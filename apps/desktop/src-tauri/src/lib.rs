@@ -10,11 +10,12 @@ mod commands {
     use crate::store;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
+    use std::env;
     use std::fs::{self, OpenOptions};
     use std::io::Write;
     use std::path::{Path, PathBuf};
     use std::process::Command;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CommandResult {
@@ -108,6 +109,93 @@ mod commands {
         pub exists: bool,
         pub content: String,
         pub size_bytes: u64,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct TokenTotals {
+        pub entries_count: usize,
+        pub total_input_tokens: usize,
+        pub total_output_tokens: usize,
+        pub total_tokens: usize,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct TokenUsageItem {
+        pub provider: String,
+        pub model: Option<String>,
+        pub input_tokens: usize,
+        pub output_tokens: usize,
+        pub total_tokens: usize,
+        pub estimated_cost_units: Option<f64>,
+        pub currency_label: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct TokenArtifactEstimate {
+        pub kind: String,
+        pub title: String,
+        pub path: Option<String>,
+        pub exists: bool,
+        pub size_bytes: u64,
+        pub estimated_tokens: Option<usize>,
+        pub status: String,
+        pub recommendation: String,
+        pub error: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct TokenCostSummary {
+        pub estimated_total_units: f64,
+        pub currency_label: String,
+        pub note: String,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct TokenUsageSnapshot {
+        pub generated_at_ms: u128,
+        pub totals: TokenTotals,
+        pub by_provider: Vec<TokenUsageItem>,
+        pub by_model: Vec<TokenUsageItem>,
+        pub active_artifacts: Vec<TokenArtifactEstimate>,
+        pub cost_estimate: TokenCostSummary,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct LogTokenUsageInput {
+        pub provider: String,
+        pub model: Option<String>,
+        pub input_tokens: usize,
+        pub output_tokens: usize,
+        pub category: String,
+        pub notes: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ModelStatus {
+        pub id: String,
+        pub provider: String,
+        pub available: bool,
+        pub loaded: Option<bool>,
+        pub context_window: Option<usize>,
+        pub notes: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ProviderHealth {
+        pub id: String,
+        pub label: String,
+        pub enabled: bool,
+        pub auth_status: String,
+        pub reachability: String,
+        pub models: Vec<ModelStatus>,
+        pub error_summary: Option<String>,
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ModelHealthSnapshot {
+        pub generated_at_ms: u128,
+        pub providers: Vec<ProviderHealth>,
+        pub warnings: Vec<String>,
     }
 
     fn now_ms() -> u128 {
@@ -468,6 +556,586 @@ mod commands {
                 size_bytes: 0,
             },
         }
+    }
+
+    fn validate_model_name(label: &str, value: &str) -> Result<(), String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Ok(());
+        }
+
+        if trimmed.len() > 160 || trimmed.contains('\0') || trimmed.contains('\n') {
+            return Err(format!("{label} is not safe"));
+        }
+
+        let safe = trimmed.chars().all(|ch| {
+            ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '/' | ':' | '@' | '+')
+        });
+
+        if !safe {
+            return Err(format!("{label} contains unsupported characters"));
+        }
+
+        Ok(())
+    }
+
+    fn validate_optional_notes(value: &Option<String>) -> Result<(), String> {
+        if let Some(notes) = value {
+            if notes.len() > 1_000 || notes.contains('\0') {
+                return Err("Notes are too long or unsafe".into());
+            }
+
+            let lower = notes.to_lowercase();
+            if notes.contains("-----BEGIN") || lower.contains("api_key") || lower.contains("token=")
+            {
+                return Err("Notes must not contain secrets".into());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn token_artifact_estimate(kind: &str) -> TokenArtifactEstimate {
+        match artifact_path(kind) {
+            Ok((title, path)) => {
+                let metadata = fs::metadata(&path).ok();
+                let exists = metadata.is_some();
+                let size_bytes = metadata
+                    .as_ref()
+                    .map(|value| value.len())
+                    .unwrap_or_default();
+
+                if !exists {
+                    return TokenArtifactEstimate {
+                        kind: kind.to_string(),
+                        title,
+                        path: Some(path.display().to_string()),
+                        exists,
+                        size_bytes,
+                        estimated_tokens: None,
+                        status: "missing".into(),
+                        recommendation:
+                            "Generate this artifact before sending context to an agent.".into(),
+                        error: None,
+                    };
+                }
+
+                match repodesk_core::tokens::estimate_file(&path) {
+                    Ok(estimate) => TokenArtifactEstimate {
+                        kind: kind.to_string(),
+                        title,
+                        path: Some(path.display().to_string()),
+                        exists,
+                        size_bytes,
+                        estimated_tokens: Some(estimate.estimated_tokens),
+                        status: estimate.status.as_label().to_string(),
+                        recommendation: estimate.status.recommendation().to_string(),
+                        error: None,
+                    },
+                    Err(error) => TokenArtifactEstimate {
+                        kind: kind.to_string(),
+                        title,
+                        path: Some(path.display().to_string()),
+                        exists,
+                        size_bytes,
+                        estimated_tokens: None,
+                        status: "unreadable".into(),
+                        recommendation: "Open the artifact directly or rebuild it.".into(),
+                        error: Some(error.to_string()),
+                    },
+                }
+            }
+            Err(error) => TokenArtifactEstimate {
+                kind: kind.to_string(),
+                title: kind.to_string(),
+                path: None,
+                exists: false,
+                size_bytes: 0,
+                estimated_tokens: None,
+                status: "missing_task".into(),
+                recommendation: "Create or select an active task first.".into(),
+                error: Some(error),
+            },
+        }
+    }
+
+    fn build_token_usage_snapshot() -> TokenUsageSnapshot {
+        let report = repodesk_core::token_ledger::read_token_report().unwrap_or(
+            repodesk_core::token_ledger::TokenReport {
+                entries_count: 0,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                total_tokens: 0,
+                by_agent: Vec::new(),
+                by_model: Vec::new(),
+            },
+        );
+        let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
+
+        let mut estimated_total_units = 0.0;
+        let by_provider = report
+            .by_agent
+            .iter()
+            .map(|item| {
+                let estimate = repodesk_core::cost::estimate_agent_cost(
+                    &cost_config,
+                    &item.agent,
+                    item.input_tokens,
+                    item.output_tokens,
+                );
+                estimated_total_units += estimate.estimated_cost_units;
+                TokenUsageItem {
+                    provider: item.agent.clone(),
+                    model: None,
+                    input_tokens: item.input_tokens,
+                    output_tokens: item.output_tokens,
+                    total_tokens: item.total_tokens,
+                    estimated_cost_units: Some(estimate.estimated_cost_units),
+                    currency_label: Some(estimate.currency_label),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let by_model = report
+            .by_model
+            .iter()
+            .map(|item| {
+                let estimate = repodesk_core::cost::estimate_agent_cost(
+                    &cost_config,
+                    &item.agent,
+                    item.input_tokens,
+                    item.output_tokens,
+                );
+                TokenUsageItem {
+                    provider: item.agent.clone(),
+                    model: Some(item.model.clone()),
+                    input_tokens: item.input_tokens,
+                    output_tokens: item.output_tokens,
+                    total_tokens: item.total_tokens,
+                    estimated_cost_units: Some(estimate.estimated_cost_units),
+                    currency_label: Some(estimate.currency_label),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        TokenUsageSnapshot {
+            generated_at_ms: now_ms(),
+            totals: TokenTotals {
+                entries_count: report.entries_count,
+                total_input_tokens: report.total_input_tokens,
+                total_output_tokens: report.total_output_tokens,
+                total_tokens: report.total_tokens,
+            },
+            by_provider,
+            by_model,
+            active_artifacts: vec![
+                token_artifact_estimate("context"),
+                token_artifact_estimate("smart_context"),
+                token_artifact_estimate("prompt_codex"),
+                token_artifact_estimate("prompt_chatgpt"),
+                token_artifact_estimate("prompt_review"),
+                token_artifact_estimate("checks_summary"),
+            ],
+            cost_estimate: TokenCostSummary {
+                estimated_total_units,
+                currency_label: cost_config.currency_label,
+                note: "Planning estimate from local RepoDesk cost config. Real billing depends on provider and model."
+                    .into(),
+            },
+        }
+    }
+
+    struct HttpJsonError {
+        status: Option<u16>,
+        summary: String,
+    }
+
+    fn http_agent() -> ureq::Agent {
+        ureq::AgentBuilder::new()
+            .timeout_connect(Duration::from_millis(800))
+            .timeout_read(Duration::from_secs(3))
+            .timeout_write(Duration::from_secs(3))
+            .build()
+    }
+
+    fn request_json(
+        url: &str,
+        headers: &[(&str, &str)],
+    ) -> Result<serde_json::Value, HttpJsonError> {
+        let agent = http_agent();
+        let mut request = agent.get(url).set("accept", "application/json");
+        for (key, value) in headers {
+            request = request.set(key, value);
+        }
+
+        match request.call() {
+            Ok(response) => response.into_json().map_err(|error| HttpJsonError {
+                status: None,
+                summary: format!("Invalid JSON response: {error}"),
+            }),
+            Err(ureq::Error::Status(code, response)) => {
+                let body = response
+                    .into_string()
+                    .unwrap_or_default()
+                    .chars()
+                    .take(240)
+                    .collect::<String>();
+                Err(HttpJsonError {
+                    status: Some(code),
+                    summary: if body.trim().is_empty() {
+                        format!("HTTP {code}")
+                    } else {
+                        format!("HTTP {code}: {body}")
+                    },
+                })
+            }
+            Err(error) => Err(HttpJsonError {
+                status: None,
+                summary: error.to_string(),
+            }),
+        }
+    }
+
+    fn model_status(provider: &str, id: String, notes: Option<String>) -> ModelStatus {
+        ModelStatus {
+            id,
+            provider: provider.to_string(),
+            available: true,
+            loaded: None,
+            context_window: None,
+            notes,
+        }
+    }
+
+    fn disabled_provider(id: &str, label: &str) -> ProviderHealth {
+        ProviderHealth {
+            id: id.into(),
+            label: label.into(),
+            enabled: false,
+            auth_status: "disabled".into(),
+            reachability: "disabled".into(),
+            models: Vec::new(),
+            error_summary: None,
+        }
+    }
+
+    fn provider_error(
+        id: &str,
+        label: &str,
+        auth_status: &str,
+        reachability: &str,
+        error: String,
+    ) -> ProviderHealth {
+        ProviderHealth {
+            id: id.into(),
+            label: label.into(),
+            enabled: true,
+            auth_status: auth_status.into(),
+            reachability: reachability.into(),
+            models: Vec::new(),
+            error_summary: Some(truncate_text(&error, 500)),
+        }
+    }
+
+    fn provider_working(
+        id: &str,
+        label: &str,
+        auth_status: &str,
+        models: Vec<ModelStatus>,
+    ) -> ProviderHealth {
+        ProviderHealth {
+            id: id.into(),
+            label: label.into(),
+            enabled: true,
+            auth_status: auth_status.into(),
+            reachability: "working".into(),
+            models,
+            error_summary: None,
+        }
+    }
+
+    fn join_url(base: &str, suffix: &str) -> String {
+        format!(
+            "{}/{}",
+            base.trim().trim_end_matches('/'),
+            suffix.trim_start_matches('/')
+        )
+    }
+
+    fn ollama_health(settings: &store::ProviderSettings) -> ProviderHealth {
+        if !settings.ollama_enabled {
+            return disabled_provider("ollama", "Ollama");
+        }
+
+        match request_json(&join_url(&settings.ollama_url, "/api/tags"), &[]) {
+            Ok(value) => {
+                let models = value
+                    .get("models")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                item.get("model")
+                                    .or_else(|| item.get("name"))
+                                    .and_then(|value| value.as_str())
+                                    .map(|name| {
+                                        model_status(
+                                            "ollama",
+                                            name.to_string(),
+                                            item.get("details")
+                                                .and_then(|details| details.get("parameter_size"))
+                                                .and_then(|value| value.as_str())
+                                                .map(|value| format!("parameters: {value}")),
+                                        )
+                                    })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                provider_working("ollama", "Ollama", "not_required", models)
+            }
+            Err(error) => provider_error(
+                "ollama",
+                "Ollama",
+                "not_required",
+                "unreachable",
+                error.summary,
+            ),
+        }
+    }
+
+    fn lm_studio_health(settings: &store::ProviderSettings) -> ProviderHealth {
+        if !settings.lm_studio_enabled {
+            return disabled_provider("lm_studio", "LM Studio");
+        }
+
+        match request_json(&join_url(&settings.lm_studio_url, "/v1/models"), &[]) {
+            Ok(value) => {
+                let models = value
+                    .get("data")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                item.get("id").and_then(|value| value.as_str()).map(|id| {
+                                    model_status(
+                                        "lm_studio",
+                                        id.to_string(),
+                                        Some(
+                                            "visible to LM Studio OpenAI-compatible server".into(),
+                                        ),
+                                    )
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                provider_working("lm_studio", "LM Studio", "not_required", models)
+            }
+            Err(error) => provider_error(
+                "lm_studio",
+                "LM Studio",
+                "not_required",
+                "unreachable",
+                error.summary,
+            ),
+        }
+    }
+
+    fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
+        if !settings.openai_api_enabled {
+            return disabled_provider("openai", "OpenAI API");
+        }
+
+        let env_name = settings.openai_api_key_env_var.trim();
+        let Ok(api_key) = env::var(env_name) else {
+            return provider_error(
+                "openai",
+                "OpenAI API",
+                "auth_missing",
+                "auth_missing",
+                format!("Set {env_name} to enable live OpenAI model discovery."),
+            );
+        };
+
+        if api_key.trim().is_empty() {
+            return provider_error(
+                "openai",
+                "OpenAI API",
+                "auth_missing",
+                "auth_missing",
+                format!("Set {env_name} to enable live OpenAI model discovery."),
+            );
+        }
+
+        let authorization = format!("Bearer {api_key}");
+        match request_json(
+            "https://api.openai.com/v1/models",
+            &[("authorization", authorization.as_str())],
+        ) {
+            Ok(value) => {
+                let models = value
+                    .get("data")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                item.get("id").and_then(|value| value.as_str()).map(|id| {
+                                    model_status(
+                                        "openai",
+                                        id.to_string(),
+                                        item.get("owned_by")
+                                            .and_then(|value| value.as_str())
+                                            .map(|owner| format!("owned by {owner}")),
+                                    )
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                provider_working("openai", "OpenAI API", "configured", models)
+            }
+            Err(error) => {
+                let reachability = match error.status {
+                    Some(401 | 403) => "auth_missing",
+                    Some(429) => "rate_limited",
+                    _ => "unreachable",
+                };
+                let auth_status = if reachability == "auth_missing" {
+                    "auth_missing"
+                } else {
+                    "configured"
+                };
+                provider_error(
+                    "openai",
+                    "OpenAI API",
+                    auth_status,
+                    reachability,
+                    error.summary,
+                )
+            }
+        }
+    }
+
+    fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
+        if !settings.gemini_api_enabled {
+            return disabled_provider("gemini", "Gemini API");
+        }
+
+        let env_name = settings.gemini_api_key_env_var.trim();
+        let Ok(api_key) = env::var(env_name) else {
+            return provider_error(
+                "gemini",
+                "Gemini API",
+                "auth_missing",
+                "auth_missing",
+                format!("Set {env_name} to enable live Gemini model discovery."),
+            );
+        };
+
+        if api_key.trim().is_empty() {
+            return provider_error(
+                "gemini",
+                "Gemini API",
+                "auth_missing",
+                "auth_missing",
+                format!("Set {env_name} to enable live Gemini model discovery."),
+            );
+        }
+
+        match request_json(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            &[("x-goog-api-key", api_key.as_str())],
+        ) {
+            Ok(value) => {
+                let models = value
+                    .get("models")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                item.get("name")
+                                    .and_then(|value| value.as_str())
+                                    .map(|name| {
+                                        let id = name.strip_prefix("models/").unwrap_or(name);
+                                        model_status(
+                                            "gemini",
+                                            id.to_string(),
+                                            item.get("displayName")
+                                                .and_then(|value| value.as_str())
+                                                .map(str::to_string),
+                                        )
+                                    })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                provider_working("gemini", "Gemini API", "configured", models)
+            }
+            Err(error) => {
+                let reachability = match error.status {
+                    Some(401 | 403) => "auth_missing",
+                    Some(429) => "rate_limited",
+                    _ => "unreachable",
+                };
+                let auth_status = if reachability == "auth_missing" {
+                    "auth_missing"
+                } else {
+                    "configured"
+                };
+                provider_error(
+                    "gemini",
+                    "Gemini API",
+                    auth_status,
+                    reachability,
+                    error.summary,
+                )
+            }
+        }
+    }
+
+    pub(crate) fn model_health_from_settings(
+        settings: &store::ProviderSettings,
+    ) -> ModelHealthSnapshot {
+        let providers = vec![
+            ollama_health(settings),
+            lm_studio_health(settings),
+            openai_health(settings),
+            gemini_health(settings),
+        ];
+        let mut warnings = Vec::new();
+
+        if providers
+            .iter()
+            .any(|provider| provider.reachability == "auth_missing")
+        {
+            warnings.push(
+                "Some API providers are enabled but missing environment-based credentials.".into(),
+            );
+        }
+
+        if providers
+            .iter()
+            .filter(|provider| provider.enabled)
+            .all(|provider| provider.reachability != "working")
+        {
+            warnings.push("No enabled model provider is currently reachable.".into());
+        }
+
+        ModelHealthSnapshot {
+            generated_at_ms: now_ms(),
+            providers,
+            warnings,
+        }
+    }
+
+    fn build_model_health_snapshot() -> ModelHealthSnapshot {
+        let settings = store::read_provider_settings().unwrap_or_default();
+        model_health_from_settings(&settings)
     }
 
     fn has_block_signal(result: &CommandResult) -> bool {
@@ -936,6 +1604,51 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn token_usage_snapshot() -> TokenUsageSnapshot {
+        build_token_usage_snapshot()
+    }
+
+    #[tauri::command]
+    pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, String> {
+        validate_short_id("Provider", &input.provider)?;
+        if let Some(model) = &input.model {
+            validate_model_name("Model", model)?;
+        }
+        validate_short_id("Category", &input.category)?;
+        validate_optional_notes(&input.notes)?;
+
+        if input.input_tokens > 10_000_000 || input.output_tokens > 10_000_000 {
+            return Err("Token counts are too large".into());
+        }
+
+        repodesk_core::token_ledger::log_token_event(repodesk_core::token_ledger::LogTokenInput {
+            agent: input.provider.trim().to_ascii_lowercase(),
+            model: input
+                .model
+                .as_ref()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            input_tokens: input.input_tokens,
+            output_tokens: input.output_tokens,
+            category: input.category.trim().to_string(),
+            notes: input.notes,
+        })
+        .map_err(|error| error.to_string())?;
+
+        Ok(build_token_usage_snapshot())
+    }
+
+    #[tauri::command]
+    pub fn model_health_snapshot() -> ModelHealthSnapshot {
+        build_model_health_snapshot()
+    }
+
+    #[tauri::command]
+    pub fn refresh_model_health() -> ModelHealthSnapshot {
+        build_model_health_snapshot()
+    }
+
+    #[tauri::command]
     pub fn db_status() -> store::DbStatus {
         store::db_status()
     }
@@ -961,10 +1674,221 @@ mod git_workspace_commands {
     }
 }
 
+mod code_workbench_commands {
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CodeFilePreview {
+        pub path: String,
+        pub status: String,
+        pub bytes: u64,
+        pub blocked: bool,
+        pub reason: Option<String>,
+        pub preview: Option<String>,
+    }
+
+    fn active_project_path() -> Result<PathBuf, String> {
+        repodesk_core::projects::get_active_project()
+            .map(|project| project.path)
+            .map_err(|error| error.to_string())
+    }
+
+    fn run_git(project_path: &Path, args: &[&str]) -> String {
+        Command::new("git")
+            .args(args)
+            .current_dir(project_path)
+            .output()
+            .map(|output| {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                if stdout.trim().is_empty() {
+                    stderr
+                } else {
+                    stdout
+                }
+            })
+            .unwrap_or_else(|error| format!("git command failed: {error}"))
+    }
+
+    fn is_blocked_path(path: &str) -> Option<String> {
+        let lower = path.to_lowercase();
+        let blocked_fragments = [".env", "secret", "credential", "private", "token", "id_rsa"];
+        let blocked_suffixes = [
+            ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif",
+            ".webp", ".pdf", ".zip",
+        ];
+
+        if blocked_fragments.iter().any(|item| lower.contains(item)) {
+            return Some("secret-like path blocked".into());
+        }
+
+        if blocked_suffixes.iter().any(|item| lower.ends_with(item)) {
+            return Some("binary or sensitive file type blocked".into());
+        }
+
+        None
+    }
+
+    fn parse_status(project_path: &Path) -> Vec<(String, String)> {
+        run_git(project_path, &["status", "--porcelain=v1"])
+            .lines()
+            .filter_map(|line| {
+                if line.len() < 4 {
+                    return None;
+                }
+                let status = line.chars().take(2).collect::<String>();
+                let mut path = line.chars().skip(3).collect::<String>();
+                if let Some((_, after)) = path.split_once(" -> ") {
+                    path = after.to_string();
+                }
+                Some((path.trim().to_string(), status.trim().to_string()))
+            })
+            .collect()
+    }
+
+    fn safe_preview(project_path: &Path, relative_path: &str, status: &str) -> CodeFilePreview {
+        if let Some(reason) = is_blocked_path(relative_path) {
+            return CodeFilePreview {
+                path: relative_path.into(),
+                status: status.into(),
+                bytes: 0,
+                blocked: true,
+                reason: Some(reason),
+                preview: None,
+            };
+        }
+
+        let full_path = project_path.join(relative_path);
+        let metadata = match fs::metadata(&full_path) {
+            Ok(value) => value,
+            Err(error) => {
+                return CodeFilePreview {
+                    path: relative_path.into(),
+                    status: status.into(),
+                    bytes: 0,
+                    blocked: true,
+                    reason: Some(error.to_string()),
+                    preview: None,
+                };
+            }
+        };
+
+        if metadata.len() > 80_000 {
+            return CodeFilePreview {
+                path: relative_path.into(),
+                status: status.into(),
+                bytes: metadata.len(),
+                blocked: true,
+                reason: Some("file is too large for UI preview".into()),
+                preview: None,
+            };
+        }
+
+        match fs::read_to_string(&full_path) {
+            Ok(content) => {
+                let preview: String = content.chars().take(4_000).collect();
+                CodeFilePreview {
+                    path: relative_path.into(),
+                    status: status.into(),
+                    bytes: metadata.len(),
+                    blocked: false,
+                    reason: None,
+                    preview: Some(preview),
+                }
+            }
+            Err(error) => CodeFilePreview {
+                path: relative_path.into(),
+                status: status.into(),
+                bytes: metadata.len(),
+                blocked: true,
+                reason: Some(error.to_string()),
+                preview: None,
+            },
+        }
+    }
+
+    #[tauri::command]
+    pub fn code_workbench_snapshot() -> serde_json::Value {
+        let project_path = match active_project_path() {
+            Ok(path) => path,
+            Err(error) => {
+                return json!({
+                    "connected": false,
+                    "error": error,
+                    "changed_files": [],
+                    "previews": [],
+                });
+            }
+        };
+
+        let status_items = parse_status(&project_path);
+        let changed_files: Vec<String> =
+            status_items.iter().map(|(path, _)| path.clone()).collect();
+        let previews: Vec<CodeFilePreview> = status_items
+            .iter()
+            .take(30)
+            .map(|(path, status)| safe_preview(&project_path, path, status))
+            .collect();
+
+        json!({
+            "connected": true,
+            "project_path": project_path.display().to_string(),
+            "changed_files": changed_files,
+            "previews": previews,
+            "diff_stat": run_git(&project_path, &["diff", "--stat"]),
+            "cached_diff_stat": run_git(&project_path, &["diff", "--cached", "--stat"]),
+            "recommendation": if status_items.is_empty() { "Workspace is clean. Create or select a task, then build context." } else { "Review changed files, build smart context, then run checks before asking an agent." },
+        })
+    }
+
+    #[tauri::command]
+    pub fn read_code_file(relative_path: String) -> Result<serde_json::Value, String> {
+        if relative_path.trim().is_empty()
+            || relative_path.contains("..")
+            || Path::new(&relative_path).is_absolute()
+        {
+            return Err("Unsafe relative path".into());
+        }
+        if let Some(reason) = is_blocked_path(&relative_path) {
+            return Err(reason);
+        }
+
+        let project_path = active_project_path()?;
+        let project_root = project_path
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let file_path = project_root.join(&relative_path);
+        let canonical_file = file_path
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+
+        if !canonical_file.starts_with(&project_root) {
+            return Err("Path escapes active project".into());
+        }
+
+        let metadata = fs::metadata(&canonical_file).map_err(|error| error.to_string())?;
+        if metadata.len() > 160_000 {
+            return Err("File is too large for safe UI preview".into());
+        }
+        let content = fs::read_to_string(&canonical_file).map_err(|error| error.to_string())?;
+        Ok(json!({
+            "path": relative_path,
+            "bytes": metadata.len(),
+            "content": content,
+        }))
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            code_workbench_commands::read_code_file,
+            code_workbench_commands::code_workbench_snapshot,
             git_workspace_commands::git_workspace_snapshot,
             ai_discovery_commands::ai_discovery_scan,
             commands::desktop_snapshot,
@@ -984,7 +1908,11 @@ pub fn run() {
             commands::project_add,
             commands::task_new,
             commands::task_status,
-            commands::task_show
+            commands::task_show,
+            commands::token_usage_snapshot,
+            commands::log_token_usage,
+            commands::model_health_snapshot,
+            commands::refresh_model_health
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1036,5 +1964,28 @@ mod tests {
         let state = commands::build_product_workflow_state();
         assert!(!state.primary_cta.trim().is_empty());
         assert!(!state.steps.is_empty());
+    }
+
+    #[test]
+    fn disabled_model_health_does_not_probe_network() {
+        let settings = crate::store::ProviderSettings {
+            ollama_enabled: false,
+            lm_studio_enabled: false,
+            openai_api_enabled: false,
+            gemini_api_enabled: false,
+            ..crate::store::ProviderSettings::default()
+        };
+
+        let snapshot = commands::model_health_from_settings(&settings);
+
+        assert_eq!(snapshot.providers.len(), 4);
+        assert!(snapshot
+            .providers
+            .iter()
+            .all(|provider| provider.reachability == "disabled"));
+        assert!(snapshot
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("No enabled model provider")));
     }
 }

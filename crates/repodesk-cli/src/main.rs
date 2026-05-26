@@ -516,6 +516,8 @@ enum TokensCommand {
         #[arg(long)]
         agent: String,
         #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
         input: usize,
         #[arg(long, default_value_t = 0)]
         output: usize,
@@ -1149,6 +1151,7 @@ fn handle_tokens_command(command: TokensCommand) -> Result<()> {
         }
         TokensCommand::Log {
             agent,
+            model,
             input,
             output,
             category,
@@ -1156,6 +1159,7 @@ fn handle_tokens_command(command: TokensCommand) -> Result<()> {
         } => {
             let ledger_file = log_token_event(LogTokenInput {
                 agent,
+                model,
                 input_tokens: input,
                 output_tokens: output,
                 category,

@@ -22,9 +22,15 @@ export type ProviderSettings = {
   ollama_enabled: boolean;
   ollama_url: string;
   ollama_model: string;
+  lm_studio_enabled: boolean;
+  lm_studio_url: string;
   chatgpt_enabled: boolean;
   codex_enabled: boolean;
   gemini_enabled: boolean;
+  openai_api_enabled: boolean;
+  openai_api_key_env_var: string;
+  gemini_api_enabled: boolean;
+  gemini_api_key_env_var: string;
   allow_paid_agents: boolean;
   preferred_patch_provider: string;
   preferred_compression_provider: string;
@@ -83,6 +89,78 @@ export type ArtifactContent = {
   exists: boolean;
   content: string;
   size_bytes: number;
+};
+
+export type TokenUsageItem = {
+  provider: string;
+  model?: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  estimated_cost_units?: number | null;
+  currency_label?: string | null;
+};
+
+export type TokenUsageSnapshot = {
+  generated_at_ms: number;
+  totals: {
+    entries_count: number;
+    total_input_tokens: number;
+    total_output_tokens: number;
+    total_tokens: number;
+  };
+  by_provider: TokenUsageItem[];
+  by_model: TokenUsageItem[];
+  active_artifacts: Array<{
+    kind: string;
+    title: string;
+    path?: string | null;
+    exists: boolean;
+    size_bytes: number;
+    estimated_tokens?: number | null;
+    status: string;
+    recommendation: string;
+    error?: string | null;
+  }>;
+  cost_estimate: {
+    estimated_total_units: number;
+    currency_label: string;
+    note: string;
+  };
+};
+
+export type LogTokenUsageInput = {
+  provider: string;
+  model?: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  category: string;
+  notes?: string | null;
+};
+
+export type ModelStatus = {
+  id: string;
+  provider: string;
+  available: boolean;
+  loaded?: boolean | null;
+  context_window?: number | null;
+  notes?: string | null;
+};
+
+export type ProviderHealth = {
+  id: string;
+  label: string;
+  enabled: boolean;
+  auth_status: string;
+  reachability: string;
+  models: ModelStatus[];
+  error_summary?: string | null;
+};
+
+export type ModelHealthSnapshot = {
+  generated_at_ms: number;
+  providers: ProviderHealth[];
+  warnings: string[];
 };
 
 export type ProductWorkflowState = {
@@ -187,6 +265,22 @@ export async function taskShow(): Promise<CommandResult> {
   return invoke("task_show");
 }
 
+export async function tokenUsageSnapshot(): Promise<TokenUsageSnapshot> {
+  return invoke("token_usage_snapshot");
+}
+
+export async function logTokenUsage(input: LogTokenUsageInput): Promise<TokenUsageSnapshot> {
+  return invoke("log_token_usage", { input });
+}
+
+export async function modelHealthSnapshot(): Promise<ModelHealthSnapshot> {
+  return invoke("model_health_snapshot");
+}
+
+export async function refreshModelHealth(): Promise<ModelHealthSnapshot> {
+  return invoke("refresh_model_health");
+}
+
 
 export async function dbStatus(): Promise<DbStatus> {
   return invoke("db_status");
@@ -199,4 +293,3 @@ export async function providerSettings(): Promise<ProviderSettings> {
 export async function saveProviderSettings(input: ProviderSettings): Promise<ProviderSettings> {
   return invoke("save_provider_settings", { input });
 }
-
