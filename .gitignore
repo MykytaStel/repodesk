@@ -1,0 +1,210 @@
+# =========================================================
+# RepoDesk .gitignore
+# Rust + Tauri 2 + React/TypeScript + local storage + AI tools
+# =========================================================
+
+
+# ---------------------------------------------------------
+# OS files
+# ---------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+
+# ---------------------------------------------------------
+# Watchman / file watcher artifacts
+# ---------------------------------------------------------
+.watchman-cookie-*
+.watchmanconfig.local
+
+
+# ---------------------------------------------------------
+# Editors / IDE
+# ---------------------------------------------------------
+.idea/
+*.iml
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+!.vscode/launch.example.json
+!.vscode/tasks.example.json
+
+*.swp
+*.swo
+*~
+*.tmp
+
+
+# ---------------------------------------------------------
+# Environment files / secrets
+# ---------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.template
+
+*.local
+*.secret
+*.secrets
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.cert
+
+
+# ---------------------------------------------------------
+# Logs
+# ---------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+debug.log
+
+
+# ---------------------------------------------------------
+# Node / React / TypeScript
+# ---------------------------------------------------------
+node_modules/
+.pnpm-store/
+.yarn/
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+
+dist/
+build/
+out/
+coverage/
+.nyc_output/
+
+.cache/
+.parcel-cache/
+.vite/
+.next/
+.nuxt/
+.svelte-kit/
+
+*.tsbuildinfo
+vite.config.ts.timestamp-*
+
+
+# ---------------------------------------------------------
+# Rust / Cargo
+# ---------------------------------------------------------
+target/
+**/target/
+
+# Keep Cargo.lock for applications/binaries.
+# RepoDesk is an app/CLI/desktop project, so Cargo.lock SHOULD be committed.
+# Do NOT ignore Cargo.lock.
+
+
+# ---------------------------------------------------------
+# Tauri
+# ---------------------------------------------------------
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.tauri/
+
+# Tauri generated bundles/installers
+src-tauri/bundle/
+src-tauri/target/release/bundle/
+
+
+# ---------------------------------------------------------
+# SQLite / local app storage
+# ---------------------------------------------------------
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+
+data/
+storage/
+.local-data/
+local-data/
+
+# Keep database schema and migrations
+!migrations/
+!**/migrations/
+!schema.sql
+!seed.sql
+
+
+# ---------------------------------------------------------
+# Local AI / Ollama / model artifacts
+# ---------------------------------------------------------
+models/
+.local-models/
+ollama/
+.ollama/
+*.gguf
+*.ggml
+*.safetensors
+*.onnx
+*.bin
+
+
+# ---------------------------------------------------------
+# Test / temporary output
+# ---------------------------------------------------------
+tmp/
+temp/
+.tmp/
+coverage/
+test-results/
+playwright-report/
+reports/generated/
+
+
+# ---------------------------------------------------------
+# Mac app / desktop build artifacts
+# ---------------------------------------------------------
+*.app
+*.dmg
+*.pkg
+
+
+# ---------------------------------------------------------
+# Windows build artifacts
+# ---------------------------------------------------------
+*.exe
+*.msi
+*.msix
+*.dll
+*.pdb
+
+
+# ---------------------------------------------------------
+# Linux packages / archives
+# ---------------------------------------------------------
+*.AppImage
+*.deb
+*.rpm
+*.tar.gz
+*.tgz
+*.zip
+
+
+# ---------------------------------------------------------
+# Misc generated files
+# ---------------------------------------------------------
+generated/
+.codegen/

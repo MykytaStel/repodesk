@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "crates/repodesk-core",
+  "crates/repodesk-cli"
+]
+resolver = "2"
