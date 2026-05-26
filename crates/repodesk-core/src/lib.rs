@@ -1,6 +1,7 @@
 pub mod access;
 pub mod agents;
 pub mod ai_adapters;
+pub mod ai_discovery;
 pub mod brain;
 pub mod budget;
 pub mod capabilities;

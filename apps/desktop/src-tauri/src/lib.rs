@@ -1,3 +1,10 @@
+pub mod ai_discovery_commands {
+    #[tauri::command]
+    pub fn ai_discovery_scan() -> Result<repodesk_core::ai_discovery::AiDiscoveryReport, String> {
+        repodesk_core::ai_discovery::write_ai_discovery_report().map_err(|error| error.to_string())
+    }
+}
+
 mod store;
 mod commands {
     use crate::store;
@@ -950,6 +957,7 @@ mod commands {
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            ai_discovery_commands::ai_discovery_scan,
             commands::desktop_snapshot,
             commands::product_workflow_state,
             commands::read_artifact,

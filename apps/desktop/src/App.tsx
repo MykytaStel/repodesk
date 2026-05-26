@@ -1,645 +1,514 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActionRunResult,
-  ArtifactContent,
-  CommandResult,
-  DbStatus,
-  DesktopAction,
-  DesktopSnapshot,
-  ProviderSettings,
-  ProductWorkflowState,
-  explainAction,
-  getActionHistory,
-  getSnapshot,
-  getWorkflowState,
-  projectAdd,
-  projectList,
-  projectUse,
-  readArtifact,
-  runDesktopAction,
-  runNextSafeStep,
-  taskNew,
-  dbStatus,
-  providerSettings,
-  saveProviderSettings,
-} from "./api";
-import { artifactKinds, formatBytes, productPrinciples, statusLabel, summarizeCommand } from "./product";
-import "./styles.css";
+import { useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import "./App.css";
 
-type TabId = "workflow" | "management" | "artifacts" | "actions" | "security" | "runtime" | "history" | "raw";
+type InvokeState<T> = {
+  data: T | null;
+  error: string | null;
+  loading: boolean;
+};
 
-const tabs: Array<{ id: TabId; label: string }> = [
-  { id: "workflow", label: "Workflow" },
-  { id: "management", label: "Management" },
-  { id: "artifacts", label: "Artifacts" },
-  { id: "actions", label: "Actions" },
-  { id: "security", label: "Security" },
-  { id: "runtime", label: "Runtime" },
-  { id: "history", label: "History" },
-  { id: "raw", label: "Raw" },
+type DesktopAction = {
+  id: string;
+  title?: string;
+  label?: string;
+  description?: string;
+  risk?: string;
+  category?: string;
+};
+
+type ActionRunResult = {
+  action_id?: string;
+  status?: string;
+  message?: string;
+  started_at?: string;
+  finished_at?: string;
+  duration_ms?: number;
+  error?: string;
+};
+
+type AiToolProbe = {
+  id: string;
+  name: string;
+  category: string;
+  status: string;
+  detection: string;
+  executable_path?: string | null;
+  app_path?: string | null;
+  local_only: boolean;
+  requires_paid_account: boolean;
+  risk_level: string;
+  notes: string[];
+};
+
+type AiEndpointProbe = {
+  id: string;
+  name: string;
+  url: string;
+  status: string;
+  local_only: boolean;
+  notes: string[];
+};
+
+type AiDiscoveryReport = {
+  generated_at: string;
+  host_os: string;
+  tools: AiToolProbe[];
+  endpoints: AiEndpointProbe[];
+  recommendations: string[];
+  warnings: string[];
+  report_path?: string | null;
+};
+
+type Snapshot = Record<string, unknown>;
+
+type TabKey = "workflow" | "ai" | "actions" | "security" | "runtime" | "history" | "raw";
+
+const tabs: { key: TabKey; label: string }[] = [
+  { key: "workflow", label: "Workflow" },
+  { key: "ai", label: "AI Discovery" },
+  { key: "actions", label: "Actions" },
+  { key: "security", label: "Security" },
+  { key: "runtime", label: "Runtime" },
+  { key: "history", label: "History" },
+  { key: "raw", label: "Raw" },
 ];
 
-function OutputBlock({ result }: { result?: CommandResult }) {
-  if (!result) return <pre className="output muted">No output yet.</pre>;
-  return (
-    <pre className={result.ok ? "output" : "output outputError"}>
-      {result.stdout || result.stderr || "No output"}
-    </pre>
-  );
+function emptyState<T>(): InvokeState<T> {
+  return { data: null, error: null, loading: false };
 }
 
-function StatusPill({ ok, label }: { ok: boolean; label: string }) {
-  return <span className={ok ? "pill pillOk" : "pill pillWarn"}>{label}</span>;
-}
-
-function StepCard({ step }: { step: ProductWorkflowState["steps"][number] }) {
-  return (
-    <article className={`stepCard ${step.status}`}>
-      <div className="stepHead">
-        <span className="stepTitle">{step.title}</span>
-        <span className={`stepStatus ${step.status}`}>{statusLabel(step.status)}</span>
-      </div>
-      <p>{step.description}</p>
-      {step.command_preview && <code>{step.command_preview}</code>}
-      {step.blocker && <small className="warnText">{step.blocker}</small>}
-    </article>
-  );
-}
-
-function RunResult({ result }: { result?: ActionRunResult | null }) {
-  if (!result) return null;
-  const duration = Number(result.finished_at_ms - result.started_at_ms);
-  return (
-    <section className="card resultCard">
-      <div className="sectionHeader">
-        <div>
-          <h3>{result.title}</h3>
-          <p>{result.result.command}</p>
-        </div>
-        <StatusPill ok={result.result.ok} label={result.result.ok ? "Success" : "Failed"} />
-      </div>
-      <p className="mutedText">Duration: {duration} ms · Risk: {result.risk}</p>
-      <OutputBlock result={result.result} />
-    </section>
-  );
-}
-
-function WorkflowView({
-  workflow,
-  onRunNext,
-  running,
-}: {
-  workflow: ProductWorkflowState | null;
-  onRunNext: () => void;
-  running: boolean;
-}) {
-  if (!workflow) {
-    return <div className="card">Loading workflow...</div>;
+async function safeInvoke<T>(command: string, args?: Record<string, unknown>): Promise<InvokeState<T>> {
+  try {
+    const data = await invoke<T>(command, args);
+    return { data, error: null, loading: false };
+  } catch (error) {
+    return { data: null, error: String(error), loading: false };
   }
-
-  return (
-    <div className="grid gap">
-      <section className="heroPanel">
-        <div>
-          <p className="eyebrow">RepoDesk Control Brain</p>
-          <h2>{workflow.primary_cta}</h2>
-          <p>
-            RepoDesk guides the active project from task → context → safety → prompt → checks → review.
-            The desktop UI can only run whitelisted commands.
-          </p>
-          <div className="healthRow">
-            <StatusPill ok={workflow.project_ok} label="Project" />
-            <StatusPill ok={workflow.task_ok} label="Task" />
-            <StatusPill ok={workflow.smart_context_ok} label="Smart context" />
-            <StatusPill ok={workflow.safety_ok} label="Safety" />
-            <StatusPill ok={workflow.prompts_ok} label="Prompts" />
-            <StatusPill ok={workflow.checks_ok} label="Checks" />
-          </div>
-        </div>
-        <div className="primaryActionBox">
-          <span className="mutedText">Recommended action</span>
-          <strong>{workflow.recommended_action_title || workflow.primary_cta}</strong>
-          <button disabled={running || !workflow.recommended_action_id} onClick={onRunNext}>
-            {running ? "Running..." : "Do next safe step"}
-          </button>
-          {!workflow.recommended_action_id && (
-            <small className="warnText">Set project/task first in Management.</small>
-          )}
-        </div>
-      </section>
-
-      <section className="timeline">
-        {workflow.steps.map((step) => (
-          <StepCard key={step.id} step={step} />
-        ))}
-      </section>
-
-      <section className="twoCols">
-        <div className="card">
-          <h3>Brain hint</h3>
-          <OutputBlock result={workflow.workflow_hint} />
-        </div>
-        <div className="card">
-          <h3>Security verdict</h3>
-          <OutputBlock result={workflow.security_verdict} />
-        </div>
-      </section>
-
-      {workflow.checks_summary_preview && (
-        <section className="card">
-          <h3>Latest checks summary</h3>
-          <pre className="output">{workflow.checks_summary_preview}</pre>
-        </section>
-      )}
-    </div>
-  );
 }
 
-function ManagementView({ onRefresh }: { onRefresh: () => void }) {
-  const [projectName, setProjectName] = useState("repodesk");
-  const [projectPath, setProjectPath] = useState("");
-  const [projectType, setProjectType] = useState("rust-desktop");
-  const [mainLanguage, setMainLanguage] = useState("rust");
-  const [useProjectName, setUseProjectName] = useState("");
-  const [taskTitle, setTaskTitle] = useState("Build product workflow MVP");
-  const [projectListOutput, setProjectListOutput] = useState<CommandResult | null>(null);
-  const [lastResult, setLastResult] = useState<CommandResult | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const run = async (fn: () => Promise<CommandResult>) => {
-    setBusy(true);
-    try {
-      const result = await fn();
-      setLastResult(result);
-      onRefresh();
-    } catch (error) {
-      setLastResult({ ok: false, command: "desktop management", stdout: "", stderr: String(error), exit_code: null });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  useEffect(() => {
-    projectList().then(setProjectListOutput).catch(() => undefined);
-  }, []);
-
-  return (
-    <div className="twoCols">
-      <section className="card">
-        <h3>Add project</h3>
-        <label>Project name</label>
-        <input value={projectName} onChange={(event) => setProjectName(event.target.value)} />
-        <label>Project path</label>
-        <input placeholder="/Users/mykyta/Documents/projects/repodesk" value={projectPath} onChange={(event) => setProjectPath(event.target.value)} />
-        <label>Project type</label>
-        <input value={projectType} onChange={(event) => setProjectType(event.target.value)} />
-        <label>Main language</label>
-        <input value={mainLanguage} onChange={(event) => setMainLanguage(event.target.value)} />
-        <button disabled={busy} onClick={() => run(() => projectAdd({ name: projectName, path: projectPath, project_type: projectType, main_language: mainLanguage }))}>
-          Add project
-        </button>
-      </section>
-
-      <section className="card">
-        <h3>Use project / create task</h3>
-        <label>Project name</label>
-        <input value={useProjectName} onChange={(event) => setUseProjectName(event.target.value)} placeholder="repodesk" />
-        <button disabled={busy} onClick={() => run(() => projectUse(useProjectName))}>Use project</button>
-        <hr />
-        <label>Task title</label>
-        <input value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} />
-        <button disabled={busy} onClick={() => run(() => taskNew(taskTitle))}>Create active task</button>
-      </section>
-
-      <section className="card">
-        <h3>Registered projects</h3>
-        <OutputBlock result={projectListOutput || undefined} />
-      </section>
-
-      <section className="card">
-        <h3>Last management result</h3>
-        <OutputBlock result={lastResult || undefined} />
-      </section>
-    </div>
-  );
+function labelForAction(action: DesktopAction): string {
+  return action.title ?? action.label ?? action.id;
 }
 
-function ArtifactsView({ workflow }: { workflow: ProductWorkflowState | null }) {
-  const [selectedKind, setSelectedKind] = useState("prompt_codex");
-  const [artifact, setArtifact] = useState<ArtifactContent | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadArtifact = useCallback(async (kind: string) => {
-    setSelectedKind(kind);
-    setError(null);
-    try {
-      setArtifact(await readArtifact(kind));
-    } catch (err) {
-      setArtifact(null);
-      setError(String(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    loadArtifact(selectedKind);
-  }, [loadArtifact, selectedKind]);
-
-  const copy = async () => {
-    if (!artifact?.content) return;
-    await navigator.clipboard.writeText(artifact.content);
-  };
-
-  return (
-    <div className="grid gap">
-      <section className="card">
-        <div className="sectionHeader">
-          <div>
-            <h3>Artifacts</h3>
-            <p>Read prompts and summaries without opening files manually.</p>
-          </div>
-          <button disabled={!artifact?.content} onClick={copy}>Copy content</button>
-        </div>
-        <div className="artifactButtons">
-          {artifactKinds.map((item) => {
-            const status = workflow?.artifacts.find((artifactStatus) => artifactStatus.kind === item.kind);
-            return (
-              <button key={item.kind} className={selectedKind === item.kind ? "secondary active" : "secondary"} onClick={() => loadArtifact(item.kind)}>
-                {item.label} {status?.exists ? "✓" : ""}
-              </button>
-            );
-          })}
-        </div>
-        {workflow && (
-          <div className="artifactGrid">
-            {workflow.artifacts.map((item) => (
-              <div key={item.kind} className="artifactMeta">
-                <strong>{item.title}</strong>
-                <span>{item.exists ? formatBytes(item.size_bytes) : "missing"}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="card">
-        <div className="sectionHeader">
-          <div>
-            <h3>{artifact?.title || "Artifact"}</h3>
-            <p>{artifact?.path || error || "No artifact selected"}</p>
-          </div>
-          {artifact?.exists ? <StatusPill ok label="Exists" /> : <StatusPill ok={false} label="Missing" />}
-        </div>
-        {error ? <pre className="output outputError">{error}</pre> : <pre className="output largeOutput">{artifact?.content || "No content yet."}</pre>}
-      </section>
-    </div>
-  );
-}
-
-function ActionsView({
-  actions,
-  onRun,
-  running,
-}: {
-  actions: DesktopAction[];
-  onRun: (id: string) => void;
-  running: string | null;
-}) {
-  const [explanation, setExplanation] = useState<string>("");
-  const grouped = useMemo(() => {
-    return actions.reduce<Record<string, DesktopAction[]>>((acc, action) => {
-      acc[action.category] ||= [];
-      acc[action.category].push(action);
-      return acc;
-    }, {});
-  }, [actions]);
-
-  return (
-    <div className="twoCols">
-      <section className="card">
-        <h3>Bounded actions</h3>
-        {Object.entries(grouped).map(([category, categoryActions]) => (
-          <div key={category} className="actionGroup">
-            <h4>{category}</h4>
-            {categoryActions.map((action) => (
-              <div className="actionRow" key={action.id}>
-                <div>
-                  <strong>{action.title}</strong>
-                  <p>{action.description}</p>
-                  <code>{action.command_preview}</code>
-                </div>
-                <div className="actionButtons">
-                  <button className="secondary" onClick={async () => setExplanation(await explainAction(action.id))}>Explain</button>
-                  <button disabled={Boolean(running)} onClick={() => onRun(action.id)}>
-                    {running === action.id ? "Running..." : "Run"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </section>
-
-      <section className="card stickyCard">
-        <h3>Action explanation</h3>
-        <pre className="output">{explanation || "Pick an action to see why it is allowed and what it can do."}</pre>
-      </section>
-    </div>
-  );
-}
-
-function HistoryView({ history }: { history: ActionRunResult[] }) {
-  return (
-    <section className="card">
-      <h3>Action history</h3>
-      {history.length === 0 && <p>No desktop actions recorded yet.</p>}
-      <div className="historyList">
-        {history.map((item, index) => (
-          <article key={`${item.started_at_ms}-${index}`} className="historyItem">
-            <div className="sectionHeader">
-              <div>
-                <strong>{item.title}</strong>
-                <p>{item.result.command}</p>
-              </div>
-              <StatusPill ok={item.result.ok} label={item.result.ok ? "OK" : "Failed"} />
-            </div>
-            <pre className="output compactOutput">{summarizeCommand(item.result)}</pre>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-
-function ProviderSettingsView({
-  settings,
-  dbState,
-  runtime,
-  git,
-  onSaved,
-}: {
-  settings: ProviderSettings | null;
-  dbState: DbStatus | null;
-  runtime?: CommandResult;
-  git?: CommandResult;
-  onSaved: () => Promise<void>;
-}) {
-  const [draft, setDraft] = useState<ProviderSettings | null>(settings);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string>("");
-
-  useEffect(() => {
-    setDraft(settings);
-  }, [settings]);
-
-  const update = <K extends keyof ProviderSettings>(key: K, value: ProviderSettings[K]) => {
-    setDraft((current) => current ? { ...current, [key]: value } : current);
-  };
-
-  const save = async () => {
-    if (!draft) return;
-    setSaving(true);
-    setMessage("");
-    try {
-      await saveProviderSettings(draft);
-      setMessage("Provider settings saved to SQLite state store.");
-      await onSaved();
-    } catch (error) {
-      setMessage(String(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!draft) {
-    return <div className="card">Loading provider settings...</div>;
+function getSnapshotText(snapshot: Snapshot | null, keys: string[]): string {
+  if (!snapshot) return "unknown";
+  for (const key of keys) {
+    const value = snapshot[key];
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
   }
+  return "unknown";
+}
 
-  const providerOptions = ["ollama", "chatgpt", "codex", "gemini", "manual"];
-
-  return (
-    <div className="grid gap">
-      <section className="heroPanel">
-        <div>
-          <p className="eyebrow">Runtime control</p>
-          <h2>Provider settings</h2>
-          <p>
-            Configure which AI modules RepoDesk should prefer for patching, compression, and review.
-            Secrets are intentionally not stored here.
-          </p>
-          <div className="healthRow">
-            <StatusPill ok={draft.ollama_enabled} label="Ollama" />
-            <StatusPill ok={draft.codex_enabled} label="Codex" />
-            <StatusPill ok={draft.chatgpt_enabled} label="ChatGPT" />
-            <StatusPill ok={draft.allow_paid_agents} label="Paid agents" />
-            <StatusPill ok={Boolean(dbState?.ok)} label="SQLite" />
-          </div>
-        </div>
-        <div className="primaryActionBox">
-          <span className="mutedText">State store</span>
-          <strong>{dbState?.ok ? "Ready" : "Needs attention"}</strong>
-          <small>{dbState?.path || "No DB path"}</small>
-          <button disabled={saving} onClick={save}>{saving ? "Saving..." : "Save settings"}</button>
-        </div>
-      </section>
-
-      <section className="twoCols">
-        <div className="card">
-          <h3>Local provider</h3>
-          <label className="switchRow"><input type="checkbox" checked={draft.ollama_enabled} onChange={(event) => update("ollama_enabled", event.target.checked)} /> Enable Ollama</label>
-          <label>Ollama URL</label>
-          <input value={draft.ollama_url} onChange={(event) => update("ollama_url", event.target.value)} />
-          <small className="mutedText">Security rule: only localhost / 127.0.0.1 URLs are accepted.</small>
-          <label>Default local model</label>
-          <input value={draft.ollama_model} onChange={(event) => update("ollama_model", event.target.value)} />
-        </div>
-
-        <div className="card">
-          <h3>Paid / external agents</h3>
-          <label className="switchRow"><input type="checkbox" checked={draft.allow_paid_agents} onChange={(event) => update("allow_paid_agents", event.target.checked)} /> Allow paid agents</label>
-          <label className="switchRow"><input type="checkbox" checked={draft.codex_enabled} onChange={(event) => update("codex_enabled", event.target.checked)} /> Enable Codex</label>
-          <label className="switchRow"><input type="checkbox" checked={draft.chatgpt_enabled} onChange={(event) => update("chatgpt_enabled", event.target.checked)} /> Enable ChatGPT</label>
-          <label className="switchRow"><input type="checkbox" checked={draft.gemini_enabled} onChange={(event) => update("gemini_enabled", event.target.checked)} /> Enable Gemini</label>
-          <p className="warnText">RepoDesk stores routing preferences here, not API keys or secrets.</p>
-        </div>
-      </section>
-
-      <section className="card">
-        <h3>Routing preferences</h3>
-        <div className="settingsGrid">
-          <label>
-            Patch provider
-            <select value={draft.preferred_patch_provider} onChange={(event) => update("preferred_patch_provider", event.target.value)}>
-              {providerOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          <label>
-            Compression provider
-            <select value={draft.preferred_compression_provider} onChange={(event) => update("preferred_compression_provider", event.target.value)}>
-              {providerOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          <label>
-            Review provider
-            <select value={draft.preferred_review_provider} onChange={(event) => update("preferred_review_provider", event.target.value)}>
-              {providerOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-        </div>
-        <label>Notes / policy</label>
-        <textarea value={draft.notes} onChange={(event) => update("notes", event.target.value)} />
-        {message && <pre className={message.includes("saved") ? "output" : "output outputError"}>{message}</pre>}
-      </section>
-
-      <section className="twoCols">
-        <div className="card"><h3>Runtime providers</h3><OutputBlock result={runtime} /></div>
-        <div className="card"><h3>Git backup</h3><OutputBlock result={git} /></div>
-      </section>
-    </div>
-  );
+function hasTruthLike(snapshot: Snapshot | null, keys: string[]): boolean {
+  if (!snapshot) return false;
+  return keys.some((key) => {
+    const value = snapshot[key];
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") return value.length > 0 && value !== "unknown" && value !== "false";
+    if (typeof value === "number") return value > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return Boolean(value);
+  });
 }
 
 function App() {
-  const [tab, setTab] = useState<TabId>("workflow");
-  const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
-  const [workflow, setWorkflow] = useState<ProductWorkflowState | null>(null);
-  const [actions, setActions] = useState<DesktopAction[]>([]);
-  const [history, setHistory] = useState<ActionRunResult[]>([]);
-  const [providerConfig, setProviderConfig] = useState<ProviderSettings | null>(null);
-  const [dbState, setDbState] = useState<DbStatus | null>(null);
+  const [activeTab, setActiveTab] = useState<TabKey>("workflow");
+  const [snapshot, setSnapshot] = useState<InvokeState<Snapshot>>(emptyState());
+  const [actions, setActions] = useState<InvokeState<DesktopAction[]>>(emptyState());
+  const [history, setHistory] = useState<InvokeState<ActionRunResult[]>>(emptyState());
+  const [aiReport, setAiReport] = useState<InvokeState<AiDiscoveryReport>>(emptyState());
   const [lastRun, setLastRun] = useState<ActionRunResult | null>(null);
-  const [runningAction, setRunningAction] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  const refresh = useCallback(async () => {
-    const nextSnapshot = await getSnapshot();
-    const nextWorkflow = await getWorkflowState();
-    const nextHistory = await getActionHistory();
-    const nextProviderConfig = await providerSettings().catch(() => null);
-    const nextDbState = await dbStatus().catch(() => null);
-    setSnapshot(nextSnapshot);
-    setWorkflow(nextWorkflow);
-    setActions(nextSnapshot.actions || []);
-    setHistory(nextHistory);
-    setProviderConfig(nextProviderConfig);
-    setDbState(nextDbState);
-    setLoading(false);
-  }, []);
+  async function refreshAll() {
+    setSnapshot((state) => ({ ...state, loading: true }));
+    setActions((state) => ({ ...state, loading: true }));
+    setHistory((state) => ({ ...state, loading: true }));
 
-  useEffect(() => {
-    refresh().catch((error) => {
-      console.error(error);
-      setLoading(false);
-    });
-  }, [refresh]);
+    const [snapshotResult, actionsResult, historyResult] = await Promise.all([
+      safeInvoke<Snapshot>("desktop_snapshot"),
+      safeInvoke<DesktopAction[]>("desktop_actions"),
+      safeInvoke<ActionRunResult[]>("action_history"),
+    ]);
 
-  const runAction = async (actionId: string) => {
-    setRunningAction(actionId);
-    try {
-      const result = await runDesktopAction(actionId);
-      setLastRun(result);
-      await refresh();
-    } catch (error) {
-      setLastRun({
-        id: actionId,
-        title: "Action failed before execution",
-        risk: "unknown",
-        category: "Desktop",
-        started_at_ms: Date.now(),
-        finished_at_ms: Date.now(),
-        result: { ok: false, command: actionId, stdout: "", stderr: String(error), exit_code: null },
-      });
-    } finally {
-      setRunningAction(null);
-    }
-  };
-
-  const runPrimary = async () => {
-    setRunningAction(workflow?.recommended_action_id || "next");
-    try {
-      const result = await runNextSafeStep();
-      setLastRun(result);
-      await refresh();
-    } catch (error) {
-      setLastRun({
-        id: "next",
-        title: "Primary action failed",
-        risk: "unknown",
-        category: "Workflow",
-        started_at_ms: Date.now(),
-        finished_at_ms: Date.now(),
-        result: { ok: false, command: "run next safe step", stdout: "", stderr: String(error), exit_code: null },
-      });
-    } finally {
-      setRunningAction(null);
-    }
-  };
-
-  if (loading) {
-    return <main className="appShell"><div className="card">Loading RepoDesk...</div></main>;
+    setSnapshot(snapshotResult);
+    setActions(actionsResult);
+    setHistory(historyResult);
   }
 
+  async function scanAiSystems() {
+    setAiReport((state) => ({ ...state, loading: true }));
+    const result = await safeInvoke<AiDiscoveryReport>("ai_discovery_scan");
+    setAiReport(result);
+  }
+
+  async function runAction(actionId: string) {
+    const result = await safeInvoke<ActionRunResult>("run_desktop_action", { actionId });
+    if (result.data) setLastRun(result.data);
+    await refreshAll();
+  }
+
+  useEffect(() => {
+    void refreshAll();
+  }, []);
+
+  const recommendedAction = useMemo(() => {
+    const list = actions.data ?? [];
+    const priority = [
+      "workflow_next",
+      "build_context",
+      "build_smart_context",
+      "safety_scan",
+      "generate_prompts",
+      "run_checks",
+      "judge_codex",
+    ];
+    for (const id of priority) {
+      const found = list.find((action) => action.id === id);
+      if (found) return found;
+    }
+    return list[0] ?? null;
+  }, [actions.data]);
+
+  const workflowSteps = [
+    {
+      title: "Project",
+      done: hasTruthLike(snapshot.data, ["active_project", "project", "project_name"]),
+      detail: getSnapshotText(snapshot.data, ["active_project", "project", "project_name"]),
+    },
+    {
+      title: "Task",
+      done: hasTruthLike(snapshot.data, ["active_task", "task", "task_id"]),
+      detail: getSnapshotText(snapshot.data, ["active_task", "task", "task_id"]),
+    },
+    {
+      title: "Context",
+      done: hasTruthLike(snapshot.data, ["context_exists", "has_context", "context_ready"]),
+      detail: "Build bounded context before any paid agent.",
+    },
+    {
+      title: "Smart Context",
+      done: hasTruthLike(snapshot.data, ["smart_context_exists", "has_smart_context", "smart_context_ready"]),
+      detail: "Use smart context to avoid wasting tokens.",
+    },
+    {
+      title: "Safety",
+      done: hasTruthLike(snapshot.data, ["safety_ready", "safety_scan_exists", "security_ready"]),
+      detail: "Scan for secrets and risky context before routing to AI.",
+    },
+    {
+      title: "Prompts",
+      done: hasTruthLike(snapshot.data, ["prompts_exist", "has_prompts", "prompt_count"]),
+      detail: "Generate task-specific prompts for the right runtime.",
+    },
+    {
+      title: "Checks",
+      done: hasTruthLike(snapshot.data, ["checks_summary_exists", "has_checks_summary", "checks_ready"]),
+      detail: "Run configured checks and summarize failures.",
+    },
+  ];
+
   return (
-    <main className="appShell">
-      <header className="topbar">
+    <main className="shell">
+      <header className="hero">
         <div>
-          <p className="eyebrow">Local AI development cockpit</p>
-          <h1>RepoDesk</h1>
+          <p className="eyebrow">RepoDesk Control Brain</p>
+          <h1>Local-first AI workflow cockpit</h1>
+          <p className="heroText">
+            RepoDesk should decide what is safe, what is expensive, which AI runtime fits the job,
+            and what the next useful step is before any agent touches your repository.
+          </p>
         </div>
-        <div className="topActions">
-          <StatusPill ok={Boolean(workflow?.project_ok)} label="Project" />
-          <StatusPill ok={Boolean(workflow?.task_ok)} label="Task" />
-          <StatusPill ok={Boolean(workflow?.safety_ok)} label="Safety" />
-          <button className="secondary" onClick={refresh}>Refresh</button>
+        <div className="heroActions">
+          <button className="secondary" onClick={() => void refreshAll()}>Refresh brain</button>
+          <button className="secondary" onClick={() => void scanAiSystems()}>Scan AI systems</button>
+          <button
+            className="primary"
+            disabled={!recommendedAction}
+            onClick={() => recommendedAction && void runAction(recommendedAction.id)}
+          >
+            Do next safe step
+          </button>
         </div>
       </header>
 
-      <section className="principles">
-        {productPrinciples.map((item) => (
-          <article key={item.title}>
-            <strong>{item.title}</strong>
-            <p>{item.body}</p>
-          </article>
-        ))}
-      </section>
-
       <nav className="tabs">
-        {tabs.map((item) => (
-          <button key={item.id} className={tab === item.id ? "active" : ""} onClick={() => setTab(item.id)}>
-            {item.label}
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            className={activeTab === tab.key ? "active" : ""}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
           </button>
         ))}
       </nav>
 
-      {lastRun && <RunResult result={lastRun} />}
+      {lastRun && (
+        <section className="notice">
+          <strong>Last action:</strong> {lastRun.action_id ?? "action"} — {lastRun.status ?? "finished"}
+          {lastRun.message ? <span> · {lastRun.message}</span> : null}
+          {lastRun.error ? <span className="danger"> · {lastRun.error}</span> : null}
+        </section>
+      )}
 
-      {tab === "workflow" && <WorkflowView workflow={workflow} onRunNext={runPrimary} running={Boolean(runningAction)} />}
-      {tab === "management" && <ManagementView onRefresh={refresh} />}
-      {tab === "artifacts" && <ArtifactsView workflow={workflow} />}
-      {tab === "actions" && <ActionsView actions={actions} onRun={runAction} running={runningAction} />}
-      {tab === "security" && (
-        <div className="twoCols">
-          <section className="card"><h3>Security audit</h3><OutputBlock result={snapshot?.security} /></section>
-          <section className="card"><h3>Judge verdict</h3><OutputBlock result={workflow?.security_verdict} /></section>
-        </div>
+      {activeTab === "workflow" && (
+        <section className="grid two">
+          <article className="card span2">
+            <div className="cardHeader">
+              <div>
+                <p className="eyebrow">Product workflow</p>
+                <h2>What should happen next?</h2>
+              </div>
+              {recommendedAction ? <span className="pill">Next: {labelForAction(recommendedAction)}</span> : null}
+            </div>
+            <div className="timeline">
+              {workflowSteps.map((step, index) => (
+                <div className={`step ${step.done ? "done" : "pending"}`} key={step.title}>
+                  <div className="stepIndex">{step.done ? "✓" : index + 1}</div>
+                  <div>
+                    <h3>{step.title}</h3>
+                    <p>{step.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </article>
+          <SnapshotCard snapshot={snapshot} />
+          <article className="card">
+            <p className="eyebrow">Decision rule</p>
+            <h2>Never pay for chaos</h2>
+            <p>
+              The desktop app must not send raw repositories to paid agents. First build context,
+              reduce it, scan it, judge it, and only then route to Codex/ChatGPT/Gemini if needed.
+            </p>
+          </article>
+        </section>
       )}
-      {tab === "runtime" && (
-        <ProviderSettingsView
-          settings={providerConfig}
-          dbState={dbState}
-          runtime={snapshot?.runtime}
-          git={snapshot?.git}
-          onSaved={refresh}
-        />
+
+      {activeTab === "ai" && (
+        <AiDiscovery report={aiReport} onScan={scanAiSystems} />
       )}
-      {tab === "history" && <HistoryView history={history} />}
-      {tab === "raw" && (
+
+      {activeTab === "actions" && (
+        <section className="grid two">
+          {(actions.data ?? []).map((action) => (
+            <article className="card" key={action.id}>
+              <div className="cardHeader">
+                <div>
+                  <p className="eyebrow">{action.category ?? "action"}</p>
+                  <h2>{labelForAction(action)}</h2>
+                </div>
+                <span className={`pill ${action.risk === "high" ? "warn" : ""}`}>{action.risk ?? "bounded"}</span>
+              </div>
+              <p>{action.description ?? "Bounded RepoDesk action."}</p>
+              <button className="secondary" onClick={() => void runAction(action.id)}>Run guarded action</button>
+            </article>
+          ))}
+          {actions.error ? <ErrorCard title="Actions unavailable" error={actions.error} /> : null}
+        </section>
+      )}
+
+      {activeTab === "security" && (
+        <section className="grid two">
+          <article className="card span2">
+            <p className="eyebrow">Security model</p>
+            <h2>Desktop UI is not a shell</h2>
+            <p>
+              UI actions are whitelisted Tauri commands. No arbitrary command input, no secret reading,
+              no full repository exfiltration, no paid-agent routing without context and judge checks.
+            </p>
+          </article>
+          <article className="card">
+            <h2>Allowed</h2>
+            <ul>
+              <li>Read dashboard state</li>
+              <li>Build bounded context</li>
+              <li>Scan known local AI tools passively</li>
+              <li>Run configured checks through RepoDesk action layer</li>
+            </ul>
+          </article>
+          <article className="card">
+            <h2>Blocked by design</h2>
+            <ul>
+              <li>Unrestricted shell from UI</li>
+              <li>Secrets in prompts</li>
+              <li>External AI with raw repository context</li>
+              <li>Agent patching without review receipts</li>
+            </ul>
+          </article>
+        </section>
+      )}
+
+      {activeTab === "runtime" && (
+        <section className="grid two">
+          <article className="card span2">
+            <p className="eyebrow">Runtime routing</p>
+            <h2>AI should be treated as modules</h2>
+            <p>
+              Local runtimes should handle compression and private context. Paid agents should only receive
+              reduced task context and explicit patch instructions. Editors and CLI agents are peripherals,
+              not the brain itself.
+            </p>
+          </article>
+          <AiMiniSummary report={aiReport.data} />
+        </section>
+      )}
+
+      {activeTab === "history" && (
+        <section className="grid two">
+          {(history.data ?? []).map((item, index) => (
+            <article className="card" key={`${item.action_id ?? "action"}-${index}`}>
+              <p className="eyebrow">{item.started_at ?? "recent"}</p>
+              <h2>{item.action_id ?? "Action"}</h2>
+              <p>Status: {item.status ?? "unknown"}</p>
+              {item.message ? <p>{item.message}</p> : null}
+              {item.error ? <p className="danger">{item.error}</p> : null}
+            </article>
+          ))}
+          {history.error ? <ErrorCard title="History unavailable" error={history.error} /> : null}
+        </section>
+      )}
+
+      {activeTab === "raw" && (
         <section className="card">
-          <h3>Raw snapshot</h3>
-          <pre className="output largeOutput">{JSON.stringify(snapshot, null, 2)}</pre>
+          <p className="eyebrow">Debug snapshot</p>
+          <pre>{JSON.stringify({ snapshot: snapshot.data, ai: aiReport.data, actions: actions.data, history: history.data }, null, 2)}</pre>
         </section>
       )}
     </main>
+  );
+}
+
+function SnapshotCard({ snapshot }: { snapshot: InvokeState<Snapshot> }) {
+  if (snapshot.error) return <ErrorCard title="Snapshot unavailable" error={snapshot.error} />;
+
+  return (
+    <article className="card">
+      <p className="eyebrow">Brain snapshot</p>
+      <h2>Current state</h2>
+      <div className="kv">
+        <span>Project</span>
+        <strong>{getSnapshotText(snapshot.data, ["active_project", "project", "project_name"])}</strong>
+        <span>Task</span>
+        <strong>{getSnapshotText(snapshot.data, ["active_task", "task", "task_id"])}</strong>
+        <span>Budget</span>
+        <strong>{getSnapshotText(snapshot.data, ["budget_level", "budget", "token_budget"])} </strong>
+        <span>Next</span>
+        <strong>{getSnapshotText(snapshot.data, ["next_action", "recommended_next_action"])}</strong>
+      </div>
+    </article>
+  );
+}
+
+function AiDiscovery({ report, onScan }: { report: InvokeState<AiDiscoveryReport>; onScan: () => Promise<void> }) {
+  const tools = report.data?.tools ?? [];
+  const endpoints = report.data?.endpoints ?? [];
+  const availableTools = tools.filter((tool) => tool.status === "available");
+
+  return (
+    <section className="grid two">
+      <article className="card span2">
+        <div className="cardHeader">
+          <div>
+            <p className="eyebrow">AI discovery</p>
+            <h2>Scan installed AI systems and runtimes</h2>
+          </div>
+          <button className="primary" onClick={() => void onScan()} disabled={report.loading}>
+            {report.loading ? "Scanning..." : "Scan now"}
+          </button>
+        </div>
+        <p>
+          Passive scan only: PATH lookup, known desktop app paths, and localhost ports. It does not execute agents,
+          read secrets, or contact external AI providers.
+        </p>
+        {report.error ? <p className="danger">{report.error}</p> : null}
+        {report.data?.report_path ? <p className="muted">Saved: {report.data.report_path}</p> : null}
+      </article>
+
+      <article className="card">
+        <p className="eyebrow">Available tools</p>
+        <h2>{availableTools.length} detected</h2>
+        <div className="toolList">
+          {availableTools.map((tool) => <ToolRow key={tool.id} tool={tool} />)}
+          {availableTools.length === 0 ? <p>No AI tools detected yet. Start Ollama or install a local runtime.</p> : null}
+        </div>
+      </article>
+
+      <article className="card">
+        <p className="eyebrow">Local endpoints</p>
+        <h2>Runtime ports</h2>
+        <div className="toolList">
+          {endpoints.map((endpoint) => (
+            <div className="toolRow" key={endpoint.id}>
+              <div>
+                <strong>{endpoint.name}</strong>
+                <p>{endpoint.url}</p>
+              </div>
+              <span className={`pill ${endpoint.status === "available" ? "ok" : ""}`}>{endpoint.status}</span>
+            </div>
+          ))}
+        </div>
+      </article>
+
+      <article className="card">
+        <p className="eyebrow">Recommendations</p>
+        <h2>Routing hints</h2>
+        <ul>
+          {(report.data?.recommendations ?? []).map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </article>
+
+      <article className="card">
+        <p className="eyebrow">Warnings</p>
+        <h2>Guardrails</h2>
+        <ul>
+          {(report.data?.warnings ?? []).map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </article>
+    </section>
+  );
+}
+
+function AiMiniSummary({ report }: { report: AiDiscoveryReport | null }) {
+  const available = report?.tools.filter((tool) => tool.status === "available") ?? [];
+  return (
+    <article className="card span2">
+      <div className="cardHeader">
+        <div>
+          <p className="eyebrow">Detected modules</p>
+          <h2>{available.length} available AI/peripheral tools</h2>
+        </div>
+        <span className="pill">passive scan</span>
+      </div>
+      <div className="toolList compact">
+        {available.map((tool) => <ToolRow key={tool.id} tool={tool} />)}
+        {available.length === 0 ? <p>Run AI Discovery to populate runtime status.</p> : null}
+      </div>
+    </article>
+  );
+}
+
+function ToolRow({ tool }: { tool: AiToolProbe }) {
+  return (
+    <div className="toolRow">
+      <div>
+        <strong>{tool.name}</strong>
+        <p>{tool.executable_path ?? tool.app_path ?? tool.detection}</p>
+      </div>
+      <span className={`pill ${tool.status === "available" ? "ok" : ""}`}>{tool.status}</span>
+    </div>
+  );
+}
+
+function ErrorCard({ title, error }: { title: string; error: string }) {
+  return (
+    <article className="card errorCard">
+      <p className="eyebrow">Error</p>
+      <h2>{title}</h2>
+      <p>{error}</p>
+    </article>
   );
 }
 
