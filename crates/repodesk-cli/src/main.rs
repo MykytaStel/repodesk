@@ -2,6 +2,13 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use repodesk_core::dashboard::{dashboard_json, dashboard_summary};
+use repodesk_core::git_audit::{backup_plan, git_audit};
+use repodesk_core::receipts::{add_receipt, read_receipts, AddReceiptInput};
+use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
+use repodesk_core::smart_context::{
+    build_smart_context, format_smart_context_result, list_smart_context_sources,
+};
 
 use repodesk_core::access::{evaluate_access, format_access_matrix, format_access_report};
 use repodesk_core::agents::{ensure_agents_config, format_agents, recommend_agents};
@@ -169,6 +176,26 @@ enum Command {
     Session {
         #[command(subcommand)]
         command: SessionCommand,
+    },
+    Inspect {
+        #[command(subcommand)]
+        command: InspectCommand,
+    },
+    SmartContext {
+        #[command(subcommand)]
+        command: SmartContextCommand,
+    },
+    Receipts {
+        #[command(subcommand)]
+        command: ReceiptsCommand,
+    },
+    Git {
+        #[command(subcommand)]
+        command: GitCommand,
+    },
+    Dashboard {
+        #[command(subcommand)]
+        command: DashboardCommand,
     },
     Tokens {
         #[command(subcommand)]
@@ -408,6 +435,43 @@ enum SessionCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum InspectCommand {
+    Repo,
+    Hotspots,
+}
+
+#[derive(Debug, Subcommand)]
+enum SmartContextCommand {
+    Build,
+    Sources,
+}
+
+#[derive(Debug, Subcommand)]
+enum ReceiptsCommand {
+    Add {
+        #[arg(long)]
+        agent: String,
+        #[arg(long, default_value = "unknown")]
+        outcome: String,
+        #[arg(long)]
+        summary: String,
+    },
+    Last,
+}
+
+#[derive(Debug, Subcommand)]
+enum GitCommand {
+    Audit,
+    BackupPlan,
+}
+
+#[derive(Debug, Subcommand)]
+enum DashboardCommand {
+    Summary,
+    Json,
+}
+
+#[derive(Debug, Subcommand)]
 enum TokensCommand {
     Estimate {
         file: PathBuf,
@@ -462,6 +526,11 @@ fn main() -> Result<()> {
         Command::Access { command } => handle_access_command(command)?,
         Command::Modules { command } => handle_modules_command(command)?,
         Command::Session { command } => handle_session_command(command)?,
+        Command::Inspect { command } => handle_inspect_command(command)?,
+        Command::SmartContext { command } => handle_smart_context_command(command)?,
+        Command::Receipts { command } => handle_receipts_command(command)?,
+        Command::Git { command } => handle_git_command(command)?,
+        Command::Dashboard { command } => handle_dashboard_command(command)?,
         Command::Tokens { command } => handle_tokens_command(command)?,
         Command::Budget { command } => handle_budget_command(command)?,
     }
@@ -1094,6 +1163,83 @@ fn print_prompt_result(result: repodesk_core::prompts::PromptBuildResult) {
     println!("  kind: {}", result.prompt_kind.label());
     println!("  file: {}", result.prompt_file.display());
     println!("  context tokens: {}", result.estimated_tokens);
+}
+
+fn handle_inspect_command(command: InspectCommand) -> Result<()> {
+    match command {
+        InspectCommand::Repo => {
+            let map = build_repo_map()?;
+            print!("{}", format_repo_map(&map));
+        }
+        InspectCommand::Hotspots => {
+            let map = build_repo_map()?;
+            print!("{}", format_hotspots(&map));
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_smart_context_command(command: SmartContextCommand) -> Result<()> {
+    match command {
+        SmartContextCommand::Build => {
+            let result = build_smart_context()?;
+            print!("{}", format_smart_context_result(&result));
+        }
+        SmartContextCommand::Sources => {
+            print!("{}", list_smart_context_sources()?);
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_receipts_command(command: ReceiptsCommand) -> Result<()> {
+    match command {
+        ReceiptsCommand::Add {
+            agent,
+            outcome,
+            summary,
+        } => {
+            let file = add_receipt(AddReceiptInput {
+                agent,
+                outcome,
+                summary,
+            })?;
+            println!("Agent receipt recorded: {file}");
+        }
+        ReceiptsCommand::Last => {
+            print!("{}", read_receipts()?);
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_git_command(command: GitCommand) -> Result<()> {
+    match command {
+        GitCommand::Audit => {
+            print!("{}", git_audit()?);
+        }
+        GitCommand::BackupPlan => {
+            print!("{}", backup_plan()?);
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_dashboard_command(command: DashboardCommand) -> Result<()> {
+    match command {
+        DashboardCommand::Summary => {
+            print!("{}", dashboard_summary()?);
+        }
+        DashboardCommand::Json => {
+            println!("{}", dashboard_json()?);
+        }
+    }
+
+    Ok(())
 }
 
 fn print_task_info(label: &str, task: &repodesk_core::tasks::TaskInfo) {
