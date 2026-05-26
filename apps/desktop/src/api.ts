@@ -9,6 +9,29 @@ export type DesktopAction = {
   command_preview: string;
 };
 
+
+export type DbStatus = {
+  path: string;
+  exists: boolean;
+  ok: boolean;
+  tables: string[];
+  error?: string | null;
+};
+
+export type ProviderSettings = {
+  ollama_enabled: boolean;
+  ollama_url: string;
+  ollama_model: string;
+  chatgpt_enabled: boolean;
+  codex_enabled: boolean;
+  gemini_enabled: boolean;
+  allow_paid_agents: boolean;
+  preferred_patch_provider: string;
+  preferred_compression_provider: string;
+  preferred_review_provider: string;
+  notes: string;
+};
+
 export type CommandResult = {
   ok: boolean;
   command: string;
@@ -163,3 +186,17 @@ export async function taskStatus(): Promise<CommandResult> {
 export async function taskShow(): Promise<CommandResult> {
   return invoke("task_show");
 }
+
+
+export async function dbStatus(): Promise<DbStatus> {
+  return invoke("db_status");
+}
+
+export async function providerSettings(): Promise<ProviderSettings> {
+  return invoke("provider_settings");
+}
+
+export async function saveProviderSettings(input: ProviderSettings): Promise<ProviderSettings> {
+  return invoke("save_provider_settings", { input });
+}
+

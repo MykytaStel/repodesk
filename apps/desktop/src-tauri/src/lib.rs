@@ -1,4 +1,6 @@
+mod store;
 mod commands {
+    use crate::store;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::fs::{self, OpenOptions};
@@ -925,6 +927,23 @@ mod commands {
     pub fn task_show() -> CommandResult {
         run_cli_str(&["task", "show"])
     }
+
+    #[tauri::command]
+    pub fn db_status() -> store::DbStatus {
+        store::db_status()
+    }
+
+    #[tauri::command]
+    pub fn provider_settings() -> Result<store::ProviderSettings, String> {
+        store::read_provider_settings()
+    }
+
+    #[tauri::command]
+    pub fn save_provider_settings(
+        input: store::ProviderSettings,
+    ) -> Result<store::ProviderSettings, String> {
+        store::save_provider_settings(input)
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -939,6 +958,9 @@ pub fn run() {
             commands::run_desktop_action,
             commands::run_next_safe_step,
             commands::action_history,
+            commands::db_status,
+            commands::provider_settings,
+            commands::save_provider_settings,
             commands::project_info,
             commands::project_list,
             commands::project_use,

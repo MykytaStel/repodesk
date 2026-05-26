@@ -3,8 +3,10 @@ import {
   ActionRunResult,
   ArtifactContent,
   CommandResult,
+  DbStatus,
   DesktopAction,
   DesktopSnapshot,
+  ProviderSettings,
   ProductWorkflowState,
   explainAction,
   getActionHistory,
@@ -17,6 +19,9 @@ import {
   runDesktopAction,
   runNextSafeStep,
   taskNew,
+  dbStatus,
+  providerSettings,
+  saveProviderSettings,
 } from "./api";
 import { artifactKinds, formatBytes, productPrinciples, statusLabel, summarizeCommand } from "./product";
 import "./styles.css";
@@ -365,12 +370,143 @@ function HistoryView({ history }: { history: ActionRunResult[] }) {
   );
 }
 
+
+function ProviderSettingsView({
+  settings,
+  dbState,
+  runtime,
+  git,
+  onSaved,
+}: {
+  settings: ProviderSettings | null;
+  dbState: DbStatus | null;
+  runtime?: CommandResult;
+  git?: CommandResult;
+  onSaved: () => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<ProviderSettings | null>(settings);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string>("");
+
+  useEffect(() => {
+    setDraft(settings);
+  }, [settings]);
+
+  const update = <K extends keyof ProviderSettings>(key: K, value: ProviderSettings[K]) => {
+    setDraft((current) => current ? { ...current, [key]: value } : current);
+  };
+
+  const save = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      await saveProviderSettings(draft);
+      setMessage("Provider settings saved to SQLite state store.");
+      await onSaved();
+    } catch (error) {
+      setMessage(String(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!draft) {
+    return <div className="card">Loading provider settings...</div>;
+  }
+
+  const providerOptions = ["ollama", "chatgpt", "codex", "gemini", "manual"];
+
+  return (
+    <div className="grid gap">
+      <section className="heroPanel">
+        <div>
+          <p className="eyebrow">Runtime control</p>
+          <h2>Provider settings</h2>
+          <p>
+            Configure which AI modules RepoDesk should prefer for patching, compression, and review.
+            Secrets are intentionally not stored here.
+          </p>
+          <div className="healthRow">
+            <StatusPill ok={draft.ollama_enabled} label="Ollama" />
+            <StatusPill ok={draft.codex_enabled} label="Codex" />
+            <StatusPill ok={draft.chatgpt_enabled} label="ChatGPT" />
+            <StatusPill ok={draft.allow_paid_agents} label="Paid agents" />
+            <StatusPill ok={Boolean(dbState?.ok)} label="SQLite" />
+          </div>
+        </div>
+        <div className="primaryActionBox">
+          <span className="mutedText">State store</span>
+          <strong>{dbState?.ok ? "Ready" : "Needs attention"}</strong>
+          <small>{dbState?.path || "No DB path"}</small>
+          <button disabled={saving} onClick={save}>{saving ? "Saving..." : "Save settings"}</button>
+        </div>
+      </section>
+
+      <section className="twoCols">
+        <div className="card">
+          <h3>Local provider</h3>
+          <label className="switchRow"><input type="checkbox" checked={draft.ollama_enabled} onChange={(event) => update("ollama_enabled", event.target.checked)} /> Enable Ollama</label>
+          <label>Ollama URL</label>
+          <input value={draft.ollama_url} onChange={(event) => update("ollama_url", event.target.value)} />
+          <small className="mutedText">Security rule: only localhost / 127.0.0.1 URLs are accepted.</small>
+          <label>Default local model</label>
+          <input value={draft.ollama_model} onChange={(event) => update("ollama_model", event.target.value)} />
+        </div>
+
+        <div className="card">
+          <h3>Paid / external agents</h3>
+          <label className="switchRow"><input type="checkbox" checked={draft.allow_paid_agents} onChange={(event) => update("allow_paid_agents", event.target.checked)} /> Allow paid agents</label>
+          <label className="switchRow"><input type="checkbox" checked={draft.codex_enabled} onChange={(event) => update("codex_enabled", event.target.checked)} /> Enable Codex</label>
+          <label className="switchRow"><input type="checkbox" checked={draft.chatgpt_enabled} onChange={(event) => update("chatgpt_enabled", event.target.checked)} /> Enable ChatGPT</label>
+          <label className="switchRow"><input type="checkbox" checked={draft.gemini_enabled} onChange={(event) => update("gemini_enabled", event.target.checked)} /> Enable Gemini</label>
+          <p className="warnText">RepoDesk stores routing preferences here, not API keys or secrets.</p>
+        </div>
+      </section>
+
+      <section className="card">
+        <h3>Routing preferences</h3>
+        <div className="settingsGrid">
+          <label>
+            Patch provider
+            <select value={draft.preferred_patch_provider} onChange={(event) => update("preferred_patch_provider", event.target.value)}>
+              {providerOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <label>
+            Compression provider
+            <select value={draft.preferred_compression_provider} onChange={(event) => update("preferred_compression_provider", event.target.value)}>
+              {providerOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <label>
+            Review provider
+            <select value={draft.preferred_review_provider} onChange={(event) => update("preferred_review_provider", event.target.value)}>
+              {providerOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+        </div>
+        <label>Notes / policy</label>
+        <textarea value={draft.notes} onChange={(event) => update("notes", event.target.value)} />
+        {message && <pre className={message.includes("saved") ? "output" : "output outputError"}>{message}</pre>}
+      </section>
+
+      <section className="twoCols">
+        <div className="card"><h3>Runtime providers</h3><OutputBlock result={runtime} /></div>
+        <div className="card"><h3>Git backup</h3><OutputBlock result={git} /></div>
+      </section>
+    </div>
+  );
+}
+
 function App() {
   const [tab, setTab] = useState<TabId>("workflow");
   const [snapshot, setSnapshot] = useState<DesktopSnapshot | null>(null);
   const [workflow, setWorkflow] = useState<ProductWorkflowState | null>(null);
   const [actions, setActions] = useState<DesktopAction[]>([]);
   const [history, setHistory] = useState<ActionRunResult[]>([]);
+  const [providerConfig, setProviderConfig] = useState<ProviderSettings | null>(null);
+  const [dbState, setDbState] = useState<DbStatus | null>(null);
   const [lastRun, setLastRun] = useState<ActionRunResult | null>(null);
   const [runningAction, setRunningAction] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -379,10 +515,14 @@ function App() {
     const nextSnapshot = await getSnapshot();
     const nextWorkflow = await getWorkflowState();
     const nextHistory = await getActionHistory();
+    const nextProviderConfig = await providerSettings().catch(() => null);
+    const nextDbState = await dbStatus().catch(() => null);
     setSnapshot(nextSnapshot);
     setWorkflow(nextWorkflow);
     setActions(nextSnapshot.actions || []);
     setHistory(nextHistory);
+    setProviderConfig(nextProviderConfig);
+    setDbState(nextDbState);
     setLoading(false);
   }, []);
 
@@ -484,10 +624,13 @@ function App() {
         </div>
       )}
       {tab === "runtime" && (
-        <div className="twoCols">
-          <section className="card"><h3>Runtime providers</h3><OutputBlock result={snapshot?.runtime} /></section>
-          <section className="card"><h3>Git backup</h3><OutputBlock result={snapshot?.git} /></section>
-        </div>
+        <ProviderSettingsView
+          settings={providerConfig}
+          dbState={dbState}
+          runtime={snapshot?.runtime}
+          git={snapshot?.git}
+          onSaved={refresh}
+        />
       )}
       {tab === "history" && <HistoryView history={history} />}
       {tab === "raw" && (

@@ -246,3 +246,38 @@ code {
   .heroPanel, .twoCols { grid-template-columns: 1fr; }
   .principles, .timeline, .artifactGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+select, textarea {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e5edf7;
+  padding: 0.78rem 0.9rem;
+  margin: 0.3rem 0 0.9rem;
+}
+
+textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.55rem 0;
+  color: #dbeafe;
+}
+
+.switchRow input {
+  width: auto;
+  margin: 0;
+}
