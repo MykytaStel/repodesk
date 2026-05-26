@@ -26,6 +26,7 @@ pub struct TokenReport {
     pub total_input_tokens: usize,
     pub total_output_tokens: usize,
     pub total_tokens: usize,
+    pub today_tokens: usize,
     pub by_agent: Vec<AgentTokenTotal>,
     pub by_model: Vec<ModelTokenTotal>,
 }
@@ -109,6 +110,7 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
             total_input_tokens: 0,
             total_output_tokens: 0,
             total_tokens: 0,
+            today_tokens: 0,
             by_agent: Vec::new(),
             by_model: Vec::new(),
         });
@@ -122,6 +124,7 @@ fn parse_token_report_content(content: &str) -> TokenReport {
     let mut entries_count = 0usize;
     let mut total_input_tokens = 0usize;
     let mut total_output_tokens = 0usize;
+    let mut today_tokens = 0usize;
     let mut by_agent: Vec<AgentTokenTotal> = Vec::new();
     let mut by_model: Vec<ModelTokenTotal> = Vec::new();
 
@@ -131,6 +134,12 @@ fn parse_token_report_content(content: &str) -> TokenReport {
         if columns.len() < 9 {
             continue;
         }
+
+        let timestamp_str = &columns[0];
+        let today = Utc::now().date_naive();
+        let is_today = chrono::DateTime::parse_from_rfc3339(timestamp_str)
+            .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
+            .unwrap_or(false);
 
         let agent = columns[3].clone();
         let (model, input_index, output_index) = if columns.len() >= 10 {
@@ -145,6 +154,10 @@ fn parse_token_report_content(content: &str) -> TokenReport {
         };
         let input_tokens = columns[input_index].parse::<usize>().unwrap_or(0);
         let output_tokens = columns[output_index].parse::<usize>().unwrap_or(0);
+
+        if is_today {
+            today_tokens += input_tokens + output_tokens;
+        }
 
         entries_count += 1;
         total_input_tokens += input_tokens;
@@ -189,6 +202,7 @@ fn parse_token_report_content(content: &str) -> TokenReport {
         total_input_tokens,
         total_output_tokens,
         total_tokens: total_input_tokens + total_output_tokens,
+        today_tokens,
         by_agent,
         by_model,
     }

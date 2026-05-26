@@ -155,6 +155,19 @@ pub fn read_active_project() -> RepoDeskResult<String> {
     Ok(name)
 }
 
+pub fn update_project_ignore_rules(
+    name: &str,
+    ignore_rules: Vec<String>,
+) -> RepoDeskResult<ProjectConfig> {
+    let mut config = get_project(name)?;
+    config.context_ignore = ignore_rules;
+    config.updated_at = Utc::now();
+    let paths = RepoDeskPaths::resolve()?;
+    let project_file = paths.project_config_file(name);
+    write_project_config(&project_file, &config)?;
+    Ok(config)
+}
+
 fn write_project_config(path: &Path, config: &ProjectConfig) -> RepoDeskResult<()> {
     let content = toml::to_string_pretty(config)?;
     fs::write(path, content)?;

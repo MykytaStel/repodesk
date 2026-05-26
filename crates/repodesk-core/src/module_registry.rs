@@ -1,4 +1,6 @@
-#[derive(Debug, Clone)]
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
 pub struct BrainModule {
     pub name: &'static str,
     pub layer: &'static str,
@@ -6,7 +8,7 @@ pub struct BrainModule {
     pub purpose: &'static str,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ModuleAudit {
     pub modules_count: usize,
     pub missing_recommended: Vec<&'static str>,

@@ -117,6 +117,8 @@ mod commands {
         pub total_input_tokens: usize,
         pub total_output_tokens: usize,
         pub total_tokens: usize,
+        pub today_total_tokens: usize,
+        pub remaining_daily_tokens: usize,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -666,11 +668,21 @@ mod commands {
                 total_input_tokens: 0,
                 total_output_tokens: 0,
                 total_tokens: 0,
+                today_tokens: 0,
                 by_agent: Vec::new(),
                 by_model: Vec::new(),
             },
         );
         let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
+        let budget_config = repodesk_core::budget::load_budget_config().unwrap_or_default();
+
+        let daily_hard_limit = budget_config.daily_hard_limit;
+        let today_total_tokens = report.today_tokens;
+        let remaining_daily_tokens = if today_total_tokens >= daily_hard_limit {
+            0
+        } else {
+            daily_hard_limit - today_total_tokens
+        };
 
         let mut estimated_total_units = 0.0;
         let by_provider = report
@@ -725,6 +737,8 @@ mod commands {
                 total_input_tokens: report.total_input_tokens,
                 total_output_tokens: report.total_output_tokens,
                 total_tokens: report.total_tokens,
+                today_total_tokens,
+                remaining_daily_tokens,
             },
             by_provider,
             by_model,
@@ -944,6 +958,80 @@ mod commands {
         }
     }
 
+    fn llamafile_health(settings: &store::ProviderSettings) -> ProviderHealth {
+        if !settings.llamafile_enabled {
+            return disabled_provider("llamafile", "Llamafile");
+        }
+
+        match request_json(&join_url(&settings.llamafile_url, "/v1/models"), &[]) {
+            Ok(value) => {
+                let models = value
+                    .get("data")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                item.get("id").and_then(|value| value.as_str()).map(|id| {
+                                    model_status(
+                                        "llamafile",
+                                        id.to_string(),
+                                        Some("visible to Llamafile server".into()),
+                                    )
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                provider_working("llamafile", "Llamafile", "not_required", models)
+            }
+            Err(error) => provider_error(
+                "llamafile",
+                "Llamafile",
+                "not_required",
+                "unreachable",
+                error.summary,
+            ),
+        }
+    }
+
+    fn localai_health(settings: &store::ProviderSettings) -> ProviderHealth {
+        if !settings.localai_enabled {
+            return disabled_provider("localai", "LocalAI");
+        }
+
+        match request_json(&join_url(&settings.localai_url, "/v1/models"), &[]) {
+            Ok(value) => {
+                let models = value
+                    .get("data")
+                    .and_then(|value| value.as_array())
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(|item| {
+                                item.get("id").and_then(|value| value.as_str()).map(|id| {
+                                    model_status(
+                                        "localai",
+                                        id.to_string(),
+                                        Some("visible to LocalAI server".into()),
+                                    )
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                provider_working("localai", "LocalAI", "not_required", models)
+            }
+            Err(error) => provider_error(
+                "localai",
+                "LocalAI",
+                "not_required",
+                "unreachable",
+                error.summary,
+            ),
+        }
+    }
+
     fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
         if !settings.openai_api_enabled {
             return disabled_provider("openai", "OpenAI API");
@@ -1101,11 +1189,51 @@ mod commands {
     pub(crate) fn model_health_from_settings(
         settings: &store::ProviderSettings,
     ) -> ModelHealthSnapshot {
+        let s = settings.clone();
+
+        let t_ollama = std::thread::spawn({
+            let s = s.clone();
+            move || ollama_health(&s)
+        });
+        let t_lm = std::thread::spawn({
+            let s = s.clone();
+            move || lm_studio_health(&s)
+        });
+        let t_llamafile = std::thread::spawn({
+            let s = s.clone();
+            move || llamafile_health(&s)
+        });
+        let t_localai = std::thread::spawn({
+            let s = s.clone();
+            move || localai_health(&s)
+        });
+        let t_openai = std::thread::spawn({
+            let s = s.clone();
+            move || openai_health(&s)
+        });
+        let t_gemini = std::thread::spawn({
+            let s = s.clone();
+            move || gemini_health(&s)
+        });
+
         let providers = vec![
-            ollama_health(settings),
-            lm_studio_health(settings),
-            openai_health(settings),
-            gemini_health(settings),
+            t_ollama
+                .join()
+                .unwrap_or_else(|_| disabled_provider("ollama", "Ollama")),
+            t_lm.join()
+                .unwrap_or_else(|_| disabled_provider("lm_studio", "LM Studio")),
+            t_llamafile
+                .join()
+                .unwrap_or_else(|_| disabled_provider("llamafile", "Llamafile")),
+            t_localai
+                .join()
+                .unwrap_or_else(|_| disabled_provider("localai", "LocalAI")),
+            t_openai
+                .join()
+                .unwrap_or_else(|_| disabled_provider("openai", "OpenAI API")),
+            t_gemini
+                .join()
+                .unwrap_or_else(|_| disabled_provider("gemini", "Gemini API")),
         ];
         let mut warnings = Vec::new();
 
@@ -1136,6 +1264,391 @@ mod commands {
     fn build_model_health_snapshot() -> ModelHealthSnapshot {
         let settings = store::read_provider_settings().unwrap_or_default();
         model_health_from_settings(&settings)
+    }
+
+    fn artifact_token_estimate(snapshot: &TokenUsageSnapshot, kind: &str) -> Option<usize> {
+        snapshot
+            .active_artifacts
+            .iter()
+            .find(|artifact| artifact.kind == kind)
+            .and_then(|artifact| artifact.estimated_tokens)
+    }
+
+    fn infer_route_task_kind(
+        workflow: &ProductWorkflowState,
+        git: &repodesk_core::git_workspace::GitWorkspaceSnapshot,
+    ) -> repodesk_core::routing::TaskKind {
+        let action = workflow
+            .recommended_action_id
+            .as_deref()
+            .unwrap_or_default();
+
+        if !workflow.project_ok || !workflow.task_ok {
+            return repodesk_core::routing::TaskKind::Manual;
+        }
+        if action.contains("check") {
+            return repodesk_core::routing::TaskKind::Checks;
+        }
+        if action.contains("smart-context") {
+            return repodesk_core::routing::TaskKind::Compress;
+        }
+        if action.contains("safety") {
+            return repodesk_core::routing::TaskKind::Review;
+        }
+        if workflow.smart_context_ok
+            && workflow.prompts_ok
+            && workflow.checks_ok
+            && !git.changed_files.is_empty()
+        {
+            return repodesk_core::routing::TaskKind::Patch;
+        }
+        if workflow.smart_context_ok {
+            return repodesk_core::routing::TaskKind::Review;
+        }
+
+        repodesk_core::routing::TaskKind::Plan
+    }
+
+    fn default_output_tokens(kind: &repodesk_core::routing::TaskKind) -> usize {
+        match kind {
+            repodesk_core::routing::TaskKind::Compress
+            | repodesk_core::routing::TaskKind::Summarize => 1_200,
+            repodesk_core::routing::TaskKind::Plan
+            | repodesk_core::routing::TaskKind::Review
+            | repodesk_core::routing::TaskKind::Debug => 1_800,
+            repodesk_core::routing::TaskKind::Patch => 3_500,
+            repodesk_core::routing::TaskKind::Checks | repodesk_core::routing::TaskKind::Manual => {
+                0
+            }
+        }
+    }
+
+    fn build_default_route_request(
+        workflow: &ProductWorkflowState,
+        tokens: &TokenUsageSnapshot,
+        git: &repodesk_core::git_workspace::GitWorkspaceSnapshot,
+    ) -> repodesk_core::routing::RouteRequest {
+        let task_kind = infer_route_task_kind(workflow, git);
+        let estimated_input_tokens = artifact_token_estimate(tokens, "smart_context")
+            .or_else(|| artifact_token_estimate(tokens, "context"))
+            .unwrap_or(0);
+        let risk_level = if has_block_signal(&workflow.security_verdict) {
+            "block"
+        } else if has_warn_signal(&workflow.security_verdict) {
+            "warning"
+        } else {
+            "ok"
+        }
+        .to_string();
+        let requires_write = task_kind == repodesk_core::routing::TaskKind::Patch;
+
+        repodesk_core::routing::RouteRequest {
+            estimated_output_tokens: default_output_tokens(&task_kind),
+            task_kind,
+            estimated_input_tokens,
+            risk_level,
+            changed_file_count: git.changed_files.len(),
+            requires_write,
+            context_safe: Some(workflow.safety_ok),
+            checks_ok: Some(workflow.checks_ok),
+            guard_allowed: Some(workflow.safety_ok),
+            git_dirty: Some(git.is_dirty),
+            max_cost_units: None,
+        }
+    }
+
+    fn cost_agent_for_provider(provider: &str) -> &str {
+        match provider {
+            "openai" | "chatgpt" => "chatgpt",
+            "codex" => "codex",
+            "gemini" => "gemini",
+            _ => "ollama",
+        }
+    }
+
+    fn estimated_route_cost_units(
+        cost_config: &repodesk_core::cost::CostConfig,
+        provider: &str,
+        kind: &repodesk_core::routing::ProviderKind,
+        request: &repodesk_core::routing::RouteRequest,
+    ) -> f64 {
+        if matches!(
+            kind,
+            repodesk_core::routing::ProviderKind::Local
+                | repodesk_core::routing::ProviderKind::CheckRunner
+                | repodesk_core::routing::ProviderKind::Manual
+        ) {
+            return 0.0;
+        }
+
+        repodesk_core::cost::estimate_agent_cost(
+            cost_config,
+            cost_agent_for_provider(provider),
+            request.estimated_input_tokens,
+            request.estimated_output_tokens,
+        )
+        .estimated_cost_units
+    }
+
+    fn route_capacity_from_health(
+        provider: &ProviderHealth,
+        kind: repodesk_core::routing::ProviderKind,
+        preferred_model: Option<String>,
+        daily_remaining_tokens: usize,
+        cost_config: &repodesk_core::cost::CostConfig,
+        budget_config: &repodesk_core::budget::BudgetConfig,
+        request: &repodesk_core::routing::RouteRequest,
+        paid_agents_allowed: bool,
+    ) -> repodesk_core::routing::ProviderCapacity {
+        let models = provider
+            .models
+            .iter()
+            .filter(|model| model.available)
+            .map(|model| model.id.clone())
+            .collect::<Vec<_>>();
+        let estimated_cost_units =
+            estimated_route_cost_units(cost_config, &provider.id, &kind, request);
+
+        repodesk_core::routing::ProviderCapacity {
+            provider: provider.id.clone(),
+            label: provider.label.clone(),
+            kind,
+            enabled: provider.enabled,
+            auth_status: provider.auth_status.clone(),
+            reachability: provider.reachability.clone(),
+            models,
+            preferred_model,
+            daily_remaining_tokens,
+            estimated_cost_units,
+            quota_status: repodesk_core::routing::QuotaStatus::Available,
+            paid_agents_allowed,
+            max_patch_files: budget_config.max_files_for_patch_agent,
+        }
+    }
+
+    fn manual_route_capacity(
+        provider: &str,
+        label: &str,
+        kind: repodesk_core::routing::ProviderKind,
+        enabled: bool,
+        reachability: &str,
+        model: Option<&str>,
+        quota_status: repodesk_core::routing::QuotaStatus,
+        daily_remaining_tokens: usize,
+        cost_config: &repodesk_core::cost::CostConfig,
+        budget_config: &repodesk_core::budget::BudgetConfig,
+        request: &repodesk_core::routing::RouteRequest,
+        paid_agents_allowed: bool,
+    ) -> repodesk_core::routing::ProviderCapacity {
+        let models = model
+            .map(|value| vec![value.to_string()])
+            .unwrap_or_default();
+        let estimated_cost_units =
+            estimated_route_cost_units(cost_config, provider, &kind, request);
+
+        repodesk_core::routing::ProviderCapacity {
+            provider: provider.to_string(),
+            label: label.to_string(),
+            kind,
+            enabled,
+            auth_status: if enabled { "manual" } else { "disabled" }.into(),
+            reachability: if enabled { reachability } else { "disabled" }.into(),
+            models,
+            preferred_model: model.map(str::to_string),
+            daily_remaining_tokens,
+            estimated_cost_units,
+            quota_status,
+            paid_agents_allowed,
+            max_patch_files: budget_config.max_files_for_patch_agent,
+        }
+    }
+
+    fn build_routing_capacities(
+        settings: &store::ProviderSettings,
+        model_health: &ModelHealthSnapshot,
+        tokens: &TokenUsageSnapshot,
+        budget_config: &repodesk_core::budget::BudgetConfig,
+        cost_config: &repodesk_core::cost::CostConfig,
+        request: &repodesk_core::routing::RouteRequest,
+    ) -> Vec<repodesk_core::routing::ProviderCapacity> {
+        let mut capacities = Vec::new();
+        let daily_remaining_tokens = tokens.totals.remaining_daily_tokens;
+
+        for provider in &model_health.providers {
+            let capacity = match provider.id.as_str() {
+                "ollama" => Some(route_capacity_from_health(
+                    provider,
+                    repodesk_core::routing::ProviderKind::Local,
+                    Some(settings.ollama_model.clone()),
+                    daily_remaining_tokens,
+                    cost_config,
+                    budget_config,
+                    request,
+                    settings.allow_paid_agents,
+                )),
+                "lm_studio" | "llamafile" | "localai" => Some(route_capacity_from_health(
+                    provider,
+                    repodesk_core::routing::ProviderKind::Local,
+                    None,
+                    daily_remaining_tokens,
+                    cost_config,
+                    budget_config,
+                    request,
+                    settings.allow_paid_agents,
+                )),
+                "openai" => Some(route_capacity_from_health(
+                    provider,
+                    repodesk_core::routing::ProviderKind::Paid,
+                    None,
+                    daily_remaining_tokens,
+                    cost_config,
+                    budget_config,
+                    request,
+                    settings.allow_paid_agents,
+                )),
+                "gemini" if settings.gemini_api_enabled => Some(route_capacity_from_health(
+                    provider,
+                    repodesk_core::routing::ProviderKind::Paid,
+                    None,
+                    daily_remaining_tokens,
+                    cost_config,
+                    budget_config,
+                    request,
+                    settings.allow_paid_agents,
+                )),
+                _ => None,
+            };
+
+            if let Some(capacity) = capacity {
+                capacities.push(capacity);
+            }
+        }
+
+        capacities.push(manual_route_capacity(
+            "chatgpt",
+            "ChatGPT manual",
+            repodesk_core::routing::ProviderKind::Paid,
+            settings.chatgpt_enabled,
+            "unknown",
+            Some("user-configured"),
+            repodesk_core::routing::QuotaStatus::Unknown,
+            daily_remaining_tokens,
+            cost_config,
+            budget_config,
+            request,
+            settings.allow_paid_agents,
+        ));
+
+        if settings.gemini_enabled && !settings.gemini_api_enabled {
+            capacities.push(manual_route_capacity(
+                "gemini",
+                "Gemini manual",
+                repodesk_core::routing::ProviderKind::Paid,
+                true,
+                "unknown",
+                Some("user-configured"),
+                repodesk_core::routing::QuotaStatus::Unknown,
+                daily_remaining_tokens,
+                cost_config,
+                budget_config,
+                request,
+                settings.allow_paid_agents,
+            ));
+        }
+
+        capacities.push(manual_route_capacity(
+            "codex",
+            "Codex",
+            repodesk_core::routing::ProviderKind::PatchAgent,
+            settings.codex_enabled,
+            "unknown",
+            Some("codex-plan"),
+            repodesk_core::routing::QuotaStatus::from_label(&settings.codex_quota_status),
+            daily_remaining_tokens,
+            cost_config,
+            budget_config,
+            request,
+            settings.allow_paid_agents,
+        ));
+
+        capacities.push(manual_route_capacity(
+            "local_checks",
+            "Local checks",
+            repodesk_core::routing::ProviderKind::CheckRunner,
+            true,
+            "working",
+            Some("allowlisted-shell"),
+            repodesk_core::routing::QuotaStatus::Available,
+            daily_remaining_tokens,
+            cost_config,
+            budget_config,
+            request,
+            true,
+        ));
+
+        capacities.push(manual_route_capacity(
+            "manual",
+            "Manual",
+            repodesk_core::routing::ProviderKind::Manual,
+            true,
+            "manual",
+            None,
+            repodesk_core::routing::QuotaStatus::Available,
+            daily_remaining_tokens,
+            cost_config,
+            budget_config,
+            request,
+            true,
+        ));
+
+        capacities
+    }
+
+    fn build_routing_decision_for_request(
+        input: &repodesk_core::routing::RouteRequest,
+    ) -> repodesk_core::routing::RouteDecision {
+        let settings = store::read_provider_settings().unwrap_or_default();
+        let tokens = build_token_usage_snapshot();
+        let model_health = model_health_from_settings(&settings);
+        let budget_config = repodesk_core::budget::load_budget_config().unwrap_or_default();
+        let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
+        let capacities = build_routing_capacities(
+            &settings,
+            &model_health,
+            &tokens,
+            &budget_config,
+            &cost_config,
+            input,
+        );
+
+        repodesk_core::routing::route_request(input, &capacities, &budget_config)
+    }
+
+    fn build_routing_snapshot() -> repodesk_core::routing::RoutingSnapshot {
+        let settings = store::read_provider_settings().unwrap_or_default();
+        let tokens = build_token_usage_snapshot();
+        let model_health = model_health_from_settings(&settings);
+        let workflow = build_product_workflow_state();
+        let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
+        let budget_config = repodesk_core::budget::load_budget_config().unwrap_or_default();
+        let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
+        let request = build_default_route_request(&workflow, &tokens, &git);
+        let capacities = build_routing_capacities(
+            &settings,
+            &model_health,
+            &tokens,
+            &budget_config,
+            &cost_config,
+            &request,
+        );
+        let decision = repodesk_core::routing::route_request(&request, &capacities, &budget_config);
+
+        repodesk_core::routing::RoutingSnapshot {
+            generated_at_ms: now_ms(),
+            request,
+            decision,
+            capacities,
+        }
     }
 
     fn has_block_signal(result: &CommandResult) -> bool {
@@ -1417,7 +1930,7 @@ mod commands {
     }
 
     #[tauri::command]
-    pub fn desktop_snapshot() -> serde_json::Value {
+    pub async fn desktop_snapshot() -> serde_json::Value {
         json!({
             "mode": "desktop-product-workflow-mvp",
             "workspace_root": workspace_root(),
@@ -1440,7 +1953,7 @@ mod commands {
     }
 
     #[tauri::command]
-    pub fn product_workflow_state() -> ProductWorkflowState {
+    pub async fn product_workflow_state() -> ProductWorkflowState {
         build_product_workflow_state()
     }
 
@@ -1484,7 +1997,7 @@ mod commands {
     }
 
     #[tauri::command]
-    pub fn run_desktop_action(action_id: String) -> Result<ActionRunResult, String> {
+    pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, String> {
         validate_short_id("Action id", &action_id)?;
         let action =
             find_action(&action_id).ok_or_else(|| format!("Unknown action: {action_id}"))?;
@@ -1507,13 +2020,13 @@ mod commands {
     }
 
     #[tauri::command]
-    pub fn run_next_safe_step() -> Result<ActionRunResult, String> {
+    pub async fn run_next_safe_step() -> Result<ActionRunResult, String> {
         let state = build_product_workflow_state();
         let action_id = state.recommended_action_id.ok_or_else(|| {
             "No runnable primary action. Add/select a project and create an active task first."
                 .to_string()
         })?;
-        run_desktop_action(action_id)
+        run_desktop_action(action_id).await
     }
 
     #[tauri::command]
@@ -1644,8 +2157,20 @@ mod commands {
     }
 
     #[tauri::command]
-    pub fn refresh_model_health() -> ModelHealthSnapshot {
+    pub async fn refresh_model_health() -> ModelHealthSnapshot {
         build_model_health_snapshot()
+    }
+
+    #[tauri::command]
+    pub fn routing_decision(
+        input: repodesk_core::routing::RouteRequest,
+    ) -> repodesk_core::routing::RouteDecision {
+        build_routing_decision_for_request(&input)
+    }
+
+    #[tauri::command]
+    pub fn routing_snapshot() -> repodesk_core::routing::RoutingSnapshot {
+        build_routing_snapshot()
     }
 
     #[tauri::command]
@@ -1659,10 +2184,106 @@ mod commands {
     }
 
     #[tauri::command]
-    pub fn save_provider_settings(
+    pub async fn save_provider_settings(
         input: store::ProviderSettings,
     ) -> Result<store::ProviderSettings, String> {
         store::save_provider_settings(input)
+    }
+
+    #[tauri::command]
+    pub fn save_codex_quota_status(status: String) -> Result<store::ProviderSettings, String> {
+        let normalized = status.trim().to_ascii_lowercase();
+        if !matches!(
+            normalized.as_str(),
+            "unknown" | "available" | "limited" | "empty"
+        ) {
+            return Err(
+                "Codex quota status must be one of: unknown, available, limited, empty".to_string(),
+            );
+        }
+
+        let mut settings = store::read_provider_settings()?;
+        settings.codex_quota_status = normalized;
+        store::save_provider_settings(settings)
+    }
+
+    #[tauri::command]
+    pub fn get_active_project_config() -> Result<repodesk_core::projects::ProjectConfig, String> {
+        repodesk_core::projects::get_active_project().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn save_project_ignore_rules(ignore_rules: Vec<String>) -> Result<(), String> {
+        let active = repodesk_core::projects::read_active_project().map_err(|e| e.to_string())?;
+        repodesk_core::projects::update_project_ignore_rules(&active, ignore_rules)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn get_project_file_token_estimates(
+    ) -> Result<Vec<repodesk_core::project_token_check::FileTokenEstimate>, String> {
+        repodesk_core::project_token_check::get_project_file_token_estimates()
+            .map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn read_project_memory() -> Result<String, String> {
+        repodesk_core::knowledge::read_knowledge("memory").map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn append_project_memory(content: String) -> Result<(), String> {
+        if content.trim().is_empty() {
+            return Err("Memory content cannot be empty".to_string());
+        }
+        repodesk_core::knowledge::append_knowledge("memory", &content)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct ApiEnvDiagnostic {
+        pub openai_api_key_set: bool,
+        pub gemini_api_key_set: bool,
+        pub anthropic_api_key_set: bool,
+    }
+
+    #[tauri::command]
+    pub fn get_api_env_diagnostic() -> ApiEnvDiagnostic {
+        ApiEnvDiagnostic {
+            openai_api_key_set: std::env::var("OPENAI_API_KEY")
+                .map(|val| !val.trim().is_empty())
+                .unwrap_or(false),
+            gemini_api_key_set: std::env::var("GEMINI_API_KEY")
+                .map(|val| !val.trim().is_empty())
+                .unwrap_or(false),
+            anthropic_api_key_set: std::env::var("ANTHROPIC_API_KEY")
+                .map(|val| !val.trim().is_empty())
+                .unwrap_or(false),
+        }
+    }
+
+    #[tauri::command]
+    pub fn get_system_agents() -> Result<repodesk_core::agents::AgentsConfig, String> {
+        repodesk_core::agents::ensure_agents_config().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn get_system_capabilities(
+    ) -> Result<repodesk_core::capabilities::CapabilitiesConfig, String> {
+        repodesk_core::capabilities::ensure_capabilities_config().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn get_system_peripherals() -> Result<repodesk_core::peripherals::PeripheralsConfig, String>
+    {
+        repodesk_core::peripherals::ensure_peripherals_config().map_err(|e| e.to_string())
+    }
+
+    #[tauri::command]
+    pub fn get_system_modules() -> Vec<repodesk_core::module_registry::BrainModule> {
+        repodesk_core::module_registry::list_modules()
     }
 }
 
@@ -1912,7 +2533,20 @@ pub fn run() {
             commands::token_usage_snapshot,
             commands::log_token_usage,
             commands::model_health_snapshot,
-            commands::refresh_model_health
+            commands::refresh_model_health,
+            commands::routing_decision,
+            commands::routing_snapshot,
+            commands::get_active_project_config,
+            commands::save_project_ignore_rules,
+            commands::get_project_file_token_estimates,
+            commands::read_project_memory,
+            commands::append_project_memory,
+            commands::get_api_env_diagnostic,
+            commands::save_codex_quota_status,
+            commands::get_system_agents,
+            commands::get_system_capabilities,
+            commands::get_system_peripherals,
+            commands::get_system_modules
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1978,7 +2612,7 @@ mod tests {
 
         let snapshot = commands::model_health_from_settings(&settings);
 
-        assert_eq!(snapshot.providers.len(), 4);
+        assert_eq!(snapshot.providers.len(), 6);
         assert!(snapshot
             .providers
             .iter()

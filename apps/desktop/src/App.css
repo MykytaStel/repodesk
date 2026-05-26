@@ -154,7 +154,9 @@ button:disabled { cursor: not-allowed; opacity: .56; }
 .notice {
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(16, 21, 29, 0.88);
+  background: rgba(16, 21, 29, 0.76);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   box-shadow: 0 18px 54px rgba(0, 0, 0, 0.22);
 }
 
@@ -298,7 +300,8 @@ button,
 
 button:hover:not(:disabled) {
   transform: translateY(-1px);
-  border-color: rgba(94, 224, 174, 0.46);
+  border-color: rgba(94, 224, 174, 0.6);
+  box-shadow: 0 0 12px rgba(94, 224, 174, 0.25);
 }
 
 .primary-button {
@@ -367,6 +370,20 @@ button:hover:not(:disabled) {
   min-height: 72px;
   padding: 12px;
   text-align: left;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s, box-shadow 0.2s;
+}
+.check-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+}
+.check-card.ok:hover {
+  border-color: rgba(115, 227, 165, 0.5);
+  box-shadow: 0 6px 20px rgba(115, 227, 165, 0.2);
+}
+.check-card.warn:hover {
+  border-color: rgba(246, 207, 101, 0.5);
+  box-shadow: 0 6px 20px rgba(246, 207, 101, 0.2);
 }
 .check-card span,
 .check-card strong {
@@ -499,6 +516,102 @@ button:hover:not(:disabled) {
   margin-bottom: 12px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.route-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.route-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.route-summary-grid div,
+.route-list,
+.route-candidate {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(12, 17, 24, 0.72);
+}
+
+.route-summary-grid div {
+  padding: 10px 11px;
+}
+
+.route-summary-grid span,
+.route-summary-grid strong,
+.route-list strong,
+.route-list span,
+.route-candidate strong,
+.route-candidate span {
+  display: block;
+  min-width: 0;
+}
+
+.route-summary-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+.route-summary-grid strong {
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.route-list {
+  padding: 11px 12px;
+}
+
+.route-list strong {
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+
+.route-list span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.route-list.ok { border-color: rgba(115, 227, 165, 0.26); }
+.route-list.warn { border-color: rgba(246, 207, 101, 0.32); }
+.route-list.danger { border-color: rgba(255, 127, 147, 0.32); }
+
+.route-candidate-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.route-candidate {
+  padding: 10px;
+}
+
+.route-candidate span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.route-candidate.blocked {
+  opacity: .72;
+  border-color: rgba(255, 127, 147, 0.25);
 }
 
 .model-list {
@@ -733,6 +846,8 @@ select:focus { border-color: rgba(94, 224, 174, 0.54); }
   .topbar { grid-template-columns: 1fr; }
   .content-grid,
   .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .route-summary-grid,
+  .route-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .code-grid { grid-template-columns: 1fr; }
   .provider-panel,
   .file-browser-panel,
@@ -769,6 +884,8 @@ select:focus { border-color: rgba(94, 224, 174, 0.54); }
   .dashboard-grid,
   .checklist-grid,
   .snippet-grid,
+  .route-summary-grid,
+  .route-detail-grid,
   .settings-grid,
   .form-grid {
     grid-template-columns: 1fr;
@@ -783,4 +900,20 @@ select:focus { border-color: rgba(94, 224, 174, 0.54); }
     justify-content: flex-start;
     text-align: left;
   }
+}
+
+/* Beautiful custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(152, 163, 179, 0.2);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(152, 163, 179, 0.4);
 }

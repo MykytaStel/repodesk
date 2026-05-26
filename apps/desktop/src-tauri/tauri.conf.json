@@ -25,8 +25,15 @@
       "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": ["https://raw.githubusercontent.com/MykytaStel/repodesk/main/releases/updater-{{target}}.json"],
+      "pubkey": "dW51c2VkX3B1YmxpY19rZXlfZm9yX3RhdXJpX3VwZGF0ZXJfZGVtbyA="
+    }
+  },
   "bundle": {
-    "active": false,
+    "active": true,
     "targets": "all"
   }
 }

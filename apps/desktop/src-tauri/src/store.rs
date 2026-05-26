@@ -20,6 +20,10 @@ pub struct ProviderSettings {
     pub ollama_model: String,
     pub lm_studio_enabled: bool,
     pub lm_studio_url: String,
+    pub llamafile_enabled: bool,
+    pub llamafile_url: String,
+    pub localai_enabled: bool,
+    pub localai_url: String,
     pub chatgpt_enabled: bool,
     pub codex_enabled: bool,
     pub gemini_enabled: bool,
@@ -28,6 +32,7 @@ pub struct ProviderSettings {
     pub gemini_api_enabled: bool,
     pub gemini_api_key_env_var: String,
     pub allow_paid_agents: bool,
+    pub codex_quota_status: String,
     pub preferred_patch_provider: String,
     pub preferred_compression_provider: String,
     pub preferred_review_provider: String,
@@ -42,6 +47,10 @@ impl Default for ProviderSettings {
             ollama_model: "llama3.1".to_string(),
             lm_studio_enabled: true,
             lm_studio_url: "http://127.0.0.1:1234".to_string(),
+            llamafile_enabled: false,
+            llamafile_url: "http://127.0.0.1:8080".to_string(),
+            localai_enabled: false,
+            localai_url: "http://127.0.0.1:8080".to_string(),
             chatgpt_enabled: true,
             codex_enabled: true,
             gemini_enabled: false,
@@ -50,6 +59,7 @@ impl Default for ProviderSettings {
             gemini_api_enabled: false,
             gemini_api_key_env_var: "GEMINI_API_KEY".to_string(),
             allow_paid_agents: true,
+            codex_quota_status: "unknown".to_string(),
             preferred_patch_provider: "codex".to_string(),
             preferred_compression_provider: "ollama".to_string(),
             preferred_review_provider: "chatgpt".to_string(),
@@ -195,6 +205,22 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
             "provider.lm_studio_url",
             &defaults.lm_studio_url,
         )?,
+        llamafile_enabled: get_bool(
+            &connection,
+            "provider.llamafile_enabled",
+            defaults.llamafile_enabled,
+        )?,
+        llamafile_url: get_string(
+            &connection,
+            "provider.llamafile_url",
+            &defaults.llamafile_url,
+        )?,
+        localai_enabled: get_bool(
+            &connection,
+            "provider.localai_enabled",
+            defaults.localai_enabled,
+        )?,
+        localai_url: get_string(&connection, "provider.localai_url", &defaults.localai_url)?,
         chatgpt_enabled: get_bool(
             &connection,
             "provider.chatgpt_enabled",
@@ -234,6 +260,11 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
             &connection,
             "provider.allow_paid_agents",
             defaults.allow_paid_agents,
+        )?,
+        codex_quota_status: get_string(
+            &connection,
+            "provider.codex_quota_status",
+            &defaults.codex_quota_status,
         )?,
         preferred_patch_provider: get_string(
             &connection,
@@ -277,6 +308,22 @@ pub fn save_provider_settings(settings: ProviderSettings) -> Result<ProviderSett
     )?;
     set_setting(
         &connection,
+        "provider.llamafile_enabled",
+        &settings.llamafile_enabled.to_string(),
+    )?;
+    set_setting(
+        &connection,
+        "provider.llamafile_url",
+        &settings.llamafile_url,
+    )?;
+    set_setting(
+        &connection,
+        "provider.localai_enabled",
+        &settings.localai_enabled.to_string(),
+    )?;
+    set_setting(&connection, "provider.localai_url", &settings.localai_url)?;
+    set_setting(
+        &connection,
         "provider.chatgpt_enabled",
         &settings.chatgpt_enabled.to_string(),
     )?;
@@ -317,6 +364,11 @@ pub fn save_provider_settings(settings: ProviderSettings) -> Result<ProviderSett
     )?;
     set_setting(
         &connection,
+        "provider.codex_quota_status",
+        &settings.codex_quota_status,
+    )?;
+    set_setting(
+        &connection,
         "provider.preferred_patch_provider",
         &settings.preferred_patch_provider,
     )?;
@@ -338,9 +390,12 @@ pub fn save_provider_settings(settings: ProviderSettings) -> Result<ProviderSett
 pub fn validate_provider_settings(settings: &ProviderSettings) -> Result<(), String> {
     validate_local_url("Ollama URL", &settings.ollama_url)?;
     validate_local_url("LM Studio URL", &settings.lm_studio_url)?;
+    validate_local_url("Llamafile URL", &settings.llamafile_url)?;
+    validate_local_url("LocalAI URL", &settings.localai_url)?;
     validate_safe_text("Ollama model", &settings.ollama_model, 80)?;
     validate_env_var("OpenAI API key env var", &settings.openai_api_key_env_var)?;
     validate_env_var("Gemini API key env var", &settings.gemini_api_key_env_var)?;
+    validate_codex_quota_status(&settings.codex_quota_status)?;
     validate_safe_text("Notes", &settings.notes, 1_000)?;
 
     validate_provider(
@@ -378,11 +433,18 @@ pub fn validate_provider_settings(settings: &ProviderSettings) -> Result<(), Str
     Ok(())
 }
 
+fn validate_codex_quota_status(value: &str) -> Result<(), String> {
+    match value {
+        "unknown" | "available" | "limited" | "empty" => Ok(()),
+        _ => Err("Codex quota status must be one of: unknown, available, limited, empty".into()),
+    }
+}
+
 fn validate_provider(label: &str, value: &str) -> Result<(), String> {
     match value {
-        "ollama" | "chatgpt" | "codex" | "gemini" | "manual" => Ok(()),
+        "ollama" | "chatgpt" | "codex" | "gemini" | "manual" | "llamafile" | "localai" => Ok(()),
         _ => Err(format!(
-            "{label} must be one of: ollama, chatgpt, codex, gemini, manual"
+            "{label} must be one of: ollama, chatgpt, codex, gemini, manual, llamafile, localai"
         )),
     }
 }
@@ -466,6 +528,16 @@ mod tests {
     #[test]
     fn accepts_local_first_defaults() {
         assert!(validate_provider_settings(&ProviderSettings::default()).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_codex_quota_status() {
+        let settings = ProviderSettings {
+            codex_quota_status: "scrape-browser".to_string(),
+            ..ProviderSettings::default()
+        };
+
+        assert!(validate_provider_settings(&settings).is_err());
     }
 
     #[test]

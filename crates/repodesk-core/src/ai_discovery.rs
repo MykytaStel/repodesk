@@ -225,6 +225,15 @@ fn discover_cli_tools() -> Vec<AiToolProbe> {
             vec!["Patch-capable agent. Run only behind RepoDesk guardrails."],
         ),
         (
+            "llamafile",
+            "Llamafile",
+            AiProbeCategory::LocalRuntime,
+            true,
+            false,
+            "low",
+            vec!["Run local models via single-file executables."],
+        ),
+        (
             "docker",
             "Docker",
             AiProbeCategory::RuntimeDependency,
@@ -383,6 +392,20 @@ fn discover_local_endpoints() -> Vec<AiEndpointProbe> {
             "127.0.0.1:1234",
             "http://127.0.0.1:1234",
             vec!["Common OpenAI-compatible local endpoint for LM Studio."],
+        ),
+        (
+            "localai_api",
+            "LocalAI API",
+            "127.0.0.1:8080",
+            "http://127.0.0.1:8080",
+            vec!["OpenAI-compatible local server supporting local models."],
+        ),
+        (
+            "llamafile_api",
+            "llamafile API",
+            "127.0.0.1:8080",
+            "http://127.0.0.1:8080",
+            vec!["Single-file local LLM server (defaults to port 8080)."],
         ),
     ];
 
