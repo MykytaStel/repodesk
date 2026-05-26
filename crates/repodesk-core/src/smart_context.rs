@@ -1,6 +1,6 @@
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tokio::fs;
 
 use crate::budget::{evaluate_context, format_verdict, load_budget_config};
 use crate::errors::RepoDeskResult;
@@ -18,10 +18,10 @@ pub struct SmartContextResult {
     pub skipped_files: Vec<String>,
 }
 
-pub fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
+pub async fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
     let project = get_active_project()?;
     let task = show_active_task()?;
-    let repo_map = build_repo_map()?;
+    let repo_map = build_repo_map().await?;
 
     let changed_files = git_lines(&project.path, &["diff", "--name-only"]);
     let staged_files = git_lines(&project.path, &["diff", "--cached", "--name-only"]);
@@ -43,7 +43,7 @@ pub fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
         }
 
         let full_path = project.path.join(relative);
-        let content = match fs::read_to_string(&full_path) {
+        let content = match fs::read_to_string(&full_path).await {
             Ok(content) => content,
             Err(_) => {
                 skipped_files.push(format!("{relative} — could not read as UTF-8 text"));
@@ -63,7 +63,7 @@ pub fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
         ));
     }
 
-    let task_markdown = fs::read_to_string(&task.task_markdown_file)
+    let task_markdown = fs::read_to_string(&task.task_markdown_file).await
         .unwrap_or_else(|_| "Task markdown is not available.".to_string());
 
     let context = format!(
@@ -122,8 +122,8 @@ It prefers active task data, repository map, git status, and changed file snippe
     let context_file = task.config.run_dir.join("smart-context.md");
     let token_estimate_file = task.config.run_dir.join("smart-token-estimate.txt");
 
-    fs::write(&context_file, final_context)?;
-    fs::write(&token_estimate_file, format_estimate(&estimate))?;
+    fs::write(&context_file, final_context).await?;
+    fs::write(&token_estimate_file, format_estimate(&estimate)).await?;
 
     Ok(SmartContextResult {
         context_file,

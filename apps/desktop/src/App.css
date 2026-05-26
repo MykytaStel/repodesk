@@ -354,6 +354,7 @@ button:hover:not(:disabled) {
   gap: 12px;
 }
 
+.card,
 .check-card,
 .snippet-card,
 .model-row,
@@ -362,28 +363,40 @@ button:hover:not(:disabled) {
 .toggle-row {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: rgba(12, 17, 24, 0.72);
+  border-radius: 12px;
+  background: rgba(16, 21, 29, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  position: relative;
+  transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.25s, box-shadow 0.25s, background 0.25s;
+}
+
+.card:hover,
+.check-card:hover,
+.snippet-card:hover,
+.table-row:hover,
+.model-row:hover,
+.metric:hover {
+  transform: translateY(-3px);
+  border-color: rgba(94, 224, 174, 0.4);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3), 0 0 16px rgba(94, 224, 174, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(22, 28, 38, 0.85);
 }
 
 .check-card {
   min-height: 72px;
-  padding: 12px;
+  padding: 16px;
   text-align: left;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s, box-shadow 0.2s;
 }
-.check-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--border-strong);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-}
+
 .check-card.ok:hover {
-  border-color: rgba(115, 227, 165, 0.5);
-  box-shadow: 0 6px 20px rgba(115, 227, 165, 0.2);
+  border-color: rgba(115, 227, 165, 0.6);
+  box-shadow: 0 8px 24px rgba(115, 227, 165, 0.25);
 }
 .check-card.warn:hover {
-  border-color: rgba(246, 207, 101, 0.5);
-  box-shadow: 0 6px 20px rgba(246, 207, 101, 0.2);
+  border-color: rgba(246, 207, 101, 0.6);
+  box-shadow: 0 8px 24px rgba(246, 207, 101, 0.25);
 }
 .check-card span,
 .check-card strong {
@@ -901,6 +914,49 @@ select:focus { border-color: rgba(94, 224, 174, 0.54); }
     text-align: left;
   }
 }
+
+/* Layout Utilities */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.items-start { align-items: flex-start; }
+.justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
+.flex-wrap { flex-wrap: wrap; }
+.flex-1 { flex: 1 1 0%; }
+.w-full { width: 100%; }
+
+/* Spacing */
+.gap-xs { gap: 4px; }
+.gap-sm { gap: 8px; }
+.gap-md { gap: 12px; }
+.gap-lg { gap: 16px; }
+
+.p-0 { padding: 0; }
+.p-xs { padding: 8px; }
+.p-sm { padding: 12px; }
+.p-md { padding: 16px; }
+.p-lg { padding: 20px; }
+
+.m-0 { margin: 0; }
+.mt-xs { margin-top: 4px; }
+.mt-sm { margin-top: 8px; }
+.mb-xs { margin-bottom: 4px; }
+.mb-sm { margin-bottom: 8px; }
+.mb-md { margin-bottom: 16px; }
+
+/* Typography */
+.text-xs { font-size: 11px; }
+.text-sm { font-size: 12px; }
+.text-base { font-size: 14px; }
+.text-lg { font-size: 16px; }
+.text-xl { font-size: 20px; }
+.font-medium { font-weight: 500; }
+.font-bold { font-weight: 700; }
+.font-black { font-weight: 900; }
+.text-center { text-align: center; }
+.text-danger { color: var(--danger); }
+.text-muted { color: var(--muted); }
 
 /* Beautiful custom scrollbars */
 ::-webkit-scrollbar {

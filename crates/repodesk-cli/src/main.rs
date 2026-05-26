@@ -1210,11 +1210,13 @@ fn print_prompt_result(result: repodesk_core::prompts::PromptBuildResult) {
 fn handle_inspect_command(command: InspectCommand) -> Result<()> {
     match command {
         InspectCommand::Repo => {
-            let map = build_repo_map()?;
+            let rt = tokio::runtime::Runtime::new()?;
+            let map = rt.block_on(build_repo_map())?;
             print!("{}", format_repo_map(&map));
         }
         InspectCommand::Hotspots => {
-            let map = build_repo_map()?;
+            let rt = tokio::runtime::Runtime::new()?;
+            let map = rt.block_on(build_repo_map())?;
             print!("{}", format_hotspots(&map));
         }
     }
@@ -1225,7 +1227,8 @@ fn handle_inspect_command(command: InspectCommand) -> Result<()> {
 fn handle_smart_context_command(command: SmartContextCommand) -> Result<()> {
     match command {
         SmartContextCommand::Build => {
-            let result = build_smart_context()?;
+            let rt = tokio::runtime::Runtime::new()?;
+            let result = rt.block_on(build_smart_context())?;
             print!("{}", format_smart_context_result(&result));
         }
         SmartContextCommand::Sources => {
@@ -1274,10 +1277,12 @@ fn handle_git_command(command: GitCommand) -> Result<()> {
 fn handle_dashboard_command(command: DashboardCommand) -> Result<()> {
     match command {
         DashboardCommand::Summary => {
-            print!("{}", dashboard_summary()?);
+            let rt = tokio::runtime::Runtime::new()?;
+            print!("{}", rt.block_on(dashboard_summary())?);
         }
         DashboardCommand::Json => {
-            println!("{}", dashboard_json()?);
+            let rt = tokio::runtime::Runtime::new()?;
+            println!("{}", rt.block_on(dashboard_json())?);
         }
     }
 

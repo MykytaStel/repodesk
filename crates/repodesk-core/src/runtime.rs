@@ -4,6 +4,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
+use std::time::Duration;
+use tokio::time::sleep;
+use std::future::Future;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeProvider {
@@ -323,5 +326,78 @@ fn check_ollama() -> RuntimeProviderStatus {
             status: "not_found".to_string(),
             details: error.to_string(),
         },
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutionResult {
+    pub provider: String,
+    pub success: bool,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    pub retries_used: usize,
+}
+
+pub async fn execute_with_fallback<F, Fut>(
+    route: &RuntimeRoute,
+    mut run_agent: F,
+) -> ExecutionResult
+where
+    F: FnMut(String) -> Fut,
+    Fut: Future<Output = Result<String, String>>,
+{
+    let providers = vec![
+        route.recommended_provider.clone(),
+        route.fallback_provider.clone(),
+    ];
+
+    for provider in providers {
+        if provider.trim().is_empty() {
+            continue;
+        }
+
+        let mut retries = 0;
+        let max_retries = 3;
+        let mut backoff_ms = 1000;
+
+        while retries <= max_retries {
+            match run_agent(provider.clone()).await {
+                Ok(output) => {
+                    return ExecutionResult {
+                        provider,
+                        success: true,
+                        output: Some(output),
+                        error: None,
+                        retries_used: retries,
+                    };
+                }
+                Err(error) => {
+                    let is_rate_limit = error.contains("429")
+                        || error.to_lowercase().contains("rate limit")
+                        || error.to_lowercase().contains("too many requests");
+
+                    if is_rate_limit {
+                        retries += 1;
+                        if retries <= max_retries {
+                            sleep(Duration::from_millis(backoff_ms)).await;
+                            backoff_ms *= 2; // Exponential backoff
+                            continue;
+                        }
+                    }
+                    
+                    // If it's not a rate limit error, or we ran out of retries,
+                    // we break out of the while loop and try the next fallback provider.
+                    break;
+                }
+            }
+        }
+    }
+
+    ExecutionResult {
+        provider: "none".to_string(),
+        success: false,
+        output: None,
+        error: Some("All routing providers failed or exhausted rate limit retries.".to_string()),
+        retries_used: 0,
     }
 }

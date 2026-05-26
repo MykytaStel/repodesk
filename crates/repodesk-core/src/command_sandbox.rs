@@ -81,41 +81,45 @@ pub fn plan_command(command: &str) -> SandboxPlan {
     let normalized = command.trim().to_lowercase();
     let mut matched_rules = Vec::new();
 
-    if has_dangerous_delete(&normalized) {
+    let tokens = match shlex::split(command) {
+        Some(t) => t,
+        None => {
+            return SandboxPlan {
+                command: command.to_string(),
+                verdict: "block".to_string(),
+                reason: "Command is malformed (unclosed quotes).".to_string(),
+                required_confirmation: true,
+                matched_rules: vec![SandboxRule {
+                    name: "malformed".to_string(),
+                    verdict: "block".to_string(),
+                    pattern: "".to_string(),
+                    reason: "Parser error".to_string(),
+                }],
+            };
+        }
+    };
+
+    if has_dangerous_delete(&tokens) {
         matched_rules.push(find_rule("dangerous_delete"));
     }
 
-    if contains_any(&normalized, &["sudo ", "su -", "chmod 777"]) {
+    if has_privileged_shell(&tokens) {
         matched_rules.push(find_rule("privileged_shell"));
     }
 
-    if has_remote_shell_pipe(&normalized) {
+    if has_remote_shell_pipe(&tokens) {
         matched_rules.push(find_rule("remote_shell_pipe"));
     }
 
-    if contains_any(
-        &normalized,
-        &[
-            ".env",
-            ".pem",
-            ".key",
-            "credentials",
-            "api_key",
-            "secret",
-            "token",
-        ],
-    ) {
+    if has_secret_access(&tokens) {
         matched_rules.push(find_rule("secret_access"));
     }
 
-    if contains_any(
-        &normalized,
-        &["git push --force", "npm publish", "cargo publish"],
-    ) {
+    if has_publish_or_force_push(&tokens) {
         matched_rules.push(find_rule("publish_or_force_push"));
     }
 
-    if is_safe_check(&normalized) {
+    if is_safe_check(&tokens, &normalized) {
         matched_rules.push(find_rule("safe_checks"));
     }
 
@@ -191,46 +195,115 @@ fn find_rule(name: &str) -> SandboxRule {
         .expect("sandbox rule must exist")
 }
 
-fn contains_any(value: &str, needles: &[&str]) -> bool {
-    needles.iter().any(|needle| value.contains(needle))
+fn has_dangerous_delete(tokens: &[String]) -> bool {
+    let mut is_rm = false;
+    let mut has_rf = false;
+    let mut target_root = false;
+
+    for token in tokens {
+        if token == "rm" || token == "find" {
+            is_rm = true;
+        }
+        if token == "-rf" || token == "-r" || token == "-R" || token == "-delete" || token == "-fr" {
+            has_rf = true;
+        }
+        if token == "/" || token == "." || token == "/*" || token == ".*" || token == ".." {
+            target_root = true;
+        }
+    }
+
+    is_rm && has_rf && target_root
 }
 
-fn has_dangerous_delete(command: &str) -> bool {
-    command.contains("rm -rf /")
-        || command.contains("rm -rf .")
-        || command.contains("rm -fr /")
-        || command.contains("find ") && command.contains(" -delete")
+fn has_privileged_shell(tokens: &[String]) -> bool {
+    if let Some(first) = tokens.first() {
+        if first == "sudo" || first == "su" {
+            return true;
+        }
+    }
+
+    // Check for chmod 777
+    if let Some(pos) = tokens.iter().position(|t| t == "chmod") {
+        if pos + 1 < tokens.len() && tokens[pos + 1] == "777" {
+            return true;
+        }
+    }
+
+    false
 }
 
-fn has_remote_shell_pipe(command: &str) -> bool {
-    (command.contains("curl") || command.contains("wget"))
-        && (command.contains("| sh")
-            || command.contains("| bash")
-            || command.contains("bash <")
-            || command.contains("sh <"))
+fn has_remote_shell_pipe(tokens: &[String]) -> bool {
+    let mut has_download = false;
+    let mut has_pipe = false;
+    let mut has_shell = false;
+
+    for token in tokens {
+        if token == "curl" || token == "wget" {
+            has_download = true;
+        }
+        if token == "|" || token == "<" {
+            has_pipe = true;
+        }
+        if token == "sh" || token == "bash" || token == "zsh" {
+            has_shell = true;
+        }
+    }
+
+    has_download && has_pipe && has_shell
 }
 
-fn is_safe_check(command: &str) -> bool {
-    command == "cargo check"
-        || command == "cargo fmt"
-        || command == "cargo fmt --check"
-        || command == "cargo test"
-        || command.starts_with("cargo check ")
-        || command.starts_with("cargo fmt ")
-        || command.starts_with("cargo test ")
-        || command.starts_with("cargo clippy")
-        || command == "pnpm test"
-        || command == "pnpm build"
-        || command == "pnpm typecheck"
-        || command.starts_with("pnpm test ")
-        || command.starts_with("pnpm build ")
-        || command.starts_with("pnpm typecheck ")
-        || command == "npm test"
-        || command.starts_with("npm run test")
-        || command.starts_with("npm run build")
-        || command.starts_with("git status")
-        || command.starts_with("git diff")
-        || command.starts_with("git log")
-        || command.starts_with("git branch")
-        || command.starts_with("repodesk ")
+fn has_secret_access(tokens: &[String]) -> bool {
+    let bad_patterns = [".env", ".pem", ".key", "credentials", "api_key", "secret", "token"];
+    for token in tokens {
+        let lower = token.to_lowercase();
+        if bad_patterns.iter().any(|bad| lower.contains(bad)) {
+            return true;
+        }
+    }
+    false
+}
+
+fn has_publish_or_force_push(tokens: &[String]) -> bool {
+    if tokens.len() >= 2 {
+        if tokens[0] == "git" && tokens[1] == "push" && tokens.iter().any(|t| t == "--force" || t == "-f") {
+            return true;
+        }
+        if (tokens[0] == "npm" || tokens[0] == "cargo" || tokens[0] == "pnpm" || tokens[0] == "yarn") && tokens[1] == "publish" {
+            return true;
+        }
+    }
+    false
+}
+
+fn is_safe_check(tokens: &[String], _command: &str) -> bool {
+    if tokens.is_empty() {
+        return false;
+    }
+
+    if tokens[0] == "cargo" {
+        if tokens.len() >= 2 && (tokens[1] == "check" || tokens[1] == "fmt" || tokens[1] == "test" || tokens[1] == "clippy") {
+            return true;
+        }
+    }
+
+    if tokens[0] == "pnpm" || tokens[0] == "npm" || tokens[0] == "yarn" {
+        if tokens.len() >= 2 && (tokens[1] == "test" || tokens[1] == "build" || tokens[1] == "typecheck") {
+            return true;
+        }
+        if tokens.len() >= 3 && tokens[1] == "run" && (tokens[2] == "test" || tokens[2] == "build" || tokens[2] == "typecheck") {
+            return true;
+        }
+    }
+
+    if tokens[0] == "git" {
+        if tokens.len() >= 2 && (tokens[1] == "status" || tokens[1] == "diff" || tokens[1] == "log" || tokens[1] == "branch") {
+            return true;
+        }
+    }
+    
+    if tokens[0] == "repodesk" {
+        return true;
+    }
+
+    false
 }

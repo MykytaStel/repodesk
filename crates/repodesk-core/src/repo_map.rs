@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
+use tokio::fs;
 
 use serde::{Deserialize, Serialize};
 
@@ -34,10 +34,10 @@ pub struct FileHotspot {
     pub reason: String,
 }
 
-pub fn build_repo_map() -> RepoDeskResult<RepoMap> {
+pub async fn build_repo_map() -> RepoDeskResult<RepoMap> {
     let project = get_active_project()?;
     let mut scanner = RepoScanner::new(project.name.clone(), project.path.clone());
-    scanner.scan_dir(&project.path, 0)?;
+    scanner.scan_dir(&project.path, 0).await?;
     Ok(scanner.finish())
 }
 
@@ -119,7 +119,8 @@ impl RepoScanner {
         }
     }
 
-    fn scan_dir(&mut self, dir: &Path, depth: usize) -> RepoDeskResult<()> {
+    #[async_recursion::async_recursion]
+    async fn scan_dir(&mut self, dir: &Path, depth: usize) -> RepoDeskResult<()> {
         if depth > 8 {
             self.skipped_dirs += 1;
             return Ok(());
@@ -127,24 +128,29 @@ impl RepoScanner {
 
         self.dirs_scanned += 1;
 
-        let entries = match fs::read_dir(dir) {
+        let mut entries = match fs::read_dir(dir).await {
             Ok(entries) => entries,
             Err(_) => return Ok(()),
         };
 
-        for entry in entries.flatten() {
+        while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
 
-            if path.is_dir() {
+            let metadata = match fs::metadata(&path).await {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            if metadata.is_dir() {
                 if should_skip_dir(&name) {
                     self.skipped_dirs += 1;
                     continue;
                 }
 
-                self.scan_dir(&path, depth + 1)?;
-            } else if path.is_file() {
-                self.scan_file(&path)?;
+                self.scan_dir(&path, depth + 1).await?;
+            } else if metadata.is_file() {
+                self.scan_file(&path, metadata.len()).await?;
             }
 
             if self.files_scanned >= 2_000 {
@@ -155,13 +161,7 @@ impl RepoScanner {
         Ok(())
     }
 
-    fn scan_file(&mut self, path: &Path) -> RepoDeskResult<()> {
-        let metadata = match fs::metadata(path) {
-            Ok(metadata) => metadata,
-            Err(_) => return Ok(()),
-        };
-
-        let bytes = metadata.len();
+    async fn scan_file(&mut self, path: &Path, bytes: u64) -> RepoDeskResult<()> {
         let relative = relative_path(&self.project_path, path);
 
         self.files_scanned += 1;

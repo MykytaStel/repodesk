@@ -11,3 +11,4 @@ path = "src/main.rs"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 repodesk-core = { path = "../repodesk-core" }
+tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs"] }

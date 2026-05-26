@@ -24,10 +24,10 @@ pub struct DashboardSnapshot {
     pub next_action: String,
 }
 
-pub fn build_dashboard_snapshot() -> RepoDeskResult<DashboardSnapshot> {
+pub async fn build_dashboard_snapshot() -> RepoDeskResult<DashboardSnapshot> {
     let project = get_active_project()?;
     let task = show_active_task()?;
-    let repo_map = build_repo_map()?;
+    let repo_map = build_repo_map().await?;
 
     let context_file = task.config.run_dir.join("context.md");
     let smart_context_file = task.config.run_dir.join("smart-context.md");
@@ -77,13 +77,13 @@ pub fn build_dashboard_snapshot() -> RepoDeskResult<DashboardSnapshot> {
     })
 }
 
-pub fn dashboard_json() -> RepoDeskResult<String> {
-    let snapshot = build_dashboard_snapshot()?;
+pub async fn dashboard_json() -> RepoDeskResult<String> {
+    let snapshot = build_dashboard_snapshot().await?;
     Ok(serde_json::to_string_pretty(&snapshot)?)
 }
 
-pub fn dashboard_summary() -> RepoDeskResult<String> {
-    let snapshot = build_dashboard_snapshot()?;
+pub async fn dashboard_summary() -> RepoDeskResult<String> {
+    let snapshot = build_dashboard_snapshot().await?;
 
     Ok(format!(
         r#"RepoDesk dashboard:

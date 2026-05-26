@@ -1,4 +1,5 @@
 use std::fs;
+use regex::Regex;
 
 use serde::{Deserialize, Serialize};
 
@@ -282,4 +283,39 @@ fn format_list(items: &[String]) -> String {
         .map(|item| format!("  - {item}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
+    let mut findings = Vec::new();
+
+    // AWS Access Key ID
+    if let Ok(re) = Regex::new(r"AKIA[0-9A-Z]{16}") {
+        if re.is_match(text) {
+            findings.push("AWS Access Key ID".to_string());
+        }
+    }
+
+    // Stripe keys
+    if let Ok(re) = Regex::new(r"(sk_live|rk_live)_[0-9a-zA-Z]{24}") {
+        if re.is_match(text) {
+            findings.push("Stripe Live Key".to_string());
+        }
+    }
+
+    // Generic API keys/tokens (heuristic)
+    if let Ok(re) = Regex::new(r#"(?i)(api_key|token|secret)[=:]\s*['"]?[a-zA-Z0-9_-]{20,}['"]?"#) {
+        if re.is_match(text) {
+            findings.push("Generic API Key or Token".to_string());
+        }
+    }
+
+    // Private keys
+    if text.contains("-----BEGIN RSA PRIVATE KEY-----")
+        || text.contains("-----BEGIN OPENSSH PRIVATE KEY-----")
+        || text.contains("-----BEGIN PRIVATE KEY-----")
+    {
+        findings.push("Private Key block".to_string());
+    }
+
+    findings
 }
