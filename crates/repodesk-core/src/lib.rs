@@ -35,5 +35,6 @@ pub mod git_audit;
 pub mod receipts;
 pub mod repo_map;
 pub mod runtime;
+pub mod sandbox;
 pub mod smart_context;
 pub use errors::{RepoDeskError, RepoDeskResult};
