@@ -213,3 +213,7 @@ generated/
 apps/desktop/node_modules/
 apps/desktop/dist/
 apps/desktop/src-tauri/target/
+/target/
+/tmp/
+/runs/
+/.repodesk-debug/
