@@ -2,10 +2,15 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use repodesk_core::command_sandbox::{format_sandbox_plan, plan_command, sandbox_policy};
 use repodesk_core::dashboard::{dashboard_json, dashboard_summary};
 use repodesk_core::git_audit::{backup_plan, git_audit};
 use repodesk_core::receipts::{add_receipt, read_receipts, AddReceiptInput};
 use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
+use repodesk_core::runtime::{
+    format_provider_status, format_runtime_providers, format_runtime_route, provider_status,
+    recommend_runtime, runtime_providers, runtime_snapshot_json,
+};
 use repodesk_core::smart_context::{
     build_smart_context, format_smart_context_result, list_smart_context_sources,
 };
@@ -196,6 +201,14 @@ enum Command {
     Dashboard {
         #[command(subcommand)]
         command: DashboardCommand,
+    },
+    Runtime {
+        #[command(subcommand)]
+        command: RuntimeCommand,
+    },
+    Sandbox {
+        #[command(subcommand)]
+        command: SandboxCommand,
     },
     Tokens {
         #[command(subcommand)]
@@ -472,6 +485,29 @@ enum DashboardCommand {
 }
 
 #[derive(Debug, Subcommand)]
+enum RuntimeCommand {
+    Providers,
+    Status {
+        #[arg(long)]
+        provider: String,
+    },
+    Route {
+        #[arg(long)]
+        need: String,
+    },
+    SnapshotJson,
+}
+
+#[derive(Debug, Subcommand)]
+enum SandboxCommand {
+    Policy,
+    Plan {
+        #[arg(long)]
+        command: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
 enum TokensCommand {
     Estimate {
         file: PathBuf,
@@ -531,6 +567,8 @@ fn main() -> Result<()> {
         Command::Receipts { command } => handle_receipts_command(command)?,
         Command::Git { command } => handle_git_command(command)?,
         Command::Dashboard { command } => handle_dashboard_command(command)?,
+        Command::Runtime { command } => handle_runtime_command(command)?,
+        Command::Sandbox { command } => handle_sandbox_command(command)?,
         Command::Tokens { command } => handle_tokens_command(command)?,
         Command::Budget { command } => handle_budget_command(command)?,
     }
@@ -1236,6 +1274,42 @@ fn handle_dashboard_command(command: DashboardCommand) -> Result<()> {
         }
         DashboardCommand::Json => {
             println!("{}", dashboard_json()?);
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_runtime_command(command: RuntimeCommand) -> Result<()> {
+    match command {
+        RuntimeCommand::Providers => {
+            let providers = runtime_providers();
+            print!("{}", format_runtime_providers(&providers));
+        }
+        RuntimeCommand::Status { provider } => {
+            let status = provider_status(&provider)?;
+            print!("{}", format_provider_status(&status));
+        }
+        RuntimeCommand::Route { need } => {
+            let route = recommend_runtime(&need);
+            print!("{}", format_runtime_route(&route));
+        }
+        RuntimeCommand::SnapshotJson => {
+            println!("{}", runtime_snapshot_json()?);
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_sandbox_command(command: SandboxCommand) -> Result<()> {
+    match command {
+        SandboxCommand::Policy => {
+            print!("{}", sandbox_policy());
+        }
+        SandboxCommand::Plan { command } => {
+            let plan = plan_command(&command);
+            print!("{}", format_sandbox_plan(&plan));
         }
     }
 
