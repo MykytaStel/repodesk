@@ -1,90 +1,55 @@
-export type RiskLevel = "safe" | "guarded" | "expensive" | "blocked";
-
-export type ProductArea = {
-  id: string;
-  title: string;
-  subtitle: string;
-  description: string;
-  signal: string;
-};
-
-export const PRODUCT_AREAS: ProductArea[] = [
+export const productPrinciples = [
   {
-    id: "brain",
-    title: "Brain",
-    subtitle: "RepoDesk decides what should happen next.",
-    description:
-      "The brain reads project/task state, checks context, judges risk, and suggests a next action instead of blindly calling agents.",
-    signal: "workflow / doctor / judge",
+    title: "One task, one workflow",
+    body: "RepoDesk should always know the active project, active task, next safe step, and relevant artifacts.",
   },
   {
-    id: "management",
-    title: "Management",
-    subtitle: "Projects and tasks become first-class objects.",
-    description:
-      "The desktop app should let you select a project, create a task, and then build context around that task without touching terminal every time.",
-    signal: "project list / project use / task new",
+    title: "AI is a module, not the owner",
+    body: "Codex, ChatGPT, Ollama, and other providers are peripherals controlled by the RepoDesk brain.",
   },
   {
-    id: "context",
-    title: "Context",
-    subtitle: "Small, task-focused packs instead of dumping the whole repo.",
-    description:
-      "Context generation is the token-control layer. Smart context should include only active task, changed files, repo map, and check summaries.",
-    signal: "context.md / smart-context.md / token estimate",
+    title: "Security before automation",
+    body: "The UI only exposes whitelisted Rust commands. No unrestricted shell access from the desktop.",
   },
   {
-    id: "security",
-    title: "Security",
-    subtitle: "Every dangerous action needs a gate.",
-    description:
-      "UI actions are whitelisted. No unrestricted shell access is exposed to the desktop interface. Agent access must go through guard/judge.",
-    signal: "sandbox / safety scan / access matrix",
-  },
-  {
-    id: "runtime",
-    title: "Runtime",
-    subtitle: "AI systems are modules, not the core itself.",
-    description:
-      "Ollama, ChatGPT, Codex, Gemini, shell, and future MCP adapters are peripherals. RepoDesk routes work to them based on need and risk.",
-    signal: "runtime providers / route need",
+    title: "Token discipline",
+    body: "Smart context and prompts exist to keep paid agents focused and reduce wasted context.",
   },
 ];
 
-export const WORKFLOW_STEPS = [
-  {
-    id: "select",
-    title: "1. Select project and task",
-    body: "Choose the active project and create or inspect the active task. This prevents agents from working with vague context.",
-  },
-  {
-    id: "understand",
-    title: "2. Understand current state",
-    body: "Read dashboard, workflow doctor, active project, active task, and git state before doing any work.",
-  },
-  {
-    id: "context",
-    title: "3. Build bounded context",
-    body: "Generate context and smart context. This is what agents should see instead of the full repository.",
-  },
-  {
-    id: "safety",
-    title: "4. Scan for risky content",
-    body: "Run safety scan before sending context to any AI system. Secrets and private files must not leak.",
-  },
-  {
-    id: "judge",
-    title: "5. Judge the agent",
-    body: "Ask the judge if Codex/ChatGPT/Ollama should be allowed, warned, or blocked for the current task.",
-  },
-  {
-    id: "act",
-    title: "6. Execute a small bounded action",
-    body: "Use a whitelisted action. Avoid unrestricted commands from UI until policy is stronger.",
-  },
-  {
-    id: "verify",
-    title: "7. Verify and record",
-    body: "Run checks, inspect output, and keep action history so the system can explain what happened.",
-  },
+export const artifactKinds = [
+  { kind: "smart_context", label: "Smart context" },
+  { kind: "prompt_codex", label: "Codex prompt" },
+  { kind: "prompt_chatgpt", label: "ChatGPT prompt" },
+  { kind: "prompt_review", label: "Review prompt" },
+  { kind: "checks_summary", label: "Checks summary" },
+  { kind: "context", label: "Full context" },
+  { kind: "token_estimate", label: "Token estimate" },
 ];
+
+export function statusLabel(status: string): string {
+  switch (status) {
+    case "done":
+      return "Done";
+    case "current":
+      return "Current";
+    case "blocked":
+      return "Blocked";
+    default:
+      return status;
+  }
+}
+
+export function formatBytes(value: number): string {
+  if (!value) return "0 B";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function summarizeCommand(result?: { ok: boolean; stdout: string; stderr: string }): string {
+  if (!result) return "No data";
+  const text = `${result.stdout || ""}\n${result.stderr || ""}`.trim();
+  if (!text) return result.ok ? "OK" : "No output";
+  return text.split("\n").slice(0, 8).join("\n");
+}
