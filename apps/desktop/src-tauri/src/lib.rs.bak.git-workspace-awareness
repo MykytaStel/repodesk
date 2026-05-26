@@ -953,19 +953,10 @@ mod commands {
     }
 }
 
-mod git_workspace_commands {
-    #[tauri::command]
-    pub fn git_workspace_snapshot(
-    ) -> Result<repodesk_core::git_workspace::GitWorkspaceSnapshot, String> {
-        Ok(repodesk_core::git_workspace::build_git_workspace_snapshot())
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
-            git_workspace_commands::git_workspace_snapshot,
             ai_discovery_commands::ai_discovery_scan,
             commands::desktop_snapshot,
             commands::product_workflow_state,

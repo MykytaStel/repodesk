@@ -274,7 +274,7 @@ export default function App() {
         const result = await invoke<T>(command, args);
         const durationMs = Math.round(performance.now() - started);
         setDebugEvents((events) => [
-          { id: Date.now() + Math.random(), command, args, status: "success" as const, durationMs, timestamp: new Date().toLocaleTimeString(), preview: stringifyPreview(result) },
+          { id: Date.now() + Math.random(), command, args, status: "success", durationMs, timestamp: new Date().toLocaleTimeString(), preview: stringifyPreview(result) },
           ...events,
         ].slice(0, 80));
         if (options?.toast) pushToast("success", options.label || command, `Completed in ${durationMs}ms`);
@@ -283,7 +283,7 @@ export default function App() {
         const durationMs = Math.round(performance.now() - started);
         const message = error instanceof Error ? error.message : String(error);
         setDebugEvents((events) => [
-          { id: Date.now() + Math.random(), command, args, status: "error" as const, durationMs, timestamp: new Date().toLocaleTimeString(), error: message },
+          { id: Date.now() + Math.random(), command, args, status: "error", durationMs, timestamp: new Date().toLocaleTimeString(), error: message },
           ...events,
         ].slice(0, 80));
         if (options?.toast !== false) pushToast("error", options?.label || command, message);

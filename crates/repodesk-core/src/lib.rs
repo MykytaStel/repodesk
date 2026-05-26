@@ -39,3 +39,4 @@ pub mod runtime;
 pub mod sandbox;
 pub mod smart_context;
 pub use errors::{RepoDeskError, RepoDeskResult};
+pub mod git_workspace;
