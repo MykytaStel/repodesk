@@ -1,0 +1,21 @@
+[package]
+name = "repodesk-desktop"
+version = "0.1.0"
+description = "RepoDesk local-first desktop cockpit"
+edition = "2021"
+publish = false
+
+[lib]
+name = "repodesk_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+dirs = "5"
+repodesk-core = { path = "../../../crates/repodesk-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+thiserror = "1"

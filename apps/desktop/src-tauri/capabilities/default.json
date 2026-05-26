@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default local-only desktop capability for RepoDesk core commands.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

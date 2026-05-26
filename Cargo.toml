@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/repodesk-core",
-  "crates/repodesk-cli"
+  "crates/repodesk-cli",
+    "apps/desktop/src-tauri",
 ]
 resolver = "2"

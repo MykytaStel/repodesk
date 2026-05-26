@@ -208,3 +208,8 @@ reports/generated/
 # ---------------------------------------------------------
 generated/
 .codegen/
+
+# RepoDesk desktop/local artifacts
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/
