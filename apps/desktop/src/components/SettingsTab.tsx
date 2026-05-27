@@ -8,7 +8,7 @@ interface SettingsTabProps {
   setupForm: any;
   setSetupForm: (form: any) => void;
   dbState: any;
-  projectMemory: string;
+  projectMemory: any[];
   memoryAppendInput: string;
   setMemoryAppendInput: (val: string) => void;
   apiEnvDiagnostic: any;
@@ -113,9 +113,20 @@ export function SettingsTab({
         <p className="muted" style={{ marginBottom: "12px" }}>
           This memory is included in all context packs to guide external agents and avoid unwanted token usage on unnecessary directories or patterns.
         </p>
-        <pre className="code-panel compact" style={{ whiteSpace: "pre-wrap", maxHeight: "250px", marginBottom: "14px", overflowY: "auto" }}>
-          {projectMemory || "No guidelines or memory logs saved yet."}
-        </pre>
+        <div className="code-panel compact" style={{ maxHeight: "250px", marginBottom: "14px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+          {(!projectMemory || projectMemory.length === 0) ? (
+            <div className="muted">No guidelines or memory logs saved yet.</div>
+          ) : (
+            projectMemory.map((entry: any) => (
+              <div key={entry.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "8px" }}>
+                <div style={{ fontSize: "0.8em", color: "var(--muted)", marginBottom: "4px" }}>
+                  {new Date(entry.timestamp).toLocaleString()} <span className="pill neutral" style={{marginLeft: "8px"}}>{entry.category}</span>
+                </div>
+                <div style={{ whiteSpace: "pre-wrap" }}>{entry.content}</div>
+              </div>
+            ))
+          )}
+        </div>
         <div className="form-stack">
           <label>
             Add memory log / rule (e.g. "Do not change public API flags", "Always keep code modifications inside src-tauri/")

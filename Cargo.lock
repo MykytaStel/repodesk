@@ -2627,6 +2627,7 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "shlex 2.0.1",

@@ -83,8 +83,8 @@ pub fn routing_decision(
 }
 
 #[tauri::command]
-pub fn routing_snapshot() -> repodesk_core::routing::RoutingSnapshot {
-    build_routing_snapshot()
+pub fn routing_snapshot(economy_mode: Option<String>) -> repodesk_core::routing::RoutingSnapshot {
+    build_routing_snapshot(economy_mode)
 }
 
 #[tauri::command]

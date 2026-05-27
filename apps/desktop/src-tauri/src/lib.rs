@@ -269,7 +269,9 @@ pub fn run() {
             commands::get_system_peripherals,
             commands::get_system_modules,
             commands::get_event_journal,
-            commands::log_ui_event
+            commands::log_ui_event,
+            commands::memory_add,
+            commands::memory_list
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

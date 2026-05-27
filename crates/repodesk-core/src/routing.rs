@@ -92,6 +92,8 @@ pub struct RouteRequest {
     pub git_dirty: Option<bool>,
     #[serde(default)]
     pub max_cost_units: Option<f64>,
+    #[serde(default)]
+    pub economy_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,6 +304,18 @@ fn score_capacity(
             if matches!(request.task_kind, TaskKind::Compress | TaskKind::Summarize) {
                 score += 25;
             }
+            
+            // Economy mode adjustments
+            if let Some(mode) = &request.economy_mode {
+                if mode == "economy" {
+                    score += 100; // Heavily prefer local
+                } else if mode == "balanced" && matches!(request.task_kind, TaskKind::Compress | TaskKind::Summarize | TaskKind::Review) {
+                    score += 50; // Prefer local for drafts/checks
+                } else if mode == "quality" {
+                    score -= 50; // Heavily penalize local
+                }
+            }
+            
             if request.task_kind == TaskKind::Review {
                 score += 5;
                 warnings.push("Local review is best for cheap first-pass feedback.".to_string());
@@ -338,6 +352,19 @@ fn score_capacity(
             ) {
                 score += 15;
             }
+            
+            // Economy mode adjustments
+            if let Some(mode) = &request.economy_mode {
+                if mode == "economy" {
+                    score -= 100; // Penalize paid heavily
+                    warnings.push("Economy mode prefers local models over paid ones.".to_string());
+                } else if mode == "balanced" && matches!(request.task_kind, TaskKind::Plan | TaskKind::Debug | TaskKind::Patch) {
+                    score += 50; // Prefer paid for hard tasks
+                } else if mode == "quality" {
+                    score += 100; // Prefer paid always
+                }
+            }
+            
             if total_tokens > budget.paid_agent_hard_limit {
                 blockers.push(format!(
                     "Estimated context exceeds paid hard limit: {} > {} tokens.",

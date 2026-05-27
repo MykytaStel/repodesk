@@ -357,8 +357,8 @@ export async function routingDecision(input: RouteRequest): Promise<RouteDecisio
   return invoke("routing_decision", { input });
 }
 
-export async function routingSnapshot(): Promise<RoutingSnapshot> {
-  return invoke("routing_snapshot");
+export async function routingSnapshot(economyMode?: string): Promise<RoutingSnapshot> {
+  return invoke("routing_snapshot", { economyMode });
 }
 
 
@@ -408,12 +408,21 @@ export async function getProjectFileTokenEstimates(): Promise<FileTokenEstimate[
   return invoke("get_project_file_token_estimates");
 }
 
-export async function readProjectMemory(): Promise<string> {
-  return invoke("read_project_memory");
+export type MemoryEntry = {
+  id: number;
+  timestamp: string;
+  project: string;
+  content: string;
+  category: string;
+  tags: string[];
+};
+
+export async function readProjectMemory(project: string): Promise<MemoryEntry[]> {
+  return invoke("memory_list", { project });
 }
 
-export async function appendProjectMemory(content: string): Promise<void> {
-  return invoke("append_project_memory", { content });
+export async function appendProjectMemory(project: string, content: string, category: string = "general", tags: string[] = []): Promise<MemoryEntry> {
+  return invoke("memory_add", { project, content, category, tags });
 }
 
 export type ApiEnvDiagnostic = {

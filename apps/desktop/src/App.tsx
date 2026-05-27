@@ -16,6 +16,7 @@ import { StartupSkeleton } from "./components/SharedComponents";
 type TabId = "dashboard" | "workflow" | "tokens" | "models" | "code" | "git" | "settings" | "system" | "debug";
 type DebugStatus = "success" | "error";
 type ToastKind = "success" | "error" | "warning" | "info";
+type Theme = "dark" | "light" | "system";
 type UnknownRecord = Record<string, unknown>;
 
 interface DebugEvent {
@@ -451,6 +452,8 @@ async function copyToClipboard(text: string) {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>(() => (window.localStorage.getItem("repodesk.activeTab") as TabId) || "dashboard");
+  const [theme, setTheme] = useState<Theme>(() => (window.localStorage.getItem("repodesk.theme") as Theme) || "system");
+  const [economyMode, setEconomyMode] = useState(() => window.localStorage.getItem("repodesk.economyMode") || "balanced");
   const [booting, setBooting] = useState(true);
   const [busyLabel, setBusyLabel] = useState("");
   const [snapshot, setSnapshot] = useState<unknown>(null);
@@ -478,7 +481,7 @@ export default function App() {
   const [artifactContent, setArtifactContent] = useState("");
   const [projectConfig, setProjectConfig] = useState<any>(null);
   const [fileTokenEstimates, setFileTokenEstimates] = useState<any[]>([]);
-  const [projectMemory, setProjectMemory] = useState("");
+  const [projectMemory, setProjectMemory] = useState<any[]>([]);
   const [memoryAppendInput, setMemoryAppendInput] = useState("");
   const [setupForm, setSetupForm] = useState<SetupFormState>({
     projectName: "repodesk",
@@ -513,6 +516,35 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem("repodesk.activeTab", activeTab);
   }, [activeTab]);
+
+  useEffect(() => {
+    window.localStorage.setItem("repodesk.economyMode", economyMode);
+    // Refresh routing decision when economy mode changes
+    if (!booting) void refreshAll("Updating economy routing");
+  }, [economyMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("repodesk.theme", theme);
+    const root = document.documentElement;
+    
+    const updateTheme = () => {
+      if (theme === "system") {
+        const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+        root.setAttribute("data-theme", isDark ? "dark" : "light");
+      } else {
+        root.setAttribute("data-theme", theme);
+      }
+    };
+
+    updateTheme();
+    
+    if (theme === "system") {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      const handler = () => updateTheme();
+      mediaQuery.addEventListener("change", handler);
+      return () => mediaQuery.removeEventListener("change", handler);
+    }
+  }, [theme]);
 
   useEffect(() => {
     void refreshAll("Starting RepoDesk");
@@ -594,12 +626,12 @@ export default function App() {
         optionalCommand<unknown>("code_workbench_snapshot"),
         optionalCommand<TokenUsageSnapshot>("token_usage_snapshot"),
         optionalCommand<ModelHealthSnapshot>("model_health_snapshot"),
-        optionalCommand<RoutingSnapshot>("routing_snapshot"),
+        invoke<RoutingSnapshot>("routing_snapshot", { economyMode }).catch(() => null),
         optionalCommand<ProviderSettings>("provider_settings"),
         optionalCommand<unknown>("db_status"),
         optionalCommand<any>("get_active_project_config"),
         optionalCommand<any[]>("get_project_file_token_estimates"),
-        optionalCommand<string>("read_project_memory"),
+        optionalCommand<any[]>("memory_list", { project: projectName }),
         optionalCommand<ApiEnvDiagnostic>("get_api_env_diagnostic"),
         optionalCommand<AgentsConfig>("get_system_agents"),
         optionalCommand<CapabilitiesConfig>("get_system_capabilities"),
@@ -649,8 +681,9 @@ export default function App() {
   }
 
   async function loadProjectMemory() {
+    if (!projectName || projectName === "No active project" || projectName === "-") return;
     try {
-      const result = await callCommand<string>("read_project_memory");
+      const result = await callCommand<any[]>("memory_list", { project: projectName });
       setProjectMemory(result);
     } catch (error) {
       pushToast("error", "Memory load failed", errorToMessage(error));
@@ -695,13 +728,22 @@ export default function App() {
   }
 
   async function handleAppendMemory() {
+    if (!projectName || projectName === "No active project" || projectName === "-") {
+      pushToast("warning", "No project", "Connect a project before adding memory.");
+      return;
+    }
     if (!memoryAppendInput.trim()) return;
     setBusyLabel("Saving memory log");
     try {
-      await callCommand("append_project_memory", { content: memoryAppendInput.trim() });
+      await callCommand("memory_add", { 
+        project: projectName, 
+        content: memoryAppendInput.trim(), 
+        category: "general", 
+        tags: [] 
+      });
       setMemoryAppendInput("");
       pushToast("success", "Memory log saved");
-      const result = await callCommand<string>("read_project_memory");
+      const result = await callCommand<any[]>("memory_list", { project: projectName });
       setProjectMemory(result);
       await refreshAll("Refreshing workspace after memory update");
     } catch (error) {
@@ -888,6 +930,8 @@ export default function App() {
           doNextSafeStep={doNextSafeStep}
           refreshAll={refreshAll}
           setActiveTab={setActiveTab}
+          economyMode={economyMode}
+          setEconomyMode={setEconomyMode}
         />
       );
     }
@@ -1018,14 +1062,24 @@ export default function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">RD</div><div><strong>RepoDesk</strong><span>AI control cockpit</span></div></div>
-        <nav className="nav-list">
-          {tabs.map((tab) => (
-            <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
-              <strong>{tab.title}</strong><span>{tab.subtitle}</span>
-            </button>
-          ))}
-        </nav>
+        <div>
+          <div className="brand"><div className="brand-mark">RD</div><div><strong>RepoDesk</strong><span>AI control cockpit</span></div></div>
+          <nav className="nav-list">
+            {tabs.map((tab) => (
+              <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
+                <strong>{tab.title}</strong><span>{tab.subtitle}</span>
+              </button>
+            ))}
+          </nav>
+        </div>
+        <div className="sidebar-footer">
+          <p className="eyebrow" style={{marginBottom: 8}}>Theme</p>
+          <div className="theme-switcher">
+            <button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}>Light</button>
+            <button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}>Dark</button>
+            <button className={theme === "system" ? "active" : ""} onClick={() => setTheme("system")}>Auto</button>
+          </div>
+        </div>
       </aside>
 
       <main className="main-area">

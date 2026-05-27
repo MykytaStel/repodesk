@@ -8,6 +8,7 @@ pub mod capabilities;
 pub mod checks;
 pub mod context;
 pub mod cost;
+pub mod db;
 pub mod desktop;
 pub mod errors;
 pub mod event_journal;

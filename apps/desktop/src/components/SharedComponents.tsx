@@ -88,14 +88,31 @@ export function MetricCard({ label, value, detail, tone = "neutral" }: { label: 
   return <section className={`panel metric ${tone}`}><p className="eyebrow">{label}</p><h2>{value}</h2><p className="muted">{detail}</p></section>;
 }
 
-export function UsageRows({ rows, empty }: { rows: TokenUsageItem[]; empty: string }) {
+export function UsageRows({ rows, empty }: { rows: any[]; empty: string }) {
   if (rows.length === 0) return <p className="muted">{empty}</p>;
-  return <div className="table-list">{rows.map((row) => (
-    <div className="table-row" key={`${row.provider}-${row.model ?? "all"}`}>
-      <div><strong>{row.model ? `${row.provider} / ${row.model}` : row.provider}</strong><span>{formatCost(row.estimated_cost_units, row.currency_label)}</span></div>
-      <div className="row-meta"><span>in {formatNumber(row.input_tokens)}</span><span>out {formatNumber(row.output_tokens)}</span><strong>{formatNumber(row.total_tokens)}</strong></div>
-    </div>
-  ))}</div>;
+  
+  const maxTokens = Math.max(...rows.map(r => r.total_tokens || 0), 1);
+  
+  return <div className="table-list">{rows.map((row) => {
+    const percent = ((row.total_tokens || 0) / maxTokens) * 100;
+    return (
+      <div className="table-row flex-col items-start gap-sm" key={`${row.provider}-${row.model ?? "all"}`} style={{ paddingBottom: 16 }}>
+        <div className="w-full flex justify-between items-center">
+          <div><strong>{row.model ? `${row.provider} / ${row.model}` : row.provider}</strong><span>{formatCost(row.estimated_cost_units, row.currency_label)}</span></div>
+          <div className="row-meta"><span>in {formatNumber(row.input_tokens)}</span><span>out {formatNumber(row.output_tokens)}</span><strong>{formatNumber(row.total_tokens)}</strong></div>
+        </div>
+        <div className="w-full" style={{ height: 6, backgroundColor: "rgba(166, 180, 198, 0.1)", borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ 
+            width: `${percent}%`, 
+            height: "100%", 
+            background: "linear-gradient(90deg, var(--accent), var(--accent-2))",
+            borderRadius: 3,
+            transition: "width 0.5s ease-out"
+          }} />
+        </div>
+      </div>
+    );
+  })}</div>;
 }
 
 export function RouteList({ title, items, tone }: { title: string; items: string[]; tone: "ok" | "warn" | "danger" }) {

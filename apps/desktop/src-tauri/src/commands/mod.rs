@@ -12,12 +12,14 @@ pub mod journal;
 pub mod project;
 pub mod settings;
 pub mod task;
+pub mod memory;
 
 pub use diagnostic::*;
 pub use journal::*;
 pub use project::*;
 pub use settings::*;
 pub use task::*;
+pub use memory::*;
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1322,10 +1324,11 @@ fn default_output_tokens(kind: &repodesk_core::routing::TaskKind) -> usize {
     }
 }
 
-fn build_default_route_request(
+pub(crate) fn build_default_route_request(
     workflow: &ProductWorkflowState,
     tokens: &TokenUsageSnapshot,
     git: &repodesk_core::git_workspace::GitWorkspaceSnapshot,
+    economy_mode: Option<String>,
 ) -> repodesk_core::routing::RouteRequest {
     let task_kind = infer_route_task_kind(workflow, git);
     let estimated_input_tokens = artifact_token_estimate(tokens, "smart_context")
@@ -1353,6 +1356,7 @@ fn build_default_route_request(
         guard_allowed: Some(workflow.safety_ok),
         git_dirty: Some(git.is_dirty),
         max_cost_units: None,
+        economy_mode,
     }
 }
 
@@ -1622,7 +1626,7 @@ pub(crate) fn build_routing_decision_for_request(
     repodesk_core::routing::route_request(input, &capacities, &budget_config)
 }
 
-pub(crate) fn build_routing_snapshot() -> repodesk_core::routing::RoutingSnapshot {
+pub(crate) fn build_routing_snapshot(economy_mode: Option<String>) -> repodesk_core::routing::RoutingSnapshot {
     let settings = store::read_provider_settings().unwrap_or_default();
     let tokens = build_token_usage_snapshot();
     let model_health = model_health_from_settings(&settings);
@@ -1630,7 +1634,7 @@ pub(crate) fn build_routing_snapshot() -> repodesk_core::routing::RoutingSnapsho
     let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
     let budget_config = repodesk_core::budget::load_budget_config().unwrap_or_default();
     let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
-    let request = build_default_route_request(&workflow, &tokens, &git);
+    let request = build_default_route_request(&workflow, &tokens, &git, economy_mode);
     let capacities = build_routing_capacities(
         &settings,
         &model_health,

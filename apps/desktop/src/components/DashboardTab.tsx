@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { formatNumber, formatCost, statusTone, MetricCard, RouteList } from "./SharedComponents";
+import { EconomyControl, EconomyMode } from "./EconomyControl";
 
 interface DashboardTabProps {
   tokens: any;
@@ -20,6 +21,8 @@ interface DashboardTabProps {
   doNextSafeStep: () => void;
   refreshAll: (label: string) => void;
   setActiveTab: (tab: any) => void;
+  economyMode: string;
+  setEconomyMode: (mode: any) => void;
 }
 
 export function DashboardTab({
@@ -41,6 +44,8 @@ export function DashboardTab({
   doNextSafeStep,
   refreshAll,
   setActiveTab,
+  economyMode,
+  setEconomyMode,
 }: DashboardTabProps) {
   const readiness = [
     { label: "Project", ok: hasProject, target: "settings" },
@@ -121,6 +126,8 @@ export function DashboardTab({
       </section>
 
       {renderBestRoutePanel()}
+      
+      <EconomyControl mode={economyMode} setMode={setEconomyMode} isBusy={isBusy} />
 
       <section className="panel">
         <div className="panel-title-row">

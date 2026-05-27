@@ -113,6 +113,9 @@ pub enum RepoDeskError {
 
     #[error("JSON serialization/deserialization error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Database error: {0}")]
+    Database(String),
 }
 
 impl RepoDeskError {
@@ -141,7 +144,7 @@ impl RepoDeskError {
                 ErrorCategory::ResourceLimit
             }
 
-            Self::Io(_) | Self::TomlDe(_) | Self::TomlSer(_) | Self::Json(_) => {
+            Self::Io(_) | Self::TomlDe(_) | Self::TomlSer(_) | Self::Json(_) | Self::Database(_) => {
                 ErrorCategory::Internal
             }
         }
