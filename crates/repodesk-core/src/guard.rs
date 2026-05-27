@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
-use crate::budget::{evaluate_context, load_budget_config, BudgetLevel};
+use crate::usage::budget::{evaluate_context, load_budget_config, BudgetLevel};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::errors::RepoDeskResult;
 use crate::init;
 use crate::paths::RepoDeskPaths;
-use crate::token_ledger::TokenReport;
+use crate::usage::token_ledger::TokenReport;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CostConfig {

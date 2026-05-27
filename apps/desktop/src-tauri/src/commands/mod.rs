@@ -669,8 +669,8 @@ fn token_artifact_estimate(kind: &str) -> TokenArtifactEstimate {
 }
 
 pub(crate) fn build_token_usage_snapshot() -> TokenUsageSnapshot {
-    let report = repodesk_core::token_ledger::read_token_report().unwrap_or(
-        repodesk_core::token_ledger::TokenReport {
+    let report = repodesk_core::usage::token_ledger::read_token_report().unwrap_or(
+        repodesk_core::usage::token_ledger::TokenReport {
             entries_count: 0,
             total_input_tokens: 0,
             total_output_tokens: 0,
@@ -680,8 +680,8 @@ pub(crate) fn build_token_usage_snapshot() -> TokenUsageSnapshot {
             by_model: Vec::new(),
         },
     );
-    let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
-    let budget_config = repodesk_core::budget::load_budget_config().unwrap_or_default();
+    let cost_config = repodesk_core::usage::cost::load_cost_config().unwrap_or_default();
+    let budget_config = repodesk_core::usage::budget::load_budget_config().unwrap_or_default();
 
     let daily_hard_limit = budget_config.daily_hard_limit;
     let today_total_tokens = report.today_tokens;
@@ -692,7 +692,7 @@ pub(crate) fn build_token_usage_snapshot() -> TokenUsageSnapshot {
         .by_agent
         .iter()
         .map(|item| {
-            let estimate = repodesk_core::cost::estimate_agent_cost(
+            let estimate = repodesk_core::usage::cost::estimate_agent_cost(
                 &cost_config,
                 &item.agent,
                 item.input_tokens,
@@ -715,7 +715,7 @@ pub(crate) fn build_token_usage_snapshot() -> TokenUsageSnapshot {
         .by_model
         .iter()
         .map(|item| {
-            let estimate = repodesk_core::cost::estimate_agent_cost(
+            let estimate = repodesk_core::usage::cost::estimate_agent_cost(
                 &cost_config,
                 &item.agent,
                 item.input_tokens,
@@ -1365,7 +1365,7 @@ fn cost_agent_for_provider(provider: &str) -> &str {
 }
 
 fn estimated_route_cost_units(
-    cost_config: &repodesk_core::cost::CostConfig,
+    cost_config: &repodesk_core::usage::cost::CostConfig,
     provider: &str,
     kind: &repodesk_core::routing::ProviderKind,
     request: &repodesk_core::routing::RouteRequest,
@@ -1379,7 +1379,7 @@ fn estimated_route_cost_units(
         return 0.0;
     }
 
-    repodesk_core::cost::estimate_agent_cost(
+    repodesk_core::usage::cost::estimate_agent_cost(
         cost_config,
         cost_agent_for_provider(provider),
         request.estimated_input_tokens,
@@ -1394,8 +1394,8 @@ fn route_capacity_from_health(
     kind: repodesk_core::routing::ProviderKind,
     preferred_model: Option<String>,
     daily_remaining_tokens: usize,
-    cost_config: &repodesk_core::cost::CostConfig,
-    budget_config: &repodesk_core::budget::BudgetConfig,
+    cost_config: &repodesk_core::usage::cost::CostConfig,
+    budget_config: &repodesk_core::usage::budget::BudgetConfig,
     request: &repodesk_core::routing::RouteRequest,
     paid_agents_allowed: bool,
 ) -> repodesk_core::routing::ProviderCapacity {
@@ -1435,8 +1435,8 @@ fn manual_route_capacity(
     model: Option<&str>,
     quota_status: repodesk_core::routing::QuotaStatus,
     daily_remaining_tokens: usize,
-    cost_config: &repodesk_core::cost::CostConfig,
-    budget_config: &repodesk_core::budget::BudgetConfig,
+    cost_config: &repodesk_core::usage::cost::CostConfig,
+    budget_config: &repodesk_core::usage::budget::BudgetConfig,
     request: &repodesk_core::routing::RouteRequest,
     paid_agents_allowed: bool,
 ) -> repodesk_core::routing::ProviderCapacity {
@@ -1466,8 +1466,8 @@ fn build_routing_capacities(
     settings: &store::ProviderSettings,
     model_health: &ModelHealthSnapshot,
     tokens: &TokenUsageSnapshot,
-    budget_config: &repodesk_core::budget::BudgetConfig,
-    cost_config: &repodesk_core::cost::CostConfig,
+    budget_config: &repodesk_core::usage::budget::BudgetConfig,
+    cost_config: &repodesk_core::usage::cost::CostConfig,
     request: &repodesk_core::routing::RouteRequest,
 ) -> Vec<repodesk_core::routing::ProviderCapacity> {
     let mut capacities = Vec::new();
@@ -1609,8 +1609,8 @@ pub(crate) fn build_routing_decision_for_request(
     let settings = store::read_provider_settings().unwrap_or_default();
     let tokens = build_token_usage_snapshot();
     let model_health = model_health_from_settings(&settings);
-    let budget_config = repodesk_core::budget::load_budget_config().unwrap_or_default();
-    let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
+    let budget_config = repodesk_core::usage::budget::load_budget_config().unwrap_or_default();
+    let cost_config = repodesk_core::usage::cost::load_cost_config().unwrap_or_default();
     let capacities = build_routing_capacities(
         &settings,
         &model_health,
@@ -1631,8 +1631,8 @@ pub(crate) fn build_routing_snapshot(
     let model_health = model_health_from_settings(&settings);
     let workflow = build_product_workflow_state();
     let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
-    let budget_config = repodesk_core::budget::load_budget_config().unwrap_or_default();
-    let cost_config = repodesk_core::cost::load_cost_config().unwrap_or_default();
+    let budget_config = repodesk_core::usage::budget::load_budget_config().unwrap_or_default();
+    let cost_config = repodesk_core::usage::cost::load_cost_config().unwrap_or_default();
     let request = build_default_route_request(&workflow, &tokens, &git, economy_mode);
     let capacities = build_routing_capacities(
         &settings,

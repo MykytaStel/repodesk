@@ -48,7 +48,7 @@ pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, 
         return Err("Token counts are too large".into());
     }
 
-    repodesk_core::token_ledger::log_token_event(repodesk_core::token_ledger::LogTokenInput {
+    repodesk_core::usage::token_ledger::log_token_event(repodesk_core::usage::token_ledger::LogTokenInput {
         agent: input.provider.trim().to_ascii_lowercase(),
         model: input
             .model

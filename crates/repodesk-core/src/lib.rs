@@ -3,11 +3,11 @@ pub mod agents;
 pub mod ai_adapters;
 pub mod ai_discovery;
 pub mod brain;
-pub mod budget;
+
 pub mod capabilities;
 pub mod checks;
 pub mod context;
-pub mod cost;
+
 pub mod db;
 pub mod desktop;
 pub mod errors;
@@ -25,7 +25,7 @@ pub mod safety;
 pub mod security;
 pub mod sessions;
 pub mod tasks;
-pub mod token_ledger;
+pub mod usage;
 pub mod tokens;
 pub mod ui_snapshot;
 pub mod workflow;

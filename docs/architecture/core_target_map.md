@@ -58,10 +58,16 @@ crates/repodesk-core/src/
     repo_map.rs
     project_token_check.rs
 
+  routing/
+    mod.rs
+    routing.rs
+
   agents/
     mod.rs
     agents.rs
-    routing.rs
+
+  usage/
+    mod.rs
     budget.rs
     cost.rs
     token_ledger.rs
