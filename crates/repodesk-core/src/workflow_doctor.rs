@@ -1,4 +1,3 @@
-use crate::usage::budget::{evaluate_context, load_budget_config};
 use crate::checks::last_checks;
 use crate::errors::RepoDeskResult;
 use crate::guard::{preflight, GuardLevel};
@@ -6,6 +5,7 @@ use crate::projects::get_active_project;
 use crate::security::{audit_security_policy, SecurityLevel};
 use crate::tasks::show_active_task;
 use crate::tokens::estimate_file;
+use crate::usage::budget::{evaluate_context, load_budget_config};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DoctorLevel {

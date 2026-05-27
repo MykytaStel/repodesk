@@ -25,9 +25,9 @@ pub mod safety;
 pub mod security;
 pub mod sessions;
 pub mod tasks;
-pub mod usage;
 pub mod tokens;
 pub mod ui_snapshot;
+pub mod usage;
 pub mod workflow;
 pub mod workflow_doctor;
 

@@ -24,20 +24,12 @@ use repodesk_core::ai_adapters::{
     format_ai_status, recommend_ai_adapters,
 };
 use repodesk_core::brain::{format_brain_status, read_brain_status};
-use repodesk_core::usage::budget::{
-    ensure_budget_config, evaluate_context, format_budget_config, format_verdict,
-    load_budget_config,
-};
 use repodesk_core::capabilities::{
     audit_capabilities, ensure_capabilities_config, format_capabilities, format_capability_audit,
     format_capability_recommendations, recommend_capabilities,
 };
 use repodesk_core::checks::{last_checks, run_checks, summarize_last_checks};
 use repodesk_core::context::{build_context, estimate_active_context};
-use repodesk_core::usage::cost::{
-    ensure_cost_config, estimate_agent_cost, format_cost_config, format_cost_estimate,
-    format_cost_report,
-};
 use repodesk_core::desktop::{
     desktop_events_spec, desktop_plan, desktop_scaffold_hint, tauri_bridge_spec,
 };
@@ -69,11 +61,19 @@ use repodesk_core::sessions::{
     begin_session, end_session, format_session_record, show_active_session,
 };
 use repodesk_core::tasks::{create_task, show_active_task, task_status, NewTaskInput};
+use repodesk_core::tokens::{estimate_file, format_estimate};
+use repodesk_core::ui_snapshot::{read_ui_snapshot_json, ui_routes_text, write_ui_snapshot};
+use repodesk_core::usage::budget::{
+    ensure_budget_config, evaluate_context, format_budget_config, format_verdict,
+    load_budget_config,
+};
+use repodesk_core::usage::cost::{
+    ensure_cost_config, estimate_agent_cost, format_cost_config, format_cost_estimate,
+    format_cost_report,
+};
 use repodesk_core::usage::token_ledger::{
     format_token_report, log_token_event, read_token_report, LogTokenInput,
 };
-use repodesk_core::tokens::{estimate_file, format_estimate};
-use repodesk_core::ui_snapshot::{read_ui_snapshot_json, ui_routes_text, write_ui_snapshot};
 use repodesk_core::workflow::{create_workflow_plan, read_or_create_workflow_plan, workflow_next};
 use repodesk_core::workflow_doctor::{diagnose_workflow, format_workflow_doctor_report};
 

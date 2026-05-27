@@ -3,12 +3,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::usage::budget::{evaluate_context, format_verdict, load_budget_config};
 use crate::context::estimate_active_context;
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
 use crate::tokens::format_estimate;
+use crate::usage::budget::{evaluate_context, format_verdict, load_budget_config};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum PromptKind {
