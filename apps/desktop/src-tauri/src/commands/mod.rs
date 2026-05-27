@@ -9,18 +9,17 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod diagnostic;
 pub mod journal;
+pub mod memory;
 pub mod project;
 pub mod settings;
 pub mod task;
-pub mod memory;
 
 pub use diagnostic::*;
 pub use journal::*;
+pub use memory::*;
 pub use project::*;
 pub use settings::*;
 pub use task::*;
-pub use memory::*;
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandResult {
@@ -686,11 +685,7 @@ pub(crate) fn build_token_usage_snapshot() -> TokenUsageSnapshot {
 
     let daily_hard_limit = budget_config.daily_hard_limit;
     let today_total_tokens = report.today_tokens;
-    let remaining_daily_tokens = if today_total_tokens >= daily_hard_limit {
-        0
-    } else {
-        daily_hard_limit - today_total_tokens
-    };
+    let remaining_daily_tokens = daily_hard_limit.saturating_sub(today_total_tokens);
 
     let mut estimated_total_units = 0.0;
     let by_provider = report
@@ -1393,6 +1388,7 @@ fn estimated_route_cost_units(
     .estimated_cost_units
 }
 
+#[allow(clippy::too_many_arguments)]
 fn route_capacity_from_health(
     provider: &ProviderHealth,
     kind: repodesk_core::routing::ProviderKind,
@@ -1429,6 +1425,7 @@ fn route_capacity_from_health(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn manual_route_capacity(
     provider: &str,
     label: &str,
@@ -1626,7 +1623,9 @@ pub(crate) fn build_routing_decision_for_request(
     repodesk_core::routing::route_request(input, &capacities, &budget_config)
 }
 
-pub(crate) fn build_routing_snapshot(economy_mode: Option<String>) -> repodesk_core::routing::RoutingSnapshot {
+pub(crate) fn build_routing_snapshot(
+    economy_mode: Option<String>,
+) -> repodesk_core::routing::RoutingSnapshot {
     let settings = store::read_provider_settings().unwrap_or_default();
     let tokens = build_token_usage_snapshot();
     let model_health = model_health_from_settings(&settings);

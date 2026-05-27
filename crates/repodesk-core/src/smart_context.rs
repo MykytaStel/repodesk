@@ -63,7 +63,8 @@ pub async fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
         ));
     }
 
-    let task_markdown = fs::read_to_string(&task.task_markdown_file).await
+    let task_markdown = fs::read_to_string(&task.task_markdown_file)
+        .await
         .unwrap_or_else(|_| "Task markdown is not available.".to_string());
 
     let context = format!(

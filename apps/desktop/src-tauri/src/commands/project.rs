@@ -15,7 +15,7 @@ pub fn project_list() -> CommandResult {
 #[tauri::command]
 pub fn project_use(name: String) -> Result<CommandResult, String> {
     validate_short_id("Project name", &name)?;
-    Ok(run_cli(&vec![
+    Ok(run_cli(&[
         "project".into(),
         "use".into(),
         name.trim().into(),
@@ -75,12 +75,12 @@ pub async fn get_project_file_token_estimates(
 }
 
 #[tauri::command]
-pub fn read_project_memory() -> Result<String, String> {
+pub fn legacy_read_project_memory_file() -> Result<String, String> {
     repodesk_core::knowledge::read_knowledge("memory").map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn append_project_memory(content: String) -> Result<(), String> {
+pub fn legacy_import_project_memory_file(content: String) -> Result<(), String> {
     if content.trim().is_empty() {
         return Err("Memory content cannot be empty".to_string());
     }

@@ -204,7 +204,8 @@ fn has_dangerous_delete(tokens: &[String]) -> bool {
         if token == "rm" || token == "find" {
             is_rm = true;
         }
-        if token == "-rf" || token == "-r" || token == "-R" || token == "-delete" || token == "-fr" {
+        if token == "-rf" || token == "-r" || token == "-R" || token == "-delete" || token == "-fr"
+        {
             has_rf = true;
         }
         if token == "/" || token == "." || token == "/*" || token == ".*" || token == ".." {
@@ -253,7 +254,15 @@ fn has_remote_shell_pipe(tokens: &[String]) -> bool {
 }
 
 fn has_secret_access(tokens: &[String]) -> bool {
-    let bad_patterns = [".env", ".pem", ".key", "credentials", "api_key", "secret", "token"];
+    let bad_patterns = [
+        ".env",
+        ".pem",
+        ".key",
+        "credentials",
+        "api_key",
+        "secret",
+        "token",
+    ];
     for token in tokens {
         let lower = token.to_lowercase();
         if bad_patterns.iter().any(|bad| lower.contains(bad)) {
@@ -265,10 +274,18 @@ fn has_secret_access(tokens: &[String]) -> bool {
 
 fn has_publish_or_force_push(tokens: &[String]) -> bool {
     if tokens.len() >= 2 {
-        if tokens[0] == "git" && tokens[1] == "push" && tokens.iter().any(|t| t == "--force" || t == "-f") {
+        if tokens[0] == "git"
+            && tokens[1] == "push"
+            && tokens.iter().any(|t| t == "--force" || t == "-f")
+        {
             return true;
         }
-        if (tokens[0] == "npm" || tokens[0] == "cargo" || tokens[0] == "pnpm" || tokens[0] == "yarn") && tokens[1] == "publish" {
+        if (tokens[0] == "npm"
+            || tokens[0] == "cargo"
+            || tokens[0] == "pnpm"
+            || tokens[0] == "yarn")
+            && tokens[1] == "publish"
+        {
             return true;
         }
     }
@@ -280,27 +297,40 @@ fn is_safe_check(tokens: &[String], _command: &str) -> bool {
         return false;
     }
 
-    if tokens[0] == "cargo" {
-        if tokens.len() >= 2 && (tokens[1] == "check" || tokens[1] == "fmt" || tokens[1] == "test" || tokens[1] == "clippy") {
-            return true;
-        }
+    if tokens[0] == "cargo"
+        && tokens.len() >= 2
+        && (tokens[1] == "check"
+            || tokens[1] == "fmt"
+            || tokens[1] == "test"
+            || tokens[1] == "clippy")
+    {
+        return true;
     }
 
     if tokens[0] == "pnpm" || tokens[0] == "npm" || tokens[0] == "yarn" {
-        if tokens.len() >= 2 && (tokens[1] == "test" || tokens[1] == "build" || tokens[1] == "typecheck") {
+        if tokens.len() >= 2
+            && (tokens[1] == "test" || tokens[1] == "build" || tokens[1] == "typecheck")
+        {
             return true;
         }
-        if tokens.len() >= 3 && tokens[1] == "run" && (tokens[2] == "test" || tokens[2] == "build" || tokens[2] == "typecheck") {
+        if tokens.len() >= 3
+            && tokens[1] == "run"
+            && (tokens[2] == "test" || tokens[2] == "build" || tokens[2] == "typecheck")
+        {
             return true;
         }
     }
 
-    if tokens[0] == "git" {
-        if tokens.len() >= 2 && (tokens[1] == "status" || tokens[1] == "diff" || tokens[1] == "log" || tokens[1] == "branch") {
-            return true;
-        }
+    if tokens[0] == "git"
+        && tokens.len() >= 2
+        && (tokens[1] == "status"
+            || tokens[1] == "diff"
+            || tokens[1] == "log"
+            || tokens[1] == "branch")
+    {
+        return true;
     }
-    
+
     if tokens[0] == "repodesk" {
         return true;
     }

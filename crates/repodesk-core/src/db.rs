@@ -1,10 +1,10 @@
-use std::path::PathBuf;
-use rusqlite::{Connection, Result as SqlResult};
 use chrono::{DateTime, Utc};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-use crate::paths::RepoDeskPaths;
 use crate::errors::RepoDeskResult;
+use crate::paths::RepoDeskPaths;
 
 pub fn get_db_path() -> RepoDeskResult<PathBuf> {
     let paths = RepoDeskPaths::resolve()?;
@@ -28,7 +28,10 @@ pub fn init_db() -> RepoDeskResult<Connection> {
             metadata TEXT NOT NULL
         )",
         [],
-    ).map_err(|e| crate::errors::RepoDeskError::Database(format!("Failed to create events table: {}", e)))?;
+    )
+    .map_err(|e| {
+        crate::errors::RepoDeskError::Database(format!("Failed to create events table: {}", e))
+    })?;
 
     conn.execute(
         "CREATE TABLE IF NOT EXISTS memory (
@@ -40,7 +43,10 @@ pub fn init_db() -> RepoDeskResult<Connection> {
             tags TEXT NOT NULL
         )",
         [],
-    ).map_err(|e| crate::errors::RepoDeskError::Database(format!("Failed to create memory table: {}", e)))?;
+    )
+    .map_err(|e| {
+        crate::errors::RepoDeskError::Database(format!("Failed to create memory table: {}", e))
+    })?;
 
     Ok(conn)
 }
@@ -55,18 +61,23 @@ pub struct MemoryEntry {
     pub tags: Vec<String>,
 }
 
-pub fn add_memory(project: &str, content: &str, category: &str, tags: &[String]) -> RepoDeskResult<MemoryEntry> {
+pub fn add_memory(
+    project: &str,
+    content: &str,
+    category: &str,
+    tags: &[String],
+) -> RepoDeskResult<MemoryEntry> {
     let conn = init_db()?;
     let timestamp = Utc::now();
     let tags_json = serde_json::to_string(tags).unwrap_or_else(|_| "[]".to_string());
-    
+
     conn.execute(
         "INSERT INTO memory (timestamp, project, content, category, tags) VALUES (?1, ?2, ?3, ?4, ?5)",
         (timestamp.to_rfc3339(), project, content, category, &tags_json),
     ).map_err(|e| crate::errors::RepoDeskError::Database(format!("Failed to insert memory: {}", e)))?;
-    
+
     let id = conn.last_insert_rowid();
-    
+
     Ok(MemoryEntry {
         id,
         timestamp,
@@ -81,28 +92,30 @@ pub fn list_memory(project: &str) -> RepoDeskResult<Vec<MemoryEntry>> {
     let conn = init_db()?;
     let mut stmt = conn.prepare("SELECT id, timestamp, project, content, category, tags FROM memory WHERE project = ? ORDER BY timestamp DESC")
         .map_err(|e| crate::errors::RepoDeskError::Database(format!("DB prep error: {}", e)))?;
-        
-    let rows = stmt.query_map([project], |row: &rusqlite::Row| {
-        let timestamp_str: String = row.get(1)?;
-        let tags_str: String = row.get(5)?;
-        let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
-        
-        Ok(MemoryEntry {
-            id: row.get(0)?,
-            timestamp: DateTime::parse_from_rfc3339(&timestamp_str).map(|d| d.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-            project: row.get(2)?,
-            content: row.get(3)?,
-            category: row.get(4)?,
-            tags,
+
+    let rows = stmt
+        .query_map([project], |row: &rusqlite::Row| {
+            let timestamp_str: String = row.get(1)?;
+            let tags_str: String = row.get(5)?;
+            let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+
+            Ok(MemoryEntry {
+                id: row.get(0)?,
+                timestamp: DateTime::parse_from_rfc3339(&timestamp_str)
+                    .map(|d| d.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
+                project: row.get(2)?,
+                content: row.get(3)?,
+                category: row.get(4)?,
+                tags,
+            })
         })
-    }).map_err(|e| crate::errors::RepoDeskError::Database(format!("DB query error: {}", e)))?;
+        .map_err(|e| crate::errors::RepoDeskError::Database(format!("DB query error: {}", e)))?;
 
     let mut entries = Vec::new();
-    for row in rows {
-        if let Ok(entry) = row {
-            entries.push(entry);
-        }
+    for entry in rows.flatten() {
+        entries.push(entry);
     }
-    
+
     Ok(entries)
 }
