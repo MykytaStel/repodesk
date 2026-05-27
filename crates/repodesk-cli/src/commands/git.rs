@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use repodesk_core::command_sandbox::{format_sandbox_plan, plan_command, sandbox_policy};
 use repodesk_core::dashboard::{dashboard_json, dashboard_summary};
 use repodesk_core::git_audit::{backup_plan, git_audit};
-use repodesk_core::receipts::{add_receipt, read_receipts, AddReceiptInput};
+use repodesk_core::persistence::receipts::{add_receipt, read_receipts, AddReceiptInput};
 use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
 use repodesk_core::runtime::{
     format_provider_status, format_runtime_providers, format_runtime_route, provider_status,
@@ -33,11 +33,13 @@ use repodesk_core::context::{build_context, estimate_active_context};
 use repodesk_core::desktop::{
     desktop_events_spec, desktop_plan, desktop_scaffold_hint, tauri_bridge_spec,
 };
-use repodesk_core::event_journal::{format_events, log_event, read_events, LogEventInput};
 use repodesk_core::guard::{format_guard_result, preflight};
 use repodesk_core::init;
 use repodesk_core::judge::{format_judgement, judge_agent};
-use repodesk_core::knowledge::{append_knowledge, format_knowledge, read_knowledge};
+use repodesk_core::persistence::event_journal::{
+    format_events, log_event, read_events, LogEventInput,
+};
+// use repodesk_core::knowledge::{append_knowledge, format_knowledge, read_knowledge};
 use repodesk_core::module_registry::{
     audit_modules, format_module_audit, format_module_recommendations, format_modules,
     list_modules, recommend_modules,

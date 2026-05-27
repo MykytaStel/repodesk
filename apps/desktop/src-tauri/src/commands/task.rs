@@ -75,17 +75,19 @@ pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, St
     let started_at_ms = now_ms();
 
     // — Journal: action started —
-    let _ = repodesk_core::event_journal::log_event(repodesk_core::event_journal::LogEventInput {
-        module_name: "desktop::action".into(),
-        level: "ui".into(),
-        message: format!("Action started: {}", action.title),
-        metadata: vec![
-            ("action_id".into(), action.id.clone()),
-            ("category".into(), action.category.clone()),
-            ("risk".into(), action.risk.clone()),
-            ("command".into(), action.command_preview.clone()),
-        ],
-    });
+    let _ = repodesk_core::persistence::event_journal::log_event(
+        repodesk_core::persistence::event_journal::LogEventInput {
+            module_name: "desktop::action".into(),
+            level: "ui".into(),
+            message: format!("Action started: {}", action.title),
+            metadata: vec![
+                ("action_id".into(), action.id.clone()),
+                ("category".into(), action.category.clone()),
+                ("risk".into(), action.risk.clone()),
+                ("command".into(), action.command_preview.clone()),
+            ],
+        },
+    );
 
     let result = run_cli(&action.args);
     let finished_at_ms = now_ms();
@@ -101,16 +103,18 @@ pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, St
             action.title, duration_ms, result.exit_code
         )
     };
-    let _ = repodesk_core::event_journal::log_event(repodesk_core::event_journal::LogEventInput {
-        module_name: "desktop::action".into(),
-        level: journal_level.into(),
-        message: journal_msg,
-        metadata: vec![
-            ("action_id".into(), action.id.clone()),
-            ("ok".into(), result.ok.to_string()),
-            ("duration_ms".into(), duration_ms.to_string()),
-        ],
-    });
+    let _ = repodesk_core::persistence::event_journal::log_event(
+        repodesk_core::persistence::event_journal::LogEventInput {
+            module_name: "desktop::action".into(),
+            level: journal_level.into(),
+            message: journal_msg,
+            metadata: vec![
+                ("action_id".into(), action.id.clone()),
+                ("ok".into(), result.ok.to_string()),
+                ("duration_ms".into(), duration_ms.to_string()),
+            ],
+        },
+    );
 
     let action_result = ActionRunResult {
         id: action.id,

@@ -5,7 +5,7 @@
 //! provider switches, etc.).  The UI calls these commands to display an audit
 //! trail and to record its own user-initiated events.
 
-use repodesk_core::event_journal::{
+use repodesk_core::persistence::event_journal::{
     journal_snapshot, log_event, EventJournalSnapshot, LogEventInput,
 };
 use serde::{Deserialize, Serialize};

@@ -73,18 +73,3 @@ pub async fn get_project_file_token_estimates(
     repodesk_core::project_token_check::get_project_file_token_estimates()
         .map_err(|e| e.to_string())
 }
-
-#[tauri::command]
-pub fn legacy_read_project_memory_file() -> Result<String, String> {
-    repodesk_core::knowledge::read_knowledge("memory").map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub fn legacy_import_project_memory_file(content: String) -> Result<(), String> {
-    if content.trim().is_empty() {
-        return Err("Memory content cannot be empty".to_string());
-    }
-    repodesk_core::knowledge::append_knowledge("memory", &content)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
