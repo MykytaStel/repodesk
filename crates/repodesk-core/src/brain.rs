@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::budget::{evaluate_context, load_budget_config};
+use crate::usage::budget::{evaluate_context, load_budget_config};
 use crate::errors::RepoDeskResult;
 use crate::guard::preflight;
 use crate::projects::get_active_project;

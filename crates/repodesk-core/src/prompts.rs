@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::budget::{evaluate_context, format_verdict, load_budget_config};
+use crate::usage::budget::{evaluate_context, format_verdict, load_budget_config};
 use crate::context::estimate_active_context;
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
@@ -92,7 +92,7 @@ fn build_codex_prompt(
     task_title: &str,
     context: &str,
     estimate: &crate::tokens::TokenEstimate,
-    budget_verdict: &crate::budget::BudgetVerdict,
+    budget_verdict: &crate::usage::budget::BudgetVerdict,
 ) -> String {
     format!(
         r#"# Codex Patch Prompt
@@ -177,7 +177,7 @@ fn build_chatgpt_prompt(
     task_title: &str,
     context: &str,
     estimate: &crate::tokens::TokenEstimate,
-    budget_verdict: &crate::budget::BudgetVerdict,
+    budget_verdict: &crate::usage::budget::BudgetVerdict,
 ) -> String {
     format!(
         r#"# ChatGPT Architecture Prompt
@@ -246,7 +246,7 @@ fn build_review_prompt(
     task_title: &str,
     context: &str,
     estimate: &crate::tokens::TokenEstimate,
-    budget_verdict: &crate::budget::BudgetVerdict,
+    budget_verdict: &crate::usage::budget::BudgetVerdict,
 ) -> String {
     format!(
         r#"# Independent Review Prompt

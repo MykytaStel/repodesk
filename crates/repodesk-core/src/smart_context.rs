@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tokio::fs;
 
-use crate::budget::{evaluate_context, format_verdict, load_budget_config};
+use crate::usage::budget::{evaluate_context, format_verdict, load_budget_config};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::repo_map::{build_repo_map, format_repo_map};

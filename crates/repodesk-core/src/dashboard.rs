@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::budget::{evaluate_context, load_budget_config};
+use crate::usage::budget::{evaluate_context, load_budget_config};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::repo_map::build_repo_map;

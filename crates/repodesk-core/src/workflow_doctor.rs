@@ -1,4 +1,4 @@
-use crate::budget::{evaluate_context, load_budget_config};
+use crate::usage::budget::{evaluate_context, load_budget_config};
 use crate::checks::last_checks;
 use crate::errors::RepoDeskResult;
 use crate::guard::{preflight, GuardLevel};

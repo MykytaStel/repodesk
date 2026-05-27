@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::budget::BudgetConfig;
+use crate::usage::budget::BudgetConfig;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
