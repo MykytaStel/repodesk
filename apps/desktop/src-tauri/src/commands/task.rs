@@ -8,11 +8,7 @@ use std::fs;
 #[tauri::command]
 pub fn task_new(title: String) -> Result<CommandResult, String> {
     validate_text("Task title", &title, 180)?;
-    Ok(run_cli(&vec![
-        "task".into(),
-        "new".into(),
-        title.trim().into(),
-    ]))
+    Ok(run_cli(&["task".into(), "new".into(), title.trim().into()]))
 }
 
 #[tauri::command]
@@ -98,10 +94,7 @@ pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, St
     // — Journal: action completed (success or failure) —
     let journal_level = if result.ok { "info" } else { "error" };
     let journal_msg = if result.ok {
-        format!(
-            "Action completed: {} ({}ms)",
-            action.title, duration_ms
-        )
+        format!("Action completed: {} ({}ms)", action.title, duration_ms)
     } else {
         format!(
             "Action failed: {} ({}ms) — exit {:?}",
@@ -132,7 +125,6 @@ pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, St
     save_action_history(&action_result);
     Ok(action_result)
 }
-
 
 #[tauri::command]
 pub async fn run_next_safe_step() -> Result<ActionRunResult, String> {

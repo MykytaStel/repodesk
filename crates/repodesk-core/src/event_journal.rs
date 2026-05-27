@@ -211,4 +211,3 @@ pub fn format_events(events: &[EventEntry]) -> String {
 
     output
 }
-

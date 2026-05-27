@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::budget::BudgetConfig;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskKind {
     Compress,
@@ -12,13 +12,8 @@ pub enum TaskKind {
     Patch,
     Debug,
     Checks,
+    #[default]
     Manual,
-}
-
-impl Default for TaskKind {
-    fn default() -> Self {
-        Self::Manual
-    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -31,19 +26,14 @@ pub enum ProviderKind {
     Manual,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum QuotaStatus {
+    #[default]
     Unknown,
     Available,
     Limited,
     Empty,
-}
-
-impl Default for QuotaStatus {
-    fn default() -> Self {
-        Self::Unknown
-    }
 }
 
 impl QuotaStatus {
@@ -189,10 +179,7 @@ pub fn route_request(
         .or_else(|| {
             candidates
                 .iter()
-                .filter(|candidate| {
-                    !candidate.blocked && candidate.provider != recommended.provider
-                })
-                .next()
+                .find(|candidate| !candidate.blocked && candidate.provider != recommended.provider)
         });
 
     let non_manual_available = candidates.iter().any(|candidate| {
@@ -239,7 +226,7 @@ pub fn route_request(
     };
 
     RouteDecision {
-        task_kind: request.task_kind.clone(),
+        task_kind: request.task_kind,
         recommended_provider: recommended.provider.clone(),
         recommended_model: recommended.model.clone(),
         fallback_provider: fallback.map(|candidate| candidate.provider.clone()),
@@ -304,18 +291,23 @@ fn score_capacity(
             if matches!(request.task_kind, TaskKind::Compress | TaskKind::Summarize) {
                 score += 25;
             }
-            
+
             // Economy mode adjustments
             if let Some(mode) = &request.economy_mode {
                 if mode == "economy" {
                     score += 100; // Heavily prefer local
-                } else if mode == "balanced" && matches!(request.task_kind, TaskKind::Compress | TaskKind::Summarize | TaskKind::Review) {
+                } else if mode == "balanced"
+                    && matches!(
+                        request.task_kind,
+                        TaskKind::Compress | TaskKind::Summarize | TaskKind::Review
+                    )
+                {
                     score += 50; // Prefer local for drafts/checks
                 } else if mode == "quality" {
                     score -= 50; // Heavily penalize local
                 }
             }
-            
+
             if request.task_kind == TaskKind::Review {
                 score += 5;
                 warnings.push("Local review is best for cheap first-pass feedback.".to_string());
@@ -352,19 +344,24 @@ fn score_capacity(
             ) {
                 score += 15;
             }
-            
+
             // Economy mode adjustments
             if let Some(mode) = &request.economy_mode {
                 if mode == "economy" {
                     score -= 100; // Penalize paid heavily
                     warnings.push("Economy mode prefers local models over paid ones.".to_string());
-                } else if mode == "balanced" && matches!(request.task_kind, TaskKind::Plan | TaskKind::Debug | TaskKind::Patch) {
+                } else if mode == "balanced"
+                    && matches!(
+                        request.task_kind,
+                        TaskKind::Plan | TaskKind::Debug | TaskKind::Patch
+                    )
+                {
                     score += 50; // Prefer paid for hard tasks
                 } else if mode == "quality" {
                     score += 100; // Prefer paid always
                 }
             }
-            
+
             if total_tokens > budget.paid_agent_hard_limit {
                 blockers.push(format!(
                     "Estimated context exceeds paid hard limit: {} > {} tokens.",
@@ -521,7 +518,7 @@ fn score_capacity(
     RouteCandidate {
         provider: capacity.provider.clone(),
         label: capacity.label.clone(),
-        kind: capacity.kind.clone(),
+        kind: capacity.kind,
         model: preferred_model(capacity),
         score,
         blocked: !blockers.is_empty(),
@@ -608,6 +605,7 @@ mod tests {
             guard_allowed: Some(true),
             git_dirty: Some(false),
             max_cost_units: Some(10.0),
+            economy_mode: None,
         }
     }
 

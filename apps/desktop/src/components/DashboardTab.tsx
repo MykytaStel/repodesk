@@ -21,7 +21,7 @@ interface DashboardTabProps {
   doNextSafeStep: () => void;
   refreshAll: (label: string) => void;
   setActiveTab: (tab: any) => void;
-  economyMode: string;
+  economyMode: EconomyMode;
   setEconomyMode: (mode: any) => void;
 }
 

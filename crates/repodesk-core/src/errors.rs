@@ -20,7 +20,6 @@ pub enum ErrorCategory {
 #[derive(Debug, Error)]
 pub enum RepoDeskError {
     // ── Configuration / project state ──────────────────────────────────────
-
     #[error("could not determine a valid RepoDesk home directory")]
     HomeDirectoryNotFound,
 
@@ -46,7 +45,6 @@ pub enum RepoDeskError {
     ProjectPathDoesNotExist(String),
 
     // ── Security / sandbox ─────────────────────────────────────────────────
-
     /// Raised when the command sandbox blocks a shell command that is not on
     /// the allow-list or matches a known-dangerous pattern.
     #[error("sandbox blocked command: {command} — reason: {reason}")]
@@ -58,7 +56,6 @@ pub enum RepoDeskError {
     SecretDetected { location: String, detail: String },
 
     // ── Provider / routing ─────────────────────────────────────────────────
-
     /// The provider returned HTTP 429 or similar; use `retry_after_secs` if
     /// it was provided in the response headers.
     #[error("provider '{provider}' is rate-limited (retry after {retry_after_secs}s)")]
@@ -76,14 +73,12 @@ pub enum RepoDeskError {
     RoutingFailed { detail: String },
 
     // ── Workflow / execution ───────────────────────────────────────────────
-
     /// A long-running workflow step has been safely paused. The frontend
     /// should offer the user a "Resume" button.
     #[error("workflow paused at step '{step}': {reason}")]
     WorkflowPaused { step: String, reason: String },
 
     // ── Resource limits ────────────────────────────────────────────────────
-
     /// The context payload would exceed the model's context window.
     #[error("context too large: {estimated_tokens} tokens exceeds the {limit_tokens} limit for '{model}'")]
     ContextTooLarge {
@@ -93,7 +88,9 @@ pub enum RepoDeskError {
     },
 
     /// The operation would exceed the configured daily token budget.
-    #[error("budget exceeded: estimated {estimated_cost} {currency} but budget is {budget} {currency}")]
+    #[error(
+        "budget exceeded: estimated {estimated_cost} {currency} but budget is {budget} {currency}"
+    )]
     BudgetExceeded {
         estimated_cost: String,
         budget: String,
@@ -101,7 +98,6 @@ pub enum RepoDeskError {
     },
 
     // ── Low-level I/O and serialization ────────────────────────────────────
-
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -144,9 +140,11 @@ impl RepoDeskError {
                 ErrorCategory::ResourceLimit
             }
 
-            Self::Io(_) | Self::TomlDe(_) | Self::TomlSer(_) | Self::Json(_) | Self::Database(_) => {
-                ErrorCategory::Internal
-            }
+            Self::Io(_)
+            | Self::TomlDe(_)
+            | Self::TomlSer(_)
+            | Self::Json(_)
+            | Self::Database(_) => ErrorCategory::Internal,
         }
     }
 
@@ -158,4 +156,3 @@ impl RepoDeskError {
         )
     }
 }
-

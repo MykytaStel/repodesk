@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { DashboardTab } from "./components/DashboardTab";
+import { EconomyMode } from "./components/EconomyControl";
 import { WorkflowTab } from "./components/WorkflowTab";
 import { TokensTab } from "./components/TokensTab";
 import { ModelsTab } from "./components/ModelsTab";
@@ -453,7 +454,7 @@ async function copyToClipboard(text: string) {
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>(() => (window.localStorage.getItem("repodesk.activeTab") as TabId) || "dashboard");
   const [theme, setTheme] = useState<Theme>(() => (window.localStorage.getItem("repodesk.theme") as Theme) || "system");
-  const [economyMode, setEconomyMode] = useState(() => window.localStorage.getItem("repodesk.economyMode") || "balanced");
+  const [economyMode, setEconomyMode] = useState<EconomyMode>(() => (window.localStorage.getItem("repodesk.economyMode") as EconomyMode) || "balanced");
   const [booting, setBooting] = useState(true);
   const [busyLabel, setBusyLabel] = useState("");
   const [snapshot, setSnapshot] = useState<unknown>(null);

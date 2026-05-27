@@ -4,9 +4,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
+use std::future::Future;
 use std::time::Duration;
 use tokio::time::sleep;
-use std::future::Future;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeProvider {
@@ -270,7 +270,7 @@ pub fn format_runtime_providers(providers: &[RuntimeProvider]) -> String {
             "  recommended for: {}\n",
             provider.recommended_for.join(", ")
         ));
-        output.push_str("\n");
+        output.push('\n');
     }
 
     output
@@ -384,7 +384,7 @@ where
                             continue;
                         }
                     }
-                    
+
                     // If it's not a rate limit error, or we ran out of retries,
                     // we break out of the while loop and try the next fallback provider.
                     break;
