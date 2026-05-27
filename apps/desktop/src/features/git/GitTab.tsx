@@ -1,59 +1,35 @@
 import React from "react";
-import { asRecord, getString, stringifyPreview, MetricCard, FileGroup } from "../../shared/ui/SharedComponents";
+import { statusTone, FileGroup, stringifyPreview } from "../../shared/ui/SharedComponents";
+import { useGit } from "./useGit";
+import { listFromRecord } from "../../shared/utils/helpers";
 
-interface GitTabProps {
-  git: any;
-  dirty: boolean;
-  dirtyCount: number;
-  branch: string;
-  isBusy: boolean;
-  refreshAll: (label: string) => void;
-}
-
-function listFromRecord(source: unknown, keys: string[]): string[] {
-  const record = asRecord(source);
-  for (const key of keys) {
-    const value = record[key];
-    if (Array.isArray(value)) {
-      return value.map((item) => {
-        if (typeof item === "string") return item;
-        const itemRecord = asRecord(item);
-        return getString(itemRecord, "path", getString(itemRecord, "name", stringifyPreview(item, 160)));
-      });
-    }
-  }
-  return [];
-}
-
-export function GitTab({
-  git,
-  dirty,
-  dirtyCount,
-  branch,
-  isBusy,
-  refreshAll,
-}: GitTabProps) {
-  const staged = listFromRecord(git, ["staged", "staged_files"]);
-  const unstaged = listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"]);
-  const untracked = listFromRecord(git, ["untracked", "untracked_files"]);
-  const diffStat = getString(git, "diff_stat", getString(git, "stat", "No diff stat available"));
+export function GitTab() {
+  const { git, branch, dirty, dirtyCount, isLoading: isBusy } = useGit();
+  const refreshAll = () => {};
 
   return (
-    <div className="content-grid">
-      <section className="hero-panel wide-panel">
-        <p className="eyebrow">Git</p>
-        <h1>{dirty ? `${dirtyCount} pending changes` : "Workspace clean"}</h1>
-        <p className="lead">Read-only workspace view. RepoDesk does not stage, commit, reset, or push from this screen.</p>
-        <button className="ghost-button" onClick={() => void refreshAll("Refreshing Git")} disabled={isBusy}>Refresh Git</button>
-      </section>
-      <MetricCard label="Branch" value={branch} detail={`Last commit: ${getString(git, "last_commit", "-")}`} />
-      <MetricCard label="Staged" value={String(staged.length)} detail="Ready for commit" />
-      <MetricCard label="Unstaged" value={String(unstaged.length)} detail="Modified but not staged" tone={unstaged.length ? "warn" : "ok"} />
-      <MetricCard label="Untracked" value={String(untracked.length)} detail="New files" tone={untracked.length ? "warn" : "ok"} />
-      <section className="panel wide-panel"><p className="eyebrow">Diff stat</p><pre className="code-panel">{diffStat}</pre></section>
-      <FileGroup title="Staged files" files={staged} />
-      <FileGroup title="Unstaged files" files={unstaged} />
-      <FileGroup title="Untracked files" files={untracked} />
+    <div className="content-grid two-column-grid">
+      <div className="left-column">
+        <section className="hero-panel">
+          <p className="eyebrow">Workspace Git</p>
+          <h1>Branch {branch}</h1>
+          <p className="lead">{dirty ? `${dirtyCount} uncommitted changes.` : "Working tree clean."} Commit via terminal before using agents.</p>
+          <div className="button-row">
+            <button className="primary-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh workspace</button>
+          </div>
+        </section>
+        <section className="panel">
+          <FileGroup title="Staged" files={listFromRecord(git, ["staged", "staged_files"])} />
+          <FileGroup title="Unstaged" files={listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"])} />
+          <FileGroup title="Untracked" files={listFromRecord(git, ["untracked", "untracked_files"])} />
+        </section>
+      </div>
+      <div className="right-column">
+        <section className="panel fill-height preview-panel">
+          <div className="panel-title-row"><p className="eyebrow">Git diagnostic</p></div>
+          <pre className="code-panel scrollable">{git ? stringifyPreview(git, 4000) : "No Git data loaded."}</pre>
+        </section>
+      </div>
     </div>
   );
 }

@@ -2,51 +2,36 @@ import React, { useState } from "react";
 import { formatNumber, formatCost, statusTone, MetricCard, RouteList } from "../../shared/ui/SharedComponents";
 import { EconomyControl, EconomyMode } from "../routing/EconomyControl";
 
+import { useTokens } from "../tokens/useTokens";
+import { useRouting } from "../routing/useRouting";
+import { useModels } from "../models/useModels";
+import { useGit } from "../git/useGit";
+import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { useWorkflow } from "../workflow/useWorkflow";
+import { useQueryClient } from "@tanstack/react-query";
+
 interface DashboardTabProps {
-  tokens: any;
-  routing: any;
-  models: any;
-  git: any;
-  hasProject: boolean;
-  hasTask: boolean;
-  projectName: string;
-  taskTitle: string;
-  branch: string;
-  dirty: boolean;
-  dirtyCount: number;
-  isBusy: boolean;
-  nextAction: any;
-  workingProviders: number;
-  modelCount: number;
-  doNextSafeStep: () => void;
-  refreshAll: (label: string) => void;
   setActiveTab: (tab: any) => void;
   economyMode: EconomyMode;
   setEconomyMode: (mode: any) => void;
 }
 
 export function DashboardTab({
-  tokens,
-  routing,
-  models,
-  git,
-  hasProject,
-  hasTask,
-  projectName,
-  taskTitle,
-  branch,
-  dirty,
-  dirtyCount,
-  isBusy,
-  nextAction,
-  workingProviders,
-  modelCount,
-  doNextSafeStep,
-  refreshAll,
   setActiveTab,
   economyMode,
   setEconomyMode,
 }: DashboardTabProps) {
+  const queryClient = useQueryClient();
+  const { tokens, isLoading: isLoadingTokens } = useTokens();
+  const { routing, isLoading: isLoadingRouting } = useRouting(economyMode);
+  const { models, workingProviders, modelCount, isLoading: isLoadingModels } = useModels();
+  const { git, branch, dirty, dirtyCount, isLoading: isLoadingGit } = useGit();
+  const { projectName, taskTitle, hasProject, hasTask, isLoading: isLoadingWorkspace } = useWorkspace();
+  const { nextAction, doNextSafeStep, isRunning } = useWorkflow();
+
+  const isBusy = isRunning || isLoadingTokens || isLoadingRouting || isLoadingModels || isLoadingGit || isLoadingWorkspace;
+
+  const refreshAll = () => queryClient.invalidateQueries();
   const readiness = [
     { label: "Project", ok: hasProject, target: "settings" },
     { label: "Task", ok: hasTask, target: "settings" },
@@ -121,7 +106,7 @@ export function DashboardTab({
         <p className="lead">Use one screen to see the active project, next safe step, token usage, reachable models, and Git state before handing context to an agent.</p>
         <div className="button-row">
           <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy}>{nextAction ? `Do next: ${nextAction.label}` : "Do next safe step"}</button>
-          <button className="ghost-button" onClick={() => void refreshAll("Manual refresh")} disabled={isBusy}>Refresh</button>
+          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh</button>
         </div>
       </section>
 
