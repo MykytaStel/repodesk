@@ -1,5 +1,5 @@
 import React from "react";
-import { TokenUsageItem } from "../api";
+import { TokenUsageItem } from "../api/api";
 
 type UnknownRecord = Record<string, unknown>;
 

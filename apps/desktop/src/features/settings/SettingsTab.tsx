@@ -1,5 +1,5 @@
 import React from "react";
-import { statusTone, getString, Toggle } from "./SharedComponents";
+import { statusTone, getString, Toggle } from "../../shared/ui/SharedComponents";
 
 interface SettingsTabProps {
   isBusy: boolean;

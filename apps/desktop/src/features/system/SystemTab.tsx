@@ -1,5 +1,5 @@
 import React from "react";
-import { statusTone, formatNumber } from "./SharedComponents";
+import { statusTone, formatNumber } from "../../shared/ui/SharedComponents";
 
 interface SystemTabProps {
   systemCapabilities: any;

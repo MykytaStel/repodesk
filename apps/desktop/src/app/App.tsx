@@ -1,17 +1,17 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
-import { DashboardTab } from "./components/DashboardTab";
-import { EconomyMode } from "./components/EconomyControl";
-import { WorkflowTab } from "./components/WorkflowTab";
-import { TokensTab } from "./components/TokensTab";
-import { ModelsTab } from "./components/ModelsTab";
-import { CodeTab } from "./components/CodeTab";
-import { GitTab } from "./components/GitTab";
-import { SettingsTab } from "./components/SettingsTab";
-import { SystemTab } from "./components/SystemTab";
-import { DebugTab } from "./components/DebugTab";
-import { StartupSkeleton } from "./components/SharedComponents";
+import { DashboardTab } from "../features/dashboard/DashboardTab";
+import { EconomyMode } from "../features/routing/EconomyControl";
+import { WorkflowTab } from "../features/workflow/WorkflowTab";
+import { TokensTab } from "../features/tokens/TokensTab";
+import { ModelsTab } from "../features/models/ModelsTab";
+import { CodeTab } from "../features/code/CodeTab";
+import { GitTab } from "../features/git/GitTab";
+import { SettingsTab } from "../features/settings/SettingsTab";
+import { SystemTab } from "../features/system/SystemTab";
+import { DebugTab } from "../features/debug/DebugTab";
+import { StartupSkeleton } from "../shared/ui/SharedComponents";
 
 
 type TabId = "dashboard" | "workflow" | "tokens" | "models" | "code" | "git" | "settings" | "system" | "debug";
