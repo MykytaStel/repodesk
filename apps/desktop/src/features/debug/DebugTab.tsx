@@ -1,5 +1,5 @@
 import React from "react";
-import { stringifyPreview } from "./SharedComponents";
+import { stringifyPreview } from "../../shared/ui/SharedComponents";
 
 interface DebugTabProps {
   debugEvents: any[];

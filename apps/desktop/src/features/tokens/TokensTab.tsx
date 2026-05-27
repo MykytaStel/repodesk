@@ -1,5 +1,5 @@
 import React from "react";
-import { formatNumber, formatCost, statusTone, MetricCard, UsageRows } from "./SharedComponents";
+import { formatNumber, formatCost, statusTone, MetricCard, UsageRows } from "../../shared/ui/SharedComponents";
 
 interface TokensTabProps {
   tokens: any;

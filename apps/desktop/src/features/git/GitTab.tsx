@@ -1,5 +1,5 @@
 import React from "react";
-import { asRecord, getString, stringifyPreview, MetricCard, FileGroup } from "./SharedComponents";
+import { asRecord, getString, stringifyPreview, MetricCard, FileGroup } from "../../shared/ui/SharedComponents";
 
 interface GitTabProps {
   git: any;

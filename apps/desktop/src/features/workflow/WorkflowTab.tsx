@@ -1,5 +1,5 @@
 import React from "react";
-import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "./SharedComponents";
+import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
 
 interface WorkflowTabProps {
   workflow: any;

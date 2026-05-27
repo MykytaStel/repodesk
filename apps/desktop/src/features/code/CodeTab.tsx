@@ -1,5 +1,5 @@
 import React from "react";
-import { asArray, asRecord, getString, getValue, formatNumber, copyToClipboard } from "./SharedComponents";
+import { asArray, asRecord, getString, getValue, formatNumber, copyToClipboard } from "../../shared/ui/SharedComponents";
 
 interface CodeTabProps {
   codeWorkbench: any;

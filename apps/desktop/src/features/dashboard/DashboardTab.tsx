@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { formatNumber, formatCost, statusTone, MetricCard, RouteList } from "./SharedComponents";
-import { EconomyControl, EconomyMode } from "./EconomyControl";
+import { formatNumber, formatCost, statusTone, MetricCard, RouteList } from "../../shared/ui/SharedComponents";
+import { EconomyControl, EconomyMode } from "../routing/EconomyControl";
 
 interface DashboardTabProps {
   tokens: any;
