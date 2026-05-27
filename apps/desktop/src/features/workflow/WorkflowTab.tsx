@@ -1,29 +1,21 @@
 import React from "react";
 import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
+import { useWorkflow } from "./useWorkflow";
+import { useRouting } from "../routing/useRouting";
+import { useTokens } from "../tokens/useTokens";
 
 interface WorkflowTabProps {
-  workflow: any;
-  routing: any;
-  tokens: any;
-  nextAction: any;
-  isBusy: boolean;
-  dirty: boolean;
-  lastResult: any;
-  doNextSafeStep: () => void;
-  refreshAll: (label: string) => void;
+  economyMode: string;
 }
 
-export function WorkflowTab({
-  workflow,
-  routing,
-  tokens,
-  nextAction,
-  isBusy,
-  dirty,
-  lastResult,
-  doNextSafeStep,
-  refreshAll,
-}: WorkflowTabProps) {
+export function WorkflowTab({ economyMode }: WorkflowTabProps) {
+  const { workflow, nextAction, doNextSafeStep, isRunning } = useWorkflow();
+  const { routing } = useRouting(economyMode);
+  const { tokens } = useTokens();
+  const isBusy = isRunning;
+  const dirty = false; // TODO: from useGit
+  const lastResult = null; // Removed from global
+  const refreshAll = () => {}; // Replaced by React Query auto-refresh
   const steps = asArray(getValue(workflow, "steps"));
 
   function getValue(source: unknown, key: string): unknown {
@@ -89,7 +81,7 @@ export function WorkflowTab({
         <p className="lead">{nextAction?.description ?? "Connect a project and task, then build bounded context before model usage."}</p>
         <div className="button-row">
           <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy}>{nextAction?.label ?? "Do next safe step"}</button>
-          <button className="ghost-button" onClick={() => void refreshAll("Refreshing workflow")} disabled={isBusy}>Refresh workflow</button>
+          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh workflow</button>
         </div>
       </section>
 

@@ -1,33 +1,31 @@
 import React from "react";
+import { useState } from "react";
 import { formatNumber, formatCost, statusTone, MetricCard, UsageRows } from "../../shared/ui/SharedComponents";
+import { useTokens } from "./useTokens";
+import { useWorkspace } from "../../shared/hooks/useWorkspace";
 
-interface TokensTabProps {
-  tokens: any;
-  isBusy: boolean;
-  fileTokenEstimates: any[];
-  projectConfig: any;
-  tokenLogForm: any;
-  setTokenLogForm: (form: any) => void;
-  refreshAll: (label: string) => void;
-  loadTokenEstimates: () => void;
-  handleToggleIgnore: (path: string) => void;
-  handleRemoveIgnoreRule: (rule: string) => void;
-  logTokenUsage: () => void;
-}
+interface TokensTabProps {}
 
-export function TokensTab({
-  tokens,
-  isBusy,
-  fileTokenEstimates,
-  projectConfig,
-  tokenLogForm,
-  setTokenLogForm,
-  refreshAll,
-  loadTokenEstimates,
-  handleToggleIgnore,
-  handleRemoveIgnoreRule,
-  logTokenUsage,
-}: TokensTabProps) {
+export function TokensTab({}: TokensTabProps) {
+  const { tokens, fileTokenEstimates, loadEstimates, logTokenUsage, saveIgnoreRules } = useTokens();
+  const { projectConfig } = useWorkspace();
+  const [tokenLogForm, setTokenLogForm] = useState({ provider: "manual", model: "", inputTokens: "0", outputTokens: "0", category: "general", notes: "" });
+  const isBusy = false;
+  const refreshAll = () => {};
+
+  const handleToggleIgnore = async (path: string) => {
+    if (!projectConfig) return;
+    const current = projectConfig.context_ignore || [];
+    const nextIgnore = current.includes(path) ? current.filter((item: string) => item !== path) : [...current, path];
+    await saveIgnoreRules(nextIgnore);
+  };
+
+  const handleRemoveIgnoreRule = async (rule: string) => {
+    if (!projectConfig) return;
+    const nextIgnore = (projectConfig.context_ignore || []).filter((item: string) => item !== rule);
+    await saveIgnoreRules(nextIgnore);
+  };
+
   const providerRows = tokens?.by_provider ?? [];
   const modelRows = tokens?.by_model ?? [];
 
@@ -38,7 +36,7 @@ export function TokensTab({
         <h1>{formatNumber(tokens?.totals.total_tokens)} total tokens logged.</h1>
         <p className="lead">Track active artifact estimates, manual usage, and planning cost before sending context to local or paid models.</p>
         <div className="button-row">
-          <button className="ghost-button" onClick={() => void refreshAll("Refreshing token usage")} disabled={isBusy}>Refresh tokens</button>
+          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh tokens</button>
         </div>
       </section>
 
@@ -124,7 +122,7 @@ export function TokensTab({
             <p className="eyebrow">Token Leak Advisor</p>
             <h2>Workspace token weights</h2>
           </div>
-          <button className="tiny-button" onClick={() => void loadTokenEstimates()}>Scan files</button>
+          <button className="tiny-button" onClick={() => void loadEstimates()}>Scan files</button>
         </div>
         <p className="text-muted mb-md">
           Identify files consuming the most tokens in your project. Click <strong>Ignore</strong> to exclude them from context packs and prevent token leaks.
@@ -182,7 +180,7 @@ export function TokensTab({
       </section>
 
       <section className="panel wide-panel">
-        <div className="panel-title-row"><div><p className="eyebrow">Manual log</p><h2>Add token usage</h2></div><button className="primary-button" onClick={() => void logTokenUsage()} disabled={isBusy}>Log usage</button></div>
+        <div className="panel-title-row"><div><p className="eyebrow">Manual log</p><h2>Add token usage</h2></div><button className="primary-button" onClick={() => void logTokenUsage(tokenLogForm)} disabled={isBusy}>Log usage</button></div>
         <div className="form-grid">
           <label>Provider<input value={tokenLogForm.provider} onChange={(event) => setTokenLogForm({ ...tokenLogForm, provider: event.target.value })} /></label>
           <label>Model<input value={tokenLogForm.model} onChange={(event) => setTokenLogForm({ ...tokenLogForm, model: event.target.value })} placeholder="optional" /></label>

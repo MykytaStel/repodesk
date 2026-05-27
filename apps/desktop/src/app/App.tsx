@@ -527,7 +527,7 @@ export default function App() {
   useEffect(() => {
     window.localStorage.setItem("repodesk.theme", theme);
     const root = document.documentElement;
-    
+
     const updateTheme = () => {
       if (theme === "system") {
         const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -538,7 +538,7 @@ export default function App() {
     };
 
     updateTheme();
-    
+
     if (theme === "system") {
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
       const handler = () => updateTheme();
@@ -736,11 +736,11 @@ export default function App() {
     if (!memoryAppendInput.trim()) return;
     setBusyLabel("Saving memory log");
     try {
-      await callCommand("memory_add", { 
-        project: projectName, 
-        content: memoryAppendInput.trim(), 
-        category: "general", 
-        tags: [] 
+      await callCommand("memory_add", {
+        project: projectName,
+        content: memoryAppendInput.trim(),
+        category: "general",
+        tags: []
       });
       setMemoryAppendInput("");
       pushToast("success", "Memory log saved");
@@ -912,99 +912,32 @@ export default function App() {
     if (booting) return <StartupSkeleton />;
     if (activeTab === "dashboard") {
       return (
-        <DashboardTab
-          tokens={tokens}
-          routing={routing}
-          models={models}
-          git={git}
-          hasProject={hasProject}
-          hasTask={hasTask}
-          projectName={projectName}
-          taskTitle={taskTitle}
-          branch={branch}
-          dirty={dirty}
-          dirtyCount={dirtyCount}
-          isBusy={isBusy}
-          nextAction={nextAction}
-          workingProviders={workingProviders}
-          modelCount={modelCount}
-          doNextSafeStep={doNextSafeStep}
-          refreshAll={refreshAll}
-          setActiveTab={setActiveTab}
-          economyMode={economyMode}
-          setEconomyMode={setEconomyMode}
-        />
+        <DashboardTab setActiveTab={setActiveTab as any} economyMode={economyMode} setEconomyMode={setEconomyMode} />
       );
     }
     if (activeTab === "workflow") {
       return (
-        <WorkflowTab
-          workflow={workflow}
-          routing={routing}
-          tokens={tokens}
-          nextAction={nextAction}
-          isBusy={isBusy}
-          dirty={dirty}
-          lastResult={lastResult}
-          doNextSafeStep={doNextSafeStep}
-          refreshAll={refreshAll}
-        />
+        <WorkflowTab economyMode={economyMode} />
       );
     }
     if (activeTab === "tokens") {
       return (
-        <TokensTab
-          tokens={tokens}
-          isBusy={isBusy}
-          fileTokenEstimates={fileTokenEstimates}
-          projectConfig={projectConfig}
-          tokenLogForm={tokenLogForm}
-          setTokenLogForm={setTokenLogForm}
-          refreshAll={refreshAll}
-          loadTokenEstimates={loadTokenEstimates}
-          handleToggleIgnore={handleToggleIgnore}
-          handleRemoveIgnoreRule={handleRemoveIgnoreRule}
-          logTokenUsage={logTokenUsage}
-        />
+        <TokensTab />
       );
     }
     if (activeTab === "models") {
       return (
-        <ModelsTab
-          models={models}
-          workingProviders={workingProviders}
-          modelCount={modelCount}
-          isBusy={isBusy}
-          refreshModels={refreshModels}
-          setActiveTab={setActiveTab}
-        />
+        <ModelsTab setActiveTab={setActiveTab as any} />
       );
     }
     if (activeTab === "code") {
       return (
-        <CodeTab
-          codeWorkbench={codeWorkbench}
-          changedFiles={changedFiles}
-          isBusy={isBusy}
-          selectedFile={selectedFile}
-          selectedFileContent={selectedFileContent}
-          runAction={runAction}
-          refreshAll={refreshAll}
-          loadCodeFile={loadCodeFile}
-          pushToast={pushToast}
-        />
+        <CodeTab />
       );
     }
     if (activeTab === "git") {
       return (
-        <GitTab
-          git={git}
-          dirty={dirty}
-          dirtyCount={dirtyCount}
-          branch={branch}
-          isBusy={isBusy}
-          refreshAll={refreshAll}
-        />
+        <GitTab />
       );
     }
     if (activeTab === "settings") {
@@ -1031,14 +964,7 @@ export default function App() {
     }
     if (activeTab === "system") {
       return (
-        <SystemTab
-          systemCapabilities={systemCapabilities}
-          systemPeripherals={systemPeripherals}
-          systemAgents={systemAgents}
-          systemModules={systemModules}
-          isBusy={isBusy}
-          refreshAll={refreshAll}
-        />
+        <SystemTab />
       );
     }
     return (
@@ -1074,7 +1000,7 @@ export default function App() {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <p className="eyebrow" style={{marginBottom: 8}}>Theme</p>
+          <p className="eyebrow" style={{ marginBottom: 8 }}>Theme</p>
           <div className="theme-switcher">
             <button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}>Light</button>
             <button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}>Dark</button>
