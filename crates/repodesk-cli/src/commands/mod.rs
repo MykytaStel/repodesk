@@ -19,7 +19,6 @@ pub mod guard;
 pub mod init;
 pub mod inspect;
 pub mod judge;
-pub mod knowledge;
 pub mod modules;
 pub mod peripherals;
 pub mod project;
@@ -57,7 +56,6 @@ pub fn dispatch(cli: Cli) -> Result<()> {
         Command::Safety { command } => safety::handle_safety_command(command),
         Command::Peripherals { command } => peripherals::handle_peripherals_command(command),
         Command::Workflow { command } => workflow::handle_workflow_command(command),
-        Command::Knowledge { command } => knowledge::handle_knowledge_command(command),
         Command::Events { command } => events::handle_events_command(command),
         Command::Judge { command } => judge::handle_judge_command(command),
         Command::Access { command } => access::handle_access_command(command),

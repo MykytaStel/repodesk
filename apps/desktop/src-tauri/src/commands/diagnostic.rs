@@ -1,6 +1,5 @@
 use super::{
-    action_catalog, build_product_workflow_state, now_ms,
-    run_cli_str, workspace_root,
+    action_catalog, build_product_workflow_state, now_ms, run_cli_str, workspace_root,
     ApiEnvDiagnostic,
 };
 use serde_json::json;
@@ -24,7 +23,6 @@ pub async fn desktop_snapshot() -> serde_json::Value {
         "task_status": run_cli_str(&["task", "status"]),
         "task_show": run_cli_str(&["task", "show"]),
         "events": run_cli_str(&["events", "last", "--limit", "10"]),
-        "knowledge": run_cli_str(&["knowledge", "show", "--kind", "decision"]),
     })
 }
 

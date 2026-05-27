@@ -84,10 +84,6 @@ pub enum Command {
         #[command(subcommand)]
         command: WorkflowCommand,
     },
-    Knowledge {
-        #[command(subcommand)]
-        command: KnowledgeCommand,
-    },
     Events {
         #[command(subcommand)]
         command: EventsCommand,
@@ -302,20 +298,6 @@ pub enum WorkflowCommand {
     Next,
     Plan,
     Show,
-}
-
-#[derive(Debug, Subcommand)]
-pub enum KnowledgeCommand {
-    Show {
-        #[arg(long, default_value = "memory")]
-        kind: String,
-    },
-    Add {
-        #[arg(long, default_value = "memory")]
-        kind: String,
-        #[arg(long)]
-        text: String,
-    },
 }
 
 #[derive(Debug, Subcommand)]
