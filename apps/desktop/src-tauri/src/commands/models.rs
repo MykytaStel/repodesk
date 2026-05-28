@@ -495,8 +495,14 @@ pub(crate) fn build_model_health_snapshot() -> ModelHealthSnapshot {
 }
 
 #[tauri::command]
-pub fn model_health_snapshot() -> ModelHealthSnapshot {
-    build_model_health_snapshot()
+pub async fn model_health_snapshot() -> ModelHealthSnapshot {
+    tauri::async_runtime::spawn_blocking(build_model_health_snapshot)
+        .await
+        .unwrap_or_else(|_| ModelHealthSnapshot {
+            generated_at_ms: now_ms(),
+            providers: vec![],
+            warnings: vec!["Internal async task failure while fetching model health".into()],
+        })
 }
 
 #[tauri::command]

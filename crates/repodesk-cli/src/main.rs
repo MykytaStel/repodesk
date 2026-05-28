@@ -1,13 +1,10 @@
-mod cli;
-mod commands;
-
 use clap::Parser;
-use cli::Cli;
+use repodesk_cli::cli::Cli;
 
 fn main() {
     let cli = Cli::parse();
 
-    if let Err(error) = commands::dispatch(cli) {
+    if let Err(error) = repodesk_cli::commands::dispatch(cli) {
         eprintln!("{error}");
         std::process::exit(1);
     }

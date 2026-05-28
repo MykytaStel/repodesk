@@ -9,9 +9,11 @@ use repodesk_core::dashboard::{dashboard_json, dashboard_summary};
 use repodesk_core::git_audit::{backup_plan, git_audit};
 use repodesk_core::persistence::receipts::{add_receipt, read_receipts, AddReceiptInput};
 use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
+#[allow(deprecated)]
+use repodesk_core::runtime::recommend_runtime;
 use repodesk_core::runtime::{
     format_provider_status, format_runtime_providers, format_runtime_route, provider_status,
-    recommend_runtime, runtime_providers, runtime_snapshot_json,
+    runtime_providers, runtime_snapshot_json,
 };
 use repodesk_core::smart_context::{
     build_smart_context, format_smart_context_result, list_smart_context_sources,
@@ -92,6 +94,7 @@ pub fn handle_runtime_command(command: RuntimeCommand) -> Result<()> {
             print!("{}", format_provider_status(&status));
         }
         RuntimeCommand::Route { need } => {
+            #[allow(deprecated)]
             let route = recommend_runtime(&need);
             print!("{}", format_runtime_route(&route));
         }

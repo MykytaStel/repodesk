@@ -172,6 +172,17 @@ pub fn provider_status(provider: &str) -> RepoDeskResult<RuntimeProviderStatus> 
     }
 }
 
+/// Returns a static route recommendation based on the requested need string.
+///
+/// # Deprecated
+/// This function uses a hard-coded rule table that duplicates and diverges from the
+/// full routing engine in `routing::engine`. New code should call
+/// `routing::route_request` directly with a `RouteRequest` and live `ProviderCapacity`
+/// data so that scores, guardrails, and economy-mode adjustments are applied correctly.
+///
+/// This function is kept only because it is imported by many CLI command files.
+#[deprecated(since = "0.1.0", note = "Use routing::route_request instead")]
+#[allow(deprecated)]
 pub fn recommend_runtime(need: &str) -> RuntimeRoute {
     let normalized = need.to_lowercase();
 

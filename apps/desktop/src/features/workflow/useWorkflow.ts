@@ -34,7 +34,7 @@ export function useWorkflow() {
 
   const doNextSafeStepMutation = useMutation({
     mutationFn: async () => {
-      return await callCommand<unknown>("do_next_safe_step");
+      return await callCommand<unknown>("run_next_safe_step");
     },
     onSuccess: () => {
       queryClient.invalidateQueries();

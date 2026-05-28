@@ -2629,6 +2629,7 @@ dependencies = [
  "async-recursion",
  "chrono",
  "dirs",
+ "indexmap 2.14.0",
  "regex",
  "rusqlite",
  "serde",
@@ -2644,7 +2645,9 @@ name = "repodesk-desktop"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "clap",
  "dirs",
+ "repodesk-cli",
  "repodesk-core",
  "rusqlite",
  "serde",

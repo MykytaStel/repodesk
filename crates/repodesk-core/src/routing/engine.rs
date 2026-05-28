@@ -138,15 +138,13 @@ fn provider_rank(provider: &str) -> usize {
     }
 }
 
+use indexmap::IndexSet;
+
 pub fn unique_strings(items: Vec<String>) -> Vec<String> {
-    let mut output = Vec::new();
-    for item in items {
-        if !output.contains(&item) {
-            output.push(item);
-        }
-    }
-    output
+    let set: IndexSet<String> = items.into_iter().collect();
+    set.into_iter().collect()
 }
+
 
 #[cfg(test)]
 mod tests {

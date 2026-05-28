@@ -56,24 +56,7 @@ mod code_workbench_commands {
             .unwrap_or_else(|error| format!("git command failed: {error}"))
     }
 
-    fn is_blocked_path(path: &str) -> Option<String> {
-        let lower = path.to_lowercase();
-        let blocked_fragments = [".env", "secret", "credential", "private", "token", "id_rsa"];
-        let blocked_suffixes = [
-            ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif",
-            ".webp", ".pdf", ".zip",
-        ];
 
-        if blocked_fragments.iter().any(|item| lower.contains(item)) {
-            return Some("secret-like path blocked".into());
-        }
-
-        if blocked_suffixes.iter().any(|item| lower.ends_with(item)) {
-            return Some("binary or sensitive file type blocked".into());
-        }
-
-        None
-    }
 
     fn parse_status(project_path: &Path) -> Vec<(String, String)> {
         run_git(project_path, &["status", "--porcelain=v1"])
@@ -93,7 +76,7 @@ mod code_workbench_commands {
     }
 
     fn safe_preview(project_path: &Path, relative_path: &str, status: &str) -> CodeFilePreview {
-        if let Some(reason) = is_blocked_path(relative_path) {
+        if let Some(reason) = repodesk_core::security::is_blocked_path(relative_path) {
             return CodeFilePreview {
                 path: relative_path.into(),
                 status: status.into(),
@@ -195,7 +178,7 @@ mod code_workbench_commands {
         {
             return Err("Unsafe relative path".into());
         }
-        if let Some(reason) = is_blocked_path(&relative_path) {
+        if let Some(reason) = repodesk_core::security::is_blocked_path(&relative_path) {
             return Err(reason);
         }
 

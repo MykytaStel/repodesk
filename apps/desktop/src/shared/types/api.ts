@@ -1,4 +1,4 @@
-export type TabId = "dashboard" | "workflow" | "tokens" | "models" | "code" | "git" | "settings" | "system" | "debug";
+export type TabId = "dashboard" | "workflow" | "tokens" | "models" | "code" | "git" | "memory" | "settings" | "system" | "debug";
 export type DebugStatus = "success" | "error";
 export type ToastKind = "success" | "error" | "warning" | "info";
 export type Theme = "dark" | "light" | "system";

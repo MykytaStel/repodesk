@@ -79,7 +79,20 @@ pub(crate) fn artifact_status(kind: &str) -> ArtifactStatus {
     }
 }
 
+use std::sync::Mutex;
+use std::time::Instant;
+
+static WORKFLOW_CACHE: Mutex<Option<(ProductWorkflowState, Instant)>> = Mutex::new(None);
+
 pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
+    if let Ok(cache) = WORKFLOW_CACHE.lock() {
+        if let Some((ref state, ref last_updated)) = *cache {
+            if last_updated.elapsed() < Duration::from_secs(1) {
+                return state.clone();
+            }
+        }
+    }
+
     let generated_at_ms = now_ms();
     let project_info = run_cli_str(&["project", "info"]);
     let task_status = run_cli_str(&["task", "status"]);
@@ -98,7 +111,7 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
         .ok()
         .and_then(|(_, path)| read_file_if_exists(&path, 5000));
 
-    repodesk_core::workflow::build_product_workflow_state(
+    let state = repodesk_core::workflow::build_product_workflow_state(
         generated_at_ms,
         project_info,
         task_status,
@@ -112,5 +125,12 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
         checks_summary,
         token_estimate,
         checks_summary_preview,
-    )
+    );
+
+    if let Ok(mut cache) = WORKFLOW_CACHE.lock() {
+        *cache = Some((state.clone(), Instant::now()));
+    }
+
+    state
 }
+
