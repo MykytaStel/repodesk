@@ -3,7 +3,8 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use chrono::Utc;
 
@@ -160,46 +161,57 @@ Task: `{}`
 }
 
 fn run_shell_command(command: &str, cwd: &Path) -> CheckCommandResult {
+    const TIMEOUT_SECS: u64 = 120;
     let started = Instant::now();
+    let command_owned = command.to_string();
+    let cwd_owned = cwd.to_path_buf();
 
-    let output = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", command])
-            .current_dir(cwd)
-            .output()
-    } else {
-        Command::new("sh")
-            .args(["-c", command])
-            .current_dir(cwd)
-            .output()
-    };
+    let (tx, rx) = mpsc::channel::<std::io::Result<std::process::Output>>();
 
-    let duration_ms = started.elapsed().as_millis();
+    std::thread::spawn(move || {
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(["/C", &command_owned])
+                .current_dir(&cwd_owned)
+                .output()
+        } else {
+            Command::new("sh")
+                .args(["-c", &command_owned])
+                .current_dir(&cwd_owned)
+                .output()
+        };
+        // If the receiver is gone (timeout fired), this send is silently dropped.
+        let _ = tx.send(output);
+    });
 
-    match output {
-        Ok(output) => {
-            let status = if output.status.success() {
-                "passed".to_string()
-            } else {
-                "failed".to_string()
-            };
-
+    match rx.recv_timeout(Duration::from_secs(TIMEOUT_SECS)) {
+        Ok(Ok(output)) => {
+            let duration_ms = started.elapsed().as_millis();
+            let status = if output.status.success() { "passed" } else { "failed" };
             CheckCommandResult {
                 command: command.to_string(),
-                status,
+                status: status.to_string(),
                 exit_code: output.status.code(),
                 duration_ms,
                 stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                 stderr: String::from_utf8_lossy(&output.stderr).to_string(),
             }
         }
-        Err(error) => CheckCommandResult {
+        Ok(Err(error)) => CheckCommandResult {
             command: command.to_string(),
             status: "failed".to_string(),
             exit_code: None,
-            duration_ms,
+            duration_ms: started.elapsed().as_millis(),
             stdout: String::new(),
             stderr: format!("Failed to run command: {error}"),
+        },
+        Err(_) => CheckCommandResult {
+            command: command.to_string(),
+            status: "timeout".to_string(),
+            exit_code: None,
+            duration_ms: started.elapsed().as_millis(),
+            stdout: String::new(),
+            stderr: format!("Command timed out after {TIMEOUT_SECS}s and was abandoned"),
         },
     }
 }

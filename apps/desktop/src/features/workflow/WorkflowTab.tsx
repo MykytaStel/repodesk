@@ -1,21 +1,23 @@
 import React from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
 import { useWorkflow } from "./useWorkflow";
 import { useRouting } from "../routing/useRouting";
 import { useTokens } from "../tokens/useTokens";
+import { useGit } from "../git/useGit";
 
 interface WorkflowTabProps {
   economyMode: string;
 }
 
 export function WorkflowTab({ economyMode }: WorkflowTabProps) {
-  const { workflow, nextAction, doNextSafeStep, isRunning } = useWorkflow();
+  const { workflow, nextAction, doNextSafeStep, isRunning, history } = useWorkflow();
   const { routing } = useRouting(economyMode);
   const { tokens } = useTokens();
+  const { dirty } = useGit();
+  const queryClient = useQueryClient();
   const isBusy = isRunning;
-  const dirty = false; // TODO: from useGit
-  const lastResult = null; // Removed from global
-  const refreshAll = () => {}; // Replaced by React Query auto-refresh
+  const lastResult = ((history[0] as any)?.result as unknown) ?? null;
   const steps = asArray(getValue(workflow, "steps"));
 
   function getValue(source: unknown, key: string): unknown {
@@ -81,7 +83,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
         <p className="lead">{nextAction?.description ?? "Connect a project and task, then build bounded context before model usage."}</p>
         <div className="button-row">
           <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy}>{nextAction?.label ?? "Do next safe step"}</button>
-          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh workflow</button>
+          <button className="ghost-button" onClick={() => void queryClient.invalidateQueries()} disabled={isBusy}>Refresh workflow</button>
         </div>
       </section>
 

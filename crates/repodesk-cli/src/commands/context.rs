@@ -11,7 +11,7 @@ use repodesk_core::persistence::receipts::{add_receipt, read_receipts, AddReceip
 use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
 use repodesk_core::runtime::{
     format_provider_status, format_runtime_providers, format_runtime_route, provider_status,
-    recommend_runtime, runtime_providers, runtime_snapshot_json,
+    runtime_providers, runtime_snapshot_json,
 };
 use repodesk_core::smart_context::{
     build_smart_context, format_smart_context_result, list_smart_context_sources,
