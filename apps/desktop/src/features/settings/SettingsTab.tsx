@@ -1,43 +1,43 @@
-import React from "react";
 import { statusTone, getString, Toggle } from "../../shared/ui/SharedComponents";
 
-interface SettingsTabProps {
-  isBusy: boolean;
-  providerSettings: any;
-  setProviderSettings: (settings: any) => void;
-  setupForm: any;
-  setSetupForm: (form: any) => void;
-  dbState: any;
-  projectMemory: any[];
-  memoryAppendInput: string;
-  setMemoryAppendInput: (val: string) => void;
-  apiEnvDiagnostic: any;
-  saveSettings: () => void;
-  refreshAll: (label: string) => void;
-  addProjectFromSetup: () => void;
-  createTaskFromSetup: () => void;
-  loadProjectMemory: () => void;
-  handleAppendMemory: () => void;
-}
+import { useQueryClient } from "@tanstack/react-query";
+import { useSettings } from "./useSettings";
+import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { queryKeys } from "../../shared/api/queries";
 
-export function SettingsTab({
-  isBusy,
-  providerSettings,
-  setProviderSettings,
-  setupForm,
-  setSetupForm,
-  dbState,
-  projectMemory,
-  memoryAppendInput,
-  setMemoryAppendInput,
-  apiEnvDiagnostic,
-  saveSettings,
-  refreshAll,
-  addProjectFromSetup,
-  createTaskFromSetup,
-  loadProjectMemory,
-  handleAppendMemory,
-}: SettingsTabProps) {
+export function SettingsTab() {
+  const queryClient = useQueryClient();
+  const { dbState, projectName } = useWorkspace();
+  const {
+    providerSettings,
+    apiEnvDiagnostic,
+    projectMemory,
+    isLoading: isBusy,
+    setupForm,
+    setSetupForm,
+    memoryAppendInput,
+    setMemoryAppendInput,
+    saveSettings,
+    isSavingSettings,
+    handleAppendMemory,
+    isAppendingMemory,
+    addProjectFromSetup,
+    isAddingProject,
+    createTaskFromSetup,
+    isCreatingTask,
+  } = useSettings();
+
+  const loadProjectMemory = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
+  };
+  
+  const refreshAll = (label: string) => {
+    queryClient.invalidateQueries();
+  };
+
+  if (!providerSettings) {
+    return <div className="content-grid"><section className="panel"><p>Loading settings...</p></section></div>;
+  }
   return (
     <div className="content-grid">
       <section className="hero-panel wide-panel">
@@ -45,7 +45,7 @@ export function SettingsTab({
         <h1>Project, task, and provider controls.</h1>
         <p className="lead">Provider settings store URLs, toggles, and environment variable names only. Raw API keys stay outside RepoDesk settings.</p>
         <div className="button-row">
-          <button className="primary-button" onClick={() => void saveSettings()} disabled={isBusy}>Save provider settings</button>
+          <button className="primary-button" onClick={() => void saveSettings(providerSettings)} disabled={isSavingSettings || isBusy}>Save provider settings</button>
           <button className="ghost-button" onClick={() => void refreshAll("Refreshing settings")} disabled={isBusy}>Refresh</button>
         </div>
       </section>
@@ -57,7 +57,7 @@ export function SettingsTab({
           <label>Project path<input value={setupForm.projectPath} onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })} placeholder="/Users/mykyta/Documents/projects/repodesk" /></label>
           <label>Project type<input value={setupForm.projectType} onChange={(event) => setSetupForm({ ...setupForm, projectType: event.target.value })} /></label>
           <label>Main language<input value={setupForm.mainLanguage} onChange={(event) => setSetupForm({ ...setupForm, mainLanguage: event.target.value })} /></label>
-          <button className="primary-button full" onClick={() => void addProjectFromSetup()} disabled={isBusy}>Add and activate project</button>
+          <button className="primary-button full" onClick={() => void addProjectFromSetup()} disabled={isAddingProject || isBusy}>Add and activate project</button>
         </div>
       </section>
 
@@ -65,40 +65,40 @@ export function SettingsTab({
         <p className="eyebrow">Task</p><h2>Create active task</h2>
         <div className="form-stack">
           <label>Task title<input value={setupForm.taskTitle} onChange={(event) => setSetupForm({ ...setupForm, taskTitle: event.target.value })} /></label>
-          <button className="primary-button full" onClick={() => void createTaskFromSetup()} disabled={isBusy}>Create task</button>
+          <button className="primary-button full" onClick={() => void createTaskFromSetup()} disabled={isCreatingTask || isBusy}>Create task</button>
         </div>
       </section>
 
       <section className="panel wide-panel">
         <div className="panel-title-row"><div><p className="eyebrow">Provider settings</p><h2>Runtime configuration</h2></div><span className={`pill ${statusTone(Boolean(dbState))}`}>DB {getString(dbState, "ok", "-")}</span></div>
         <div className="settings-grid">
-          <Toggle label="Ollama enabled" checked={providerSettings.ollama_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, ollama_enabled: value })} />
-          <Toggle label="LM Studio enabled" checked={providerSettings.lm_studio_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, lm_studio_enabled: value })} />
-          <Toggle label="Llamafile enabled" checked={providerSettings.llamafile_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, llamafile_enabled: value })} />
-          <Toggle label="LocalAI enabled" checked={providerSettings.localai_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, localai_enabled: value })} />
-          <Toggle label="ChatGPT manual enabled" checked={providerSettings.chatgpt_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, chatgpt_enabled: value })} />
-          <Toggle label="Codex enabled" checked={providerSettings.codex_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, codex_enabled: value })} />
-          <Toggle label="Gemini manual enabled" checked={providerSettings.gemini_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, gemini_enabled: value })} />
-          <Toggle label="OpenAI API enabled" checked={providerSettings.openai_api_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, openai_api_enabled: value })} />
-          <Toggle label="Gemini API enabled" checked={providerSettings.gemini_api_enabled} onChange={(value) => setProviderSettings({ ...providerSettings, gemini_api_enabled: value })} />
-          <Toggle label="Allow paid agents" checked={providerSettings.allow_paid_agents} onChange={(value) => setProviderSettings({ ...providerSettings, allow_paid_agents: value })} />
-          <label>Codex quota proxy<select value={providerSettings.codex_quota_status} onChange={(event) => setProviderSettings({ ...providerSettings, codex_quota_status: event.target.value })}>
+          <Toggle label="Ollama enabled" checked={providerSettings.ollama_enabled} onChange={(value) => saveSettings({ ...providerSettings, ollama_enabled: value })} />
+          <Toggle label="LM Studio enabled" checked={providerSettings.lm_studio_enabled} onChange={(value) => saveSettings({ ...providerSettings, lm_studio_enabled: value })} />
+          <Toggle label="Llamafile enabled" checked={providerSettings.llamafile_enabled} onChange={(value) => saveSettings({ ...providerSettings, llamafile_enabled: value })} />
+          <Toggle label="LocalAI enabled" checked={providerSettings.localai_enabled} onChange={(value) => saveSettings({ ...providerSettings, localai_enabled: value })} />
+          <Toggle label="ChatGPT manual enabled" checked={providerSettings.chatgpt_enabled} onChange={(value) => saveSettings({ ...providerSettings, chatgpt_enabled: value })} />
+          <Toggle label="Codex enabled" checked={providerSettings.codex_enabled} onChange={(value) => saveSettings({ ...providerSettings, codex_enabled: value })} />
+          <Toggle label="Gemini manual enabled" checked={providerSettings.gemini_enabled} onChange={(value) => saveSettings({ ...providerSettings, gemini_enabled: value })} />
+          <Toggle label="OpenAI API enabled" checked={providerSettings.openai_api_enabled} onChange={(value) => saveSettings({ ...providerSettings, openai_api_enabled: value })} />
+          <Toggle label="Gemini API enabled" checked={providerSettings.gemini_api_enabled} onChange={(value) => saveSettings({ ...providerSettings, gemini_api_enabled: value })} />
+          <Toggle label="Allow paid agents" checked={providerSettings.allow_paid_agents} onChange={(value) => saveSettings({ ...providerSettings, allow_paid_agents: value })} />
+          <label>Codex quota proxy<select value={providerSettings.codex_quota_status} onChange={(event) => saveSettings({ ...providerSettings, codex_quota_status: event.target.value })}>
             <option value="unknown">unknown</option>
             <option value="available">available</option>
             <option value="limited">limited</option>
             <option value="empty">empty</option>
           </select></label>
-          <label>Ollama URL<input value={providerSettings.ollama_url} onChange={(event) => setProviderSettings({ ...providerSettings, ollama_url: event.target.value })} /></label>
-          <label>Ollama default model<input value={providerSettings.ollama_model} onChange={(event) => setProviderSettings({ ...providerSettings, ollama_model: event.target.value })} /></label>
-          <label>LM Studio URL<input value={providerSettings.lm_studio_url} onChange={(event) => setProviderSettings({ ...providerSettings, lm_studio_url: event.target.value })} /></label>
-          <label>Llamafile URL<input value={providerSettings.llamafile_url} onChange={(event) => setProviderSettings({ ...providerSettings, llamafile_url: event.target.value })} /></label>
-          <label>LocalAI URL<input value={providerSettings.localai_url} onChange={(event) => setProviderSettings({ ...providerSettings, localai_url: event.target.value })} /></label>
-          <label>OpenAI key env var<input value={providerSettings.openai_api_key_env_var} onChange={(event) => setProviderSettings({ ...providerSettings, openai_api_key_env_var: event.target.value })} /></label>
-          <label>Gemini key env var<input value={providerSettings.gemini_api_key_env_var} onChange={(event) => setProviderSettings({ ...providerSettings, gemini_api_key_env_var: event.target.value })} /></label>
-          <label>Patch provider<input value={providerSettings.preferred_patch_provider} onChange={(event) => setProviderSettings({ ...providerSettings, preferred_patch_provider: event.target.value })} /></label>
-          <label>Compression provider<input value={providerSettings.preferred_compression_provider} onChange={(event) => setProviderSettings({ ...providerSettings, preferred_compression_provider: event.target.value })} /></label>
-          <label>Review provider<input value={providerSettings.preferred_review_provider} onChange={(event) => setProviderSettings({ ...providerSettings, preferred_review_provider: event.target.value })} /></label>
-          <label className="span-2">Notes<textarea rows={3} value={providerSettings.notes} onChange={(event) => setProviderSettings({ ...providerSettings, notes: event.target.value })} /></label>
+          <label>Ollama URL<input value={providerSettings.ollama_url} onChange={(event) => saveSettings({ ...providerSettings, ollama_url: event.target.value })} /></label>
+          <label>Ollama default model<input value={providerSettings.ollama_model} onChange={(event) => saveSettings({ ...providerSettings, ollama_model: event.target.value })} /></label>
+          <label>LM Studio URL<input value={providerSettings.lm_studio_url} onChange={(event) => saveSettings({ ...providerSettings, lm_studio_url: event.target.value })} /></label>
+          <label>Llamafile URL<input value={providerSettings.llamafile_url} onChange={(event) => saveSettings({ ...providerSettings, llamafile_url: event.target.value })} /></label>
+          <label>LocalAI URL<input value={providerSettings.localai_url} onChange={(event) => saveSettings({ ...providerSettings, localai_url: event.target.value })} /></label>
+          <label>OpenAI key env var<input value={providerSettings.openai_api_key_env_var} onChange={(event) => saveSettings({ ...providerSettings, openai_api_key_env_var: event.target.value })} /></label>
+          <label>Gemini key env var<input value={providerSettings.gemini_api_key_env_var} onChange={(event) => saveSettings({ ...providerSettings, gemini_api_key_env_var: event.target.value })} /></label>
+          <label>Patch provider<input value={providerSettings.preferred_patch_provider} onChange={(event) => saveSettings({ ...providerSettings, preferred_patch_provider: event.target.value })} /></label>
+          <label>Compression provider<input value={providerSettings.preferred_compression_provider} onChange={(event) => saveSettings({ ...providerSettings, preferred_compression_provider: event.target.value })} /></label>
+          <label>Review provider<input value={providerSettings.preferred_review_provider} onChange={(event) => saveSettings({ ...providerSettings, preferred_review_provider: event.target.value })} /></label>
+          <label className="span-2">Notes<textarea rows={3} value={providerSettings.notes} onChange={(event) => saveSettings({ ...providerSettings, notes: event.target.value })} /></label>
         </div>
       </section>
 
@@ -120,7 +120,7 @@ export function SettingsTab({
             projectMemory.map((entry: any) => (
               <div key={entry.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "8px" }}>
                 <div style={{ fontSize: "0.8em", color: "var(--muted)", marginBottom: "4px" }}>
-                  {new Date(entry.timestamp).toLocaleString()} <span className="pill neutral" style={{marginLeft: "8px"}}>{entry.category}</span>
+                  {new Date(entry.timestamp).toLocaleString()} <span className="pill neutral" style={{ marginLeft: "8px" }}>{entry.category}</span>
                 </div>
                 <div style={{ whiteSpace: "pre-wrap" }}>{entry.content}</div>
               </div>
@@ -130,14 +130,14 @@ export function SettingsTab({
         <div className="form-stack">
           <label>
             Add memory log / rule (e.g. "Do not change public API flags", "Always keep code modifications inside src-tauri/")
-            <textarea 
-              rows={3} 
-              value={memoryAppendInput} 
-              onChange={(event) => setMemoryAppendInput(event.target.value)} 
+            <textarea
+              rows={3}
+              value={memoryAppendInput}
+              onChange={(event) => setMemoryAppendInput(event.target.value)}
               placeholder="Guidelines, constraints, or architecture notes for agents to remember..."
             />
           </label>
-          <button className="primary-button" onClick={() => void handleAppendMemory()} disabled={isBusy || !memoryAppendInput.trim()}>
+          <button className="primary-button" onClick={() => void handleAppendMemory()} disabled={isAppendingMemory || isBusy || !memoryAppendInput.trim()}>
             Add guidelines to memory.md
           </button>
         </div>
@@ -186,25 +186,25 @@ export function SettingsTab({
           </div>
         </div>
 
-        <div className="p-md mt-sm" style={{ 
-          borderRadius: "8px", 
-          backgroundColor: "rgba(255, 255, 255, 0.04)", 
-          borderLeft: "4px solid var(--border)" 
+        <div className="p-md mt-sm" style={{
+          borderRadius: "8px",
+          backgroundColor: "rgba(255, 255, 255, 0.04)",
+          borderLeft: "4px solid var(--border)"
         }}>
           <div className="text-base font-bold mb-xs">💡 How to configure environment variables permanently on macOS:</div>
           <p className="text-sm text-muted m-0">
             To ensure RepoDesk and your terminal sessions can securely load credentials, add them to your shell config file (typically <code>~/.zshrc</code>). Run the following commands in your terminal:
           </p>
-          <pre style={{ 
-            backgroundColor: "rgba(0, 0, 0, 0.3)", 
-            padding: "10px", 
-            borderRadius: "4px", 
-            fontSize: "12px", 
-            margin: "10px 0 0 0", 
-            fontFamily: "monospace", 
-            overflowX: "auto" 
+          <pre style={{
+            backgroundColor: "rgba(0, 0, 0, 0.3)",
+            padding: "10px",
+            borderRadius: "4px",
+            fontSize: "12px",
+            margin: "10px 0 0 0",
+            fontFamily: "monospace",
+            overflowX: "auto"
           }}>
-{`echo 'export OPENAI_API_KEY="your-openai-key"' >> ~/.zshrc
+            {`echo 'export OPENAI_API_KEY="your-openai-key"' >> ~/.zshrc
 echo 'export GEMINI_API_KEY="your-gemini-key"' >> ~/.zshrc
 echo 'export ANTHROPIC_API_KEY="your-anthropic-key"' >> ~/.zshrc
 source ~/.zshrc`}

@@ -218,3 +218,4 @@ apps/desktop/src-tauri/target/
 /tmp/
 /runs/
 /.repodesk-debug/
+.repopilot/

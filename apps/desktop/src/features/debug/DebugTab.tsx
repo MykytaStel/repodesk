@@ -1,37 +1,24 @@
 import React from "react";
 import { stringifyPreview } from "../../shared/ui/SharedComponents";
 
-interface DebugTabProps {
-  debugEvents: any[];
-  artifactKind: string;
-  artifactContent: string;
-  history: any[];
-  loadArtifact: (kind: string) => void;
-  snapshot: any;
-  workflow: any;
-  git: any;
-  codeWorkbench: any;
-  tokens: any;
-  models: any;
-  providerSettings: any;
-  dbState: any;
-}
+import { useDebug } from "./useDebug";
+import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { useWorkflow } from "../workflow/useWorkflow";
+import { useGit } from "../git/useGit";
+import { useCode } from "../code/useCode";
+import { useTokens } from "../tokens/useTokens";
+import { useModels } from "../models/useModels";
+import { useSettings } from "../settings/useSettings";
 
-export function DebugTab({
-  debugEvents,
-  artifactKind,
-  artifactContent,
-  history,
-  loadArtifact,
-  snapshot,
-  workflow,
-  git,
-  codeWorkbench,
-  tokens,
-  models,
-  providerSettings,
-  dbState,
-}: DebugTabProps) {
+export function DebugTab() {
+  const { debugEvents, artifactKind, artifactContent, loadArtifact } = useDebug();
+  const { snapshot, dbState } = useWorkspace();
+  const { workflow, history } = useWorkflow();
+  const { git } = useGit();
+  const { codeWorkbench } = useCode();
+  const { tokens } = useTokens();
+  const { models } = useModels();
+  const { providerSettings } = useSettings();
   return (
     <div className="content-grid">
       <section className="hero-panel wide-panel">
@@ -62,7 +49,7 @@ export function DebugTab({
           ))}
         </div>
       </section>
-      <section className="panel wide-panel"><p className="eyebrow">Action history</p><pre className="code-panel tall">{history.length ? stringifyPreview(history, 8000) : "No action history yet."}</pre></section>
+      <section className="panel wide-panel"><p className="eyebrow">Action history</p><pre className="code-panel tall">{(history && history.length) ? stringifyPreview(history, 8000) : "No action history yet."}</pre></section>
       <section className="panel wide-panel"><p className="eyebrow">Raw state</p><pre className="code-panel tall">{stringifyPreview({ snapshot, workflow, git, codeWorkbench, tokens, models, providerSettings, dbState }, 14000)}</pre></section>
     </div>
   );

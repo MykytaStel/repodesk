@@ -11,41 +11,20 @@ import { GitTab } from "../features/git/GitTab";
 import { SettingsTab } from "../features/settings/SettingsTab";
 import { SystemTab } from "../features/system/SystemTab";
 import { DebugTab } from "../features/debug/DebugTab";
+import { useWorkspace } from "../shared/hooks/useWorkspace";
+import { useGit } from "../features/git/useGit";
+import { useWorkflow } from "../features/workflow/useWorkflow";
+import { useCode } from "../features/code/useCode";
+import { useModels } from "../features/models/useModels";
+import { useTokens } from "../features/tokens/useTokens";
 import { StartupSkeleton } from "../shared/ui/SharedComponents";
 
 
 type TabId = "dashboard" | "workflow" | "tokens" | "models" | "code" | "git" | "settings" | "system" | "debug";
-type DebugStatus = "success" | "error";
-type ToastKind = "success" | "error" | "warning" | "info";
 type Theme = "dark" | "light" | "system";
 type UnknownRecord = Record<string, unknown>;
 
-interface DebugEvent {
-  id: number;
-  command: string;
-  args?: UnknownRecord;
-  status: DebugStatus;
-  durationMs: number;
-  timestamp: string;
-  preview?: string;
-  error?: string;
-}
 
-interface ToastMessage {
-  id: number;
-  kind: ToastKind;
-  title: string;
-  message?: string;
-}
-
-interface ActionItem {
-  id: string;
-  label: string;
-  title: string;
-  description: string;
-  risk: string;
-  category: string;
-}
 
 interface ProviderSettings {
   ollama_enabled: boolean;
@@ -400,43 +379,7 @@ function gitIsDirty(git: unknown): boolean {
   return gitDirtyCount(git) > 0;
 }
 
-function codeChangedFiles(code: unknown): string[] {
-  const direct = listFromRecord(code, ["changed_files", "files"]);
-  if (direct.length > 0) return direct;
-  return [...listFromRecord(code, ["staged"]), ...listFromRecord(code, ["unstaged"]), ...listFromRecord(code, ["untracked"])];
-}
 
-function normalizeActions(value: unknown): ActionItem[] {
-  return asArray(value).map((item, index) => {
-    const record = asRecord(item);
-    const title = getString(record, "title", getString(record, "label", `Action ${index + 1}`));
-    return {
-      id: getString(record, "id", `action-${index}`),
-      label: title,
-      title,
-      description: getString(record, "description", "No description."),
-      risk: getString(record, "risk", "safe"),
-      category: getString(record, "category", "General"),
-    };
-  });
-}
-
-function statusTone(value: string | boolean | undefined | null): "ok" | "warn" | "danger" | "neutral" {
-  if (typeof value === "boolean") return value ? "ok" : "warn";
-  const lower = String(value || "").toLowerCase();
-  if (["working", "ok", "done", "safe", "configured", "not_required"].some((item) => lower.includes(item))) return "ok";
-  if (["disabled", "missing", "unreachable", "rate", "warn", "large"].some((item) => lower.includes(item))) return "warn";
-  if (["block", "danger", "error", "failed", "too large"].some((item) => lower.includes(item))) return "danger";
-  return "neutral";
-}
-
-function findNextActionId(workflow: unknown, actions: ActionItem[], hasProject: boolean, hasTask: boolean): string {
-  if (!hasProject || !hasTask) return "";
-  const explicit = getString(workflow, "recommended_action_id", getString(workflow, "next_action_id", ""));
-  if (explicit && actions.some((action) => action.id === explicit)) return explicit;
-  const preferred = ["smart-context-build", "context-build", "safety-scan-context", "prompt-all", "checks-run", "workflow-next"];
-  return preferred.find((id) => actions.some((action) => action.id === id)) ?? actions[0]?.id ?? "";
-}
 
 async function copyToClipboard(text: string) {
   try {
@@ -455,64 +398,21 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>(() => (window.localStorage.getItem("repodesk.activeTab") as TabId) || "dashboard");
   const [theme, setTheme] = useState<Theme>(() => (window.localStorage.getItem("repodesk.theme") as Theme) || "system");
   const [economyMode, setEconomyMode] = useState<EconomyMode>(() => (window.localStorage.getItem("repodesk.economyMode") as EconomyMode) || "balanced");
-  const [booting, setBooting] = useState(true);
-  const [busyLabel, setBusyLabel] = useState("");
-  const [snapshot, setSnapshot] = useState<unknown>(null);
-  const [workflow, setWorkflow] = useState<unknown>(null);
-  const [git, setGit] = useState<unknown>(null);
-  const [codeWorkbench, setCodeWorkbench] = useState<unknown>(null);
-  const [actions, setActions] = useState<ActionItem[]>([]);
-  const [history, setHistory] = useState<unknown[]>([]);
-  const [tokens, setTokens] = useState<TokenUsageSnapshot | null>(null);
-  const [models, setModels] = useState<ModelHealthSnapshot | null>(null);
-  const [routing, setRouting] = useState<RoutingSnapshot | null>(null);
-  const [apiEnvDiagnostic, setApiEnvDiagnostic] = useState<ApiEnvDiagnostic | null>(null);
-  const [systemAgents, setSystemAgents] = useState<AgentsConfig | null>(null);
-  const [systemCapabilities, setSystemCapabilities] = useState<CapabilitiesConfig | null>(null);
-  const [systemPeripherals, setSystemPeripherals] = useState<PeripheralsConfig | null>(null);
-  const [systemModules, setSystemModules] = useState<BrainModule[]>([]);
-  const [providerSettings, setProviderSettings] = useState<ProviderSettings>(defaultProviderSettings);
-  const [dbState, setDbState] = useState<unknown>(null);
-  const [debugEvents, setDebugEvents] = useState<DebugEvent[]>([]);
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [lastResult, setLastResult] = useState<unknown>(null);
-  const [selectedFile, setSelectedFile] = useState("");
-  const [selectedFileContent, setSelectedFileContent] = useState("");
-  const [artifactKind, setArtifactKind] = useState("smart_context");
-  const [artifactContent, setArtifactContent] = useState("");
-  const [projectConfig, setProjectConfig] = useState<any>(null);
-  const [fileTokenEstimates, setFileTokenEstimates] = useState<any[]>([]);
-  const [projectMemory, setProjectMemory] = useState<any[]>([]);
-  const [memoryAppendInput, setMemoryAppendInput] = useState("");
-  const [setupForm, setSetupForm] = useState<SetupFormState>({
-    projectName: "repodesk",
-    projectPath: "",
-    projectType: "rust-tauri",
-    mainLanguage: "rust",
-    taskTitle: "Improve RepoDesk workflow",
-  });
-  const [tokenLogForm, setTokenLogForm] = useState<TokenLogFormState>({
-    provider: "manual",
-    model: "",
-    inputTokens: "0",
-    outputTokens: "0",
-    category: "general",
-    notes: "",
-  });
 
-  const projectName = getNestedString(snapshot, ["project", "name"], getString(snapshot, "project_name", "No active project"));
-  const taskTitle = getNestedString(snapshot, ["task", "title"], getString(snapshot, "task_title", "No active task"));
-  const hasProject = projectName !== "No active project" && projectName !== "-";
-  const hasTask = taskTitle !== "No active task" && taskTitle !== "-";
-  const branch = getString(git, "branch", getString(git, "current_branch", "-"));
-  const dirty = gitIsDirty(git);
-  const dirtyCount = gitDirtyCount(git);
-  const changedFiles = codeChangedFiles(codeWorkbench);
-  const nextActionId = useMemo(() => findNextActionId(workflow, actions, hasProject, hasTask), [workflow, actions, hasProject, hasTask]);
-  const nextAction = actions.find((action) => action.id === nextActionId) ?? null;
-  const workingProviders = models?.providers.filter((provider) => provider.reachability === "working").length ?? 0;
-  const modelCount = models?.providers.reduce((total, provider) => total + provider.models.length, 0) ?? 0;
-  const isBusy = busyLabel.trim().length > 0;
+  // React Query Hooks driving the shell state
+  const { snapshot, projectName, taskTitle, hasProject, hasTask, isLoading: workspaceLoading } = useWorkspace();
+  const { git, dirty, dirtyCount, branch, isLoading: gitLoading } = useGit();
+  const { workflow, nextAction, isLoading: workflowLoading } = useWorkflow();
+  const { changedFiles, isLoading: codeLoading } = useCode();
+  const { models, isLoading: modelsLoading } = useModels();
+  const { tokens } = useTokens();
+
+  const nextActionId = nextAction?.id;
+
+  const workingProviders = models?.providers?.filter((provider: any) => provider.reachability === "working").length ?? 0;
+  const modelCount = models?.providers?.reduce((total: number, provider: any) => total + provider.models.length, 0) ?? 0;
+  
+  const booting = workspaceLoading;
 
   useEffect(() => {
     window.localStorage.setItem("repodesk.activeTab", activeTab);
@@ -520,8 +420,6 @@ export default function App() {
 
   useEffect(() => {
     window.localStorage.setItem("repodesk.economyMode", economyMode);
-    // Refresh routing decision when economy mode changes
-    if (!booting) void refreshAll("Updating economy routing");
   }, [economyMode]);
 
   useEffect(() => {
@@ -547,443 +445,33 @@ export default function App() {
     }
   }, [theme]);
 
-  useEffect(() => {
-    void refreshAll("Starting RepoDesk");
-  }, []);
-
-  function pushToast(kind: ToastKind, title: string, message?: string) {
-    const id = Date.now() + Math.random();
-    setToasts((items) => [{ id, kind, title, message }, ...items].slice(0, 5));
-    window.setTimeout(() => setToasts((items) => items.filter((item) => item.id !== id)), 4500);
-  }
-
-  async function callCommand<T>(command: string, args?: UnknownRecord): Promise<T> {
-    const started = performance.now();
-    try {
-      const result = await invoke<T>(command, args);
-      const durationMs = Math.round(performance.now() - started);
-      setDebugEvents((events) => [{
-        id: Date.now() + Math.random(),
-        command,
-        args,
-        status: "success" as const,
-        durationMs,
-        timestamp: new Date().toLocaleTimeString(),
-        preview: stringifyPreview(result, 1200),
-      }, ...events].slice(0, 150));
-      return result;
-    } catch (error) {
-      const durationMs = Math.round(performance.now() - started);
-      setDebugEvents((events) => [{
-        id: Date.now() + Math.random(),
-        command,
-        args,
-        status: "error" as const,
-        durationMs,
-        timestamp: new Date().toLocaleTimeString(),
-        error: errorToMessage(error),
-      }, ...events].slice(0, 150));
-      throw error;
-    }
-  }
-
-  async function optionalCommand<T>(command: string, args?: UnknownRecord): Promise<T | null> {
-    try {
-      return await callCommand<T>(command, args);
-    } catch {
-      return null;
-    }
-  }
-
-  async function refreshAll(label = "Refreshing workspace") {
-    setBusyLabel(label);
-    try {
-      const [
-        snapshotResult,
-        workflowResult,
-        gitResult,
-        actionsResult,
-        historyResult,
-        codeResult,
-        tokenResult,
-        modelResult,
-        routingResult,
-        settingsResult,
-        dbResult,
-        projConfigResult,
-        tokenEstimatesResult,
-        memoryResult,
-        apiEnvDiagnosticResult,
-        systemAgentsResult,
-        systemCapabilitiesResult,
-        systemPeripheralsResult,
-        systemModulesResult,
-      ] = await Promise.all([
-        optionalCommand<unknown>("desktop_snapshot"),
-        optionalCommand<unknown>("product_workflow_state"),
-        optionalCommand<unknown>("git_workspace_snapshot"),
-        optionalCommand<unknown>("desktop_actions"),
-        optionalCommand<unknown[]>("action_history"),
-        optionalCommand<unknown>("code_workbench_snapshot"),
-        optionalCommand<TokenUsageSnapshot>("token_usage_snapshot"),
-        optionalCommand<ModelHealthSnapshot>("model_health_snapshot"),
-        invoke<RoutingSnapshot>("routing_snapshot", { economyMode }).catch(() => null),
-        optionalCommand<ProviderSettings>("provider_settings"),
-        optionalCommand<unknown>("db_status"),
-        optionalCommand<any>("get_active_project_config"),
-        optionalCommand<any[]>("get_project_file_token_estimates"),
-        optionalCommand<any[]>("memory_list", { project: projectName }),
-        optionalCommand<ApiEnvDiagnostic>("get_api_env_diagnostic"),
-        optionalCommand<AgentsConfig>("get_system_agents"),
-        optionalCommand<CapabilitiesConfig>("get_system_capabilities"),
-        optionalCommand<PeripheralsConfig>("get_system_peripherals"),
-        optionalCommand<BrainModule[]>("get_system_modules"),
-      ]);
-
-      setSnapshot(snapshotResult);
-      setWorkflow(workflowResult);
-      setGit(gitResult);
-      setActions(normalizeActions(actionsResult));
-      setHistory(Array.isArray(historyResult) ? historyResult : []);
-      setCodeWorkbench(codeResult);
-      setTokens(tokenResult);
-      setModels(modelResult);
-      setRouting(routingResult);
-      setApiEnvDiagnostic(apiEnvDiagnosticResult);
-      setSystemAgents(systemAgentsResult);
-      setSystemCapabilities(systemCapabilitiesResult);
-      setSystemPeripherals(systemPeripheralsResult);
-      setSystemModules(systemModulesResult || []);
-      if (settingsResult) setProviderSettings(settingsResult);
-      setDbState(dbResult);
-      setProjectConfig(projConfigResult);
-      if (tokenEstimatesResult) setFileTokenEstimates(tokenEstimatesResult);
-      if (memoryResult) setProjectMemory(memoryResult);
-      setBooting(false);
-    } catch (error) {
-      setBooting(false);
-      pushToast("error", "Refresh failed", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function loadTokenEstimates() {
-    setBusyLabel("Scanning workspace files");
-    try {
-      const result = await callCommand<any[]>("get_project_file_token_estimates");
-      setFileTokenEstimates(result);
-      pushToast("success", "Scan complete", `${result.length} text files scanned.`);
-    } catch (error) {
-      pushToast("error", "Scan failed", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function loadProjectMemory() {
-    if (!projectName || projectName === "No active project" || projectName === "-") return;
-    try {
-      const result = await callCommand<any[]>("memory_list", { project: projectName });
-      setProjectMemory(result);
-    } catch (error) {
-      pushToast("error", "Memory load failed", errorToMessage(error));
-    }
-  }
-
-  async function handleToggleIgnore(filePath: string) {
-    if (!projectConfig) return;
-    const currentIgnore = projectConfig.context_ignore || [];
-    let nextIgnore: string[];
-    if (currentIgnore.includes(filePath)) {
-      nextIgnore = currentIgnore.filter((item: string) => item !== filePath);
-      pushToast("info", "Removed ignore rule", filePath);
-    } else {
-      nextIgnore = [...currentIgnore, filePath];
-      pushToast("success", "Added ignore rule", filePath);
-    }
-    setBusyLabel("Updating ignore rules");
-    try {
-      await callCommand("save_project_ignore_rules", { ignoreRules: nextIgnore });
-      await refreshAll("Refreshing workspace after ignore change");
-    } catch (error) {
-      pushToast("error", "Failed to update ignore rules", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleRemoveIgnoreRule(rule: string) {
-    if (!projectConfig) return;
-    const nextIgnore = (projectConfig.context_ignore || []).filter((item: string) => item !== rule);
-    setBusyLabel("Removing ignore rule");
-    try {
-      await callCommand("save_project_ignore_rules", { ignoreRules: nextIgnore });
-      pushToast("info", "Removed ignore rule", rule);
-      await refreshAll("Refreshing workspace after ignore change");
-    } catch (error) {
-      pushToast("error", "Failed to remove ignore rule", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function handleAppendMemory() {
-    if (!projectName || projectName === "No active project" || projectName === "-") {
-      pushToast("warning", "No project", "Connect a project before adding memory.");
-      return;
-    }
-    if (!memoryAppendInput.trim()) return;
-    setBusyLabel("Saving memory log");
-    try {
-      await callCommand("memory_add", {
-        project: projectName,
-        content: memoryAppendInput.trim(),
-        category: "general",
-        tags: []
-      });
-      setMemoryAppendInput("");
-      pushToast("success", "Memory log saved");
-      const result = await callCommand<any[]>("memory_list", { project: projectName });
-      setProjectMemory(result);
-      await refreshAll("Refreshing workspace after memory update");
-    } catch (error) {
-      pushToast("error", "Failed to save memory log", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function runAction(actionId: string) {
-    setBusyLabel(`Running ${actionId}`);
-    try {
-      const result = await callCommand<unknown>("run_desktop_action", { actionId, action_id: actionId });
-      setLastResult(result);
-      pushToast("success", "Action completed", actionId);
-      await refreshAll("Refreshing after action");
-    } catch (error) {
-      setLastResult({ actionId, error: errorToMessage(error) });
-      pushToast("error", "Action failed", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function doNextSafeStep() {
-    if (!hasProject || !hasTask) {
-      pushToast("warning", "Setup required", "Connect a project and create a task first.");
-      setActiveTab("settings");
-      return;
-    }
-    if (!nextActionId) {
-      pushToast("warning", "No next action", "Refresh workflow state or check Debug.");
-      return;
-    }
-    if (dirty && ["judge", "agent", "patch"].some((word) => nextActionId.toLowerCase().includes(word))) {
-      pushToast("warning", "Dirty workspace", "Review Git changes before agent-like actions.");
-      setActiveTab("git");
-      return;
-    }
-    await runAction(nextActionId);
-  }
-
-  async function addProjectFromSetup() {
-    if (!setupForm.projectName.trim() || !setupForm.projectPath.trim()) {
-      pushToast("warning", "Missing project data", "Project name and absolute path are required.");
-      return;
-    }
-    setBusyLabel("Adding project");
-    try {
-      const input = {
-        name: setupForm.projectName.trim(),
-        path: setupForm.projectPath.trim(),
-        project_type: setupForm.projectType.trim(),
-        main_language: setupForm.mainLanguage.trim() || null,
-      };
-      const added = await callCommand<{ ok: boolean }>("project_add", { input });
-      if (added.ok) await callCommand("project_use", { name: input.name });
-      pushToast("success", "Project connected", input.name);
-      await refreshAll("Refreshing project state");
-    } catch (error) {
-      pushToast("error", "Could not connect project", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function createTaskFromSetup() {
-    if (!setupForm.taskTitle.trim()) {
-      pushToast("warning", "Task title missing", "Add a clear task title.");
-      return;
-    }
-    setBusyLabel("Creating task");
-    try {
-      await callCommand("task_new", { title: setupForm.taskTitle.trim() });
-      pushToast("success", "Task created", setupForm.taskTitle.trim());
-      await refreshAll("Refreshing task state");
-      setActiveTab("workflow");
-    } catch (error) {
-      pushToast("error", "Could not create task", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function loadCodeFile(path: string) {
-    setSelectedFile(path);
-    setSelectedFileContent("Loading...");
-    try {
-      const result = await callCommand<unknown>("read_code_file", { relativePath: path, relative_path: path });
-      setSelectedFileContent(getString(result, "content", stringifyPreview(result)));
-    } catch (error) {
-      setSelectedFileContent(errorToMessage(error));
-      pushToast("error", "Could not read file", errorToMessage(error));
-    }
-  }
-
-  async function loadArtifact(kind: string) {
-    setArtifactKind(kind);
-    setArtifactContent("Loading...");
-    try {
-      const result = await callCommand<unknown>("read_artifact", { kind });
-      setArtifactContent(getString(result, "content", stringifyPreview(result)));
-    } catch (error) {
-      setArtifactContent(errorToMessage(error));
-    }
-  }
-
-  async function logTokenUsage() {
-    const inputTokens = Number.parseInt(tokenLogForm.inputTokens, 10);
-    const outputTokens = Number.parseInt(tokenLogForm.outputTokens, 10);
-    if (!Number.isFinite(inputTokens) || !Number.isFinite(outputTokens) || inputTokens < 0 || outputTokens < 0) {
-      pushToast("warning", "Invalid token counts", "Use non-negative whole numbers.");
-      return;
-    }
-    setBusyLabel("Logging token usage");
-    try {
-      const nextTokens = await callCommand<TokenUsageSnapshot>("log_token_usage", {
-        input: {
-          provider: tokenLogForm.provider.trim(),
-          model: tokenLogForm.model.trim() || null,
-          input_tokens: inputTokens,
-          output_tokens: outputTokens,
-          category: tokenLogForm.category.trim() || "general",
-          notes: tokenLogForm.notes.trim() || null,
-        },
-      });
-      setTokens(nextTokens);
-      setTokenLogForm({ ...tokenLogForm, inputTokens: "0", outputTokens: "0", notes: "" });
-      pushToast("success", "Token usage logged");
-    } catch (error) {
-      pushToast("error", "Could not log tokens", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function refreshModels() {
-    setBusyLabel("Refreshing model health");
-    try {
-      const nextModels = await callCommand<ModelHealthSnapshot>("refresh_model_health");
-      setModels(nextModels);
-      pushToast("success", "Model health refreshed", `${nextModels.providers.filter((provider) => provider.reachability === "working").length} providers working`);
-    } catch (error) {
-      pushToast("error", "Could not refresh models", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
-  async function saveSettings() {
-    setBusyLabel("Saving provider settings");
-    try {
-      const saved = await callCommand<ProviderSettings>("save_provider_settings", { input: providerSettings });
-      setProviderSettings(saved);
-      pushToast("success", "Provider settings saved");
-      await refreshAll("Refreshing after settings");
-    } catch (error) {
-      pushToast("error", "Could not save settings", errorToMessage(error));
-    } finally {
-      setBusyLabel("");
-    }
-  }
-
   function renderActiveTab() {
     if (booting) return <StartupSkeleton />;
     if (activeTab === "dashboard") {
-      return (
-        <DashboardTab setActiveTab={setActiveTab as any} economyMode={economyMode} setEconomyMode={setEconomyMode} />
-      );
+      return <DashboardTab setActiveTab={setActiveTab as any} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
     }
     if (activeTab === "workflow") {
-      return (
-        <WorkflowTab economyMode={economyMode} />
-      );
+      return <WorkflowTab economyMode={economyMode} />;
     }
     if (activeTab === "tokens") {
-      return (
-        <TokensTab />
-      );
+      return <TokensTab />;
     }
     if (activeTab === "models") {
-      return (
-        <ModelsTab setActiveTab={setActiveTab as any} />
-      );
+      return <ModelsTab setActiveTab={setActiveTab as any} />;
     }
     if (activeTab === "code") {
-      return (
-        <CodeTab />
-      );
+      return <CodeTab />;
     }
     if (activeTab === "git") {
-      return (
-        <GitTab />
-      );
+      return <GitTab />;
     }
     if (activeTab === "settings") {
-      return (
-        <SettingsTab
-          isBusy={isBusy}
-          providerSettings={providerSettings}
-          setProviderSettings={setProviderSettings}
-          setupForm={setupForm}
-          setSetupForm={setSetupForm}
-          dbState={dbState}
-          projectMemory={projectMemory}
-          memoryAppendInput={memoryAppendInput}
-          setMemoryAppendInput={setMemoryAppendInput}
-          apiEnvDiagnostic={apiEnvDiagnostic}
-          saveSettings={saveSettings}
-          refreshAll={refreshAll}
-          addProjectFromSetup={addProjectFromSetup}
-          createTaskFromSetup={createTaskFromSetup}
-          loadProjectMemory={loadProjectMemory}
-          handleAppendMemory={handleAppendMemory}
-        />
-      );
+      return <SettingsTab />;
     }
     if (activeTab === "system") {
-      return (
-        <SystemTab />
-      );
+      return <SystemTab />;
     }
-    return (
-      <DebugTab
-        debugEvents={debugEvents}
-        artifactKind={artifactKind}
-        artifactContent={artifactContent}
-        history={history}
-        loadArtifact={loadArtifact}
-        snapshot={snapshot}
-        workflow={workflow}
-        git={git}
-        codeWorkbench={codeWorkbench}
-        tokens={tokens}
-        models={models}
-        providerSettings={providerSettings}
-        dbState={dbState}
-      />
-    );
+    return <DebugTab />;
   }
 
   return (
@@ -1021,9 +509,6 @@ export default function App() {
         </header>
         {renderActiveTab()}
       </main>
-
-      {isBusy && <div className="loading-overlay"><div className="loading-card"><div className="spinner" /><strong>{busyLabel}</strong><span>RepoDesk is working locally. Check Debug if it takes too long.</span></div></div>}
-      <div className="toast-stack">{toasts.map((toast) => <div key={toast.id} className={`toast ${toast.kind}`}><strong>{toast.title}</strong>{toast.message && <span>{toast.message}</span>}</div>)}</div>
     </div>
   );
 }
