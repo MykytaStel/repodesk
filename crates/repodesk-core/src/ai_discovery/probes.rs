@@ -1,174 +1,10 @@
+use super::types::*;
 use std::env;
-use std::fs;
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-
-use crate::errors::RepoDeskResult;
-use crate::paths::RepoDeskPaths;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum AiProbeStatus {
-    Available,
-    Missing,
-    Maybe,
-    Unknown,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum AiProbeCategory {
-    LocalRuntime,
-    PaidAgent,
-    CliAgent,
-    Editor,
-    DesktopApp,
-    RuntimeDependency,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AiToolProbe {
-    pub id: String,
-    pub name: String,
-    pub category: AiProbeCategory,
-    pub status: AiProbeStatus,
-    pub detection: String,
-    pub executable_path: Option<String>,
-    pub app_path: Option<String>,
-    pub local_only: bool,
-    pub requires_paid_account: bool,
-    pub risk_level: String,
-    pub notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AiEndpointProbe {
-    pub id: String,
-    pub name: String,
-    pub url: String,
-    pub status: AiProbeStatus,
-    pub local_only: bool,
-    pub notes: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AiDiscoveryReport {
-    pub generated_at: DateTime<Utc>,
-    pub host_os: String,
-    pub tools: Vec<AiToolProbe>,
-    pub endpoints: Vec<AiEndpointProbe>,
-    pub recommendations: Vec<String>,
-    pub warnings: Vec<String>,
-    pub report_path: Option<String>,
-}
-
-pub fn discover_ai_systems() -> RepoDeskResult<AiDiscoveryReport> {
-    let host_os = env::consts::OS.to_string();
-    let mut tools = Vec::new();
-
-    tools.extend(discover_cli_tools());
-    tools.extend(discover_desktop_apps());
-
-    let endpoints = discover_local_endpoints();
-    let mut recommendations = build_recommendations(&tools, &endpoints);
-    let warnings = build_warnings(&tools, &endpoints);
-
-    if recommendations.is_empty() {
-        recommendations.push(
-            "No AI runtime was confidently detected. Install or start Ollama first for local-first workflows."
-                .to_string(),
-        );
-    }
-
-    Ok(AiDiscoveryReport {
-        generated_at: Utc::now(),
-        host_os,
-        tools,
-        endpoints,
-        recommendations,
-        warnings,
-        report_path: None,
-    })
-}
-
-pub fn write_ai_discovery_report() -> RepoDeskResult<AiDiscoveryReport> {
-    let mut report = discover_ai_systems()?;
-    crate::init::init_home()?;
-    let paths = RepoDeskPaths::resolve()?;
-    let state_dir = paths.home.join("state");
-    fs::create_dir_all(&state_dir)?;
-
-    let json_path = state_dir.join("ai-discovery.json");
-    let md_path = state_dir.join("ai-discovery.md");
-
-    report.report_path = Some(json_path.display().to_string());
-
-    fs::write(&json_path, serde_json::to_string_pretty(&report)?)?;
-    fs::write(&md_path, format_ai_discovery_report(&report))?;
-
-    Ok(report)
-}
-
-pub fn format_ai_discovery_report(report: &AiDiscoveryReport) -> String {
-    let mut out = String::new();
-    out.push_str("# RepoDesk AI Discovery Report\n\n");
-    out.push_str(&format!("Generated: {}\n\n", report.generated_at));
-    out.push_str(&format!("Host OS: {}\n\n", report.host_os));
-
-    out.push_str("## Detected tools\n\n");
-    for tool in &report.tools {
-        out.push_str(&format!(
-            "- **{}** (`{}`): {:?}\n",
-            tool.name, tool.id, tool.status
-        ));
-        out.push_str(&format!("  - category: {:?}\n", tool.category));
-        out.push_str(&format!("  - detection: {}\n", tool.detection));
-        if let Some(path) = &tool.executable_path {
-            out.push_str(&format!("  - executable: `{}`\n", path));
-        }
-        if let Some(path) = &tool.app_path {
-            out.push_str(&format!("  - app: `{}`\n", path));
-        }
-        out.push_str(&format!("  - local only: {}\n", tool.local_only));
-        out.push_str(&format!(
-            "  - paid account: {}\n",
-            tool.requires_paid_account
-        ));
-        out.push_str(&format!("  - risk: {}\n", tool.risk_level));
-        for note in &tool.notes {
-            out.push_str(&format!("  - note: {}\n", note));
-        }
-    }
-
-    out.push_str("\n## Local endpoints\n\n");
-    for endpoint in &report.endpoints {
-        out.push_str(&format!(
-            "- **{}** (`{}`): {:?} at `{}`\n",
-            endpoint.name, endpoint.id, endpoint.status, endpoint.url
-        ));
-        for note in &endpoint.notes {
-            out.push_str(&format!("  - note: {}\n", note));
-        }
-    }
-
-    out.push_str("\n## Recommendations\n\n");
-    for recommendation in &report.recommendations {
-        out.push_str(&format!("- {}\n", recommendation));
-    }
-
-    out.push_str("\n## Warnings\n\n");
-    for warning in &report.warnings {
-        out.push_str(&format!("- {}\n", warning));
-    }
-
-    out
-}
-
-fn discover_cli_tools() -> Vec<AiToolProbe> {
+pub fn discover_cli_tools() -> Vec<AiToolProbe> {
     let specs = [
         (
             "ollama",
@@ -287,7 +123,7 @@ fn discover_cli_tools() -> Vec<AiToolProbe> {
         .collect()
 }
 
-fn discover_desktop_apps() -> Vec<AiToolProbe> {
+pub fn discover_desktop_apps() -> Vec<AiToolProbe> {
     let mut probes = Vec::new();
 
     let specs = [
@@ -377,7 +213,7 @@ fn discover_desktop_apps() -> Vec<AiToolProbe> {
     probes
 }
 
-fn discover_local_endpoints() -> Vec<AiEndpointProbe> {
+pub fn discover_local_endpoints() -> Vec<AiEndpointProbe> {
     let specs = [
         (
             "ollama_api",
@@ -429,7 +265,7 @@ fn discover_local_endpoints() -> Vec<AiEndpointProbe> {
         .collect()
 }
 
-fn build_recommendations(tools: &[AiToolProbe], endpoints: &[AiEndpointProbe]) -> Vec<String> {
+pub fn build_recommendations(tools: &[AiToolProbe], endpoints: &[AiEndpointProbe]) -> Vec<String> {
     let mut recommendations = Vec::new();
 
     let ollama_available =
@@ -471,7 +307,7 @@ fn build_recommendations(tools: &[AiToolProbe], endpoints: &[AiEndpointProbe]) -
     recommendations
 }
 
-fn build_warnings(tools: &[AiToolProbe], _endpoints: &[AiEndpointProbe]) -> Vec<String> {
+pub fn build_warnings(tools: &[AiToolProbe], _endpoints: &[AiEndpointProbe]) -> Vec<String> {
     let mut warnings = Vec::new();
 
     if tools
@@ -549,46 +385,4 @@ fn is_local_port_open(socket: &str) -> bool {
     };
 
     TcpStream::connect_timeout(&addr, Duration::from_millis(180)).is_ok()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn report_format_contains_core_sections() {
-        let report = AiDiscoveryReport {
-            generated_at: Utc::now(),
-            host_os: "test".to_string(),
-            tools: vec![],
-            endpoints: vec![],
-            recommendations: vec!["Use local-first runtime.".to_string()],
-            warnings: vec!["Passive scan only.".to_string()],
-            report_path: None,
-        };
-
-        let text = format_ai_discovery_report(&report);
-        assert!(text.contains("AI Discovery Report"));
-        assert!(text.contains("Recommendations"));
-        assert!(text.contains("Warnings"));
-    }
-
-    #[test]
-    fn missing_tool_is_not_available() {
-        let tools = vec![AiToolProbe {
-            id: "ollama".to_string(),
-            name: "Ollama".to_string(),
-            category: AiProbeCategory::LocalRuntime,
-            status: AiProbeStatus::Missing,
-            detection: "test".to_string(),
-            executable_path: None,
-            app_path: None,
-            local_only: true,
-            requires_paid_account: false,
-            risk_level: "low".to_string(),
-            notes: vec![],
-        }];
-
-        assert!(!is_tool_available(&tools, "ollama"));
-    }
 }

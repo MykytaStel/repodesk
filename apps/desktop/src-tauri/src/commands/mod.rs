@@ -220,10 +220,7 @@ pub(crate) fn validate_optional_notes(value: &Option<String>) -> Result<(), Stri
     Ok(())
 }
 
-struct HttpJsonError {
-    status: Option<u16>,
-    summary: String,
-}
+
 
 pub(crate) fn has_block_signal(result: &CommandResult) -> bool {
     let text = format!("{}\n{}", result.stdout, result.stderr).to_lowercase();

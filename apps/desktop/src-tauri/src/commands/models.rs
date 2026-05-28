@@ -30,43 +30,52 @@ pub struct ModelHealthSnapshot {
     pub warnings: Vec<String>,
 }
 
-fn http_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout_connect(Duration::from_millis(800))
-        .timeout_read(Duration::from_secs(3))
-        .timeout_write(Duration::from_secs(3))
-        .build()
+#[derive(Debug)]
+pub struct ProviderFetchError {
+    pub status: Option<u16>,
+    pub summary: String,
 }
 
-fn request_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, HttpJsonError> {
+fn http_agent() -> ureq::Agent {
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(Duration::from_secs(3)))
+        .build();
+    config.into()
+}
+
+fn request_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, ProviderFetchError> {
     let agent = http_agent();
-    let mut request = agent.get(url).set("accept", "application/json");
+    let mut request = agent.get(url).header("accept", "application/json");
     for (key, value) in headers {
-        request = request.set(key, value);
+        request = request.header(*key, *value);
     }
 
     match request.call() {
-        Ok(response) => response.into_json().map_err(|error| HttpJsonError {
-            status: None,
-            summary: format!("Invalid JSON response: {error}"),
-        }),
-        Err(ureq::Error::Status(code, response)) => {
-            let body = response
-                .into_string()
-                .unwrap_or_default()
-                .chars()
-                .take(240)
-                .collect::<String>();
-            Err(HttpJsonError {
-                status: Some(code),
-                summary: if body.trim().is_empty() {
-                    format!("HTTP {code}")
+        Ok(mut response) => {
+            let status = response.status();
+            let body_str = response.body_mut().read_to_string().map_err(|error| ProviderFetchError {
+                status: Some(status.as_u16()),
+                summary: error.to_string(),
+            })?;
+
+            if status.as_u16() >= 400 {
+                let summary = if body_str.trim().is_empty() {
+                    format!("HTTP {}", status.as_u16())
                 } else {
-                    format!("HTTP {code}: {body}")
-                },
+                    format!("HTTP {}: {}", status.as_u16(), body_str.chars().take(240).collect::<String>())
+                };
+                return Err(ProviderFetchError {
+                    status: Some(status.as_u16()),
+                    summary,
+                });
+            }
+
+            serde_json::from_str(&body_str).map_err(|error| ProviderFetchError {
+                status: Some(status.as_u16()),
+                summary: format!("Invalid JSON response: {error}"),
             })
         }
-        Err(error) => Err(HttpJsonError {
+        Err(error) => Err(ProviderFetchError {
             status: None,
             summary: error.to_string(),
         }),
@@ -182,12 +191,19 @@ fn ollama_health(settings: &store::ProviderSettings) -> ProviderHealth {
     }
 }
 
-fn lm_studio_health(settings: &store::ProviderSettings) -> ProviderHealth {
-    if !settings.lm_studio_enabled {
-        return disabled_provider("lm_studio", "LM Studio");
+fn open_ai_compatible_health(
+    id: &str,
+    label: &str,
+    enabled: bool,
+    url: &str,
+    suffix: &str,
+    notes: &str,
+) -> ProviderHealth {
+    if !enabled {
+        return disabled_provider(id, label);
     }
 
-    match request_json(&join_url(&settings.lm_studio_url, "/v1/models"), &[]) {
+    match request_json(&join_url(url, suffix), &[]) {
         Ok(value) => {
             let models = value
                 .get("data")
@@ -196,101 +212,50 @@ fn lm_studio_health(settings: &store::ProviderSettings) -> ProviderHealth {
                     items
                         .iter()
                         .filter_map(|item| {
-                            item.get("id").and_then(|value| value.as_str()).map(|id| {
-                                model_status(
-                                    "lm_studio",
-                                    id.to_string(),
-                                    Some("visible to LM Studio OpenAI-compatible server".into()),
-                                )
+                            item.get("id").and_then(|value| value.as_str()).map(|model_id| {
+                                model_status(id, model_id.to_string(), Some(notes.to_string()))
                             })
                         })
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            provider_working("lm_studio", "LM Studio", "not_required", models)
+            provider_working(id, label, "not_required", models)
         }
-        Err(error) => provider_error(
-            "lm_studio",
-            "LM Studio",
-            "not_required",
-            "unreachable",
-            error.summary,
-        ),
+        Err(error) => provider_error(id, label, "not_required", "unreachable", error.summary),
     }
+}
+
+fn lm_studio_health(settings: &store::ProviderSettings) -> ProviderHealth {
+    open_ai_compatible_health(
+        "lm_studio",
+        "LM Studio",
+        settings.lm_studio_enabled,
+        &settings.lm_studio_url,
+        "/v1/models",
+        "visible to LM Studio OpenAI-compatible server",
+    )
 }
 
 fn llamafile_health(settings: &store::ProviderSettings) -> ProviderHealth {
-    if !settings.llamafile_enabled {
-        return disabled_provider("llamafile", "Llamafile");
-    }
-
-    match request_json(&join_url(&settings.llamafile_url, "/v1/models"), &[]) {
-        Ok(value) => {
-            let models = value
-                .get("data")
-                .and_then(|value| value.as_array())
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|item| {
-                            item.get("id").and_then(|value| value.as_str()).map(|id| {
-                                model_status(
-                                    "llamafile",
-                                    id.to_string(),
-                                    Some("visible to Llamafile server".into()),
-                                )
-                            })
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            provider_working("llamafile", "Llamafile", "not_required", models)
-        }
-        Err(error) => provider_error(
-            "llamafile",
-            "Llamafile",
-            "not_required",
-            "unreachable",
-            error.summary,
-        ),
-    }
+    open_ai_compatible_health(
+        "llamafile",
+        "Llamafile",
+        settings.llamafile_enabled,
+        &settings.llamafile_url,
+        "/v1/models",
+        "visible to Llamafile server",
+    )
 }
 
 fn localai_health(settings: &store::ProviderSettings) -> ProviderHealth {
-    if !settings.localai_enabled {
-        return disabled_provider("localai", "LocalAI");
-    }
-
-    match request_json(&join_url(&settings.localai_url, "/v1/models"), &[]) {
-        Ok(value) => {
-            let models = value
-                .get("data")
-                .and_then(|value| value.as_array())
-                .map(|items| {
-                    items
-                        .iter()
-                        .filter_map(|item| {
-                            item.get("id").and_then(|value| value.as_str()).map(|id| {
-                                model_status(
-                                    "localai",
-                                    id.to_string(),
-                                    Some("visible to LocalAI server".into()),
-                                )
-                            })
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            provider_working("localai", "LocalAI", "not_required", models)
-        }
-        Err(error) => provider_error(
-            "localai",
-            "LocalAI",
-            "not_required",
-            "unreachable",
-            error.summary,
-        ),
-    }
+    open_ai_compatible_health(
+        "localai",
+        "LocalAI",
+        settings.localai_enabled,
+        &settings.localai_url,
+        "/v1/models",
+        "visible to LocalAI server",
+    )
 }
 
 fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
@@ -452,6 +417,8 @@ pub(crate) fn model_health_from_settings(
 ) -> ModelHealthSnapshot {
     let s = settings.clone();
 
+    // Use crossbeam or standard threads for parallel execution since we are in a synchronous context,
+    // but in Tauri commands we typically use async. If this function runs in the blocking pool, it's fine.
     let t_ollama = std::thread::spawn({
         let s = s.clone();
         move || ollama_health(&s)
@@ -534,5 +501,9 @@ pub fn model_health_snapshot() -> ModelHealthSnapshot {
 
 #[tauri::command]
 pub async fn refresh_model_health() -> ModelHealthSnapshot {
-    build_model_health_snapshot()
+    tauri::async_runtime::spawn_blocking(build_model_health_snapshot).await.unwrap_or_else(|_| ModelHealthSnapshot {
+        generated_at_ms: now_ms(),
+        providers: vec![],
+        warnings: vec!["Internal async task failure while refreshing models".into()],
+    })
 }
