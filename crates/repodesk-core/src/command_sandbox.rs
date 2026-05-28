@@ -256,20 +256,34 @@ fn has_remote_shell_pipe(tokens: &[String]) -> bool {
 fn has_secret_access(tokens: &[String]) -> bool {
     for token in tokens {
         let lower = token.to_lowercase();
-        
-        if lower == ".env" || lower.starts_with(".env.") {
-            return true;
-        }
-        
-        if lower.ends_with(".pem") || lower.ends_with(".key") {
-            return true;
-        }
-        
-        if lower.starts_with("api_key=") || lower.starts_with("token=") || lower.starts_with("secret=") || lower.starts_with("credentials=") {
+        let file_name = std::path::Path::new(&lower)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&lower);
+
+        if file_name == ".env" || file_name.starts_with(".env.") {
             return true;
         }
 
-        if lower == "api_key" || lower == "token" || lower == "secret" || lower == "credentials" {
+        if file_name.ends_with(".pem") || file_name.ends_with(".key") {
+            return true;
+        }
+
+        if lower.starts_with("api_key=")
+            || lower.starts_with("token=")
+            || lower.starts_with("secret=")
+            || lower.starts_with("credentials=")
+        {
+            return true;
+        }
+
+        if file_name == "api_key"
+            || file_name == "token"
+            || file_name == "secret"
+            || file_name == "credentials"
+            || file_name == "id_rsa"
+            || file_name == "credentials.json"
+        {
             return true;
         }
     }
@@ -340,4 +354,58 @@ fn is_safe_check(tokens: &[String], _command: &str) -> bool {
     }
 
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_has_secret_access_allows_normal_files() {
+        let safe_tokens = vec![
+            "src/token_ledger.rs",
+            "src/tokens.ts",
+            "src/privateRoute.tsx",
+            "src/credentials_form.tsx",
+            "my_secret_sauce.rs",
+            "tokenized_input",
+        ];
+
+        for token in safe_tokens {
+            assert!(
+                !has_secret_access(&[token.to_string()]),
+                "Should not block normal file: {}",
+                token
+            );
+        }
+    }
+
+    #[test]
+    fn test_has_secret_access_blocks_secrets() {
+        let secret_tokens = vec![
+            ".env",
+            ".env.local",
+            "./.env",
+            "../.env",
+            "config/.env",
+            "private.key",
+            "id_rsa",
+            "secret.pem",
+            "credentials.json",
+            "token=abc",
+            "api_key=abc",
+            "secret=abc",
+            "credentials=abc",
+            "config/id_rsa",
+            "config/credentials.json",
+        ];
+
+        for token in secret_tokens {
+            assert!(
+                has_secret_access(&[token.to_string()]),
+                "Should block secret file: {}",
+                token
+            );
+        }
+    }
 }

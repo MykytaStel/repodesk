@@ -6,7 +6,7 @@
 //! trail and to record its own user-initiated events.
 
 use repodesk_core::persistence::event_journal::{
-    journal_snapshot, log_event, EventJournalSnapshot, LogEventInput,
+    EventJournalSnapshot, LogEventInput, journal_snapshot, log_event,
 };
 use serde::{Deserialize, Serialize};
 

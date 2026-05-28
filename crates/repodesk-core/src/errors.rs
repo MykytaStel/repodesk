@@ -80,7 +80,9 @@ pub enum RepoDeskError {
 
     // ── Resource limits ────────────────────────────────────────────────────
     /// The context payload would exceed the model's context window.
-    #[error("context too large: {estimated_tokens} tokens exceeds the {limit_tokens} limit for '{model}'")]
+    #[error(
+        "context too large: {estimated_tokens} tokens exceeds the {limit_tokens} limit for '{model}'"
+    )]
     ContextTooLarge {
         model: String,
         estimated_tokens: usize,

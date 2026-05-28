@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
-use crate::tokens::{estimate_text, TokenStatus};
+use crate::tokens::{TokenStatus, estimate_text};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileTokenEstimate {

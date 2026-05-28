@@ -161,7 +161,14 @@ Task: `{}`
 }
 
 fn run_shell_command(command: &str, cwd: &Path) -> CheckCommandResult {
-    const TIMEOUT_SECS: u64 = 120;
+    run_shell_command_with_timeout(command, cwd, 120)
+}
+
+fn run_shell_command_with_timeout(
+    command: &str,
+    cwd: &Path,
+    timeout_secs: u64,
+) -> CheckCommandResult {
     let started = Instant::now();
     let command_owned = command.to_string();
     let cwd_owned = cwd.to_path_buf();
@@ -213,7 +220,7 @@ fn run_shell_command(command: &str, cwd: &Path) -> CheckCommandResult {
         let _ = tx_err.send(s);
     });
 
-    let timeout = Duration::from_secs(TIMEOUT_SECS);
+    let timeout = Duration::from_secs(timeout_secs);
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -241,7 +248,7 @@ fn run_shell_command(command: &str, cwd: &Path) -> CheckCommandResult {
                         exit_code: None,
                         duration_ms,
                         stdout: String::new(),
-                        stderr: format!("Command timed out after {}s and was killed", TIMEOUT_SECS),
+                        stderr: format!("Command timed out after {}s and was killed", timeout_secs),
                     };
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -319,4 +326,45 @@ fn tail_lines(value: &str, max_lines: usize) -> String {
     let lines = value.lines().collect::<Vec<_>>();
     let start = lines.len().saturating_sub(max_lines);
     lines[start..].join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_run_shell_command_with_timeout_kills_process() {
+        let cwd = env::current_dir().unwrap();
+
+        let cmd = if cfg!(target_os = "windows") {
+            "timeout 5"
+        } else {
+            "sleep 5"
+        };
+
+        // Timeout is 1 second, command takes 5 seconds.
+        let result = run_shell_command_with_timeout(cmd, &cwd, 1);
+
+        assert_eq!(result.status, "timeout");
+        assert!(result.stderr.contains("Command timed out after 1s"));
+        // Duration should be at least 1000ms, and realistically much less than 5000ms.
+        assert!(result.duration_ms >= 1000 && result.duration_ms < 3000);
+    }
+
+    #[test]
+    fn test_run_shell_command_captures_stdout() {
+        let cwd = env::current_dir().unwrap();
+
+        let cmd = if cfg!(target_os = "windows") {
+            "echo hello world"
+        } else {
+            "echo hello world"
+        };
+
+        let result = run_shell_command_with_timeout(cmd, &cwd, 5);
+
+        assert_eq!(result.status, "passed");
+        assert!(result.stdout.contains("hello world"));
+    }
 }

@@ -1,5 +1,5 @@
 use super::{
-    run_cli, run_cli_str, validate_path, validate_short_id, CommandResult, ProjectAddInput,
+    CommandResult, ProjectAddInput, run_cli, run_cli_str, validate_path, validate_short_id,
 };
 
 #[tauri::command]
@@ -68,8 +68,8 @@ pub async fn save_project_ignore_rules(ignore_rules: Vec<String>) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn get_project_file_token_estimates(
-) -> Result<Vec<repodesk_core::project_token_check::FileTokenEstimate>, String> {
+pub async fn get_project_file_token_estimates()
+-> Result<Vec<repodesk_core::project_token_check::FileTokenEstimate>, String> {
     repodesk_core::project_token_check::get_project_file_token_estimates()
         .map_err(|e| e.to_string())
 }

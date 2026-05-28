@@ -1,6 +1,6 @@
 use super::{
-    action_catalog, build_product_workflow_state, now_ms, run_cli_str, workspace_root,
-    ApiEnvDiagnostic,
+    ApiEnvDiagnostic, action_catalog, build_product_workflow_state, now_ms, run_cli_str,
+    workspace_root,
 };
 use serde_json::json;
 

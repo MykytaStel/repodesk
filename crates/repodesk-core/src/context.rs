@@ -6,7 +6,7 @@ use crate::init;
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
-use crate::tokens::{estimate_text, format_estimate, TokenEstimate};
+use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
 
 #[derive(Debug, Clone)]
 pub struct ContextBuildResult {
@@ -200,9 +200,5 @@ fn trim_for_context(value: &str, max_chars: usize) -> String {
 }
 
 fn fallback_empty<'a>(value: &'a str, fallback: &'a str) -> &'a str {
-    if value.is_empty() {
-        fallback
-    } else {
-        value
-    }
+    if value.is_empty() { fallback } else { value }
 }

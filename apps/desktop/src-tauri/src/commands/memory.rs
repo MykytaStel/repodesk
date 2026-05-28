@@ -1,4 +1,4 @@
-use repodesk_core::persistence::db::{add_memory, list_memory, MemoryEntry};
+use repodesk_core::persistence::db::{MemoryEntry, add_memory, list_memory};
 
 #[tauri::command]
 pub async fn memory_add(
