@@ -254,18 +254,22 @@ fn has_remote_shell_pipe(tokens: &[String]) -> bool {
 }
 
 fn has_secret_access(tokens: &[String]) -> bool {
-    let bad_patterns = [
-        ".env",
-        ".pem",
-        ".key",
-        "credentials",
-        "api_key",
-        "secret",
-        "token",
-    ];
     for token in tokens {
         let lower = token.to_lowercase();
-        if bad_patterns.iter().any(|bad| lower.contains(bad)) {
+        
+        if lower == ".env" || lower.starts_with(".env.") {
+            return true;
+        }
+        
+        if lower.ends_with(".pem") || lower.ends_with(".key") {
+            return true;
+        }
+        
+        if lower.starts_with("api_key=") || lower.starts_with("token=") || lower.starts_with("secret=") || lower.starts_with("credentials=") {
+            return true;
+        }
+
+        if lower == "api_key" || lower == "token" || lower == "secret" || lower == "credentials" {
             return true;
         }
     }

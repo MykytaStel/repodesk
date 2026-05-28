@@ -145,6 +145,8 @@ pub(crate) fn validate_path(value: &str) -> Result<(), String> {
     Ok(())
 }
 
+// DEPRECATED: Replace in-process CLI dispatch with a proper service layer instead of calling CLI commands from desktop.
+// Calling this does not capture standard `print!` output.
 pub(crate) fn run_cli(args: &[String]) -> CommandResult {
     use clap::Parser;
     let mut cli_args = vec!["repodesk".to_string()];

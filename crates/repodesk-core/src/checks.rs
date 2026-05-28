@@ -166,53 +166,100 @@ fn run_shell_command(command: &str, cwd: &Path) -> CheckCommandResult {
     let command_owned = command.to_string();
     let cwd_owned = cwd.to_path_buf();
 
-    let (tx, rx) = mpsc::channel::<std::io::Result<std::process::Output>>();
+    let mut child = match if cfg!(target_os = "windows") {
+        Command::new("cmd")
+            .args(["/C", &command_owned])
+            .current_dir(&cwd_owned)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    } else {
+        Command::new("sh")
+            .args(["-c", &command_owned])
+            .current_dir(&cwd_owned)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+    } {
+        Ok(child) => child,
+        Err(error) => {
+            return CheckCommandResult {
+                command: command.to_string(),
+                status: "failed".to_string(),
+                exit_code: None,
+                duration_ms: started.elapsed().as_millis(),
+                stdout: String::new(),
+                stderr: format!("Failed to spawn command: {error}"),
+            };
+        }
+    };
 
+    let mut stdout_pipe = child.stdout.take().unwrap();
+    let mut stderr_pipe = child.stderr.take().unwrap();
+
+    let (tx_out, rx_out) = mpsc::channel();
     std::thread::spawn(move || {
-        let output = if cfg!(target_os = "windows") {
-            Command::new("cmd")
-                .args(["/C", &command_owned])
-                .current_dir(&cwd_owned)
-                .output()
-        } else {
-            Command::new("sh")
-                .args(["-c", &command_owned])
-                .current_dir(&cwd_owned)
-                .output()
-        };
-        // If the receiver is gone (timeout fired), this send is silently dropped.
-        let _ = tx.send(output);
+        let mut s = String::new();
+        use std::io::Read;
+        let _ = stdout_pipe.read_to_string(&mut s);
+        let _ = tx_out.send(s);
     });
 
-    match rx.recv_timeout(Duration::from_secs(TIMEOUT_SECS)) {
-        Ok(Ok(output)) => {
-            let duration_ms = started.elapsed().as_millis();
-            let status = if output.status.success() { "passed" } else { "failed" };
-            CheckCommandResult {
-                command: command.to_string(),
-                status: status.to_string(),
-                exit_code: output.status.code(),
-                duration_ms,
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+    let (tx_err, rx_err) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut s = String::new();
+        use std::io::Read;
+        let _ = stderr_pipe.read_to_string(&mut s);
+        let _ = tx_err.send(s);
+    });
+
+    let timeout = Duration::from_secs(TIMEOUT_SECS);
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = rx_out.recv().unwrap_or_default();
+                let stderr = rx_err.recv().unwrap_or_default();
+                let duration_ms = started.elapsed().as_millis();
+                let status_str = if status.success() { "passed" } else { "failed" };
+                return CheckCommandResult {
+                    command: command.to_string(),
+                    status: status_str.to_string(),
+                    exit_code: status.code(),
+                    duration_ms,
+                    stdout,
+                    stderr,
+                };
+            }
+            Ok(None) => {
+                if started.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let duration_ms = started.elapsed().as_millis();
+                    return CheckCommandResult {
+                        command: command.to_string(),
+                        status: "timeout".to_string(),
+                        exit_code: None,
+                        duration_ms,
+                        stdout: String::new(),
+                        stderr: format!("Command timed out after {}s and was killed", TIMEOUT_SECS),
+                    };
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let duration_ms = started.elapsed().as_millis();
+                return CheckCommandResult {
+                    command: command.to_string(),
+                    status: "failed".to_string(),
+                    exit_code: None,
+                    duration_ms,
+                    stdout: String::new(),
+                    stderr: format!("Failed to wait for command: {error}"),
+                };
             }
         }
-        Ok(Err(error)) => CheckCommandResult {
-            command: command.to_string(),
-            status: "failed".to_string(),
-            exit_code: None,
-            duration_ms: started.elapsed().as_millis(),
-            stdout: String::new(),
-            stderr: format!("Failed to run command: {error}"),
-        },
-        Err(_) => CheckCommandResult {
-            command: command.to_string(),
-            status: "timeout".to_string(),
-            exit_code: None,
-            duration_ms: started.elapsed().as_millis(),
-            stdout: String::new(),
-            stderr: format!("Command timed out after {TIMEOUT_SECS}s and was abandoned"),
-        },
     }
 }
 
