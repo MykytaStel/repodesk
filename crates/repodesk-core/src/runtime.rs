@@ -184,70 +184,23 @@ pub fn provider_status(provider: &str) -> RepoDeskResult<RuntimeProviderStatus> 
 #[deprecated(since = "0.1.0", note = "Use routing::route_request instead")]
 #[allow(deprecated)]
 pub fn recommend_runtime(need: &str) -> RuntimeRoute {
-    let normalized = need.to_lowercase();
+    let budget = crate::usage::budget::load_budget_config().unwrap_or_default();
+    let request = crate::routing::route_request_for_need(need);
+    let capacities = crate::routing::default_capacities(&budget);
+    let decision = crate::routing::route_request(&request, &capacities, &budget);
 
-    if matches!(
-        normalized.as_str(),
-        "compression" | "summary" | "cheap" | "local"
-    ) {
-        return RuntimeRoute {
-            need: need.to_string(),
-            recommended_provider: "ollama".to_string(),
-            reason: "Use local AI first for cheap compression and summarization.".to_string(),
-            fallback_provider: "chatgpt".to_string(),
-            required_guardrails: vec![
-                "safety scan context".to_string(),
-                "token budget check".to_string(),
-            ],
-        };
-    }
-
-    if matches!(
-        normalized.as_str(),
-        "patch" | "refactor" | "implementation" | "code"
-    ) {
-        return RuntimeRoute {
-            need: need.to_string(),
-            recommended_provider: "codex".to_string(),
-            reason: "Patch work should go to a bounded patch agent after preflight checks."
-                .to_string(),
-            fallback_provider: "chatgpt".to_string(),
-            required_guardrails: vec![
-                "judge agent --agent codex".to_string(),
-                "access check for filesystem_write".to_string(),
-                "sandbox plan for shell commands".to_string(),
-            ],
-        };
-    }
-
-    if matches!(
-        normalized.as_str(),
-        "architecture" | "design" | "debugging" | "planning"
-    ) {
-        return RuntimeRoute {
-            need: need.to_string(),
-            recommended_provider: "chatgpt".to_string(),
-            reason: "Higher-level reasoning should use a bounded, curated context pack."
-                .to_string(),
-            fallback_provider: "gemini".to_string(),
-            required_guardrails: vec![
-                "smart-context build".to_string(),
-                "budget check-context".to_string(),
-                "safety scan-context".to_string(),
-            ],
-        };
-    }
+    let reason = if decision.blockers.is_empty() {
+        format!("Routed via modern routing engine. Score: {}.", decision.score)
+    } else {
+        format!("Blocked by routing engine: {}.", decision.blockers.join(", "))
+    };
 
     RuntimeRoute {
         need: need.to_string(),
-        recommended_provider: "chatgpt".to_string(),
-        reason: "Unknown need. Default to a reasoning provider with bounded context.".to_string(),
-        fallback_provider: "ollama".to_string(),
-        required_guardrails: vec![
-            "workflow next".to_string(),
-            "doctor workflow".to_string(),
-            "safety scan-context".to_string(),
-        ],
+        recommended_provider: decision.recommended_provider,
+        reason,
+        fallback_provider: decision.fallback_provider.unwrap_or_default(),
+        required_guardrails: decision.required_guardrails,
     }
 }
 

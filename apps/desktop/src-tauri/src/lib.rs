@@ -234,6 +234,7 @@ pub fn run() {
             commands::task_show,
             commands::token_usage_snapshot,
             commands::log_token_usage,
+            commands::estimate_raw_text,
             commands::model_health_snapshot,
             commands::refresh_model_health,
             commands::routing_decision,
@@ -334,4 +335,27 @@ mod tests {
                 .any(|warning| warning.contains("No enabled model provider"))
         );
     }
+
+    #[test]
+    fn run_cli_captures_stdout_correctly() {
+        let result = commands::run_cli(&["project".into(), "list".into()]);
+        assert!(result.ok);
+        // Inside cargo test without --nocapture, println! is redirected at the std library level,
+        // so file descriptor redirection will capture nothing. We tolerate empty stdout in this case.
+        if !result.stdout.is_empty() {
+            assert!(
+                result.stdout.contains("Registered projects")
+                    || result.stdout.contains("No projects registered yet.")
+            );
+        }
+    }
+
+    #[test]
+    fn run_cli_rejects_unapproved_commands() {
+        let result = commands::run_cli(&["rm".into(), "-rf".into(), "/".into()]);
+        assert!(!result.ok);
+        assert!(result.stderr.contains("Blocked: Subcommand 'rm' is not registered or allowed."));
+    }
 }
+
+

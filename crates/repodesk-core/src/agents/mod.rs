@@ -1,10 +1,6 @@
-use std::fs;
-
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::init;
-use crate::paths::RepoDeskPaths;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentsConfig {
@@ -22,36 +18,24 @@ pub struct AgentConfig {
     pub preferred_for: Vec<String>,
 }
 
-pub fn ensure_agents_config() -> RepoDeskResult<AgentsConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("agents.toml");
-
-    if file.exists() {
-        return load_agents_config();
+impl Default for AgentsConfig {
+    fn default() -> Self {
+        default_agents_config()
     }
+}
 
-    let config = default_agents_config();
-    fs::write(file, toml::to_string_pretty(&config)?)?;
+impl crate::utils::ConfigStore for AgentsConfig {
+    const FILE_NAME: &'static str = "agents.toml";
+}
 
-    Ok(config)
+pub fn ensure_agents_config() -> RepoDeskResult<AgentsConfig> {
+    use crate::utils::ConfigStore;
+    AgentsConfig::ensure_config()
 }
 
 pub fn load_agents_config() -> RepoDeskResult<AgentsConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("agents.toml");
-
-    if !file.exists() {
-        return ensure_agents_config();
-    }
-
-    let content = fs::read_to_string(file)?;
-    let config = toml::from_str(&content)?;
-
-    Ok(config)
+    use crate::utils::ConfigStore;
+    AgentsConfig::load_config()
 }
 
 pub fn recommend_agents(category: &str) -> RepoDeskResult<Vec<AgentConfig>> {

@@ -257,3 +257,9 @@ pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, 
 
     Ok(build_token_usage_snapshot())
 }
+
+#[tauri::command]
+pub fn estimate_raw_text(text: String) -> repodesk_core::tokens::TokenEstimate {
+    repodesk_core::tokens::estimate_text(&text)
+}
+

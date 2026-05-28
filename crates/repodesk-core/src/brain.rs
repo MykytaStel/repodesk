@@ -1,7 +1,7 @@
-use std::fs;
 use std::path::PathBuf;
 
 use crate::errors::RepoDeskResult;
+use crate::utils::format_list;
 use crate::guard::preflight;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
@@ -206,7 +206,14 @@ fn artifact(path: PathBuf, label: &str) -> ArtifactState {
 }
 
 fn summarize_checks_state(path: &PathBuf) -> String {
-    let content = fs::read_to_string(path).unwrap_or_default();
+    use std::io::Read;
+    let content = std::fs::File::open(path)
+        .ok()
+        .and_then(|file| {
+            let mut buf = String::new();
+            file.take(10_000).read_to_string(&mut buf).ok().map(|_| buf)
+        })
+        .unwrap_or_default();
     let lowered = content.to_ascii_lowercase();
 
     if lowered.contains("overall status: `passed`") {
@@ -222,10 +229,4 @@ fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
 }
 
-fn format_list(items: &[String]) -> String {
-    items
-        .iter()
-        .map(|item| format!("  - {item}"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+

@@ -1,7 +1,8 @@
 use std::fs;
-use std::process::Command;
 
 use crate::errors::RepoDeskResult;
+use crate::git_workspace::run_git_captured as run_git;
+use crate::utils::format_list;
 use crate::init;
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
@@ -160,34 +161,9 @@ fn read_optional_file(path: &std::path::Path) -> String {
     fs::read_to_string(path).unwrap_or_else(|_| "Not available.".to_string())
 }
 
-fn run_git(project_path: &std::path::Path, args: &[&str]) -> String {
-    match Command::new("git")
-        .args(args)
-        .current_dir(project_path)
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).to_string()
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            format!("Git command failed: git {}\n{}", args.join(" "), stderr)
-        }
-        Err(error) => format!("Git command failed: git {}\n{}", args.join(" "), error),
-    }
-}
 
-fn format_list(items: &[String]) -> String {
-    if items.is_empty() {
-        "- none".to_string()
-    } else {
-        items
-            .iter()
-            .map(|item| format!("- {item}"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}
+
+
 
 fn trim_for_context(value: &str, max_chars: usize) -> String {
     if value.chars().count() <= max_chars {

@@ -1,12 +1,10 @@
 use regex::Regex;
-use std::fs;
 
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
+use crate::utils::format_list;
 use crate::guard::preflight;
-use crate::init;
-use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
 
@@ -48,36 +46,18 @@ impl SecurityLevel {
     }
 }
 
+impl crate::utils::ConfigStore for SecurityPolicy {
+    const FILE_NAME: &'static str = "security.toml";
+}
+
 pub fn ensure_security_policy() -> RepoDeskResult<SecurityPolicy> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("security.toml");
-
-    if file.exists() {
-        return load_security_policy();
-    }
-
-    let policy = SecurityPolicy::default();
-    fs::write(file, toml::to_string_pretty(&policy)?)?;
-
-    Ok(policy)
+    use crate::utils::ConfigStore;
+    SecurityPolicy::ensure_config()
 }
 
 pub fn load_security_policy() -> RepoDeskResult<SecurityPolicy> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("security.toml");
-
-    if !file.exists() {
-        return ensure_security_policy();
-    }
-
-    let content = fs::read_to_string(file)?;
-    let policy = toml::from_str(&content)?;
-
-    Ok(policy)
+    use crate::utils::ConfigStore;
+    SecurityPolicy::load_config()
 }
 
 pub fn audit_security_policy() -> RepoDeskResult<SecurityAudit> {
@@ -292,40 +272,34 @@ pub fn is_blocked_path(path: &str) -> Option<String> {
     None
 }
 
-fn format_list(items: &[String]) -> String {
-    if items.is_empty() {
-        return "  - none".to_string();
-    }
-
-    items
-        .iter()
-        .map(|item| format!("  - {item}"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
+    use std::sync::OnceLock;
+
     let mut findings = Vec::new();
 
     // AWS Access Key ID
-    if let Ok(re) = Regex::new(r"AKIA[0-9A-Z]{16}") {
-        if re.is_match(text) {
-            findings.push("AWS Access Key ID".to_string());
-        }
+    static AWS_REGEX: OnceLock<Regex> = OnceLock::new();
+    let aws_re = AWS_REGEX.get_or_init(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
+    if aws_re.is_match(text) {
+        findings.push("AWS Access Key ID".to_string());
     }
 
     // Stripe keys
-    if let Ok(re) = Regex::new(r"(sk_live|rk_live)_[0-9a-zA-Z]{24}") {
-        if re.is_match(text) {
-            findings.push("Stripe Live Key".to_string());
-        }
+    static STRIPE_REGEX: OnceLock<Regex> = OnceLock::new();
+    let stripe_re =
+        STRIPE_REGEX.get_or_init(|| Regex::new(r"(sk_live|rk_live)_[0-9a-zA-Z]{24}").unwrap());
+    if stripe_re.is_match(text) {
+        findings.push("Stripe Live Key".to_string());
     }
 
     // Generic API keys/tokens (heuristic)
-    if let Ok(re) = Regex::new(r#"(?i)(api_key|token|secret)[=:]\s*['"]?[a-zA-Z0-9_-]{20,}['"]?"#) {
-        if re.is_match(text) {
-            findings.push("Generic API Key or Token".to_string());
-        }
+    static GENERIC_REGEX: OnceLock<Regex> = OnceLock::new();
+    let generic_re = GENERIC_REGEX.get_or_init(|| {
+        Regex::new(r#"(?i)(api_key|token|secret)[=:]\s*['"]?[a-zA-Z0-9_-]{20,}['"]?"#).unwrap()
+    });
+    if generic_re.is_match(text) {
+        findings.push("Generic API Key or Token".to_string());
     }
 
     // Private keys
@@ -338,3 +312,4 @@ pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
 
     findings
 }
+

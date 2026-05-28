@@ -1,10 +1,6 @@
-use std::fs;
-
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::init;
-use crate::paths::RepoDeskPaths;
 use crate::tokens::TokenEstimate;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,37 +57,18 @@ impl Default for BudgetConfig {
     }
 }
 
+impl crate::utils::ConfigStore for BudgetConfig {
+    const FILE_NAME: &'static str = "budgets.toml";
+}
+
 pub fn ensure_budget_config() -> RepoDeskResult<BudgetConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("budgets.toml");
-
-    if file.exists() {
-        return load_budget_config();
-    }
-
-    let config = BudgetConfig::default();
-    let content = toml::to_string_pretty(&config)?;
-    fs::write(file, content)?;
-
-    Ok(config)
+    use crate::utils::ConfigStore;
+    BudgetConfig::ensure_config()
 }
 
 pub fn load_budget_config() -> RepoDeskResult<BudgetConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("budgets.toml");
-
-    if !file.exists() {
-        return ensure_budget_config();
-    }
-
-    let content = fs::read_to_string(file)?;
-    let config = toml::from_str(&content)?;
-
-    Ok(config)
+    use crate::utils::ConfigStore;
+    BudgetConfig::load_config()
 }
 
 pub fn evaluate_context(estimate: &TokenEstimate, config: &BudgetConfig) -> BudgetVerdict {

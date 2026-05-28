@@ -3,12 +3,15 @@ use super::types::*;
 
 pub fn has_block_signal(result: &CommandResult) -> bool {
     let text = format!("{}\n{}", result.stdout, result.stderr).to_lowercase();
-    text.contains("block") || text.contains("secret") || text.contains("private key")
+    text.contains("safety scan: block")
+        || text.contains("security audit: block")
+        || text.contains("private key")
+        || text.contains("aws_secret_access_key")
 }
 
 pub fn has_warn_signal(result: &CommandResult) -> bool {
     let text = format!("{}\n{}", result.stdout, result.stderr).to_lowercase();
-    text.contains("warn") || text.contains("warning") || text.contains("risk")
+    text.contains("safety scan: warning") || text.contains("security audit: warning")
 }
 
 pub fn build_product_workflow_state(

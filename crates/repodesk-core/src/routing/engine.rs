@@ -145,6 +145,177 @@ pub fn unique_strings(items: Vec<String>) -> Vec<String> {
     set.into_iter().collect()
 }
 
+pub fn default_capacities(budget: &BudgetConfig) -> Vec<ProviderCapacity> {
+    vec![
+        ProviderCapacity {
+            provider: "ollama".to_string(),
+            label: "Ollama".to_string(),
+            kind: ProviderKind::Local,
+            enabled: true,
+            auth_status: "configured".to_string(),
+            reachability: "working".to_string(),
+            models: vec!["llama3".to_string()],
+            preferred_model: Some("llama3".to_string()),
+            daily_remaining_tokens: budget.daily_hard_limit,
+            estimated_cost_units: 0.0,
+            quota_status: QuotaStatus::Available,
+            paid_agents_allowed: true,
+            max_patch_files: budget.max_files_for_patch_agent,
+        },
+        ProviderCapacity {
+            provider: "chatgpt".to_string(),
+            label: "ChatGPT".to_string(),
+            kind: ProviderKind::Paid,
+            enabled: true,
+            auth_status: "manual".to_string(),
+            reachability: "unknown".to_string(),
+            models: vec!["gpt-4o".to_string()],
+            preferred_model: Some("gpt-4o".to_string()),
+            daily_remaining_tokens: budget.daily_hard_limit,
+            estimated_cost_units: 1.0,
+            quota_status: QuotaStatus::Available,
+            paid_agents_allowed: true,
+            max_patch_files: budget.max_files_for_patch_agent,
+        },
+        ProviderCapacity {
+            provider: "codex".to_string(),
+            label: "Codex".to_string(),
+            kind: ProviderKind::PatchAgent,
+            enabled: true,
+            auth_status: "manual".to_string(),
+            reachability: "unknown".to_string(),
+            models: vec!["codex-plan".to_string()],
+            preferred_model: Some("codex-plan".to_string()),
+            daily_remaining_tokens: budget.daily_hard_limit,
+            estimated_cost_units: 1.0,
+            quota_status: QuotaStatus::Available,
+            paid_agents_allowed: true,
+            max_patch_files: budget.max_files_for_patch_agent,
+        },
+        ProviderCapacity {
+            provider: "gemini".to_string(),
+            label: "Gemini".to_string(),
+            kind: ProviderKind::Paid,
+            enabled: true,
+            auth_status: "manual".to_string(),
+            reachability: "unknown".to_string(),
+            models: vec!["gemini-1.5-pro".to_string()],
+            preferred_model: Some("gemini-1.5-pro".to_string()),
+            daily_remaining_tokens: budget.daily_hard_limit,
+            estimated_cost_units: 1.0,
+            quota_status: QuotaStatus::Available,
+            paid_agents_allowed: true,
+            max_patch_files: budget.max_files_for_patch_agent,
+        },
+        ProviderCapacity {
+            provider: "local_checks".to_string(),
+            label: "Local checks".to_string(),
+            kind: ProviderKind::CheckRunner,
+            enabled: true,
+            auth_status: "configured".to_string(),
+            reachability: "working".to_string(),
+            models: Vec::new(),
+            preferred_model: None,
+            daily_remaining_tokens: budget.daily_hard_limit,
+            estimated_cost_units: 0.0,
+            quota_status: QuotaStatus::Available,
+            paid_agents_allowed: true,
+            max_patch_files: budget.max_files_for_patch_agent,
+        },
+        manual_capacity(budget),
+    ]
+}
+
+pub fn route_request_for_need(need: &str) -> RouteRequest {
+    let normalized = need.to_lowercase();
+    let task_kind = if normalized.contains("compress") {
+        TaskKind::Compress
+    } else if normalized.contains("summary") || normalized.contains("summarize") {
+        TaskKind::Summarize
+    } else if normalized.contains("patch") || normalized.contains("refactor") || normalized.contains("implementation") {
+        TaskKind::Patch
+    } else if normalized.contains("review") || normalized.contains("opinion") {
+        TaskKind::Review
+    } else if normalized.contains("debug") {
+        TaskKind::Debug
+    } else if normalized.contains("check") {
+        TaskKind::Checks
+    } else {
+        TaskKind::Plan
+    };
+
+    let estimated_output_tokens = match task_kind {
+        TaskKind::Compress | TaskKind::Summarize => 1_200,
+        TaskKind::Plan | TaskKind::Review | TaskKind::Debug => 1_800,
+        TaskKind::Patch => 3_500,
+        TaskKind::Checks | TaskKind::Manual => 0,
+    };
+
+    RouteRequest {
+        task_kind,
+        estimated_input_tokens: 4_000,
+        estimated_output_tokens,
+        risk_level: "ok".to_string(),
+        changed_file_count: 0,
+        requires_write: task_kind == TaskKind::Patch,
+        context_safe: Some(true),
+        checks_ok: Some(true),
+        guard_allowed: Some(true),
+        git_dirty: Some(false),
+        max_cost_units: None,
+        economy_mode: None,
+    }
+}
+
+pub fn format_route_decision(decision: &RouteDecision) -> String {
+    let mut output = String::new();
+    output.push_str("Routing Decision:\n\n");
+    output.push_str(&format!("need: {}\n", match decision.task_kind {
+        TaskKind::Compress => "compression",
+        TaskKind::Summarize => "summarization",
+        TaskKind::Plan => "planning",
+        TaskKind::Review => "review",
+        TaskKind::Patch => "patch",
+        TaskKind::Debug => "debugging",
+        TaskKind::Checks => "checks",
+        TaskKind::Manual => "manual",
+    }));
+    output.push_str(&format!("recommended provider: {}\n", decision.recommended_provider));
+    if let Some(ref model) = decision.recommended_model {
+        output.push_str(&format!("recommended model: {}\n", model));
+    }
+    if let Some(ref fallback) = decision.fallback_provider {
+        output.push_str(&format!("fallback provider: {}\n", fallback));
+    }
+    if let Some(ref fallback_model) = decision.fallback_model {
+        output.push_str(&format!("fallback model: {}\n", fallback_model));
+    }
+    output.push_str(&format!("score: {}\n", decision.score));
+    output.push_str(&format!("decision level: {:?}\n", decision.decision_level));
+    output.push_str(&format!("estimated total tokens: {}\n", decision.estimated_total_tokens));
+    
+    if !decision.blockers.is_empty() {
+        output.push_str("\nBlockers:\n");
+        for blocker in &decision.blockers {
+            output.push_str(&format!("  - {}\n", blocker));
+        }
+    }
+    if !decision.warnings.is_empty() {
+        output.push_str("\nWarnings:\n");
+        for warning in &decision.warnings {
+            output.push_str(&format!("  - {}\n", warning));
+        }
+    }
+    if !decision.required_guardrails.is_empty() {
+        output.push_str("\nRequired Guardrails:\n");
+        for guardrail in &decision.required_guardrails {
+            output.push_str(&format!("  - {}\n", guardrail));
+        }
+    }
+    output
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;

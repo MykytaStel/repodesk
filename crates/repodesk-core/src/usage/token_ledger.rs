@@ -5,6 +5,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
+use crate::utils::{csv_escape, split_simple_csv};
 use crate::init;
 use crate::paths::RepoDeskPaths;
 use crate::projects::read_active_project;
@@ -247,43 +248,7 @@ pub fn format_token_report(report: &TokenReport) -> String {
     output
 }
 
-fn csv_escape(value: &str) -> String {
-    let escaped = value.replace('"', "\"\"");
 
-    if escaped.contains(',') || escaped.contains('"') || escaped.contains('\n') {
-        format!("\"{escaped}\"")
-    } else {
-        escaped
-    }
-}
-
-fn split_simple_csv(line: &str) -> Vec<String> {
-    let mut columns = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    let mut chars = line.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' if in_quotes && chars.peek() == Some(&'"') => {
-                current.push('"');
-                chars.next();
-            }
-            '"' => {
-                in_quotes = !in_quotes;
-            }
-            ',' if !in_quotes => {
-                columns.push(current.clone());
-                current.clear();
-            }
-            _ => current.push(ch),
-        }
-    }
-
-    columns.push(current);
-
-    columns
-}
 
 #[cfg(test)]
 mod tests {

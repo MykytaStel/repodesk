@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use tokio::fs;
 
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
+use crate::git_workspace::git_lines;
 use crate::repo_map::{build_repo_map, format_repo_map};
 use crate::tasks::show_active_task;
 use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
@@ -179,21 +179,7 @@ pub fn format_smart_context_result(result: &SmartContextResult) -> String {
     )
 }
 
-fn git_lines(project_path: &Path, args: &[&str]) -> Vec<String> {
-    match Command::new("git")
-        .args(args)
-        .current_dir(project_path)
-        .output()
-    {
-        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(ToString::to_string)
-            .collect(),
-        _ => Vec::new(),
-    }
-}
+
 
 fn is_safe_text_path(path: &str) -> bool {
     let lower = path.to_lowercase();
