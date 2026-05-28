@@ -10,8 +10,8 @@ mod store;
 
 mod git_workspace_commands {
     #[tauri::command]
-    pub fn git_workspace_snapshot(
-    ) -> Result<repodesk_core::git_workspace::GitWorkspaceSnapshot, String> {
+    pub fn git_workspace_snapshot()
+    -> Result<repodesk_core::git_workspace::GitWorkspaceSnapshot, String> {
         Ok(repodesk_core::git_workspace::build_git_workspace_snapshot())
     }
 }
@@ -55,8 +55,6 @@ mod code_workbench_commands {
             })
             .unwrap_or_else(|error| format!("git command failed: {error}"))
     }
-
-
 
     fn parse_status(project_path: &Path) -> Vec<(String, String)> {
         run_git(project_path, &["status", "--porcelain=v1"])
@@ -267,12 +265,16 @@ mod tests {
         let actions = commands::action_catalog();
         assert!(actions.iter().any(|action| action.id == "workflow-next"));
         assert!(actions.iter().any(|action| action.id == "context-build"));
-        assert!(actions
-            .iter()
-            .any(|action| action.id == "smart-context-build"));
-        assert!(actions
-            .iter()
-            .any(|action| action.id == "safety-scan-context"));
+        assert!(
+            actions
+                .iter()
+                .any(|action| action.id == "smart-context-build")
+        );
+        assert!(
+            actions
+                .iter()
+                .any(|action| action.id == "safety-scan-context")
+        );
         assert!(actions.iter().any(|action| action.id == "prompt-all"));
         assert!(actions.iter().any(|action| action.id == "checks-run"));
     }
@@ -319,13 +321,17 @@ mod tests {
         let snapshot = commands::model_health_from_settings(&settings);
 
         assert_eq!(snapshot.providers.len(), 6);
-        assert!(snapshot
-            .providers
-            .iter()
-            .all(|provider| provider.reachability == "disabled"));
-        assert!(snapshot
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("No enabled model provider")));
+        assert!(
+            snapshot
+                .providers
+                .iter()
+                .all(|provider| provider.reachability == "disabled")
+        );
+        assert!(
+            snapshot
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("No enabled model provider"))
+        );
     }
 }

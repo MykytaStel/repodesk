@@ -219,11 +219,7 @@ fn summarize_checks_state(path: &PathBuf) -> String {
 }
 
 fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
+    if value { "yes" } else { "no" }
 }
 
 fn format_list(items: &[String]) -> String {

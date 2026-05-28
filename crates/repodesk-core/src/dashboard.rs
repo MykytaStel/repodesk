@@ -132,11 +132,7 @@ fn count_existing(paths: &[std::path::PathBuf]) -> usize {
 }
 
 fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
+    if value { "yes" } else { "no" }
 }
 
 fn next_action(

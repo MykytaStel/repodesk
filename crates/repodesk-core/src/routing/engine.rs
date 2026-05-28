@@ -145,7 +145,6 @@ pub fn unique_strings(items: Vec<String>) -> Vec<String> {
     set.into_iter().collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,10 +239,12 @@ mod tests {
 
         assert_eq!(decision.recommended_provider, "manual");
         assert_eq!(decision.decision_level, DecisionLevel::Block);
-        assert!(decision
-            .blockers
-            .iter()
-            .any(|blocker| blocker.contains("Codex quota status is empty")));
+        assert!(
+            decision
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("Codex quota status is empty"))
+        );
     }
 
     #[test]
@@ -255,10 +256,12 @@ mod tests {
 
         assert_eq!(decision.recommended_provider, "manual");
         assert_eq!(decision.decision_level, DecisionLevel::Block);
-        assert!(decision
-            .blockers
-            .iter()
-            .any(|blocker| blocker.contains("Paid agents are disabled")));
+        assert!(
+            decision
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("Paid agents are disabled"))
+        );
     }
 
     #[test]
@@ -273,10 +276,12 @@ mod tests {
         );
 
         assert_eq!(decision.recommended_provider, "manual");
-        assert!(decision
-            .blockers
-            .iter()
-            .any(|blocker| blocker.contains("paid hard limit")));
+        assert!(
+            decision
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("paid hard limit"))
+        );
     }
 
     #[test]
@@ -287,10 +292,12 @@ mod tests {
         let decision = route_request(&request(TaskKind::Summarize), &[local, manual()], &budget);
 
         assert_eq!(decision.recommended_provider, "manual");
-        assert!(decision
-            .blockers
-            .iter()
-            .any(|blocker| blocker.contains("unreachable")));
+        assert!(
+            decision
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("unreachable"))
+        );
     }
 
     #[test]
@@ -307,10 +314,12 @@ mod tests {
 
         assert_eq!(decision.recommended_provider, "codex");
         assert_eq!(decision.decision_level, DecisionLevel::Warn);
-        assert!(decision
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("Workspace is dirty")));
+        assert!(
+            decision
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("Workspace is dirty"))
+        );
     }
 
     #[test]

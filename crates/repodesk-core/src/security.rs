@@ -277,8 +277,8 @@ pub fn is_blocked_path(path: &str) -> Option<String> {
     let lower = path.to_lowercase();
     let blocked_fragments = [".env", "secret", "credential", "private", "token", "id_rsa"];
     let blocked_suffixes = [
-        ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif",
-        ".webp", ".pdf", ".zip",
+        ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+        ".pdf", ".zip",
     ];
 
     if blocked_fragments.iter().any(|item| lower.contains(item)) {

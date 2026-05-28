@@ -7,7 +7,7 @@ use crate::brain::{format_brain_status, read_brain_status};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
-use crate::workflow_doctor::{diagnose_workflow, DoctorLevel};
+use crate::workflow_doctor::{DoctorLevel, diagnose_workflow};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UiSnapshot {

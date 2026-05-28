@@ -43,7 +43,10 @@ fn http_agent() -> ureq::Agent {
     config.into()
 }
 
-fn request_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value, ProviderFetchError> {
+fn request_json(
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<serde_json::Value, ProviderFetchError> {
     let agent = http_agent();
     let mut request = agent.get(url).header("accept", "application/json");
     for (key, value) in headers {
@@ -53,16 +56,24 @@ fn request_json(url: &str, headers: &[(&str, &str)]) -> Result<serde_json::Value
     match request.call() {
         Ok(mut response) => {
             let status = response.status();
-            let body_str = response.body_mut().read_to_string().map_err(|error| ProviderFetchError {
-                status: Some(status.as_u16()),
-                summary: error.to_string(),
-            })?;
+            let body_str =
+                response
+                    .body_mut()
+                    .read_to_string()
+                    .map_err(|error| ProviderFetchError {
+                        status: Some(status.as_u16()),
+                        summary: error.to_string(),
+                    })?;
 
             if status.as_u16() >= 400 {
                 let summary = if body_str.trim().is_empty() {
                     format!("HTTP {}", status.as_u16())
                 } else {
-                    format!("HTTP {}: {}", status.as_u16(), body_str.chars().take(240).collect::<String>())
+                    format!(
+                        "HTTP {}: {}",
+                        status.as_u16(),
+                        body_str.chars().take(240).collect::<String>()
+                    )
                 };
                 return Err(ProviderFetchError {
                     status: Some(status.as_u16()),
@@ -212,9 +223,11 @@ fn open_ai_compatible_health(
                     items
                         .iter()
                         .filter_map(|item| {
-                            item.get("id").and_then(|value| value.as_str()).map(|model_id| {
-                                model_status(id, model_id.to_string(), Some(notes.to_string()))
-                            })
+                            item.get("id")
+                                .and_then(|value| value.as_str())
+                                .map(|model_id| {
+                                    model_status(id, model_id.to_string(), Some(notes.to_string()))
+                                })
                         })
                         .collect::<Vec<_>>()
                 })
@@ -507,9 +520,11 @@ pub async fn model_health_snapshot() -> ModelHealthSnapshot {
 
 #[tauri::command]
 pub async fn refresh_model_health() -> ModelHealthSnapshot {
-    tauri::async_runtime::spawn_blocking(build_model_health_snapshot).await.unwrap_or_else(|_| ModelHealthSnapshot {
-        generated_at_ms: now_ms(),
-        providers: vec![],
-        warnings: vec!["Internal async task failure while refreshing models".into()],
-    })
+    tauri::async_runtime::spawn_blocking(build_model_health_snapshot)
+        .await
+        .unwrap_or_else(|_| ModelHealthSnapshot {
+            generated_at_ms: now_ms(),
+            providers: vec![],
+            warnings: vec!["Internal async task failure while refreshing models".into()],
+        })
 }

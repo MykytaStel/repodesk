@@ -7,7 +7,7 @@ use clap::{Parser, Subcommand};
 use repodesk_core::command_sandbox::{format_sandbox_plan, plan_command, sandbox_policy};
 use repodesk_core::dashboard::{dashboard_json, dashboard_summary};
 use repodesk_core::git_audit::{backup_plan, git_audit};
-use repodesk_core::persistence::receipts::{add_receipt, read_receipts, AddReceiptInput};
+use repodesk_core::persistence::receipts::{AddReceiptInput, add_receipt, read_receipts};
 use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
 #[allow(deprecated)]
 use repodesk_core::runtime::recommend_runtime;
@@ -39,7 +39,7 @@ use repodesk_core::guard::{format_guard_result, preflight};
 use repodesk_core::init;
 use repodesk_core::judge::{format_judgement, judge_agent};
 use repodesk_core::persistence::event_journal::{
-    format_events, log_event, read_events, LogEventInput,
+    LogEventInput, format_events, log_event, read_events,
 };
 // use repodesk_core::knowledge::{append_knowledge, format_knowledge, read_knowledge};
 use repodesk_core::module_registry::{
@@ -51,9 +51,9 @@ use repodesk_core::peripherals::{
     format_peripherals,
 };
 use repodesk_core::projects::{
-    add_project, get_active_project, list_projects, use_project, AddProjectInput,
+    AddProjectInput, add_project, get_active_project, list_projects, use_project,
 };
-use repodesk_core::prompts::{generate_prompt, PromptKind};
+use repodesk_core::prompts::{PromptKind, generate_prompt};
 use repodesk_core::safety::{
     format_safety_report, safety_rules_text, scan_active_context, scan_file,
 };
@@ -64,7 +64,7 @@ use repodesk_core::security::{
 use repodesk_core::sessions::{
     begin_session, end_session, format_session_record, show_active_session,
 };
-use repodesk_core::tasks::{create_task, show_active_task, task_status, NewTaskInput};
+use repodesk_core::tasks::{NewTaskInput, create_task, show_active_task, task_status};
 use repodesk_core::tokens::{estimate_file, format_estimate};
 use repodesk_core::ui_snapshot::{read_ui_snapshot_json, ui_routes_text, write_ui_snapshot};
 use repodesk_core::usage::budget::{
@@ -76,7 +76,7 @@ use repodesk_core::usage::cost::{
     format_cost_report,
 };
 use repodesk_core::usage::token_ledger::{
-    format_token_report, log_token_event, read_token_report, LogTokenInput,
+    LogTokenInput, format_token_report, log_token_event, read_token_report,
 };
 use repodesk_core::workflow::{create_workflow_plan, read_or_create_workflow_plan, workflow_next};
 use repodesk_core::workflow_doctor::{diagnose_workflow, format_workflow_doctor_report};

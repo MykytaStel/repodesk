@@ -105,9 +105,5 @@ fn run_git(project_path: &Path, args: &[&str]) -> String {
 }
 
 fn fallback<'a>(value: &'a str, fallback: &'a str) -> &'a str {
-    if value.is_empty() {
-        fallback
-    } else {
-        value
-    }
+    if value.is_empty() { fallback } else { value }
 }

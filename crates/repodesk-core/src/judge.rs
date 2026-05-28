@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::context::estimate_active_context;
 use crate::errors::RepoDeskResult;
-use crate::guard::{preflight, GuardLevel};
-use crate::persistence::event_journal::{log_event, LogEventInput};
-use crate::safety::{scan_active_context, SafetyLevel};
-use crate::usage::budget::{evaluate_context, load_budget_config, BudgetLevel};
+use crate::guard::{GuardLevel, preflight};
+use crate::persistence::event_journal::{LogEventInput, log_event};
+use crate::safety::{SafetyLevel, scan_active_context};
+use crate::usage::budget::{BudgetLevel, evaluate_context, load_budget_config};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JudgementReport {

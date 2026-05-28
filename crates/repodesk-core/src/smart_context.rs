@@ -6,7 +6,7 @@ use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::repo_map::{build_repo_map, format_repo_map};
 use crate::tasks::show_active_task;
-use crate::tokens::{estimate_text, format_estimate, TokenEstimate};
+use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
 use crate::usage::budget::{evaluate_context, format_verdict, load_budget_config};
 
 #[derive(Debug, Clone)]

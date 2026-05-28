@@ -164,7 +164,11 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
             // we can intercept the most common commands or run dispatch.
             // Let's compile and see if we can get basic dispatch working.
             match repodesk_cli::commands::dispatch(cli) {
-                Ok(_) => (true, "Command executed successfully in-process.".to_string(), String::new()),
+                Ok(_) => (
+                    true,
+                    "Command executed successfully in-process.".to_string(),
+                    String::new(),
+                ),
                 Err(error) => (false, String::new(), error.to_string()),
             }
         }
@@ -223,8 +227,6 @@ pub(crate) fn validate_optional_notes(value: &Option<String>) -> Result<(), Stri
 
     Ok(())
 }
-
-
 
 pub(crate) fn has_block_signal(result: &CommandResult) -> bool {
     let text = format!("{}\n{}", result.stdout, result.stderr).to_lowercase();

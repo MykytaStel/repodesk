@@ -96,7 +96,12 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
     let generated_at_ms = now_ms();
     let project_info = match repodesk_core::projects::get_active_project() {
         Ok(config) => {
-            let mut stdout = format!("Active project:\n  name: {}\n  path: {}\n  type: {}", config.name, config.path.display(), config.project_type);
+            let mut stdout = format!(
+                "Active project:\n  name: {}\n  path: {}\n  type: {}",
+                config.name,
+                config.path.display(),
+                config.project_type
+            );
             if let Some(lang) = config.main_language {
                 stdout.push_str(&format!("\n  main language: {}", lang));
             }
@@ -116,23 +121,65 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
                     stdout.push_str(&format!("\n    - {}", item));
                 }
             }
-            CommandResult { ok: true, command: "repodesk project info".into(), stdout, stderr: "".into(), exit_code: Some(0) }
+            CommandResult {
+                ok: true,
+                command: "repodesk project info".into(),
+                stdout,
+                stderr: "".into(),
+                exit_code: Some(0),
+            }
         }
-        Err(e) => CommandResult { ok: false, command: "repodesk project info".into(), stdout: "".into(), stderr: e.to_string(), exit_code: Some(1) }
+        Err(e) => CommandResult {
+            ok: false,
+            command: "repodesk project info".into(),
+            stdout: "".into(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        },
     };
 
     let task_status = match repodesk_core::tasks::task_status() {
         Ok(info) => {
-            let mut stdout = format!("Active task:\n  id: {}\n  title: {}\n  status: {:?}", info.config.id, info.config.title, info.config.status);
-            stdout.push_str(&format!("\n  run directory: {}", info.config.run_dir.display()));
-            CommandResult { ok: true, command: "repodesk task status".into(), stdout, stderr: "".into(), exit_code: Some(0) }
+            let mut stdout = format!(
+                "Active task:\n  id: {}\n  title: {}\n  status: {:?}",
+                info.config.id, info.config.title, info.config.status
+            );
+            stdout.push_str(&format!(
+                "\n  run directory: {}",
+                info.config.run_dir.display()
+            ));
+            CommandResult {
+                ok: true,
+                command: "repodesk task status".into(),
+                stdout,
+                stderr: "".into(),
+                exit_code: Some(0),
+            }
         }
-        Err(e) => CommandResult { ok: false, command: "repodesk task status".into(), stdout: "".into(), stderr: e.to_string(), exit_code: Some(1) }
+        Err(e) => CommandResult {
+            ok: false,
+            command: "repodesk task status".into(),
+            stdout: "".into(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        },
     };
 
     let workflow_hint = match repodesk_core::workflow::workflow_next() {
-        Ok(text) => CommandResult { ok: true, command: "repodesk workflow next".into(), stdout: text, stderr: "".into(), exit_code: Some(0) },
-        Err(e) => CommandResult { ok: false, command: "repodesk workflow next".into(), stdout: "".into(), stderr: e.to_string(), exit_code: Some(1) }
+        Ok(text) => CommandResult {
+            ok: true,
+            command: "repodesk workflow next".into(),
+            stdout: text,
+            stderr: "".into(),
+            exit_code: Some(0),
+        },
+        Err(e) => CommandResult {
+            ok: false,
+            command: "repodesk workflow next".into(),
+            stdout: "".into(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        },
     };
 
     let security_verdict = match repodesk_core::judge::judge_agent("codex") {
@@ -141,9 +188,15 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
             command: "repodesk judge agent --agent codex".into(),
             stdout: repodesk_core::judge::format_judgement(&report),
             stderr: "".into(),
-            exit_code: Some(0)
+            exit_code: Some(0),
         },
-        Err(e) => CommandResult { ok: false, command: "repodesk judge agent --agent codex".into(), stdout: "".into(), stderr: e.to_string(), exit_code: Some(1) }
+        Err(e) => CommandResult {
+            ok: false,
+            command: "repodesk judge agent --agent codex".into(),
+            stdout: "".into(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        },
     };
 
     let context = artifact_status("context");
@@ -180,4 +233,3 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
 
     state
 }
-

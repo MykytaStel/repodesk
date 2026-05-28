@@ -1,8 +1,8 @@
 use crate::checks::last_checks;
 use crate::errors::RepoDeskResult;
-use crate::guard::{preflight, GuardLevel};
+use crate::guard::{GuardLevel, preflight};
 use crate::projects::get_active_project;
-use crate::security::{audit_security_policy, SecurityLevel};
+use crate::security::{SecurityLevel, audit_security_policy};
 use crate::tasks::show_active_task;
 use crate::tokens::estimate_file;
 use crate::usage::budget::{evaluate_context, load_budget_config};
@@ -169,11 +169,7 @@ Next actions:
 }
 
 fn yes_no(value: bool) -> &'static str {
-    if value {
-        "yes"
-    } else {
-        "no"
-    }
+    if value { "yes" } else { "no" }
 }
 
 fn format_list(items: &[String]) -> String {

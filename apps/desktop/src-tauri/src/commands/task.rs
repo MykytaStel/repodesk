@@ -1,7 +1,7 @@
 use super::{
+    ActionRunResult, ArtifactContent, CommandResult, DesktopAction, ProductWorkflowState,
     artifact_path, build_product_workflow_state, find_action, history_file, now_ms, run_cli,
     run_cli_str, save_action_history, truncate_text, validate_short_id, validate_text,
-    ActionRunResult, ArtifactContent, CommandResult, DesktopAction, ProductWorkflowState,
 };
 use std::fs;
 
