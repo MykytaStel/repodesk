@@ -3,6 +3,24 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type UnknownRecord = Record<string, unknown>;
 
+export const debugEmitter = new EventTarget();
+
+export interface DebugEventDetail {
+  id: number;
+  command: string;
+  args?: UnknownRecord;
+  status: "success" | "error";
+  durationMs: number;
+  timestamp: string;
+  preview?: string;
+  error?: string;
+}
+
+function dispatchDebugEvent(detail: DebugEventDetail) {
+  debugEmitter.dispatchEvent(new CustomEvent("debug-command", { detail }));
+}
+
+
 export const queryKeys = {
   workspace: {
     snapshot: ["desktop_snapshot"] as const,
@@ -45,13 +63,39 @@ export const queryKeys = {
 
 /** Wrapper for Tauri invoke that throws on error. */
 export async function callCommand<T>(command: string, args?: UnknownRecord): Promise<T> {
-  return await invoke<T>(command, args);
+  const started = performance.now();
+  try {
+    const result = await invoke<T>(command, args);
+    const durationMs = Math.round(performance.now() - started);
+    dispatchDebugEvent({
+      id: Date.now() + Math.random(),
+      command,
+      args,
+      status: "success",
+      durationMs,
+      timestamp: new Date().toLocaleTimeString(),
+      preview: typeof result === "string" ? result : JSON.stringify(result, null, 2),
+    });
+    return result;
+  } catch (error: any) {
+    const durationMs = Math.round(performance.now() - started);
+    dispatchDebugEvent({
+      id: Date.now() + Math.random(),
+      command,
+      args,
+      status: "error",
+      durationMs,
+      timestamp: new Date().toLocaleTimeString(),
+      error: typeof error === "string" ? error : error?.message || String(error),
+    });
+    throw error;
+  }
 }
 
 /** Wrapper for Tauri invoke that returns null on error. */
 export async function optionalCommand<T>(command: string, args?: UnknownRecord): Promise<T | null> {
   try {
-    return await invoke<T>(command, args);
+    return await callCommand<T>(command, args);
   } catch {
     return null;
   }
