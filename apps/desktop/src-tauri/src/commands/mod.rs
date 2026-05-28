@@ -31,14 +31,7 @@ pub use project::*;
 pub use settings::*;
 pub use task::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommandResult {
-    pub ok: bool,
-    pub command: String,
-    pub stdout: String,
-    pub stderr: String,
-    pub exit_code: Option<i32>,
-}
+pub use repodesk_core::workflow::CommandResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectAddInput {
