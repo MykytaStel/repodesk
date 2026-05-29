@@ -435,6 +435,10 @@ pub enum TokensCommand {
         notes: Option<String>,
     },
     Report,
+    Compare {
+        #[arg(required = true, num_args = 1..)]
+        snippets: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

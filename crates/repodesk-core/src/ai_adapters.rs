@@ -1,11 +1,8 @@
-use std::fs;
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::init;
-use crate::paths::RepoDeskPaths;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiAdaptersConfig {
@@ -30,34 +27,24 @@ pub struct AiAdapterStatus {
     pub detail: String,
 }
 
-pub fn ensure_ai_adapters_config() -> RepoDeskResult<AiAdaptersConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("ai-adapters.toml");
-
-    if file.exists() {
-        return load_ai_adapters_config();
+impl Default for AiAdaptersConfig {
+    fn default() -> Self {
+        default_ai_adapters_config()
     }
+}
 
-    let config = default_ai_adapters_config();
-    fs::write(file, toml::to_string_pretty(&config)?)?;
+impl crate::utils::ConfigStore for AiAdaptersConfig {
+    const FILE_NAME: &'static str = "ai-adapters.toml";
+}
 
-    Ok(config)
+pub fn ensure_ai_adapters_config() -> RepoDeskResult<AiAdaptersConfig> {
+    use crate::utils::ConfigStore;
+    AiAdaptersConfig::ensure_config()
 }
 
 pub fn load_ai_adapters_config() -> RepoDeskResult<AiAdaptersConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("ai-adapters.toml");
-
-    if !file.exists() {
-        return ensure_ai_adapters_config();
-    }
-
-    let content = fs::read_to_string(file)?;
-    Ok(toml::from_str(&content)?)
+    use crate::utils::ConfigStore;
+    AiAdaptersConfig::load_config()
 }
 
 pub fn recommend_ai_adapters(need: &str) -> RepoDeskResult<Vec<AiAdapter>> {

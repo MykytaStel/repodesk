@@ -1,8 +1,6 @@
-use std::path::Path;
-use std::process::Command;
-
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
+use crate::git_workspace::run_git_captured as run_git;
 
 pub fn git_audit() -> RepoDeskResult<String> {
     let project = get_active_project()?;
@@ -90,19 +88,7 @@ Safety notes:
     ))
 }
 
-fn run_git(project_path: &Path, args: &[&str]) -> String {
-    match Command::new("git")
-        .args(args)
-        .current_dir(project_path)
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).to_string()
-        }
-        Ok(output) => String::from_utf8_lossy(&output.stderr).to_string(),
-        Err(error) => format!("failed to run git {}: {}", args.join(" "), error),
-    }
-}
+
 
 fn fallback<'a>(value: &'a str, fallback: &'a str) -> &'a str {
     if value.is_empty() { fallback } else { value }

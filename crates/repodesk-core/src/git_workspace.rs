@@ -203,6 +203,37 @@ fn run_git(project_path: &Path, args: &[&str]) -> std::io::Result<GitOutput> {
     })
 }
 
+pub fn run_git_captured(project_path: &Path, args: &[&str]) -> String {
+    match Command::new("git")
+        .args(args)
+        .current_dir(project_path)
+        .output()
+    {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).to_string()
+        }
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.trim().is_empty() {
+                String::from_utf8_lossy(&output.stdout).to_string()
+            } else {
+                stderr.to_string()
+            }
+        }
+        Err(error) => format!("failed to run git {}: {}", args.join(" "), error),
+    }
+}
+
+pub fn git_lines(project_path: &Path, args: &[&str]) -> Vec<String> {
+    let output = run_git_captured(project_path, args);
+    output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(ToString::to_string)
+        .collect()
+}
+
 fn non_empty(value: &str) -> Option<String> {
     let value = value.trim();
     if value.is_empty() {

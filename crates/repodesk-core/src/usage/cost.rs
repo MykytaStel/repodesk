@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::init;
-use crate::paths::RepoDeskPaths;
 use crate::usage::token_ledger::TokenReport;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,36 +75,18 @@ impl Default for CostConfig {
     }
 }
 
+impl crate::utils::ConfigStore for CostConfig {
+    const FILE_NAME: &'static str = "costs.toml";
+}
+
 pub fn ensure_cost_config() -> RepoDeskResult<CostConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("costs.toml");
-
-    if file.exists() {
-        return load_cost_config();
-    }
-
-    let config = CostConfig::default();
-    std::fs::write(file, toml::to_string_pretty(&config)?)?;
-
-    Ok(config)
+    use crate::utils::ConfigStore;
+    CostConfig::ensure_config()
 }
 
 pub fn load_cost_config() -> RepoDeskResult<CostConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("costs.toml");
-
-    if !file.exists() {
-        return ensure_cost_config();
-    }
-
-    let content = std::fs::read_to_string(file)?;
-    let config = toml::from_str(&content)?;
-
-    Ok(config)
+    use crate::utils::ConfigStore;
+    CostConfig::load_config()
 }
 
 pub fn estimate_agent_cost(

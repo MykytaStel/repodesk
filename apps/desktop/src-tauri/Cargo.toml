@@ -24,4 +24,6 @@ tauri = { version = "2", features = [] }
 thiserror = "2.0.18"
 ureq = { version = "3.3.0", features = ["json"] }
 clap = { version = "4", features = ["derive"] }
+stdio-override = "0.2.0"
+
 

@@ -282,3 +282,89 @@ fn explain_breakdown(estimate: &TokenEstimate) -> String {
 
     notes.join("\n")
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyntaxComparison {
+    pub snippet: String,
+    pub characters: usize,
+    pub lines: usize,
+    pub estimated_tokens: usize,
+    pub code_like_chars: usize,
+    pub symbol_chars: usize,
+    pub cost_percentage_difference: f64,
+}
+
+pub fn compare_syntax(snippets: &[String]) -> Vec<SyntaxComparison> {
+    if snippets.is_empty() {
+        return Vec::new();
+    }
+
+    let estimates: Vec<(String, TokenEstimate)> = snippets
+        .iter()
+        .map(|s| (s.clone(), estimate_text(s)))
+        .collect();
+
+    let baseline_tokens = estimates[0].1.estimated_tokens as f64;
+
+    estimates
+        .into_iter()
+        .map(|(snippet, est)| {
+            let diff = if baseline_tokens > 0.0 {
+                ((est.estimated_tokens as f64 - baseline_tokens) / baseline_tokens) * 100.0
+            } else {
+                0.0
+            };
+            SyntaxComparison {
+                snippet,
+                characters: est.characters,
+                lines: est.lines,
+                estimated_tokens: est.estimated_tokens,
+                code_like_chars: est.breakdown.code_like_chars,
+                symbol_chars: est.breakdown.symbol_chars,
+                cost_percentage_difference: diff,
+            }
+        })
+        .collect()
+}
+
+pub fn format_syntax_comparison(comparisons: &[SyntaxComparison]) -> String {
+    let mut output = String::new();
+    output.push_str("Syntax / Language Token Comparison:\n\n");
+    for (i, comp) in comparisons.iter().enumerate() {
+        output.push_str(&format!("Snippet #{}:\n", i + 1));
+        output.push_str(&format!("  Content:    {:?}\n", comp.snippet));
+        output.push_str(&format!("  Characters: {}\n", comp.characters));
+        output.push_str(&format!("  Lines:      {}\n", comp.lines));
+        output.push_str(&format!("  Tokens:     {}\n", comp.estimated_tokens));
+        output.push_str(&format!("  Code-like:  {}\n", comp.code_like_chars));
+        output.push_str(&format!("  Symbols:    {}\n", comp.symbol_chars));
+        if i == 0 {
+            output.push_str("  Cost Diff:  Baseline (0.0%)\n");
+        } else {
+            output.push_str(&format!("  Cost Diff:  {:+2.1}%\n", comp.cost_percentage_difference));
+        }
+        output.push('\n');
+    }
+    output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compare_syntax() {
+        let snippets = vec![
+            "fn foo() {}".to_string(),
+            "function foo() {}".to_string(),
+            "def foo(): pass".to_string(),
+        ];
+        let comps = compare_syntax(&snippets);
+        assert_eq!(comps.len(), 3);
+        assert_eq!(comps[0].cost_percentage_difference, 0.0);
+        assert_eq!(comps[0].snippet, "fn foo() {}");
+        assert_eq!(comps[1].snippet, "function foo() {}");
+    }
+}
+
+

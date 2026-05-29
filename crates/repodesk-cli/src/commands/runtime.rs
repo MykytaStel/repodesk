@@ -94,9 +94,11 @@ pub fn handle_runtime_command(command: RuntimeCommand) -> Result<()> {
             print!("{}", format_provider_status(&status));
         }
         RuntimeCommand::Route { need } => {
-            #[allow(deprecated)]
-            let route = recommend_runtime(&need);
-            print!("{}", format_runtime_route(&route));
+            let budget = repodesk_core::usage::budget::load_budget_config().unwrap_or_default();
+            let request = repodesk_core::routing::route_request_for_need(&need);
+            let capacities = repodesk_core::routing::default_capacities(&budget);
+            let decision = repodesk_core::routing::route_request(&request, &capacities, &budget);
+            print!("{}", repodesk_core::routing::format_route_decision(&decision));
         }
         RuntimeCommand::SnapshotJson => {
             println!("{}", runtime_snapshot_json()?);

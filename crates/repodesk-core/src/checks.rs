@@ -38,6 +38,40 @@ pub struct ChecksLastResult {
     pub summary: String,
 }
 
+pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return Err("Command is empty".to_string());
+    }
+
+    // Check for dangerous shell symbols or characters that allow command injection/chaining
+    let dangerous_chars = [';', '&', '|', '<', '>', '$', '`', '\n', '\r'];
+    for &ch in &dangerous_chars {
+        if trimmed.contains(ch) {
+            return Err(format!("Command contains restricted character '{ch}'"));
+        }
+    }
+
+    // Extract the binary name (first word)
+    let binary = trimmed
+        .split_whitespace()
+        .next()
+        .ok_or_else(|| "Could not parse command executable".to_string())?;
+
+    // Approved list of binaries for checkers/test runners/compilers
+    let allowed_binaries = [
+        "cargo", "npm", "pnpm", "yarn", "python", "python3", "pytest", "go", "make", 
+        "gradle", "mvn", "deno", "npx", "bun", "jest", "vitest", "eslint", "prettier", 
+        "flake8", "mypy", "black"
+    ];
+
+    if !allowed_binaries.contains(&binary) {
+        return Err(format!("Executable '{binary}' is not in the allowed list of check tools"));
+    }
+
+    Ok(())
+}
+
 pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
     init::init_home()?;
 
@@ -73,7 +107,17 @@ pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
     let mut results = Vec::new();
 
     for check in &project.checks {
-        let result = run_shell_command(check, &project.path);
+        let result = match is_allowed_check_command(check) {
+            Ok(_) => run_shell_command(check, &project.path),
+            Err(err) => CheckCommandResult {
+                command: check.to_string(),
+                status: "failed".to_string(),
+                exit_code: None,
+                duration_ms: 0,
+                stdout: String::new(),
+                stderr: format!("Validation Error: {err}"),
+            },
+        };
 
         writeln!(log, "==============================")?;
         writeln!(log, "Command: {}", result.command)?;
@@ -367,4 +411,28 @@ mod tests {
         assert_eq!(result.status, "passed");
         assert!(result.stdout.contains("hello world"));
     }
+
+    #[test]
+    fn test_is_allowed_check_command() {
+        // Valid commands
+        assert!(is_allowed_check_command("cargo test").is_ok());
+        assert!(is_allowed_check_command("cargo fmt --all -- --check").is_ok());
+        assert!(is_allowed_check_command("pnpm typecheck").is_ok());
+        assert!(is_allowed_check_command("python -m pytest").is_ok());
+
+        // Invalid binaries
+        assert!(is_allowed_check_command("rm -rf /").is_err());
+        assert!(is_allowed_check_command("curl http://example.com").is_err());
+
+        // Dangerous characters/chaining/injection
+        assert!(is_allowed_check_command("cargo test; rm -rf /").is_err());
+        assert!(is_allowed_check_command("cargo test && echo 1").is_err());
+        assert!(is_allowed_check_command("cargo test || echo 2").is_err());
+        assert!(is_allowed_check_command("cargo test | grep error").is_err());
+        assert!(is_allowed_check_command("cargo test > file.txt").is_err());
+        assert!(is_allowed_check_command("cargo test < file.txt").is_err());
+        assert!(is_allowed_check_command("cargo test $VAR").is_err());
+        assert!(is_allowed_check_command("cargo test `id`").is_err());
+    }
 }
+

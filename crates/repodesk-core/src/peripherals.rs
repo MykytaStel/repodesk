@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::init;
-use crate::paths::RepoDeskPaths;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PeripheralsConfig {
@@ -25,34 +23,24 @@ pub struct PeripheralAudit {
     pub recommendations: Vec<String>,
 }
 
-pub fn ensure_peripherals_config() -> RepoDeskResult<PeripheralsConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("peripherals.toml");
-
-    if file.exists() {
-        return load_peripherals_config();
+impl Default for PeripheralsConfig {
+    fn default() -> Self {
+        default_peripherals_config()
     }
+}
 
-    let config = default_peripherals_config();
-    std::fs::write(file, toml::to_string_pretty(&config)?)?;
+impl crate::utils::ConfigStore for PeripheralsConfig {
+    const FILE_NAME: &'static str = "peripherals.toml";
+}
 
-    Ok(config)
+pub fn ensure_peripherals_config() -> RepoDeskResult<PeripheralsConfig> {
+    use crate::utils::ConfigStore;
+    PeripheralsConfig::ensure_config()
 }
 
 pub fn load_peripherals_config() -> RepoDeskResult<PeripheralsConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("peripherals.toml");
-
-    if !file.exists() {
-        return ensure_peripherals_config();
-    }
-
-    let content = std::fs::read_to_string(file)?;
-    Ok(toml::from_str(&content)?)
+    use crate::utils::ConfigStore;
+    PeripheralsConfig::load_config()
 }
 
 pub fn audit_peripherals() -> RepoDeskResult<PeripheralAudit> {

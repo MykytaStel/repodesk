@@ -40,3 +40,6 @@ pub mod smart_context;
 pub use errors::{RepoDeskError, RepoDeskResult};
 pub mod git_workspace;
 pub mod project_token_check;
+pub mod utils;
+
+

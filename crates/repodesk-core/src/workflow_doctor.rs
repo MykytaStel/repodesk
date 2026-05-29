@@ -1,5 +1,6 @@
 use crate::checks::last_checks;
 use crate::errors::RepoDeskResult;
+use crate::utils::format_list;
 use crate::guard::{GuardLevel, preflight};
 use crate::projects::get_active_project;
 use crate::security::{SecurityLevel, audit_security_policy};
@@ -172,17 +173,7 @@ fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
 }
 
-fn format_list(items: &[String]) -> String {
-    if items.is_empty() {
-        return "  - none".to_string();
-    }
 
-    items
-        .iter()
-        .map(|item| format!("  - {item}"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
 
 fn max_level(left: DoctorLevel, right: DoctorLevel) -> DoctorLevel {
     if weight(&right) > weight(&left) {

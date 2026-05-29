@@ -1,10 +1,6 @@
-use std::fs;
-
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::init;
-use crate::paths::RepoDeskPaths;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilitiesConfig {
@@ -30,36 +26,24 @@ pub struct CapabilityAudit {
     pub recommendations: Vec<String>,
 }
 
-pub fn ensure_capabilities_config() -> RepoDeskResult<CapabilitiesConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("capabilities.toml");
-
-    if file.exists() {
-        return load_capabilities_config();
+impl Default for CapabilitiesConfig {
+    fn default() -> Self {
+        default_capabilities_config()
     }
+}
 
-    let config = default_capabilities_config();
-    fs::write(file, toml::to_string_pretty(&config)?)?;
+impl crate::utils::ConfigStore for CapabilitiesConfig {
+    const FILE_NAME: &'static str = "capabilities.toml";
+}
 
-    Ok(config)
+pub fn ensure_capabilities_config() -> RepoDeskResult<CapabilitiesConfig> {
+    use crate::utils::ConfigStore;
+    CapabilitiesConfig::ensure_config()
 }
 
 pub fn load_capabilities_config() -> RepoDeskResult<CapabilitiesConfig> {
-    init::init_home()?;
-
-    let paths = RepoDeskPaths::resolve()?;
-    let file = paths.config_dir.join("capabilities.toml");
-
-    if !file.exists() {
-        return ensure_capabilities_config();
-    }
-
-    let content = fs::read_to_string(file)?;
-    let config = toml::from_str(&content)?;
-
-    Ok(config)
+    use crate::utils::ConfigStore;
+    CapabilitiesConfig::load_config()
 }
 
 pub fn recommend_capabilities(need: &str) -> RepoDeskResult<Vec<Capability>> {
