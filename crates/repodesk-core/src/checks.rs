@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+use wait_timeout::ChildExt;
 
 use chrono::Utc;
 
@@ -245,8 +246,37 @@ fn run_shell_command_with_timeout(
         }
     };
 
-    let mut stdout_pipe = child.stdout.take().unwrap();
-    let mut stderr_pipe = child.stderr.take().unwrap();
+    let mut stdout_pipe = match child.stdout.take() {
+        Some(pipe) => pipe,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return CheckCommandResult {
+                command: command.to_string(),
+                status: "failed".to_string(),
+                exit_code: None,
+                duration_ms: started.elapsed().as_millis(),
+                stdout: String::new(),
+                stderr: "Failed to take child process stdout pipe".to_string(),
+            };
+        }
+    };
+
+    let mut stderr_pipe = match child.stderr.take() {
+        Some(pipe) => pipe,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return CheckCommandResult {
+                command: command.to_string(),
+                status: "failed".to_string(),
+                exit_code: None,
+                duration_ms: started.elapsed().as_millis(),
+                stdout: String::new(),
+                stderr: "Failed to take child process stderr pipe".to_string(),
+            };
+        }
+    };
 
     let (tx_out, rx_out) = mpsc::channel();
     std::thread::spawn(move || {
@@ -265,50 +295,45 @@ fn run_shell_command_with_timeout(
     });
 
     let timeout = Duration::from_secs(timeout_secs);
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                let stdout = rx_out.recv().unwrap_or_default();
-                let stderr = rx_err.recv().unwrap_or_default();
-                let duration_ms = started.elapsed().as_millis();
-                let status_str = if status.success() { "passed" } else { "failed" };
-                return CheckCommandResult {
-                    command: command.to_string(),
-                    status: status_str.to_string(),
-                    exit_code: status.code(),
-                    duration_ms,
-                    stdout,
-                    stderr,
-                };
+    match child.wait_timeout(timeout) {
+        Ok(Some(status)) => {
+            let stdout = rx_out.recv().unwrap_or_default();
+            let stderr = rx_err.recv().unwrap_or_default();
+            let duration_ms = started.elapsed().as_millis();
+            let status_str = if status.success() { "passed" } else { "failed" };
+            CheckCommandResult {
+                command: command.to_string(),
+                status: status_str.to_string(),
+                exit_code: status.code(),
+                duration_ms,
+                stdout,
+                stderr,
             }
-            Ok(None) => {
-                if started.elapsed() > timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    let duration_ms = started.elapsed().as_millis();
-                    return CheckCommandResult {
-                        command: command.to_string(),
-                        status: "timeout".to_string(),
-                        exit_code: None,
-                        duration_ms,
-                        stdout: String::new(),
-                        stderr: format!("Command timed out after {}s and was killed", timeout_secs),
-                    };
-                }
-                std::thread::sleep(Duration::from_millis(100));
+        }
+        Ok(None) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let duration_ms = started.elapsed().as_millis();
+            CheckCommandResult {
+                command: command.to_string(),
+                status: "timeout".to_string(),
+                exit_code: None,
+                duration_ms,
+                stdout: String::new(),
+                stderr: format!("Command timed out after {}s and was killed", timeout_secs),
             }
-            Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let duration_ms = started.elapsed().as_millis();
-                return CheckCommandResult {
-                    command: command.to_string(),
-                    status: "failed".to_string(),
-                    exit_code: None,
-                    duration_ms,
-                    stdout: String::new(),
-                    stderr: format!("Failed to wait for command: {error}"),
-                };
+        }
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            let duration_ms = started.elapsed().as_millis();
+            CheckCommandResult {
+                command: command.to_string(),
+                status: "failed".to_string(),
+                exit_code: None,
+                duration_ms,
+                stdout: String::new(),
+                stderr: format!("Failed to wait for command: {error}"),
             }
         }
     }

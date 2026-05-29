@@ -17,4 +17,6 @@ shlex = "2.0.1"
 regex = "1.12.3"
 rusqlite = { version = "0.32.1", features = ["bundled"] }
 indexmap = "2.2.6"
+wait-timeout = "0.2.0"
+
 

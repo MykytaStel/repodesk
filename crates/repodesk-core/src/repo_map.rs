@@ -7,6 +7,12 @@ use serde::{Deserialize, Serialize};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 
+const MAX_SCAN_DEPTH: usize = 8;
+const MAX_FILES_SCANNED: usize = 2_000;
+const HOTSPOT_BYTE_LIMIT: u64 = 80_000;
+const MAX_HOTSPOTS: usize = 15;
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoMap {
     pub project_name: String,
@@ -121,7 +127,7 @@ impl RepoScanner {
 
     #[async_recursion::async_recursion]
     async fn scan_dir(&mut self, dir: &Path, depth: usize) -> RepoDeskResult<()> {
-        if depth > 8 {
+        if depth > MAX_SCAN_DEPTH {
             self.skipped_dirs += 1;
             return Ok(());
         }
@@ -153,7 +159,7 @@ impl RepoScanner {
                 self.scan_file(&path, metadata.len()).await?;
             }
 
-            if self.files_scanned >= 2_000 {
+            if self.files_scanned >= MAX_FILES_SCANNED {
                 break;
             }
         }
@@ -176,7 +182,7 @@ impl RepoScanner {
             self.important_files.push(relative.clone());
         }
 
-        if bytes > 80_000 {
+        if bytes > HOTSPOT_BYTE_LIMIT {
             self.hotspots.push(FileHotspot {
                 path: relative,
                 bytes,
@@ -201,7 +207,7 @@ impl RepoScanner {
         languages.sort_by(|a, b| b.bytes.cmp(&a.bytes));
 
         self.hotspots.sort_by(|a, b| b.bytes.cmp(&a.bytes));
-        self.hotspots.truncate(15);
+        self.hotspots.truncate(MAX_HOTSPOTS);
         self.important_files.sort();
         self.important_files.dedup();
 
