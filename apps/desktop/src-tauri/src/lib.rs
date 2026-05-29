@@ -23,6 +23,11 @@ mod code_workbench_commands {
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
+    const MAX_PREVIEW_BYTES: u64 = 80_000;
+    const MAX_SAFE_PREVIEW_BYTES: u64 = 160_000;
+    const MAX_PREVIEW_CHARS: usize = 4_000;
+
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CodeFilePreview {
         pub path: String,
@@ -100,7 +105,7 @@ mod code_workbench_commands {
             }
         };
 
-        if metadata.len() > 80_000 {
+        if metadata.len() > MAX_PREVIEW_BYTES {
             return CodeFilePreview {
                 path: relative_path.into(),
                 status: status.into(),
@@ -113,7 +118,7 @@ mod code_workbench_commands {
 
         match fs::read_to_string(&full_path) {
             Ok(content) => {
-                let preview: String = content.chars().take(4_000).collect();
+                let preview: String = content.chars().take(MAX_PREVIEW_CHARS).collect();
                 CodeFilePreview {
                     path: relative_path.into(),
                     status: status.into(),
@@ -194,7 +199,7 @@ mod code_workbench_commands {
         }
 
         let metadata = fs::metadata(&canonical_file).map_err(|error| error.to_string())?;
-        if metadata.len() > 160_000 {
+        if metadata.len() > MAX_SAFE_PREVIEW_BYTES {
             return Err("File is too large for safe UI preview".into());
         }
         let content = fs::read_to_string(&canonical_file).map_err(|error| error.to_string())?;

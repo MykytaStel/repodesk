@@ -9,6 +9,12 @@ use crate::tasks::show_active_task;
 use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
 use crate::usage::budget::{evaluate_context, format_verdict, load_budget_config};
 
+const MAX_CANDIDATE_FILES: usize = 12;
+const MAX_PREVIEW_CHARS: usize = 4_000;
+const MAX_TASK_CHARS: usize = 5_000;
+const MAX_REPOMAP_CHARS: usize = 8_000;
+
+
 #[derive(Debug, Clone)]
 pub struct SmartContextResult {
     pub context_file: PathBuf,
@@ -36,7 +42,7 @@ pub async fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
     let mut skipped_files = Vec::new();
     let mut file_sections = Vec::new();
 
-    for relative in candidate_files.iter().take(12) {
+    for relative in candidate_files.iter().take(MAX_CANDIDATE_FILES) {
         if !is_safe_text_path(relative) {
             skipped_files.push(format!("{relative} — unsupported or risky file type"));
             continue;
@@ -51,15 +57,15 @@ pub async fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
             }
         };
 
-        let trimmed = trim_text(&content, 4_000);
+        let trimmed = trim_text(&content, MAX_PREVIEW_CHARS);
         included_files.push(relative.clone());
         file_sections.push(format!("## File: `{relative}`\n\n```txt\n{trimmed}\n```\n"));
     }
 
-    if candidate_files.len() > 12 {
+    if candidate_files.len() > MAX_CANDIDATE_FILES {
         skipped_files.push(format!(
             "{} additional changed files skipped by smart-context file limit",
-            candidate_files.len() - 12
+            candidate_files.len() - MAX_CANDIDATE_FILES
         ));
     }
 
@@ -103,8 +109,8 @@ It prefers active task data, repository map, git status, and changed file snippe
 - Do not touch secrets or credentials.
 - Ask for specific missing files only.
 "#,
-        task_markdown = trim_text(&task_markdown, 5_000),
-        repo_map = trim_text(&format_repo_map(&repo_map), 8_000),
+        task_markdown = trim_text(&task_markdown, MAX_TASK_CHARS),
+        repo_map = trim_text(&format_repo_map(&repo_map), MAX_REPOMAP_CHARS),
         included_files = format_lines(&included_files),
         skipped_files = format_lines(&skipped_files),
         file_sections = file_sections.join("\n"),
