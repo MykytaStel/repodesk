@@ -22,11 +22,10 @@ pub(crate) fn save_action_history(result: &ActionRunResult) {
         let _ = fs::create_dir_all(parent);
     }
 
-    if let Ok(line) = serde_json::to_string(result) {
-        if let Ok(mut handle) = OpenOptions::new().create(true).append(true).open(file) {
+    if let Ok(line) = serde_json::to_string(result)
+        && let Ok(mut handle) = OpenOptions::new().create(true).append(true).open(file) {
             let _ = writeln!(handle, "{line}");
         }
-    }
 }
 
 fn active_task_run_dir() -> Option<PathBuf> {
@@ -85,13 +84,11 @@ use std::time::Instant;
 static WORKFLOW_CACHE: Mutex<Option<(ProductWorkflowState, Instant)>> = Mutex::new(None);
 
 pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
-    if let Ok(cache) = WORKFLOW_CACHE.lock() {
-        if let Some((ref state, ref last_updated)) = *cache {
-            if last_updated.elapsed() < Duration::from_secs(1) {
+    if let Ok(cache) = WORKFLOW_CACHE.lock()
+        && let Some((ref state, ref last_updated)) = *cache
+            && last_updated.elapsed() < Duration::from_secs(1) {
                 return state.clone();
             }
-        }
-    }
 
     let generated_at_ms = now_ms();
     let project_info = match repodesk_core::projects::get_active_project() {
@@ -212,19 +209,21 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
         .and_then(|(_, path)| read_file_if_exists(&path, 5000));
 
     let state = repodesk_core::workflow::build_product_workflow_state(
-        generated_at_ms,
-        project_info,
-        task_status,
-        workflow_hint,
-        security_verdict,
-        context,
-        smart_context,
-        prompt_codex,
-        prompt_chatgpt,
-        prompt_review,
-        checks_summary,
-        token_estimate,
-        checks_summary_preview,
+        repodesk_core::workflow::ProductWorkflowStateParams {
+            generated_at_ms,
+            project_info,
+            task_status,
+            workflow_hint,
+            security_verdict,
+            context,
+            smart_context,
+            prompt_codex,
+            prompt_chatgpt,
+            prompt_review,
+            checks_summary,
+            token_estimate,
+            checks_summary_preview,
+        },
     );
 
     if let Ok(mut cache) = WORKFLOW_CACHE.lock() {

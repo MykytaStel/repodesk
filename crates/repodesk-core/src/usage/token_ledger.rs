@@ -1,11 +1,10 @@
-use std::fs::OpenOptions;
-use std::io::Write;
+
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::utils::{csv_escape, split_simple_csv};
+use crate::utils::split_simple_csv;
 use crate::init;
 use crate::paths::RepoDeskPaths;
 use crate::projects::read_active_project;
@@ -52,21 +51,6 @@ pub struct ModelTokenTotal {
 pub fn log_token_event(input: LogTokenInput) -> RepoDeskResult<String> {
     init::init_home()?;
 
-    let paths = RepoDeskPaths::resolve()?;
-    let ledger_file = paths.logs_dir.join("token-ledger.csv");
-
-    if !ledger_file.exists() {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&ledger_file)?;
-
-        writeln!(
-            file,
-            "timestamp,project,task_id,agent,model,category,input_tokens,output_tokens,total_tokens,notes"
-        )?;
-    }
-
     let project = read_active_project().unwrap_or_else(|_| "unknown".to_string());
     let task_id = show_active_task()
         .map(|task| task.config.id)
@@ -76,27 +60,25 @@ pub fn log_token_event(input: LogTokenInput) -> RepoDeskResult<String> {
     let model = input.model.unwrap_or_default();
     let notes = input.notes.unwrap_or_default();
 
-    let mut file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&ledger_file)?;
+    let conn = crate::persistence::db::init_db()?;
+    conn.execute(
+        "INSERT INTO token_ledger (timestamp, project, task_id, agent, model, category, input_tokens, output_tokens, total_tokens, notes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        (
+            Utc::now().to_rfc3339(),
+            &project,
+            &task_id,
+            &input.agent,
+            &model,
+            &input.category,
+            input.input_tokens,
+            input.output_tokens,
+            total_tokens,
+            &notes,
+        ),
+    ).map_err(|e| crate::errors::RepoDeskError::Database(format!("Failed to log token to SQLite: {}", e)))?;
 
-    writeln!(
-        file,
-        "{},{},{},{},{},{},{},{},{},{}",
-        Utc::now().to_rfc3339(),
-        csv_escape(&project),
-        csv_escape(&task_id),
-        csv_escape(&input.agent),
-        csv_escape(&model),
-        csv_escape(&input.category),
-        input.input_tokens,
-        input.output_tokens,
-        total_tokens,
-        csv_escape(&notes)
-    )?;
-
-    Ok(ledger_file.display().to_string())
+    Ok("SQLite token_ledger".to_string())
 }
 
 pub fn read_token_report() -> RepoDeskResult<TokenReport> {
@@ -105,20 +87,81 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
     let paths = RepoDeskPaths::resolve()?;
     let ledger_file = paths.logs_dir.join("token-ledger.csv");
 
-    if !ledger_file.exists() {
-        return Ok(TokenReport {
-            entries_count: 0,
-            total_input_tokens: 0,
-            total_output_tokens: 0,
-            total_tokens: 0,
-            today_tokens: 0,
-            by_agent: Vec::new(),
-            by_model: Vec::new(),
-        });
+    let mut csv_content = String::new();
+    if ledger_file.exists() {
+        csv_content = std::fs::read_to_string(&ledger_file)?;
     }
 
-    let content = std::fs::read_to_string(ledger_file)?;
-    Ok(parse_token_report_content(&content))
+    let mut report = parse_token_report_content(&csv_content);
+
+    // Read from DB
+    if let Ok(conn) = crate::persistence::db::init_db() {
+        if let Ok(mut stmt) = conn.prepare("SELECT timestamp, agent, model, input_tokens, output_tokens FROM token_ledger") {
+            let rows = stmt.query_map([], |row| {
+                let timestamp_str: String = row.get(0)?;
+                let agent: String = row.get(1)?;
+                let model: String = row.get(2)?;
+                let input_tokens: usize = row.get(3)?;
+                let output_tokens: usize = row.get(4)?;
+                Ok((timestamp_str, agent, model, input_tokens, output_tokens))
+            });
+
+            if let Ok(rows) = rows {
+                for row in rows.flatten() {
+                    let (timestamp_str, agent, model, input_tokens, output_tokens) = row;
+
+                    let today = Utc::now().date_naive();
+                    let is_today = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
+                        .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
+                        .unwrap_or(false);
+
+                    if is_today {
+                        report.today_tokens += input_tokens + output_tokens;
+                    }
+
+                    report.entries_count += 1;
+                    report.total_input_tokens += input_tokens;
+                    report.total_output_tokens += output_tokens;
+                    report.total_tokens += input_tokens + output_tokens;
+
+                    if let Some(existing) = report.by_agent.iter_mut().find(|item| item.agent == agent) {
+                        existing.input_tokens += input_tokens;
+                        existing.output_tokens += output_tokens;
+                        existing.total_tokens += input_tokens + output_tokens;
+                    } else {
+                        report.by_agent.push(AgentTokenTotal {
+                            agent: agent.clone(),
+                            input_tokens,
+                            output_tokens,
+                            total_tokens: input_tokens + output_tokens,
+                        });
+                    }
+
+                    if let Some(existing) = report.by_model
+                        .iter_mut()
+                        .find(|item| item.agent == agent && item.model == model)
+                    {
+                        existing.input_tokens += input_tokens;
+                        existing.output_tokens += output_tokens;
+                        existing.total_tokens += input_tokens + output_tokens;
+                    } else {
+                        report.by_model.push(ModelTokenTotal {
+                            model,
+                            agent,
+                            input_tokens,
+                            output_tokens,
+                            total_tokens: input_tokens + output_tokens,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    report.by_agent.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    report.by_model.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+
+    Ok(report)
 }
 
 fn parse_token_report_content(content: &str) -> TokenReport {

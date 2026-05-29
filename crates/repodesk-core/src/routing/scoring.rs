@@ -261,15 +261,14 @@ pub fn score_capacity(
         }
     }
 
-    if let Some(max_cost_units) = request.max_cost_units {
-        if capacity.estimated_cost_units > max_cost_units {
+    if let Some(max_cost_units) = request.max_cost_units
+        && capacity.estimated_cost_units > max_cost_units {
             score -= 20;
             warnings.push(format!(
                 "Estimated cost {:.4} exceeds preference {:.4}.",
                 capacity.estimated_cost_units, max_cost_units
             ));
         }
-    }
 
     score = score.clamp(0, 150);
 

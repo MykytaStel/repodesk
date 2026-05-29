@@ -425,11 +425,7 @@ mod tests {
     fn test_run_shell_command_captures_stdout() {
         let cwd = env::current_dir().unwrap();
 
-        let cmd = if cfg!(target_os = "windows") {
-            "echo hello world"
-        } else {
-            "echo hello world"
-        };
+        let cmd = "echo hello world";
 
         let result = run_shell_command_with_timeout(cmd, &cwd, 5);
 

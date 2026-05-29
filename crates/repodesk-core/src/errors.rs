@@ -114,6 +114,9 @@ pub enum RepoDeskError {
 
     #[error("Database error: {0}")]
     Database(String),
+
+    #[error("API error: {0}")]
+    Api(String),
 }
 
 impl RepoDeskError {
@@ -146,7 +149,8 @@ impl RepoDeskError {
             | Self::TomlDe(_)
             | Self::TomlSer(_)
             | Self::Json(_)
-            | Self::Database(_) => ErrorCategory::Internal,
+            | Self::Database(_)
+            | Self::Api(_) => ErrorCategory::Internal,
         }
     }
 

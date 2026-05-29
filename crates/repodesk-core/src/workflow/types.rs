@@ -54,6 +54,23 @@ pub struct ArtifactStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProductWorkflowStateParams {
+    pub generated_at_ms: u128,
+    pub project_info: CommandResult,
+    pub task_status: CommandResult,
+    pub workflow_hint: CommandResult,
+    pub security_verdict: CommandResult,
+    pub context: ArtifactStatus,
+    pub smart_context: ArtifactStatus,
+    pub prompt_codex: ArtifactStatus,
+    pub prompt_chatgpt: ArtifactStatus,
+    pub prompt_review: ArtifactStatus,
+    pub checks_summary: ArtifactStatus,
+    pub token_estimate: ArtifactStatus,
+    pub checks_summary_preview: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductWorkflowState {
     pub generated_at_ms: u128,
     pub overall_status: String,

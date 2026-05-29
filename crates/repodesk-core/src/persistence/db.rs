@@ -48,6 +48,26 @@ pub fn init_db() -> RepoDeskResult<Connection> {
         crate::errors::RepoDeskError::Database(format!("Failed to create memory table: {}", e))
     })?;
 
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS token_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            project TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            agent TEXT NOT NULL,
+            model TEXT NOT NULL,
+            category TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL,
+            output_tokens INTEGER NOT NULL,
+            total_tokens INTEGER NOT NULL,
+            notes TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| {
+        crate::errors::RepoDeskError::Database(format!("Failed to create token_ledger table: {}", e))
+    })?;
+
     Ok(conn)
 }
 

@@ -118,11 +118,10 @@ pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, String> {
     validate_path(&input.path)?;
     validate_short_id("Project type", &input.project_type)?;
 
-    if let Some(language) = &input.main_language {
-        if !language.trim().is_empty() {
+    if let Some(language) = &input.main_language
+        && !language.trim().is_empty() {
             validate_short_id("Main language", language)?;
         }
-    }
 
     let core_input = repodesk_core::projects::AddProjectInput {
         name: input.name.trim().to_string(),

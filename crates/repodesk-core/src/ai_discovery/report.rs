@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn missing_tool_is_not_available() {
-        let _tools = vec![AiToolProbe {
+        let _tools = [AiToolProbe {
             id: "ollama".to_string(),
             name: "Ollama".to_string(),
             category: AiProbeCategory::LocalRuntime,

@@ -1,4 +1,4 @@
-use std::process::Command;
+
 
 use serde::{Deserialize, Serialize};
 
@@ -154,23 +154,32 @@ fn status_for_adapter(adapter: &AiAdapter) -> AiAdapterStatus {
     }
 
     match adapter.name.as_str() {
-        "ollama" => match Command::new("ollama").arg("--version").output() {
-            Ok(output) if output.status.success() => AiAdapterStatus {
-                name: adapter.name.clone(),
-                available: true,
-                detail: String::from_utf8_lossy(&output.stdout).trim().to_string(),
-            },
-            Ok(output) => AiAdapterStatus {
-                name: adapter.name.clone(),
-                available: false,
-                detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
-            },
-            Err(error) => AiAdapterStatus {
-                name: adapter.name.clone(),
-                available: false,
-                detail: error.to_string(),
-            },
-        },
+        "ollama" => {
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(rt) => rt,
+                Err(e) => return AiAdapterStatus {
+                    name: adapter.name.clone(),
+                    available: false,
+                    detail: format!("Failed to create tokio runtime: {}", e),
+                },
+            };
+
+            let client = crate::api_clients::ollama::OllamaClient::new(None, None);
+            let result = rt.block_on(client.get_tags());
+            
+            match result {
+                Ok(tags) => AiAdapterStatus {
+                    name: adapter.name.clone(),
+                    available: true,
+                    detail: format!("Models available: {}", tags.join(", ")),
+                },
+                Err(error) => AiAdapterStatus {
+                    name: adapter.name.clone(),
+                    available: false,
+                    detail: error.to_string(),
+                },
+            }
+        }
         _ => AiAdapterStatus {
             name: adapter.name.clone(),
             available: false,

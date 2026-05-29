@@ -204,20 +204,18 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
     drop(stderr_guard);
 
     // Read the logs
-    if let Ok(content) = std::fs::read_to_string(&stdout_path) {
-        if !content.is_empty() {
+    if let Ok(content) = std::fs::read_to_string(&stdout_path)
+        && !content.is_empty() {
             stdout = content;
         }
-    }
-    if let Ok(content) = std::fs::read_to_string(&stderr_path) {
-        if !content.is_empty() {
+    if let Ok(content) = std::fs::read_to_string(&stderr_path)
+        && !content.is_empty() {
             if stderr.is_empty() {
                 stderr = content;
             } else {
                 stderr = format!("{stderr}\n{content}");
             }
         }
-    }
 
     // Clean up temp files
     let _ = std::fs::remove_file(&stdout_path);
