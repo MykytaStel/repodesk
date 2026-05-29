@@ -233,13 +233,7 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
 }
 
 
-pub(crate) fn run_cli_str(args: &[&str]) -> CommandResult {
-    let owned = args
-        .iter()
-        .map(|value| value.to_string())
-        .collect::<Vec<_>>();
-    run_cli(&owned)
-}
+
 
 pub(crate) fn validate_model_name(label: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();

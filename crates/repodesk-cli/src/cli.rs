@@ -140,6 +140,10 @@ pub enum Command {
         #[command(subcommand)]
         command: BudgetCommand,
     },
+    Memory {
+        #[command(subcommand)]
+        command: MemoryCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -446,3 +450,26 @@ pub enum BudgetCommand {
     Show,
     CheckContext,
 }
+
+#[derive(Debug, Subcommand)]
+pub enum MemoryCommand {
+    Add {
+        #[arg(long)]
+        project: Option<String>,
+        #[arg(long)]
+        content: String,
+        #[arg(long)]
+        category: String,
+        #[arg(long, value_delimiter = ',')]
+        tags: Vec<String>,
+    },
+    List {
+        #[arg(long)]
+        project: Option<String>,
+    },
+    Consolidate {
+        #[arg(long)]
+        project: Option<String>,
+    },
+}
+

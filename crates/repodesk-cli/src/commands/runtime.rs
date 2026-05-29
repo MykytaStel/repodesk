@@ -9,10 +9,8 @@ use repodesk_core::dashboard::{dashboard_json, dashboard_summary};
 use repodesk_core::git_audit::{backup_plan, git_audit};
 use repodesk_core::persistence::receipts::{AddReceiptInput, add_receipt, read_receipts};
 use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
-#[allow(deprecated)]
-use repodesk_core::runtime::recommend_runtime;
 use repodesk_core::runtime::{
-    format_provider_status, format_runtime_providers, format_runtime_route, provider_status,
+    format_provider_status, format_runtime_providers, provider_status,
     runtime_providers, runtime_snapshot_json,
 };
 use repodesk_core::smart_context::{

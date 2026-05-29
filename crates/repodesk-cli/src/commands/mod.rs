@@ -24,6 +24,7 @@ pub mod peripherals;
 pub mod project;
 pub mod prompt;
 pub mod receipts;
+pub mod memory;
 pub mod runtime;
 pub mod safety;
 pub mod sandbox;
@@ -70,5 +71,6 @@ pub fn dispatch(cli: Cli) -> Result<()> {
         Command::Sandbox { command } => sandbox::handle_sandbox_command(command),
         Command::Tokens { command } => tokens::handle_tokens_command(command),
         Command::Budget { command } => budget::handle_budget_command(command),
+        Command::Memory { command } => memory::handle_memory_command(command),
     }
 }
