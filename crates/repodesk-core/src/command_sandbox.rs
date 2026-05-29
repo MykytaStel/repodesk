@@ -217,18 +217,16 @@ fn has_dangerous_delete(tokens: &[String]) -> bool {
 }
 
 fn has_privileged_shell(tokens: &[String]) -> bool {
-    if let Some(first) = tokens.first() {
-        if first == "sudo" || first == "su" {
+    if let Some(first) = tokens.first()
+        && (first == "sudo" || first == "su") {
             return true;
         }
-    }
 
     // Check for chmod 777
-    if let Some(pos) = tokens.iter().position(|t| t == "chmod") {
-        if pos + 1 < tokens.len() && tokens[pos + 1] == "777" {
+    if let Some(pos) = tokens.iter().position(|t| t == "chmod")
+        && pos + 1 < tokens.len() && tokens[pos + 1] == "777" {
             return true;
         }
-    }
 
     false
 }

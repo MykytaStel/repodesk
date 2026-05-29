@@ -15,20 +15,23 @@ pub fn has_warn_signal(result: &CommandResult) -> bool {
 }
 
 pub fn build_product_workflow_state(
-    generated_at_ms: u128,
-    project_info: CommandResult,
-    task_status: CommandResult,
-    workflow_hint: CommandResult,
-    security_verdict: CommandResult,
-    context: ArtifactStatus,
-    smart_context: ArtifactStatus,
-    prompt_codex: ArtifactStatus,
-    prompt_chatgpt: ArtifactStatus,
-    prompt_review: ArtifactStatus,
-    checks_summary: ArtifactStatus,
-    token_estimate: ArtifactStatus,
-    checks_summary_preview: Option<String>,
+    params: ProductWorkflowStateParams,
 ) -> ProductWorkflowState {
+    let ProductWorkflowStateParams {
+        generated_at_ms,
+        project_info,
+        task_status,
+        workflow_hint,
+        security_verdict,
+        context,
+        smart_context,
+        prompt_codex,
+        prompt_chatgpt,
+        prompt_review,
+        checks_summary,
+        token_estimate,
+        checks_summary_preview,
+    } = params;
     let project_ok = project_info.ok;
     let task_ok = task_status.ok;
     let context_ok = context.exists;
