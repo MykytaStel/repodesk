@@ -172,38 +172,6 @@ pub fn provider_status(provider: &str) -> RepoDeskResult<RuntimeProviderStatus> 
     }
 }
 
-/// Returns a static route recommendation based on the requested need string.
-///
-/// # Deprecated
-/// This function uses a hard-coded rule table that duplicates and diverges from the
-/// full routing engine in `routing::engine`. New code should call
-/// `routing::route_request` directly with a `RouteRequest` and live `ProviderCapacity`
-/// data so that scores, guardrails, and economy-mode adjustments are applied correctly.
-///
-/// This function is kept only because it is imported by many CLI command files.
-#[deprecated(since = "0.1.0", note = "Use routing::route_request instead")]
-#[allow(deprecated)]
-pub fn recommend_runtime(need: &str) -> RuntimeRoute {
-    let budget = crate::usage::budget::load_budget_config().unwrap_or_default();
-    let request = crate::routing::route_request_for_need(need);
-    let capacities = crate::routing::default_capacities(&budget);
-    let decision = crate::routing::route_request(&request, &capacities, &budget);
-
-    let reason = if decision.blockers.is_empty() {
-        format!("Routed via modern routing engine. Score: {}.", decision.score)
-    } else {
-        format!("Blocked by routing engine: {}.", decision.blockers.join(", "))
-    };
-
-    RuntimeRoute {
-        need: need.to_string(),
-        recommended_provider: decision.recommended_provider,
-        reason,
-        fallback_provider: decision.fallback_provider.unwrap_or_default(),
-        required_guardrails: decision.required_guardrails,
-    }
-}
-
 pub fn runtime_snapshot_json() -> RepoDeskResult<String> {
     let providers = runtime_providers();
     let statuses = providers
@@ -263,6 +231,8 @@ pub fn format_runtime_route(route: &RuntimeRoute) -> String {
     }
     output
 }
+
+
 
 fn check_ollama() -> RuntimeProviderStatus {
     match Command::new("ollama").arg("--version").output() {

@@ -1,24 +1,103 @@
 use super::{
     ActionRunResult, ArtifactContent, CommandResult, DesktopAction, ProductWorkflowState,
     artifact_path, build_product_workflow_state, find_action, history_file, now_ms, run_cli,
-    run_cli_str, save_action_history, truncate_text, validate_short_id, validate_text,
+    save_action_history, truncate_text, validate_short_id, validate_text,
 };
 use std::fs;
 
 #[tauri::command]
 pub fn task_new(title: String) -> Result<CommandResult, String> {
     validate_text("Task title", &title, 180)?;
-    Ok(run_cli(&["task".into(), "new".into(), title.trim().into()]))
+    match repodesk_core::tasks::create_task(repodesk_core::tasks::NewTaskInput { title: title.clone() }) {
+        Ok(task) => {
+            let stdout = format!(
+                "Task created and set as active:\n  id: {}\n  project: {}\n  title: {}\n  run dir: {}\n  task file: {}",
+                task.config.id,
+                task.config.project_name,
+                task.config.title,
+                task.config.run_dir.display(),
+                task.task_markdown_file.display()
+            );
+            Ok(CommandResult {
+                ok: true,
+                command: format!("repodesk task new {}", title),
+                stdout,
+                stderr: String::new(),
+                exit_code: Some(0),
+            })
+        }
+        Err(e) => Ok(CommandResult {
+            ok: false,
+            command: format!("repodesk task new {}", title),
+            stdout: String::new(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        })
+    }
 }
 
 #[tauri::command]
 pub fn task_status() -> CommandResult {
-    run_cli_str(&["task", "status"])
+    match repodesk_core::tasks::task_status() {
+        Ok(task) => {
+            let stdout = format!(
+                "Task status:\n  id: {}\n  project: {}\n  title: {}\n  status: {:?}\n  run dir: {}\n  task config: {}\n  task markdown: {}",
+                task.config.id,
+                task.config.project_name,
+                task.config.title,
+                task.config.status,
+                task.config.run_dir.display(),
+                task.task_file.display(),
+                task.task_markdown_file.display()
+            );
+            CommandResult {
+                ok: true,
+                command: "repodesk task status".to_string(),
+                stdout,
+                stderr: String::new(),
+                exit_code: Some(0),
+            }
+        }
+        Err(e) => CommandResult {
+            ok: false,
+            command: "repodesk task status".to_string(),
+            stdout: String::new(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        }
+    }
 }
 
 #[tauri::command]
 pub fn task_show() -> CommandResult {
-    run_cli_str(&["task", "show"])
+    match repodesk_core::tasks::show_active_task() {
+        Ok(task) => {
+            let stdout = format!(
+                "Active task:\n  id: {}\n  project: {}\n  title: {}\n  status: {:?}\n  run dir: {}\n  task config: {}\n  task markdown: {}",
+                task.config.id,
+                task.config.project_name,
+                task.config.title,
+                task.config.status,
+                task.config.run_dir.display(),
+                task.task_file.display(),
+                task.task_markdown_file.display()
+            );
+            CommandResult {
+                ok: true,
+                command: "repodesk task show".to_string(),
+                stdout,
+                stderr: String::new(),
+                exit_code: Some(0),
+            }
+        }
+        Err(e) => CommandResult {
+            ok: false,
+            command: "repodesk task show".to_string(),
+            stdout: String::new(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        }
+    }
 }
 
 #[tauri::command]

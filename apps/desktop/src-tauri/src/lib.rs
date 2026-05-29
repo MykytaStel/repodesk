@@ -251,7 +251,8 @@ pub fn run() {
             commands::get_event_journal,
             commands::log_ui_event,
             commands::memory_add,
-            commands::memory_list
+            commands::memory_list,
+            commands::memory_consolidate
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
