@@ -68,9 +68,10 @@ fn scan_directory(
             // Recurse, ignoring errors for system directories
             let _ = scan_directory(root, &path, ignore_list, estimates);
         } else if path.is_file()
-            && let Some(estimate) = estimate_single_file(&path, &relative_path) {
-                estimates.push(estimate);
-            }
+            && let Some(estimate) = estimate_single_file(&path, &relative_path)
+        {
+            estimates.push(estimate);
+        }
     }
 
     Ok(())

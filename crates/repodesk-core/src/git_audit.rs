@@ -1,6 +1,6 @@
 use crate::errors::RepoDeskResult;
-use crate::projects::get_active_project;
 use crate::git_workspace::run_git_captured as run_git;
+use crate::projects::get_active_project;
 
 pub fn git_audit() -> RepoDeskResult<String> {
     let project = get_active_project()?;
@@ -87,8 +87,6 @@ Safety notes:
         project.name
     ))
 }
-
-
 
 fn fallback<'a>(value: &'a str, fallback: &'a str) -> &'a str {
     if value.is_empty() { fallback } else { value }

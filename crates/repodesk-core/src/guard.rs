@@ -75,16 +75,17 @@ pub fn preflight(agent: &str) -> RepoDeskResult<GuardResult> {
     }
 
     if let Some(prompt_file) = expected_prompt_file(&task.config.run_dir, &normalized_agent)
-        && !prompt_file.exists() {
-            if level != GuardLevel::Block {
-                level = GuardLevel::Warning;
-            }
-            reasons.push(format!(
-                "Expected prompt file is missing: {}",
-                prompt_file.display()
-            ));
-            recommendations.push("Run `repodesk prompt all` before using the agent.".to_string());
+        && !prompt_file.exists()
+    {
+        if level != GuardLevel::Block {
+            level = GuardLevel::Warning;
         }
+        reasons.push(format!(
+            "Expected prompt file is missing: {}",
+            prompt_file.display()
+        ));
+        recommendations.push("Run `repodesk prompt all` before using the agent.".to_string());
+    }
 
     let summary_file = task.config.run_dir.join("checks-summary.md");
 

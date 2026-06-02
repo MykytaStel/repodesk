@@ -14,9 +14,7 @@ pub fn has_warn_signal(result: &CommandResult) -> bool {
     text.contains("safety scan: warning") || text.contains("security audit: warning")
 }
 
-pub fn build_product_workflow_state(
-    params: ProductWorkflowStateParams,
-) -> ProductWorkflowState {
+pub fn build_product_workflow_state(params: ProductWorkflowStateParams) -> ProductWorkflowState {
     let ProductWorkflowStateParams {
         generated_at_ms,
         project_info,

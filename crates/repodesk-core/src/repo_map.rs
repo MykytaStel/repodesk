@@ -12,7 +12,6 @@ const MAX_FILES_SCANNED: usize = 2_000;
 const HOTSPOT_BYTE_LIMIT: u64 = 80_000;
 const MAX_HOTSPOTS: usize = 15;
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoMap {
     pub project_name: String,

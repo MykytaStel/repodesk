@@ -13,7 +13,12 @@ pub fn handle_memory_command(command: MemoryCommand) -> Result<()> {
                 Some(p) => p,
                 None => repodesk_core::projects::read_active_project()?,
             };
-            let entry = repodesk_core::persistence::db::add_memory(&project_name, &content, &category, &tags)?;
+            let entry = repodesk_core::persistence::db::add_memory(
+                &project_name,
+                &content,
+                &category,
+                &tags,
+            )?;
             println!("Memory entry added successfully (ID: {}).", entry.id);
         }
         MemoryCommand::List { project } => {
@@ -48,8 +53,12 @@ pub fn handle_memory_command(command: MemoryCommand) -> Result<()> {
                 Some(p) => p,
                 None => repodesk_core::projects::read_active_project()?,
             };
-            let markdown = repodesk_core::persistence::db::consolidate_project_memory(&project_name)?;
-            println!("Memory consolidated successfully for project '{}'!", project_name);
+            let markdown =
+                repodesk_core::persistence::db::consolidate_project_memory(&project_name)?;
+            println!(
+                "Memory consolidated successfully for project '{}'!",
+                project_name
+            );
             println!("Written to memory.md ({} bytes).", markdown.len());
         }
     }

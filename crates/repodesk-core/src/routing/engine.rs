@@ -232,7 +232,10 @@ pub fn route_request_for_need(need: &str) -> RouteRequest {
         TaskKind::Compress
     } else if normalized.contains("summary") || normalized.contains("summarize") {
         TaskKind::Summarize
-    } else if normalized.contains("patch") || normalized.contains("refactor") || normalized.contains("implementation") {
+    } else if normalized.contains("patch")
+        || normalized.contains("refactor")
+        || normalized.contains("implementation")
+    {
         TaskKind::Patch
     } else if normalized.contains("review") || normalized.contains("opinion") {
         TaskKind::Review
@@ -270,17 +273,23 @@ pub fn route_request_for_need(need: &str) -> RouteRequest {
 pub fn format_route_decision(decision: &RouteDecision) -> String {
     let mut output = String::new();
     output.push_str("Routing Decision:\n\n");
-    output.push_str(&format!("need: {}\n", match decision.task_kind {
-        TaskKind::Compress => "compression",
-        TaskKind::Summarize => "summarization",
-        TaskKind::Plan => "planning",
-        TaskKind::Review => "review",
-        TaskKind::Patch => "patch",
-        TaskKind::Debug => "debugging",
-        TaskKind::Checks => "checks",
-        TaskKind::Manual => "manual",
-    }));
-    output.push_str(&format!("recommended provider: {}\n", decision.recommended_provider));
+    output.push_str(&format!(
+        "need: {}\n",
+        match decision.task_kind {
+            TaskKind::Compress => "compression",
+            TaskKind::Summarize => "summarization",
+            TaskKind::Plan => "planning",
+            TaskKind::Review => "review",
+            TaskKind::Patch => "patch",
+            TaskKind::Debug => "debugging",
+            TaskKind::Checks => "checks",
+            TaskKind::Manual => "manual",
+        }
+    ));
+    output.push_str(&format!(
+        "recommended provider: {}\n",
+        decision.recommended_provider
+    ));
     if let Some(ref model) = decision.recommended_model {
         output.push_str(&format!("recommended model: {}\n", model));
     }
@@ -292,8 +301,11 @@ pub fn format_route_decision(decision: &RouteDecision) -> String {
     }
     output.push_str(&format!("score: {}\n", decision.score));
     output.push_str(&format!("decision level: {:?}\n", decision.decision_level));
-    output.push_str(&format!("estimated total tokens: {}\n", decision.estimated_total_tokens));
-    
+    output.push_str(&format!(
+        "estimated total tokens: {}\n",
+        decision.estimated_total_tokens
+    ));
+
     if !decision.blockers.is_empty() {
         output.push_str("\nBlockers:\n");
         for blocker in &decision.blockers {
@@ -314,7 +326,6 @@ pub fn format_route_decision(decision: &RouteDecision) -> String {
     }
     output
 }
-
 
 #[cfg(test)]
 mod tests {

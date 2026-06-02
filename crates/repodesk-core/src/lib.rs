@@ -14,6 +14,7 @@ pub mod errors;
 pub mod guard;
 pub mod init;
 pub mod judge;
+pub mod memory;
 pub mod module_registry;
 pub mod paths;
 pub mod peripherals;
@@ -42,5 +43,3 @@ pub use errors::{RepoDeskError, RepoDeskResult};
 pub mod git_workspace;
 pub mod project_token_check;
 pub mod utils;
-
-

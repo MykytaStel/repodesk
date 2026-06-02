@@ -41,24 +41,34 @@ impl OllamaClient {
 
     pub async fn get_tags(&self) -> RepoDeskResult<Vec<String>> {
         let url = format!("{}/api/tags", self.base_url);
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            RepoDeskError::Api(format!("Failed to connect to Ollama: {}", e))
-        })?;
+        let resp = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| RepoDeskError::Api(format!("Failed to connect to Ollama: {}", e)))?;
 
         if !resp.status().is_success() {
-            return Err(RepoDeskError::Api(format!("Ollama API error: {}", resp.status())));
+            return Err(RepoDeskError::Api(format!(
+                "Ollama API error: {}",
+                resp.status()
+            )));
         }
 
-        let tags: OllamaTagsResponse = resp.json().await.map_err(|e| {
-            RepoDeskError::Api(format!("Failed to parse Ollama tags: {}", e))
-        })?;
+        let tags: OllamaTagsResponse = resp
+            .json()
+            .await
+            .map_err(|e| RepoDeskError::Api(format!("Failed to parse Ollama tags: {}", e)))?;
 
         Ok(tags.models.into_iter().map(|m| m.name).collect())
     }
 }
 
 impl super::LlmProvider for OllamaClient {
-    fn generate(&self, prompt: &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = RepoDeskResult<String>> + Send>> {
+    fn generate(
+        &self,
+        prompt: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = RepoDeskResult<String>> + Send>> {
         let url = format!("{}/api/generate", self.base_url);
         let req = OllamaGenerateRequest {
             model: self.default_model.clone(),
@@ -66,14 +76,18 @@ impl super::LlmProvider for OllamaClient {
             stream: false,
         };
         let client = self.client.clone();
-        
+
         Box::pin(async move {
-            let resp = client.post(&url).json(&req).send().await.map_err(|e| {
-                RepoDeskError::Api(format!("Failed to connect to Ollama: {}", e))
-            })?;
+            let resp =
+                client.post(&url).json(&req).send().await.map_err(|e| {
+                    RepoDeskError::Api(format!("Failed to connect to Ollama: {}", e))
+                })?;
 
             if !resp.status().is_success() {
-                return Err(RepoDeskError::Api(format!("Ollama API error: {}", resp.status())));
+                return Err(RepoDeskError::Api(format!(
+                    "Ollama API error: {}",
+                    resp.status()
+                )));
             }
 
             let gen_resp: OllamaGenerateResponse = resp.json().await.map_err(|e| {
@@ -87,10 +101,8 @@ impl super::LlmProvider for OllamaClient {
     fn is_available(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = bool> + Send>> {
         let url = format!("{}/api/tags", self.base_url);
         let client = self.client.clone();
-        
-        Box::pin(async move {
-            client.get(&url).send().await.is_ok()
-        })
+
+        Box::pin(async move { client.get(&url).send().await.is_ok() })
     }
 }
 

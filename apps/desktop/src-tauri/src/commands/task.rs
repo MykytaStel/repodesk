@@ -8,7 +8,9 @@ use std::fs;
 #[tauri::command]
 pub fn task_new(title: String) -> Result<CommandResult, String> {
     validate_text("Task title", &title, 180)?;
-    match repodesk_core::tasks::create_task(repodesk_core::tasks::NewTaskInput { title: title.clone() }) {
+    match repodesk_core::tasks::create_task(repodesk_core::tasks::NewTaskInput {
+        title: title.clone(),
+    }) {
         Ok(task) => {
             let stdout = format!(
                 "Task created and set as active:\n  id: {}\n  project: {}\n  title: {}\n  run dir: {}\n  task file: {}",
@@ -32,7 +34,7 @@ pub fn task_new(title: String) -> Result<CommandResult, String> {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        })
+        }),
     }
 }
 
@@ -64,7 +66,7 @@ pub fn task_status() -> CommandResult {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     }
 }
 
@@ -96,7 +98,7 @@ pub fn task_show() -> CommandResult {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     }
 }
 

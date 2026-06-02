@@ -20,7 +20,7 @@ pub async fn desktop_snapshot() -> serde_json::Value {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     };
 
     let workflow = match repodesk_core::workflow::workflow_next() {
@@ -37,7 +37,7 @@ pub async fn desktop_snapshot() -> serde_json::Value {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     };
 
     let doctor = match repodesk_core::workflow_doctor::diagnose_workflow() {
@@ -54,7 +54,7 @@ pub async fn desktop_snapshot() -> serde_json::Value {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     };
 
     let security = match repodesk_core::security::audit_security_policy() {
@@ -71,7 +71,7 @@ pub async fn desktop_snapshot() -> serde_json::Value {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     };
 
     let runtime = {
@@ -99,7 +99,7 @@ pub async fn desktop_snapshot() -> serde_json::Value {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     };
 
     let events = match repodesk_core::persistence::event_journal::read_events(10) {
@@ -116,7 +116,7 @@ pub async fn desktop_snapshot() -> serde_json::Value {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     };
 
     json!({

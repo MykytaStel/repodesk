@@ -66,13 +66,27 @@ pub fn detect_language(text: &str) -> String {
 
     for line in text.lines() {
         let trimmed = line.trim();
-        if trimmed.starts_with("pub fn ") || trimmed.starts_with("impl ") || trimmed.starts_with("use crate::") || trimmed.contains("match ") || trimmed.contains("mut ") {
+        if trimmed.starts_with("pub fn ")
+            || trimmed.starts_with("impl ")
+            || trimmed.starts_with("use crate::")
+            || trimmed.contains("match ")
+            || trimmed.contains("mut ")
+        {
             rust_score += 3;
         }
-        if trimmed.starts_with("def ") || trimmed.starts_with("import ") || trimmed.contains("elif ") || trimmed.ends_with(":") {
+        if trimmed.starts_with("def ")
+            || trimmed.starts_with("import ")
+            || trimmed.contains("elif ")
+            || trimmed.ends_with(":")
+        {
             python_score += 2;
         }
-        if trimmed.starts_with("const ") || trimmed.starts_with("let ") || trimmed.starts_with("function ") || trimmed.contains("console.log") || trimmed.contains("=>") {
+        if trimmed.starts_with("const ")
+            || trimmed.starts_with("let ")
+            || trimmed.starts_with("function ")
+            || trimmed.contains("console.log")
+            || trimmed.contains("=>")
+        {
             js_score += 2;
         }
     }
@@ -87,7 +101,6 @@ pub fn detect_language(text: &str) -> String {
         "text".to_string()
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenBreakdown {
@@ -146,7 +159,9 @@ pub fn estimate_text_for_language(text: &str, lang: Option<&str>) -> TokenEstima
 
     let model = get_language_model(&detected_lang);
 
-    let base_tokens = (breakdown.code_like_chars + breakdown.prose_chars + breakdown.markdown_chars) as f64 / model.chars_per_token;
+    let base_tokens = (breakdown.code_like_chars + breakdown.prose_chars + breakdown.markdown_chars)
+        as f64
+        / model.chars_per_token;
     let symbol_penalty = breakdown.symbol_chars as f64 / model.symbol_divisor;
     let cyrillic_penalty = breakdown.cyrillic_chars as f64 / 12.0;
 
@@ -172,10 +187,11 @@ pub fn estimate_text_for_language(text: &str, lang: Option<&str>) -> TokenEstima
         model.language, model.chars_per_token
     ));
     explanation.push(model.description.clone());
-    
+
     explanation.push(format!(
         "Base characters ({}) estimated at {:.1} tokens.",
-        characters, base_tokens.ceil()
+        characters,
+        base_tokens.ceil()
     ));
 
     if breakdown.symbol_chars > 0 {
@@ -188,13 +204,15 @@ pub fn estimate_text_for_language(text: &str, lang: Option<&str>) -> TokenEstima
     if breakdown.cyrillic_chars > 0 {
         explanation.push(format!(
             "Cyrillic chars ({}) added {:.1} tokens penalty. Cyrillic takes more UTF-8 space.",
-            breakdown.cyrillic_chars, cyrillic_penalty.ceil()
+            breakdown.cyrillic_chars,
+            cyrillic_penalty.ceil()
         ));
     }
 
     explanation.push(format!(
         "Final estimation: {} tokens. Status: {}.",
-        estimated_tokens, status.as_label()
+        estimated_tokens,
+        status.as_label()
     ));
 
     TokenEstimate {
@@ -207,7 +225,6 @@ pub fn estimate_text_for_language(text: &str, lang: Option<&str>) -> TokenEstima
         explanation,
     }
 }
-
 
 pub fn estimate_file(path: &Path) -> RepoDeskResult<TokenEstimate> {
     let content = fs::read_to_string(path)?;
@@ -314,8 +331,6 @@ fn analyze_breakdown(text: &str) -> TokenBreakdown {
 
     breakdown
 }
-
-
 
 fn is_markdown_line(line: &str) -> bool {
     let trimmed = line.trim_start();
@@ -474,7 +489,10 @@ pub fn format_syntax_comparison(comparisons: &[SyntaxComparison]) -> String {
         if i == 0 {
             output.push_str("  Cost Diff:  Baseline (0.0%)\n");
         } else {
-            output.push_str(&format!("  Cost Diff:  {:+2.1}%\n", comp.cost_percentage_difference));
+            output.push_str(&format!(
+                "  Cost Diff:  {:+2.1}%\n",
+                comp.cost_percentage_difference
+            ));
         }
         output.push_str("  Why this snippet cost:\n");
         for step in &comp.explanation {
@@ -519,8 +537,14 @@ mod tests {
     #[test]
     fn test_grammar_aware_token_density() {
         // Compare same logical declaration in Rust vs Python
-        let rust_est = estimate_text_for_language("pub fn greet(name: &str) -> String { format!(\"Hello, {}!\", name) }", Some("rust"));
-        let python_est = estimate_text_for_language("def greet(name: str) -> str:\n    return f\"Hello, {name}!\"", Some("python"));
+        let rust_est = estimate_text_for_language(
+            "pub fn greet(name: &str) -> String { format!(\"Hello, {}!\", name) }",
+            Some("rust"),
+        );
+        let python_est = estimate_text_for_language(
+            "def greet(name: str) -> str:\n    return f\"Hello, {name}!\"",
+            Some("python"),
+        );
 
         assert_eq!(rust_est.language, "Rust");
         assert_eq!(python_est.language, "Python");
@@ -530,5 +554,3 @@ mod tests {
         assert!(!python_est.explanation.is_empty());
     }
 }
-
-

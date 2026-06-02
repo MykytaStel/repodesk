@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use crate::errors::RepoDeskResult;
-use crate::utils::format_list;
 use crate::guard::preflight;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
 use crate::tokens::estimate_file;
 use crate::usage::budget::{evaluate_context, load_budget_config};
+use crate::utils::format_list;
 
 #[derive(Debug, Clone)]
 pub struct BrainStatus {
@@ -228,5 +228,3 @@ fn summarize_checks_state(path: &PathBuf) -> String {
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
 }
-
-

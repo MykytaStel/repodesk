@@ -3,10 +3,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::utils::format_list;
 use crate::guard::preflight;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
+use crate::utils::format_list;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecurityPolicy {
@@ -272,7 +272,6 @@ pub fn is_blocked_path(path: &str) -> Option<String> {
     None
 }
 
-
 pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
     use std::sync::OnceLock;
 
@@ -312,4 +311,3 @@ pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
 
     findings
 }
-

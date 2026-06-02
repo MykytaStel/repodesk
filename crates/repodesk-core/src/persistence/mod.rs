@@ -1,5 +1,6 @@
 pub mod db;
 pub mod event_journal;
+pub mod migrations;
 pub mod receipts;
 
 pub use db::*;

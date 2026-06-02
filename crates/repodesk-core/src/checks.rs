@@ -61,13 +61,15 @@ pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
 
     // Approved list of binaries for checkers/test runners/compilers
     let allowed_binaries = [
-        "cargo", "npm", "pnpm", "yarn", "python", "python3", "pytest", "go", "make", 
-        "gradle", "mvn", "deno", "npx", "bun", "jest", "vitest", "eslint", "prettier", 
-        "flake8", "mypy", "black"
+        "cargo", "npm", "pnpm", "yarn", "python", "python3", "pytest", "go", "make", "gradle",
+        "mvn", "deno", "npx", "bun", "jest", "vitest", "eslint", "prettier", "flake8", "mypy",
+        "black",
     ];
 
     if !allowed_binaries.contains(&binary) {
-        return Err(format!("Executable '{binary}' is not in the allowed list of check tools"));
+        return Err(format!(
+            "Executable '{binary}' is not in the allowed list of check tools"
+        ));
     }
 
     Ok(())
@@ -456,4 +458,3 @@ mod tests {
         assert!(is_allowed_check_command("cargo test `id`").is_err());
     }
 }
-

@@ -1,6 +1,4 @@
-use super::{
-    CommandResult, ProjectAddInput, validate_path, validate_short_id,
-};
+use super::{CommandResult, ProjectAddInput, validate_path, validate_short_id};
 
 #[tauri::command]
 pub fn project_info() -> CommandResult {
@@ -45,7 +43,7 @@ pub fn project_info() -> CommandResult {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     }
 }
 
@@ -62,7 +60,10 @@ pub fn project_list() -> CommandResult {
                     let marker = if project.is_active { "*" } else { " " };
                     stdout.push_str(&format!(
                         "{} {} ({})\n    path: {}\n",
-                        marker, project.config.name, project.config.project_type, project.config.path.display()
+                        marker,
+                        project.config.name,
+                        project.config.project_type,
+                        project.config.path.display()
                     ));
                 }
             }
@@ -80,7 +81,7 @@ pub fn project_list() -> CommandResult {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        }
+        },
     }
 }
 
@@ -108,7 +109,7 @@ pub fn project_use(name: String) -> Result<CommandResult, String> {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        })
+        }),
     }
 }
 
@@ -119,15 +120,19 @@ pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, String> {
     validate_short_id("Project type", &input.project_type)?;
 
     if let Some(language) = &input.main_language
-        && !language.trim().is_empty() {
-            validate_short_id("Main language", language)?;
-        }
+        && !language.trim().is_empty()
+    {
+        validate_short_id("Main language", language)?;
+    }
 
     let core_input = repodesk_core::projects::AddProjectInput {
         name: input.name.trim().to_string(),
         path: std::path::PathBuf::from(input.path.trim()),
         project_type: input.project_type.trim().to_string(),
-        main_language: input.main_language.map(|s| s.trim().to_string()).filter(|s| !s.is_empty()),
+        main_language: input
+            .main_language
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
     };
 
     match repodesk_core::projects::add_project(core_input) {
@@ -163,7 +168,7 @@ pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, String> {
             stdout: String::new(),
             stderr: e.to_string(),
             exit_code: Some(1),
-        })
+        }),
     }
 }
 

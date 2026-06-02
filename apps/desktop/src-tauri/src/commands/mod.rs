@@ -158,11 +158,39 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
     }
 
     let allowed_subcommands = [
-        "init", "project", "task", "context", "prompt", "checks", "agents",
-        "guard", "brain", "capabilities", "security", "doctor", "ai", "ui",
-        "desktop", "cost", "safety", "peripherals", "workflow", "events",
-        "judge", "access", "modules", "session", "inspect", "smartcontext",
-        "receipts", "git", "dashboard", "runtime", "sandbox", "tokens", "budget"
+        "init",
+        "project",
+        "task",
+        "context",
+        "prompt",
+        "checks",
+        "agents",
+        "guard",
+        "brain",
+        "capabilities",
+        "security",
+        "doctor",
+        "ai",
+        "ui",
+        "desktop",
+        "cost",
+        "safety",
+        "peripherals",
+        "workflow",
+        "events",
+        "judge",
+        "access",
+        "modules",
+        "session",
+        "inspect",
+        "smartcontext",
+        "receipts",
+        "git",
+        "dashboard",
+        "runtime",
+        "sandbox",
+        "tokens",
+        "budget",
     ];
     let sub = args[0].to_lowercase();
     if !allowed_subcommands.contains(&sub.as_str()) {
@@ -170,7 +198,10 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
             ok: false,
             command: format!("repodesk {}", args.join(" ")),
             stdout: "".into(),
-            stderr: format!("Blocked: Subcommand '{}' is not registered or allowed.", sub),
+            stderr: format!(
+                "Blocked: Subcommand '{}' is not registered or allowed.",
+                sub
+            ),
             exit_code: Some(1),
         };
     }
@@ -190,12 +221,10 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
     let stderr_guard = stdio_override::StderrOverride::from_file(&stderr_path).ok();
 
     let (ok, mut stdout, mut stderr) = match parsed {
-        Ok(cli) => {
-            match repodesk_cli::commands::dispatch(cli) {
-                Ok(_) => (true, String::new(), String::new()),
-                Err(error) => (false, String::new(), error.to_string()),
-            }
-        }
+        Ok(cli) => match repodesk_cli::commands::dispatch(cli) {
+            Ok(_) => (true, String::new(), String::new()),
+            Err(error) => (false, String::new(), error.to_string()),
+        },
         Err(e) => (false, String::new(), e.to_string()),
     };
 
@@ -205,17 +234,19 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
 
     // Read the logs
     if let Ok(content) = std::fs::read_to_string(&stdout_path)
-        && !content.is_empty() {
-            stdout = content;
-        }
+        && !content.is_empty()
+    {
+        stdout = content;
+    }
     if let Ok(content) = std::fs::read_to_string(&stderr_path)
-        && !content.is_empty() {
-            if stderr.is_empty() {
-                stderr = content;
-            } else {
-                stderr = format!("{stderr}\n{content}");
-            }
+        && !content.is_empty()
+    {
+        if stderr.is_empty() {
+            stderr = content;
+        } else {
+            stderr = format!("{stderr}\n{content}");
         }
+    }
 
     // Clean up temp files
     let _ = std::fs::remove_file(&stdout_path);
@@ -229,9 +260,6 @@ pub(crate) fn run_cli(args: &[String]) -> CommandResult {
         exit_code: if ok { Some(0) } else { Some(1) },
     }
 }
-
-
-
 
 pub(crate) fn validate_model_name(label: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
@@ -270,4 +298,3 @@ pub(crate) fn validate_optional_notes(value: &Option<String>) -> Result<(), Stri
 }
 
 pub use repodesk_core::workflow::{has_block_signal, has_warn_signal};
-

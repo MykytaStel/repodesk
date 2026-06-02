@@ -2,12 +2,15 @@ use std::fs;
 
 use crate::errors::RepoDeskResult;
 use crate::git_workspace::run_git_captured as run_git;
-use crate::utils::format_list;
 use crate::init;
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
 use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
+use crate::utils::format_list;
+
+/// Token budget for the Memory Brain slice injected into the full context pack.
+const MEMORY_BUDGET_TOKENS: usize = 1_500;
 
 #[derive(Debug, Clone)]
 pub struct ContextBuildResult {
@@ -26,7 +29,12 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     let project_meta_dir = paths.project_dir(&project.name);
 
     let task_markdown = read_optional_file(&task.task_markdown_file);
-    let memory = read_optional_file(&project_meta_dir.join("memory.md"));
+    // Prefer the live, ranked Memory Brain slice; fall back to the legacy
+    // memory.md artifact when the brain has no entries (or is unavailable).
+    let memory = match crate::memory::retrieval::memory_slice(&project.name, MEMORY_BUDGET_TOKENS) {
+        Ok(slice) if !slice.is_empty() => slice.markdown,
+        _ => read_optional_file(&project_meta_dir.join("memory.md")),
+    };
     let decisions = read_optional_file(&project_meta_dir.join("decisions.md"));
     let risks = read_optional_file(&project_meta_dir.join("risks.md"));
 
@@ -160,10 +168,6 @@ pub fn estimate_active_context() -> RepoDeskResult<(String, TokenEstimate)> {
 fn read_optional_file(path: &std::path::Path) -> String {
     fs::read_to_string(path).unwrap_or_else(|_| "Not available.".to_string())
 }
-
-
-
-
 
 fn trim_for_context(value: &str, max_chars: usize) -> String {
     if value.chars().count() <= max_chars {

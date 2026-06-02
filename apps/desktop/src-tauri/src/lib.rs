@@ -27,7 +27,6 @@ mod code_workbench_commands {
     const MAX_SAFE_PREVIEW_BYTES: u64 = 160_000;
     const MAX_PREVIEW_CHARS: usize = 4_000;
 
-
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct CodeFilePreview {
         pub path: String,
@@ -360,8 +359,10 @@ mod tests {
     fn run_cli_rejects_unapproved_commands() {
         let result = commands::run_cli(&["rm".into(), "-rf".into(), "/".into()]);
         assert!(!result.ok);
-        assert!(result.stderr.contains("Blocked: Subcommand 'rm' is not registered or allowed."));
+        assert!(
+            result
+                .stderr
+                .contains("Blocked: Subcommand 'rm' is not registered or allowed.")
+        );
     }
 }
-
-

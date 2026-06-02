@@ -10,8 +10,8 @@ use repodesk_core::git_audit::{backup_plan, git_audit};
 use repodesk_core::persistence::receipts::{AddReceiptInput, add_receipt, read_receipts};
 use repodesk_core::repo_map::{build_repo_map, format_hotspots, format_repo_map};
 use repodesk_core::runtime::{
-    format_provider_status, format_runtime_providers, provider_status,
-    runtime_providers, runtime_snapshot_json,
+    format_provider_status, format_runtime_providers, provider_status, runtime_providers,
+    runtime_snapshot_json,
 };
 use repodesk_core::smart_context::{
     build_smart_context, format_smart_context_result, list_smart_context_sources,
@@ -96,7 +96,10 @@ pub fn handle_runtime_command(command: RuntimeCommand) -> Result<()> {
             let request = repodesk_core::routing::route_request_for_need(&need);
             let capacities = repodesk_core::routing::default_capacities(&budget);
             let decision = repodesk_core::routing::route_request(&request, &capacities, &budget);
-            print!("{}", repodesk_core::routing::format_route_decision(&decision));
+            print!(
+                "{}",
+                repodesk_core::routing::format_route_decision(&decision)
+            );
         }
         RuntimeCommand::SnapshotJson => {
             println!("{}", runtime_snapshot_json()?);

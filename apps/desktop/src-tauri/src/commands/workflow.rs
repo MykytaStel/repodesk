@@ -23,9 +23,10 @@ pub(crate) fn save_action_history(result: &ActionRunResult) {
     }
 
     if let Ok(line) = serde_json::to_string(result)
-        && let Ok(mut handle) = OpenOptions::new().create(true).append(true).open(file) {
-            let _ = writeln!(handle, "{line}");
-        }
+        && let Ok(mut handle) = OpenOptions::new().create(true).append(true).open(file)
+    {
+        let _ = writeln!(handle, "{line}");
+    }
 }
 
 fn active_task_run_dir() -> Option<PathBuf> {
@@ -86,9 +87,10 @@ static WORKFLOW_CACHE: Mutex<Option<(ProductWorkflowState, Instant)>> = Mutex::n
 pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
     if let Ok(cache) = WORKFLOW_CACHE.lock()
         && let Some((ref state, ref last_updated)) = *cache
-            && last_updated.elapsed() < Duration::from_secs(1) {
-                return state.clone();
-            }
+        && last_updated.elapsed() < Duration::from_secs(1)
+    {
+        return state.clone();
+    }
 
     let generated_at_ms = now_ms();
     let project_info = match repodesk_core::projects::get_active_project() {

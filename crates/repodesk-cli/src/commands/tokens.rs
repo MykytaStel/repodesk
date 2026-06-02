@@ -116,7 +116,10 @@ pub fn handle_tokens_command(command: TokensCommand) -> Result<()> {
         }
         TokensCommand::Compare { snippets } => {
             let comparisons = repodesk_core::tokens::compare_syntax(&snippets);
-            print!("{}", repodesk_core::tokens::format_syntax_comparison(&comparisons));
+            print!(
+                "{}",
+                repodesk_core::tokens::format_syntax_comparison(&comparisons)
+            );
         }
     }
 

@@ -5,7 +5,10 @@ pub use crate::command_sandbox::{
 pub fn run_sandboxed_command(command: &str) -> Result<std::process::Output, String> {
     let plan = plan_command(command);
     if plan.verdict == "block" {
-        return Err(format!("Command blocked by sandbox policy: {}", plan.reason));
+        return Err(format!(
+            "Command blocked by sandbox policy: {}",
+            plan.reason
+        ));
     }
     if plan.required_confirmation {
         return Err("Command requires manual confirmation/override.".to_string());
@@ -41,5 +44,3 @@ mod tests {
         assert!(res.unwrap_err().contains("requires manual confirmation"));
     }
 }
-
-

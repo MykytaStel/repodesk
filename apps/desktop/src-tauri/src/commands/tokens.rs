@@ -262,4 +262,3 @@ pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, 
 pub fn estimate_raw_text(text: String) -> repodesk_core::tokens::TokenEstimate {
     repodesk_core::tokens::estimate_text(&text)
 }
-

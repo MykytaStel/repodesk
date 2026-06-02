@@ -1,14 +1,12 @@
-
-
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
-use crate::utils::split_simple_csv;
 use crate::init;
 use crate::paths::RepoDeskPaths;
 use crate::projects::read_active_project;
 use crate::tasks::show_active_task;
+use crate::utils::split_simple_csv;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogTokenInput {
@@ -96,7 +94,9 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
 
     // Read from DB
     if let Ok(conn) = crate::persistence::db::init_db() {
-        if let Ok(mut stmt) = conn.prepare("SELECT timestamp, agent, model, input_tokens, output_tokens FROM token_ledger") {
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT timestamp, agent, model, input_tokens, output_tokens FROM token_ledger",
+        ) {
             let rows = stmt.query_map([], |row| {
                 let timestamp_str: String = row.get(0)?;
                 let agent: String = row.get(1)?;
@@ -124,7 +124,9 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
                     report.total_output_tokens += output_tokens;
                     report.total_tokens += input_tokens + output_tokens;
 
-                    if let Some(existing) = report.by_agent.iter_mut().find(|item| item.agent == agent) {
+                    if let Some(existing) =
+                        report.by_agent.iter_mut().find(|item| item.agent == agent)
+                    {
                         existing.input_tokens += input_tokens;
                         existing.output_tokens += output_tokens;
                         existing.total_tokens += input_tokens + output_tokens;
@@ -137,7 +139,8 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
                         });
                     }
 
-                    if let Some(existing) = report.by_model
+                    if let Some(existing) = report
+                        .by_model
                         .iter_mut()
                         .find(|item| item.agent == agent && item.model == model)
                     {
@@ -158,8 +161,12 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
         }
     }
 
-    report.by_agent.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
-    report.by_model.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    report
+        .by_agent
+        .sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    report
+        .by_model
+        .sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
 
     Ok(report)
 }
@@ -290,8 +297,6 @@ pub fn format_token_report(report: &TokenReport) -> String {
 
     output
 }
-
-
 
 #[cfg(test)]
 mod tests {

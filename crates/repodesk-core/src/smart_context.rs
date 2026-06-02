@@ -2,8 +2,8 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 
 use crate::errors::RepoDeskResult;
-use crate::projects::get_active_project;
 use crate::git_workspace::git_lines;
+use crate::projects::get_active_project;
 use crate::repo_map::{build_repo_map, format_repo_map};
 use crate::tasks::show_active_task;
 use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
@@ -13,7 +13,9 @@ const MAX_CANDIDATE_FILES: usize = 12;
 const MAX_PREVIEW_CHARS: usize = 4_000;
 const MAX_TASK_CHARS: usize = 5_000;
 const MAX_REPOMAP_CHARS: usize = 8_000;
-
+/// Memory Brain gets a lean budget here — the smart pack is meant for paid
+/// agents, so durable decisions/constraints are worth the tokens but must stay small.
+const MAX_MEMORY_TOKENS: usize = 900;
 
 #[derive(Debug, Clone)]
 pub struct SmartContextResult {
@@ -73,6 +75,11 @@ pub async fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
         .await
         .unwrap_or_else(|_| "Task markdown is not available.".to_string());
 
+    // Shared Memory Brain slice — the same durable context every agent sees.
+    let memory_brain =
+        crate::memory::retrieval::memory_slice_markdown(&project.name, MAX_MEMORY_TOKENS)
+            .unwrap_or_else(|_| "Project memory unavailable.".to_string());
+
     let context = format!(
         r#"# RepoDesk Smart Context Pack
 
@@ -84,6 +91,10 @@ It prefers active task data, repository map, git status, and changed file snippe
 ## Active Task
 
 {task_markdown}
+
+## Project Memory (Brain)
+
+{memory_brain}
 
 ## Repository Map
 
@@ -110,6 +121,7 @@ It prefers active task data, repository map, git status, and changed file snippe
 - Ask for specific missing files only.
 "#,
         task_markdown = trim_text(&task_markdown, MAX_TASK_CHARS),
+        memory_brain = memory_brain,
         repo_map = trim_text(&format_repo_map(&repo_map), MAX_REPOMAP_CHARS),
         included_files = format_lines(&included_files),
         skipped_files = format_lines(&skipped_files),
@@ -184,8 +196,6 @@ pub fn format_smart_context_result(result: &SmartContextResult) -> String {
         format_estimate(&result.estimate)
     )
 }
-
-
 
 fn is_safe_text_path(path: &str) -> bool {
     let lower = path.to_lowercase();

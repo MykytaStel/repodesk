@@ -1,12 +1,12 @@
 use crate::checks::last_checks;
 use crate::errors::RepoDeskResult;
-use crate::utils::format_list;
 use crate::guard::{GuardLevel, preflight};
 use crate::projects::get_active_project;
 use crate::security::{SecurityLevel, audit_security_policy};
 use crate::tasks::show_active_task;
 use crate::tokens::estimate_file;
 use crate::usage::budget::{evaluate_context, load_budget_config};
+use crate::utils::format_list;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DoctorLevel {
@@ -172,8 +172,6 @@ Next actions:
 fn yes_no(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
 }
-
-
 
 fn max_level(left: DoctorLevel, right: DoctorLevel) -> DoctorLevel {
     if weight(&right) > weight(&left) {

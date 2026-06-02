@@ -1,5 +1,3 @@
-
-
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
@@ -157,16 +155,18 @@ fn status_for_adapter(adapter: &AiAdapter) -> AiAdapterStatus {
         "ollama" => {
             let rt = match tokio::runtime::Runtime::new() {
                 Ok(rt) => rt,
-                Err(e) => return AiAdapterStatus {
-                    name: adapter.name.clone(),
-                    available: false,
-                    detail: format!("Failed to create tokio runtime: {}", e),
-                },
+                Err(e) => {
+                    return AiAdapterStatus {
+                        name: adapter.name.clone(),
+                        available: false,
+                        detail: format!("Failed to create tokio runtime: {}", e),
+                    };
+                }
             };
 
             let client = crate::api_clients::ollama::OllamaClient::new(None, None);
             let result = rt.block_on(client.get_tags());
-            
+
             match result {
                 Ok(tags) => AiAdapterStatus {
                     name: adapter.name.clone(),

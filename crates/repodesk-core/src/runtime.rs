@@ -232,8 +232,6 @@ pub fn format_runtime_route(route: &RuntimeRoute) -> String {
     output
 }
 
-
-
 fn check_ollama() -> RuntimeProviderStatus {
     match Command::new("ollama").arg("--version").output() {
         Ok(output) if output.status.success() => {
