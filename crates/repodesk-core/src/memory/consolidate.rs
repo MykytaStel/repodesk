@@ -76,53 +76,43 @@ fn render(project_name: &str, entries: &[MemoryEntry]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::test_support::with_temp_home;
 
     #[test]
     fn consolidate_groups_by_category_with_tags() {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let test_home = std::env::temp_dir().join(format!("repodesk-consolidate-{now}"));
-        std::fs::create_dir_all(&test_home).unwrap();
-        unsafe {
-            std::env::set_var("REPODESK_HOME", &test_home);
-        }
-        crate::init::init_home().unwrap();
+        with_temp_home(|| {
+            let project = "test_memory_project";
+            store::add_memory(
+                project,
+                "First note about design patterns",
+                "Design",
+                &["architecture".into(), "backend".into()],
+            )
+            .unwrap();
+            store::add_memory(
+                project,
+                "Second note about schema design",
+                "Database",
+                &["db".into()],
+            )
+            .unwrap();
+            store::add_memory(project, "Third note without tags", "Design", &[]).unwrap();
 
-        let project = "test_memory_project";
-        store::add_memory(
-            project,
-            "First note about design patterns",
-            "Design",
-            &["architecture".into(), "backend".into()],
-        )
-        .unwrap();
-        store::add_memory(
-            project,
-            "Second note about schema design",
-            "Database",
-            &["db".into()],
-        )
-        .unwrap();
-        store::add_memory(project, "Third note without tags", "Design", &[]).unwrap();
+            let md = consolidate_project_memory(project).unwrap();
 
-        let md = consolidate_project_memory(project).unwrap();
+            assert!(md.contains("# test_memory_project Memory"));
+            assert!(md.contains("## Database"));
+            assert!(md.contains("## Design"));
+            assert!(md.contains("First note about design patterns"));
+            assert!(md.contains("Second note about schema design"));
+            assert!(md.contains("Third note without tags"));
+            assert!(md.contains("(Tags: architecture, backend)"));
+            assert!(md.contains("(Tags: db)"));
 
-        assert!(md.contains("# test_memory_project Memory"));
-        assert!(md.contains("## Database"));
-        assert!(md.contains("## Design"));
-        assert!(md.contains("First note about design patterns"));
-        assert!(md.contains("Second note about schema design"));
-        assert!(md.contains("Third note without tags"));
-        assert!(md.contains("(Tags: architecture, backend)"));
-        assert!(md.contains("(Tags: db)"));
-
-        let paths = RepoDeskPaths::resolve().unwrap();
-        let expected_file = paths.project_dir(project).join("memory.md");
-        assert!(expected_file.exists());
-        assert_eq!(std::fs::read_to_string(expected_file).unwrap(), md);
-
-        let _ = std::fs::remove_dir_all(&test_home);
+            let paths = RepoDeskPaths::resolve().unwrap();
+            let expected_file = paths.project_dir(project).join("memory.md");
+            assert!(expected_file.exists());
+            assert_eq!(std::fs::read_to_string(expected_file).unwrap(), md);
+        });
     }
 }

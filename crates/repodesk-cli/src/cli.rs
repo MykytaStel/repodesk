@@ -467,8 +467,66 @@ pub enum MemoryCommand {
         #[arg(long)]
         project: Option<String>,
     },
+    /// Search entries by content/category/tag substring.
+    Search {
+        #[arg(long)]
+        project: Option<String>,
+        query: String,
+    },
     Consolidate {
         #[arg(long)]
         project: Option<String>,
+    },
+    /// Capture memory candidates from an AI response (creates proposals).
+    Capture {
+        #[arg(long)]
+        project: Option<String>,
+        /// Which AI produced the text (codex, chatgpt, gemini, ollama, …).
+        #[arg(long)]
+        agent: String,
+        /// Read the response from a file (otherwise --content or stdin).
+        #[arg(long)]
+        file: Option<PathBuf>,
+        /// Inline response text.
+        #[arg(long)]
+        content: Option<String>,
+    },
+    /// Scan active memory for duplicates / merges / conflicts (creates proposals).
+    Scan {
+        #[arg(long)]
+        project: Option<String>,
+    },
+    /// List proposals awaiting review (pending by default).
+    Review {
+        #[arg(long)]
+        project: Option<String>,
+        /// Include accepted/rejected proposals too.
+        #[arg(long)]
+        all: bool,
+    },
+    /// Accept a proposal, applying it to the brain.
+    Accept {
+        id: i64,
+        /// For dedup/conflict: the entry id to keep.
+        #[arg(long)]
+        keep: Option<i64>,
+    },
+    /// Reject a proposal (brain left unchanged).
+    Reject {
+        id: i64,
+    },
+    /// Pin an entry so it is always included in context.
+    Pin {
+        id: i64,
+    },
+    Unpin {
+        id: i64,
+    },
+    /// Archive an entry (kept, but excluded from context).
+    Archive {
+        id: i64,
+    },
+    Delete {
+        id: i64,
     },
 }

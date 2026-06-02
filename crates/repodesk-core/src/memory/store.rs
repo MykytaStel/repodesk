@@ -9,7 +9,10 @@ use rusqlite::Row;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::persistence::db::init_db;
 
-use super::model::{MemoryEntry, NewMemoryInput, compute_content_hash, status};
+use super::model::{
+    MemoryEntry, MemoryProposal, NewMemoryInput, NewProposal, ProposalPayload,
+    compute_content_hash, status,
+};
 
 /// Columns selected for a full [`MemoryEntry`], in `row_to_entry` order.
 const SELECT_COLUMNS: &str = "id, timestamp, project, content, category, tags, source, agent, \
@@ -212,6 +215,17 @@ pub fn set_status(id: i64, new_status: &str) -> RepoDeskResult<()> {
     Ok(())
 }
 
+/// Mark an entry superseded by another (used when a merge/dedup is accepted).
+pub fn mark_superseded(id: i64, by_id: i64) -> RepoDeskResult<()> {
+    let conn = init_db()?;
+    conn.execute(
+        "UPDATE memory SET status = ?2, supersedes_id = ?3, updated_at = ?4 WHERE id = ?1",
+        rusqlite::params![id, status::SUPERSEDED, by_id, Utc::now().to_rfc3339()],
+    )
+    .map_err(|e| db_err("Failed to mark superseded", e))?;
+    Ok(())
+}
+
 fn set_int_field(id: i64, field: &str, value: i64) -> RepoDeskResult<()> {
     let conn = init_db()?;
     conn.execute(
@@ -233,24 +247,134 @@ fn query_entries(sql: &str, params: impl rusqlite::Params) -> RepoDeskResult<Vec
     Ok(rows.flatten().collect())
 }
 
+// ── Proposals (human-approval queue) ─────────────────────────────────────────
+
+const PROPOSAL_COLUMNS: &str =
+    "id, created_at, project, task_id, kind, status, payload, applied_entry_id";
+
+fn row_to_proposal(row: &Row) -> rusqlite::Result<MemoryProposal> {
+    let created_at_str: String = row.get(1)?;
+    let payload_str: String = row.get(6)?;
+    let payload: ProposalPayload = serde_json::from_str(&payload_str).unwrap_or_default();
+
+    Ok(MemoryProposal {
+        id: row.get(0)?,
+        created_at: parse_ts(&created_at_str).unwrap_or_else(Utc::now),
+        project: row.get(2)?,
+        task_id: row.get(3)?,
+        kind: row.get(4)?,
+        status: row.get(5)?,
+        payload,
+        applied_entry_id: row.get(7)?,
+    })
+}
+
+/// Create a pending proposal.
+pub fn add_proposal(input: NewProposal) -> RepoDeskResult<MemoryProposal> {
+    let conn = init_db()?;
+    let created_at = Utc::now();
+    let payload_json = serde_json::to_string(&input.payload).unwrap_or_else(|_| "{}".to_string());
+
+    conn.execute(
+        "INSERT INTO memory_proposals (created_at, project, task_id, kind, status, payload)
+         VALUES (?1, ?2, ?3, ?4, 'pending', ?5)",
+        rusqlite::params![
+            created_at.to_rfc3339(),
+            input.project,
+            input.task_id,
+            input.kind,
+            payload_json,
+        ],
+    )
+    .map_err(|e| db_err("Failed to insert proposal", e))?;
+
+    Ok(MemoryProposal {
+        id: conn.last_insert_rowid(),
+        created_at,
+        project: input.project,
+        task_id: input.task_id,
+        kind: input.kind,
+        status: super::model::proposal_status::PENDING.to_string(),
+        payload: input.payload,
+        applied_entry_id: None,
+    })
+}
+
+/// List proposals for a project, optionally filtered by status, newest first.
+pub fn list_proposals(
+    project: &str,
+    status_filter: Option<&str>,
+) -> RepoDeskResult<Vec<MemoryProposal>> {
+    let conn = init_db()?;
+    let (sql, params): (String, Vec<String>) = match status_filter {
+        Some(s) => (
+            format!(
+                "SELECT {PROPOSAL_COLUMNS} FROM memory_proposals
+                 WHERE project = ?1 AND status = ?2 ORDER BY created_at DESC, id DESC"
+            ),
+            vec![project.to_string(), s.to_string()],
+        ),
+        None => (
+            format!(
+                "SELECT {PROPOSAL_COLUMNS} FROM memory_proposals
+                 WHERE project = ?1 ORDER BY created_at DESC, id DESC"
+            ),
+            vec![project.to_string()],
+        ),
+    };
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| db_err("DB prepare error", e))?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(params), row_to_proposal)
+        .map_err(|e| db_err("DB query error", e))?;
+    Ok(rows.flatten().collect())
+}
+
+pub fn get_proposal(id: i64) -> RepoDeskResult<Option<MemoryProposal>> {
+    let conn = init_db()?;
+    let mut stmt = conn
+        .prepare(&format!(
+            "SELECT {PROPOSAL_COLUMNS} FROM memory_proposals WHERE id = ?1"
+        ))
+        .map_err(|e| db_err("DB prepare error", e))?;
+    let mut rows = stmt
+        .query_map(rusqlite::params![id], row_to_proposal)
+        .map_err(|e| db_err("DB query error", e))?;
+    Ok(rows.next().and_then(Result::ok))
+}
+
+pub fn set_proposal_status(
+    id: i64,
+    new_status: &str,
+    applied_entry_id: Option<i64>,
+) -> RepoDeskResult<()> {
+    let conn = init_db()?;
+    conn.execute(
+        "UPDATE memory_proposals SET status = ?2, applied_entry_id = ?3 WHERE id = ?1",
+        rusqlite::params![id, new_status, applied_entry_id],
+    )
+    .map_err(|e| db_err("Failed to update proposal", e))?;
+    Ok(())
+}
+
+/// Count pending proposals for a project (drives the UI badge).
+pub fn count_pending(project: &str) -> RepoDeskResult<usize> {
+    let conn = init_db()?;
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM memory_proposals WHERE project = ?1 AND status = 'pending'",
+            rusqlite::params![project],
+            |row| row.get(0),
+        )
+        .map_err(|e| db_err("Failed to count proposals", e))?;
+    Ok(count as usize)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn with_temp_home(test: impl FnOnce()) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let test_home = std::env::temp_dir().join(format!("repodesk-store-{now}"));
-        std::fs::create_dir_all(&test_home).unwrap();
-        unsafe {
-            std::env::set_var("REPODESK_HOME", &test_home);
-        }
-        crate::init::init_home().unwrap();
-        test();
-        let _ = std::fs::remove_dir_all(&test_home);
-    }
+    use crate::memory::test_support::with_temp_home;
 
     #[test]
     fn add_list_update_pin_status_delete() {

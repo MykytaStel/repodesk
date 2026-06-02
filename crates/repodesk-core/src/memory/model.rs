@@ -150,6 +150,97 @@ impl NewMemoryInput {
     }
 }
 
+// ── Proposals (the human-approved brain-mutation queue) ──────────────────────
+
+/// Kind of change a [`MemoryProposal`] represents.
+pub mod proposal_kind {
+    /// A candidate entry extracted from an AI response.
+    pub const CAPTURE: &str = "capture";
+    /// Two or more entries with identical normalized content.
+    pub const DEDUP: &str = "dedup";
+    /// Near-duplicate entries that should be combined into one.
+    pub const MERGE: &str = "merge";
+    /// Entries that appear to contradict each other.
+    pub const CONFLICT: &str = "conflict";
+}
+
+pub mod proposal_status {
+    pub const PENDING: &str = "pending";
+    pub const ACCEPTED: &str = "accepted";
+    pub const REJECTED: &str = "rejected";
+}
+
+/// The new (or merged) entry a proposal would create when accepted.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProposedEntry {
+    pub content: String,
+    pub category: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default = "default_source")]
+    pub source: String,
+    #[serde(default)]
+    pub agent: String,
+}
+
+/// Structured body of a proposal (stored as JSON in the DB).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProposalPayload {
+    /// Human-readable explanation of why this was proposed.
+    #[serde(default)]
+    pub rationale: String,
+    /// For captures: which AI produced the source text.
+    #[serde(default)]
+    pub agent: String,
+    /// Existing entry ids involved (dedup / merge / conflict).
+    #[serde(default)]
+    pub source_ids: Vec<i64>,
+    /// The entry to create on accept (capture / merge / reconciled conflict).
+    #[serde(default)]
+    pub proposed: Option<ProposedEntry>,
+}
+
+/// A pending suggestion to change the brain. Nothing is applied until a human
+/// accepts it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryProposal {
+    pub id: i64,
+    pub created_at: DateTime<Utc>,
+    pub project: String,
+    pub task_id: String,
+    /// One of [`proposal_kind`].
+    pub kind: String,
+    /// One of [`proposal_status`].
+    pub status: String,
+    pub payload: ProposalPayload,
+    pub applied_entry_id: Option<i64>,
+}
+
+/// Input for creating a proposal.
+#[derive(Debug, Clone)]
+pub struct NewProposal {
+    pub project: String,
+    pub task_id: String,
+    pub kind: String,
+    pub payload: ProposalPayload,
+}
+
+impl NewProposal {
+    pub fn capture(project: &str, task_id: &str, agent: &str, proposed: ProposedEntry) -> Self {
+        Self {
+            project: project.to_string(),
+            task_id: task_id.to_string(),
+            kind: proposal_kind::CAPTURE.to_string(),
+            payload: ProposalPayload {
+                rationale: format!("Captured from {agent} response"),
+                agent: agent.to_string(),
+                source_ids: Vec::new(),
+                proposed: Some(proposed),
+            },
+        }
+    }
+}
+
 /// Stable, version-independent hash of an entry's content used for exact-dup
 /// detection. Normalizes whitespace and case so trivially different copies
 /// collide. `DefaultHasher` is seeded with fixed keys, so this is deterministic
