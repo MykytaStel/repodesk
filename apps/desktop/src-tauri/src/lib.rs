@@ -256,7 +256,19 @@ pub fn run() {
             commands::log_ui_event,
             commands::memory_add,
             commands::memory_list,
-            commands::memory_consolidate
+            commands::memory_consolidate,
+            commands::memory_search,
+            commands::memory_update,
+            commands::memory_delete,
+            commands::memory_set_pinned,
+            commands::memory_set_status,
+            commands::memory_brain_preview,
+            commands::memory_capture,
+            commands::memory_scan,
+            commands::memory_proposals_list,
+            commands::memory_proposal_accept,
+            commands::memory_proposal_reject,
+            commands::memory_reconcile_conflict
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

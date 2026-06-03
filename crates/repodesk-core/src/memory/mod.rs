@@ -13,6 +13,7 @@
 
 pub mod capture;
 pub mod consolidate;
+pub mod llm;
 pub mod merge;
 pub mod model;
 pub mod retrieval;
@@ -21,9 +22,10 @@ pub mod store;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-pub use capture::capture_from_text;
+pub use capture::{capture_from_text, capture_from_text_smart};
 pub use consolidate::consolidate_project_memory;
-pub use merge::{ScanSummary, accept_proposal, reject_proposal, scan};
+pub use llm::BrainLlm;
+pub use merge::{ScanSummary, accept_proposal, reconcile_conflict, reject_proposal, scan};
 pub use model::{
     MemoryEntry, MemoryProposal, NewMemoryInput, NewProposal, ProposalPayload, ProposedEntry,
     compute_content_hash,

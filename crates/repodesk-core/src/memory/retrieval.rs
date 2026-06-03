@@ -8,6 +8,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
 use crate::tokens::estimate_text;
@@ -52,7 +53,7 @@ pub struct ScoredEntry {
 }
 
 /// Result of selecting a budgeted slice of memory.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SliceRender {
     pub markdown: String,
     pub estimated_tokens: usize,

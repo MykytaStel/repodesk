@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys, callCommand, optionalCommand } from "../../shared/api/queries";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { normalizeError } from "../../shared/utils/errors";
 
 interface ProviderSettings {
   ollama_enabled: boolean;
@@ -36,6 +37,19 @@ interface SetupFormState {
   taskTitle: string;
 }
 
+interface CommandResult {
+  ok: boolean;
+  command: string;
+  stdout: string;
+  stderr: string;
+  exit_code: number | null;
+}
+
+interface SetupNotice {
+  tone: "ok" | "warn" | "danger";
+  message: string;
+}
+
 export function useSettings() {
   const queryClient = useQueryClient();
   const { projectName } = useWorkspace();
@@ -48,6 +62,8 @@ export function useSettings() {
     taskTitle: "Improve RepoDesk workflow",
   });
   const [memoryAppendInput, setMemoryAppendInput] = useState("");
+  const [setupNotice, setSetupNotice] = useState<SetupNotice | null>(null);
+  const [taskNotice, setTaskNotice] = useState<SetupNotice | null>(null);
 
   const settingsQuery = useQuery({
     queryKey: queryKeys.routing.settings,
@@ -89,29 +105,78 @@ export function useSettings() {
 
   const addProjectMutation = useMutation({
     mutationFn: async (form: SetupFormState) => {
+      const name = form.projectName.trim();
+      const path = form.projectPath.trim();
+      if (!name || !path) {
+        throw new Error("Project name and path are required.");
+      }
+
       const input = {
-        name: form.projectName.trim(),
-        path: form.projectPath.trim(),
+        name,
+        path,
         project_type: form.projectType.trim(),
         main_language: form.mainLanguage.trim() || null,
       };
-      const added = await callCommand<{ ok: boolean }>("project_add", { input });
-      if (added.ok) {
-        await callCommand("project_use", { name: input.name });
+
+      const added = await callCommand<CommandResult>("project_add", { input });
+      const alreadyExists = !added.ok && /already exists/i.test(added.stderr);
+      if (!added.ok && !alreadyExists) {
+        throw new Error(added.stderr || "Could not add project.");
       }
+
+      const activated = await callCommand<CommandResult>("project_use", { name: input.name });
+      if (!activated.ok) {
+        throw new Error(activated.stderr || "Project was added, but could not be activated.");
+      }
+
+      return { projectName: input.name, alreadyExists };
     },
-    onSuccess: () => {
+    onMutate: () => {
+      setSetupNotice({ tone: "warn", message: "Adding project and switching workspace..." });
+    },
+    onSuccess: ({ projectName, alreadyExists }) => {
+      setSetupNotice({
+        tone: "ok",
+        message: alreadyExists
+          ? `Project "${projectName}" already existed, so RepoDesk activated it.`
+          : `Project "${projectName}" was added and activated.`,
+      });
       queryClient.invalidateQueries({ queryKey: queryKeys.workspace.snapshot });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workspace.activeProject });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.state });
+      queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
+    },
+    onError: (error) => {
+      const normalized = normalizeError(error);
+      setSetupNotice({ tone: "danger", message: normalized.message });
     },
   });
 
   const createTaskMutation = useMutation({
     mutationFn: async (title: string) => {
-      await callCommand("task_new", { title: title.trim() });
+      const taskTitle = title.trim();
+      if (!taskTitle) {
+        throw new Error("Task title is required.");
+      }
+
+      const created = await callCommand<CommandResult>("task_new", { title: taskTitle });
+      if (!created.ok) {
+        throw new Error(created.stderr || "Could not create task.");
+      }
+
+      return taskTitle;
     },
-    onSuccess: () => {
+    onMutate: () => {
+      setTaskNotice({ tone: "warn", message: "Creating active task..." });
+    },
+    onSuccess: (title) => {
+      setTaskNotice({ tone: "ok", message: `Task "${title}" was created and activated.` });
       queryClient.invalidateQueries({ queryKey: queryKeys.workspace.snapshot });
       queryClient.invalidateQueries({ queryKey: queryKeys.workflow.state });
+    },
+    onError: (error) => {
+      const normalized = normalizeError(error);
+      setTaskNotice({ tone: "danger", message: normalized.message });
     },
   });
 
@@ -123,6 +188,8 @@ export function useSettings() {
     
     setupForm,
     setSetupForm,
+    setupNotice,
+    taskNotice,
     memoryAppendInput,
     setMemoryAppendInput,
     

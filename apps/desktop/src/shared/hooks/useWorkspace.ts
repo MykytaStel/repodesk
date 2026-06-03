@@ -18,7 +18,15 @@ export function useWorkspace() {
     queryFn: () => optionalCommand<any>("get_active_project_config"),
   });
 
-  const projectName = getNestedString(snapshot.data, ["project", "name"], getString(snapshot.data, "project_name", "No active project"));
+  const projectName = getString(
+    projectConfig.data,
+    "name",
+    getNestedString(
+      snapshot.data,
+      ["project", "name"],
+      getString(snapshot.data, "project_name", "No active project"),
+    ),
+  );
   const taskTitle = getNestedString(snapshot.data, ["task", "title"], getString(snapshot.data, "task_title", "No active task"));
   const hasProject = projectName !== "No active project" && projectName !== "-";
   const hasTask = taskTitle !== "No active task" && taskTitle !== "-";

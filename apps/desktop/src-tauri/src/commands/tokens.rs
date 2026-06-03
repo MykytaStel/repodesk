@@ -227,7 +227,7 @@ pub fn token_usage_snapshot() -> TokenUsageSnapshot {
 }
 
 #[tauri::command]
-pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, String> {
+pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, ErrorPayload> {
     validate_short_id("Provider", &input.provider)?;
     if let Some(model) = &input.model {
         validate_model_name("Model", model)?;
@@ -236,7 +236,7 @@ pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, 
     validate_optional_notes(&input.notes)?;
 
     if input.input_tokens > 10_000_000 || input.output_tokens > 10_000_000 {
-        return Err("Token counts are too large".into());
+        return Err(ErrorPayload::resource_limit("Token counts are too large"));
     }
 
     repodesk_core::usage::token_ledger::log_token_event(
@@ -253,7 +253,7 @@ pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, 
             notes: input.notes,
         },
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(ErrorPayload::from)?;
 
     Ok(build_token_usage_snapshot())
 }

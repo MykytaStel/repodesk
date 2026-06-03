@@ -48,23 +48,32 @@ pub fn get_event_journal(input: GetJournalInput) -> EventJournalSnapshot {
 ///
 /// Returns the updated snapshot so the UI can refresh in one round-trip.
 #[tauri::command]
-pub fn log_ui_event(input: LogUiEventInput) -> Result<EventJournalSnapshot, String> {
+pub fn log_ui_event(input: LogUiEventInput) -> Result<EventJournalSnapshot, ErrorPayload> {
     // Basic validation
     let module_name = input.module_name.trim().to_string();
     if module_name.is_empty() || module_name.len() > 80 {
-        return Err("module_name must be 1–80 characters".into());
+        return Err(ErrorPayload::from_message(
+            "module_name must be 1–80 characters",
+        ));
     }
 
     let message = input.message.trim().to_string();
     if message.is_empty() || message.len() > 1_000 {
-        return Err("message must be 1–1000 characters".into());
+        return Err(ErrorPayload::from_message(
+            "message must be 1–1000 characters",
+        ));
     }
 
     let level = match input.level.to_ascii_lowercase().as_str() {
         "info" | "warn" | "warning" | "error" | "security" | "ui" => {
             input.level.to_ascii_lowercase()
         }
-        _ => return Err(format!("unsupported level '{}'", input.level)),
+        _ => {
+            return Err(ErrorPayload::from_message(format!(
+                "unsupported level '{}'",
+                input.level
+            )));
+        }
     };
 
     let metadata = input.metadata.unwrap_or_default();
@@ -74,8 +83,7 @@ pub fn log_ui_event(input: LogUiEventInput) -> Result<EventJournalSnapshot, Stri
         level,
         message,
         metadata,
-    })
-    .map_err(|error| error.to_string())?;
+    })?;
 
     Ok(journal_snapshot(50))
 }
@@ -118,11 +126,94 @@ impl ErrorPayload {
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
+        Self::with_category("internal", message)
+    }
+
+    /// A user-facing setup/validation error (configuration category).
+    pub fn configuration(message: impl Into<String>) -> Self {
+        Self::with_category("configuration", message)
+    }
+
+    /// A "too large / over budget" error (resource_limit category).
+    pub fn resource_limit(message: impl Into<String>) -> Self {
+        Self::with_category("resource_limit", message)
+    }
+
+    fn with_category(category: &str, message: impl Into<String>) -> Self {
         Self {
-            category: "internal".into(),
+            category: category.to_string(),
             message: message.into(),
             retryable: false,
             detail: None,
         }
+    }
+
+    /// Build a payload from a bare message string, inferring the category from
+    /// keywords (for errors that arrive as plain `String`s rather than a
+    /// `RepoDeskError`). Mirrors the frontend's `guessCategory`.
+    pub fn from_message(message: impl Into<String>) -> Self {
+        let message = message.into();
+        let category = guess_category(&message);
+        Self {
+            retryable: category == "provider_transient",
+            category: category.to_string(),
+            message,
+            detail: None,
+        }
+    }
+}
+
+impl From<repodesk_core::errors::RepoDeskError> for ErrorPayload {
+    fn from(err: repodesk_core::errors::RepoDeskError) -> Self {
+        ErrorPayload::from_core(&err)
+    }
+}
+
+impl From<String> for ErrorPayload {
+    fn from(message: String) -> Self {
+        ErrorPayload::from_message(message)
+    }
+}
+
+impl From<&str> for ErrorPayload {
+    fn from(message: &str) -> Self {
+        ErrorPayload::from_message(message)
+    }
+}
+
+fn guess_category(message: &str) -> &'static str {
+    let m = message.to_lowercase();
+    if m.contains("rate")
+        || m.contains("unreachable")
+        || m.contains("unavailable")
+        || m.contains("timeout")
+        || m.contains("connect")
+        || m.contains("429")
+    {
+        "provider_transient"
+    } else if m.contains("secret")
+        || m.contains("credential")
+        || m.contains("blocked")
+        || m.contains("sandbox")
+        || m.contains("denied")
+    {
+        "security_block"
+    } else if m.contains("too large")
+        || m.contains("budget")
+        || m.contains("exceeds")
+        || m.contains("hard limit")
+        || m.contains("token limit")
+    {
+        "resource_limit"
+    } else if m.contains("not set")
+        || m.contains("not found")
+        || m.contains("invalid")
+        || m.contains("must ")
+        || m.contains("required")
+        || m.contains("configure")
+    {
+        "configuration"
+    } else {
+        "internal"
     }
 }

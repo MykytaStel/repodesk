@@ -15,6 +15,8 @@ export function SettingsTab() {
     isLoading: isBusy,
     setupForm,
     setSetupForm,
+    setupNotice,
+    taskNotice,
     memoryAppendInput,
     setMemoryAppendInput,
     saveSettings,
@@ -53,11 +55,17 @@ export function SettingsTab() {
       <section className="panel">
         <p className="eyebrow">Connect project</p><h2>Active workspace</h2>
         <div className="form-stack">
+          <div className="notice" style={{ padding: "10px 12px" }}>
+            Current active project: <strong>{projectName}</strong>
+          </div>
           <label>Project name<input value={setupForm.projectName} onChange={(event) => setSetupForm({ ...setupForm, projectName: event.target.value })} /></label>
           <label>Project path<input value={setupForm.projectPath} onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })} placeholder="/Users/mykyta/Documents/projects/repodesk" /></label>
           <label>Project type<input value={setupForm.projectType} onChange={(event) => setSetupForm({ ...setupForm, projectType: event.target.value })} /></label>
           <label>Main language<input value={setupForm.mainLanguage} onChange={(event) => setSetupForm({ ...setupForm, mainLanguage: event.target.value })} /></label>
-          <button className="primary-button full" onClick={() => void addProjectFromSetup()} disabled={isAddingProject || isBusy}>Add and activate project</button>
+          <button className="primary-button full" onClick={() => void addProjectFromSetup().catch(() => undefined)} disabled={isAddingProject || isBusy}>
+            {isAddingProject ? "Adding and activating..." : "Add and activate project"}
+          </button>
+          {setupNotice && <div className={`notice ${setupNotice.tone}`}>{setupNotice.message}</div>}
         </div>
       </section>
 
@@ -65,7 +73,10 @@ export function SettingsTab() {
         <p className="eyebrow">Task</p><h2>Create active task</h2>
         <div className="form-stack">
           <label>Task title<input value={setupForm.taskTitle} onChange={(event) => setSetupForm({ ...setupForm, taskTitle: event.target.value })} /></label>
-          <button className="primary-button full" onClick={() => void createTaskFromSetup()} disabled={isCreatingTask || isBusy}>Create task</button>
+          <button className="primary-button full" onClick={() => void createTaskFromSetup().catch(() => undefined)} disabled={isCreatingTask || isBusy}>
+            {isCreatingTask ? "Creating task..." : "Create task"}
+          </button>
+          {taskNotice && <div className={`notice ${taskNotice.tone}`}>{taskNotice.message}</div>}
         </div>
       </section>
 

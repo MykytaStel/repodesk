@@ -1,3 +1,4 @@
+use super::ErrorPayload;
 use crate::store;
 use serde::{Deserialize, Serialize};
 
@@ -14,19 +15,20 @@ pub fn db_status() -> store::DbStatus {
 }
 
 #[tauri::command]
-pub fn get_system_agents() -> Result<repodesk_core::agents::AgentsConfig, String> {
-    repodesk_core::agents::ensure_agents_config().map_err(|e| e.to_string())
+pub fn get_system_agents() -> Result<repodesk_core::agents::AgentsConfig, ErrorPayload> {
+    repodesk_core::agents::ensure_agents_config().map_err(ErrorPayload::from)
 }
 
 #[tauri::command]
-pub fn get_system_capabilities() -> Result<repodesk_core::capabilities::CapabilitiesConfig, String>
-{
-    repodesk_core::capabilities::ensure_capabilities_config().map_err(|e| e.to_string())
+pub fn get_system_capabilities()
+-> Result<repodesk_core::capabilities::CapabilitiesConfig, ErrorPayload> {
+    repodesk_core::capabilities::ensure_capabilities_config().map_err(ErrorPayload::from)
 }
 
 #[tauri::command]
-pub fn get_system_peripherals() -> Result<repodesk_core::peripherals::PeripheralsConfig, String> {
-    repodesk_core::peripherals::ensure_peripherals_config().map_err(|e| e.to_string())
+pub fn get_system_peripherals()
+-> Result<repodesk_core::peripherals::PeripheralsConfig, ErrorPayload> {
+    repodesk_core::peripherals::ensure_peripherals_config().map_err(ErrorPayload::from)
 }
 
 #[tauri::command]

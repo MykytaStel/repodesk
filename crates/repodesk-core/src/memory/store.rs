@@ -344,6 +344,18 @@ pub fn get_proposal(id: i64) -> RepoDeskResult<Option<MemoryProposal>> {
     Ok(rows.next().and_then(Result::ok))
 }
 
+/// Replace a proposal's payload (e.g. after Ollama fills a reconciled entry).
+pub fn update_proposal_payload(id: i64, payload: &ProposalPayload) -> RepoDeskResult<()> {
+    let conn = init_db()?;
+    let payload_json = serde_json::to_string(payload).unwrap_or_else(|_| "{}".to_string());
+    conn.execute(
+        "UPDATE memory_proposals SET payload = ?2 WHERE id = ?1",
+        rusqlite::params![id, payload_json],
+    )
+    .map_err(|e| db_err("Failed to update proposal payload", e))?;
+    Ok(())
+}
+
 pub fn set_proposal_status(
     id: i64,
     new_status: &str,

@@ -1,4 +1,4 @@
-use super::{CommandResult, ProjectAddInput, validate_path, validate_short_id};
+use super::{CommandResult, ErrorPayload, ProjectAddInput, validate_path, validate_short_id};
 
 #[tauri::command]
 pub fn project_info() -> CommandResult {
@@ -86,7 +86,7 @@ pub fn project_list() -> CommandResult {
 }
 
 #[tauri::command]
-pub fn project_use(name: String) -> Result<CommandResult, String> {
+pub fn project_use(name: String) -> Result<CommandResult, ErrorPayload> {
     validate_short_id("Project name", &name)?;
     match repodesk_core::projects::use_project(name.trim()) {
         Ok(config) => {
@@ -114,7 +114,7 @@ pub fn project_use(name: String) -> Result<CommandResult, String> {
 }
 
 #[tauri::command]
-pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, String> {
+pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, ErrorPayload> {
     validate_short_id("Project name", &input.name)?;
     validate_path(&input.path)?;
     validate_short_id("Project type", &input.project_type)?;
@@ -173,21 +173,21 @@ pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, String> {
 }
 
 #[tauri::command]
-pub fn get_active_project_config() -> Result<repodesk_core::projects::ProjectConfig, String> {
-    repodesk_core::projects::get_active_project().map_err(|e| e.to_string())
+pub fn get_active_project_config() -> Result<repodesk_core::projects::ProjectConfig, ErrorPayload> {
+    repodesk_core::projects::get_active_project().map_err(ErrorPayload::from)
 }
 
 #[tauri::command]
-pub async fn save_project_ignore_rules(ignore_rules: Vec<String>) -> Result<(), String> {
-    let active = repodesk_core::projects::read_active_project().map_err(|e| e.to_string())?;
+pub async fn save_project_ignore_rules(ignore_rules: Vec<String>) -> Result<(), ErrorPayload> {
+    let active = repodesk_core::projects::read_active_project().map_err(ErrorPayload::from)?;
     repodesk_core::projects::update_project_ignore_rules(&active, ignore_rules)
         .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(ErrorPayload::from)
 }
 
 #[tauri::command]
 pub async fn get_project_file_token_estimates()
--> Result<Vec<repodesk_core::project_token_check::FileTokenEstimate>, String> {
+-> Result<Vec<repodesk_core::project_token_check::FileTokenEstimate>, ErrorPayload> {
     repodesk_core::project_token_check::get_project_file_token_estimates()
-        .map_err(|e| e.to_string())
+        .map_err(ErrorPayload::from)
 }

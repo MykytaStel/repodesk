@@ -5,30 +5,60 @@
 //! attributed to that agent. It writes **proposals**, never entries directly —
 //! a human accepts them via the review queue.
 //!
-//! Extraction is deterministic (headings + prefixes + keyworded bullets). An
-//! optional Ollama-assisted extractor is layered on in a later phase.
+//! Extraction is deterministic (headings + prefixes + keyworded bullets), with
+//! an optional Ollama extractor ([`capture_from_text_smart`]) that falls back to
+//! the heuristics when Ollama is unavailable.
 
 use std::collections::HashSet;
 
 use crate::errors::RepoDeskResult;
 
+use super::llm::BrainLlm;
 use super::model::{MemoryProposal, NewProposal, ProposedEntry, compute_content_hash, source};
 use super::store;
 
 const MAX_CAPTURE_CANDIDATES: usize = 25;
 const MIN_CONTENT_LEN: usize = 12;
 
-/// Extract candidate entries from `text` and persist them as capture proposals.
-/// Skips candidates that duplicate an existing active entry (by content hash) or
-/// repeat within the same response.
+/// Deterministic capture: extract candidates with heuristics and persist them
+/// as pending capture proposals.
 pub fn capture_from_text(
     project: &str,
     task_id: &str,
     agent: &str,
     text: &str,
 ) -> RepoDeskResult<Vec<MemoryProposal>> {
-    let candidates = extract_candidates(text);
+    let candidates = extract_candidates(text)
+        .into_iter()
+        .map(|c| (c.content, c.category))
+        .collect();
+    persist_candidates(project, task_id, agent, candidates)
+}
 
+/// Hybrid capture: use the Ollama extractor when available, otherwise fall back
+/// to the deterministic heuristics.
+pub async fn capture_from_text_smart(
+    project: &str,
+    task_id: &str,
+    agent: &str,
+    text: &str,
+    llm: &BrainLlm,
+) -> RepoDeskResult<Vec<MemoryProposal>> {
+    match llm.extract(text).await {
+        Some(candidates) => persist_candidates(project, task_id, agent, candidates),
+        None => capture_from_text(project, task_id, agent, text),
+    }
+}
+
+/// Persist `(content, category)` candidates as pending capture proposals,
+/// skipping anything that duplicates an existing active entry (by content hash)
+/// or repeats within this batch.
+fn persist_candidates(
+    project: &str,
+    task_id: &str,
+    agent: &str,
+    candidates: Vec<(String, String)>,
+) -> RepoDeskResult<Vec<MemoryProposal>> {
     // Existing active content hashes, so we don't propose obvious duplicates.
     let mut seen: HashSet<String> = store::list_active(project)?
         .iter()
@@ -36,14 +66,18 @@ pub fn capture_from_text(
         .collect();
 
     let mut created = Vec::new();
-    for candidate in candidates.into_iter().take(MAX_CAPTURE_CANDIDATES) {
-        let hash = compute_content_hash(&candidate.content);
+    for (content, category) in candidates.into_iter().take(MAX_CAPTURE_CANDIDATES) {
+        let content = content.trim().to_string();
+        if content.chars().count() < MIN_CONTENT_LEN {
+            continue;
+        }
+        let hash = compute_content_hash(&content);
         if !seen.insert(hash) {
             continue; // duplicate of an existing entry or an earlier candidate
         }
         let proposed = ProposedEntry {
-            content: candidate.content,
-            category: candidate.category,
+            content,
+            category,
             tags: Vec::new(),
             source: source::AI.to_string(),
             agent: agent.to_string(),

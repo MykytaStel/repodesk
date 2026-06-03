@@ -1,12 +1,12 @@
 use super::{
-    ActionRunResult, ArtifactContent, CommandResult, DesktopAction, ProductWorkflowState,
-    artifact_path, build_product_workflow_state, find_action, history_file, now_ms, run_cli,
-    save_action_history, truncate_text, validate_short_id, validate_text,
+    ActionRunResult, ArtifactContent, CommandResult, DesktopAction, ErrorPayload,
+    ProductWorkflowState, artifact_path, build_product_workflow_state, find_action, history_file,
+    now_ms, run_cli, save_action_history, truncate_text, validate_short_id, validate_text,
 };
 use std::fs;
 
 #[tauri::command]
-pub fn task_new(title: String) -> Result<CommandResult, String> {
+pub fn task_new(title: String) -> Result<CommandResult, ErrorPayload> {
     validate_text("Task title", &title, 180)?;
     match repodesk_core::tasks::create_task(repodesk_core::tasks::NewTaskInput {
         title: title.clone(),
@@ -108,7 +108,7 @@ pub async fn product_workflow_state() -> ProductWorkflowState {
 }
 
 #[tauri::command]
-pub fn read_artifact(kind: String) -> Result<ArtifactContent, String> {
+pub fn read_artifact(kind: String) -> Result<ArtifactContent, ErrorPayload> {
     validate_short_id("Artifact kind", &kind)?;
     let (title, path) = artifact_path(kind.trim())?;
     let metadata = fs::metadata(&path).ok();
@@ -140,7 +140,7 @@ fn action_catalog() -> Vec<DesktopAction> {
 }
 
 #[tauri::command]
-pub fn explain_action(action_id: String) -> Result<String, String> {
+pub fn explain_action(action_id: String) -> Result<String, ErrorPayload> {
     validate_short_id("Action id", &action_id)?;
     let action = find_action(&action_id).ok_or_else(|| format!("Unknown action: {action_id}"))?;
     Ok(format!(
@@ -150,7 +150,7 @@ pub fn explain_action(action_id: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, String> {
+pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, ErrorPayload> {
     validate_short_id("Action id", &action_id)?;
     let action = find_action(&action_id).ok_or_else(|| format!("Unknown action: {action_id}"))?;
     let started_at_ms = now_ms();
@@ -212,7 +212,7 @@ pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, St
 }
 
 #[tauri::command]
-pub async fn run_next_safe_step() -> Result<ActionRunResult, String> {
+pub async fn run_next_safe_step() -> Result<ActionRunResult, ErrorPayload> {
     let state = build_product_workflow_state();
     let action_id = state.recommended_action_id.ok_or_else(|| {
         "No runnable primary action. Add/select a project and create an active task first."

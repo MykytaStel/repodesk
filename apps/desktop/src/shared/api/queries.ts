@@ -58,6 +58,8 @@ export const queryKeys = {
   },
   memory: {
     list: (project: string) => ["memory_list", project] as const,
+    proposals: (project: string) => ["memory_proposals", project] as const,
+    preview: (project: string) => ["memory_brain_preview", project] as const,
   },
 };
 

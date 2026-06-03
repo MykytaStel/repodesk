@@ -8,9 +8,12 @@
 
 use std::collections::HashSet;
 
+use serde::{Deserialize, Serialize};
+
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::persistence::event_journal::{LogEventInput, log_event};
 
+use super::llm::BrainLlm;
 use super::model::{
     MemoryEntry, MemoryProposal, NewMemoryInput, NewProposal, ProposalPayload, ProposedEntry,
     proposal_kind, proposal_status, source, status,
@@ -26,7 +29,7 @@ const NEGATIONS: &[&str] = &[
 ];
 
 /// Counts of proposals created by a scan.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ScanSummary {
     pub dedup: usize,
     pub merge: usize,
@@ -257,6 +260,51 @@ pub fn reject_proposal(id: i64) -> RepoDeskResult<MemoryProposal> {
     }
     store::set_proposal_status(id, proposal_status::REJECTED, None)?;
     audit(&proposal.project, "rejected", &proposal.kind, id, None);
+    store::get_proposal(id)?
+        .ok_or_else(|| RepoDeskError::Database(format!("proposal {id} vanished")))
+}
+
+/// Ask Ollama to reconcile a conflict's two entries into one note, storing the
+/// result as the proposal's `proposed` entry (so it can then be accepted with no
+/// `--keep`). Errors when Ollama is unavailable.
+pub async fn reconcile_conflict(id: i64, llm: &BrainLlm) -> RepoDeskResult<MemoryProposal> {
+    let proposal = store::get_proposal(id)?
+        .ok_or_else(|| RepoDeskError::Database(format!("proposal {id} not found")))?;
+    if proposal.kind != proposal_kind::CONFLICT {
+        return Err(RepoDeskError::Database(format!(
+            "proposal {id} is not a conflict"
+        )));
+    }
+    let ids = &proposal.payload.source_ids;
+    if ids.len() < 2 {
+        return Err(RepoDeskError::Database(
+            "conflict has fewer than two sources".to_string(),
+        ));
+    }
+    let a = store::get_entry(ids[0])?
+        .ok_or_else(|| RepoDeskError::Database(format!("entry {} not found", ids[0])))?;
+    let b = store::get_entry(ids[1])?
+        .ok_or_else(|| RepoDeskError::Database(format!("entry {} not found", ids[1])))?;
+
+    let reconciled = llm.reconcile(&a.content, &b.content).await.ok_or_else(|| {
+        RepoDeskError::Api("Ollama is unavailable or returned no reconciliation".to_string())
+    })?;
+
+    let mut payload = proposal.payload.clone();
+    payload.proposed = Some(ProposedEntry {
+        content: reconciled,
+        category: a.category.clone(),
+        tags: Vec::new(),
+        source: source::SYSTEM.to_string(),
+        agent: "ollama".to_string(),
+    });
+    payload.rationale = format!(
+        "Ollama-reconciled from [{}] and [{}]; accept to apply.",
+        a.provenance(),
+        b.provenance()
+    );
+    store::update_proposal_payload(id, &payload)?;
+
     store::get_proposal(id)?
         .ok_or_else(|| RepoDeskError::Database(format!("proposal {id} vanished")))
 }
