@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "../../shared/api/queries";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
-import * as api from "../../shared/api/api";
+import * as api from "../../shared/api/memory";
 
 /**
  * Memory Brain hook: entries + proposal queue + "what the AI sees" preview,

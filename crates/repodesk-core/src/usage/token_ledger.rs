@@ -93,69 +93,68 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
     let mut report = parse_token_report_content(&csv_content);
 
     // Read from DB
-    if let Ok(conn) = crate::persistence::db::init_db() {
-        if let Ok(mut stmt) = conn.prepare(
+    if let Ok(conn) = crate::persistence::db::init_db()
+        && let Ok(mut stmt) = conn.prepare(
             "SELECT timestamp, agent, model, input_tokens, output_tokens FROM token_ledger",
-        ) {
-            let rows = stmt.query_map([], |row| {
-                let timestamp_str: String = row.get(0)?;
-                let agent: String = row.get(1)?;
-                let model: String = row.get(2)?;
-                let input_tokens: usize = row.get(3)?;
-                let output_tokens: usize = row.get(4)?;
-                Ok((timestamp_str, agent, model, input_tokens, output_tokens))
-            });
+        )
+    {
+        let rows = stmt.query_map([], |row| {
+            let timestamp_str: String = row.get(0)?;
+            let agent: String = row.get(1)?;
+            let model: String = row.get(2)?;
+            let input_tokens: usize = row.get(3)?;
+            let output_tokens: usize = row.get(4)?;
+            Ok((timestamp_str, agent, model, input_tokens, output_tokens))
+        });
 
-            if let Ok(rows) = rows {
-                for row in rows.flatten() {
-                    let (timestamp_str, agent, model, input_tokens, output_tokens) = row;
+        if let Ok(rows) = rows {
+            for row in rows.flatten() {
+                let (timestamp_str, agent, model, input_tokens, output_tokens) = row;
 
-                    let today = Utc::now().date_naive();
-                    let is_today = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
-                        .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
-                        .unwrap_or(false);
+                let today = Utc::now().date_naive();
+                let is_today = chrono::DateTime::parse_from_rfc3339(&timestamp_str)
+                    .map(|dt| dt.with_timezone(&Utc).date_naive() == today)
+                    .unwrap_or(false);
 
-                    if is_today {
-                        report.today_tokens += input_tokens + output_tokens;
-                    }
+                if is_today {
+                    report.today_tokens += input_tokens + output_tokens;
+                }
 
-                    report.entries_count += 1;
-                    report.total_input_tokens += input_tokens;
-                    report.total_output_tokens += output_tokens;
-                    report.total_tokens += input_tokens + output_tokens;
+                report.entries_count += 1;
+                report.total_input_tokens += input_tokens;
+                report.total_output_tokens += output_tokens;
+                report.total_tokens += input_tokens + output_tokens;
 
-                    if let Some(existing) =
-                        report.by_agent.iter_mut().find(|item| item.agent == agent)
-                    {
-                        existing.input_tokens += input_tokens;
-                        existing.output_tokens += output_tokens;
-                        existing.total_tokens += input_tokens + output_tokens;
-                    } else {
-                        report.by_agent.push(AgentTokenTotal {
-                            agent: agent.clone(),
-                            input_tokens,
-                            output_tokens,
-                            total_tokens: input_tokens + output_tokens,
-                        });
-                    }
+                if let Some(existing) = report.by_agent.iter_mut().find(|item| item.agent == agent)
+                {
+                    existing.input_tokens += input_tokens;
+                    existing.output_tokens += output_tokens;
+                    existing.total_tokens += input_tokens + output_tokens;
+                } else {
+                    report.by_agent.push(AgentTokenTotal {
+                        agent: agent.clone(),
+                        input_tokens,
+                        output_tokens,
+                        total_tokens: input_tokens + output_tokens,
+                    });
+                }
 
-                    if let Some(existing) = report
-                        .by_model
-                        .iter_mut()
-                        .find(|item| item.agent == agent && item.model == model)
-                    {
-                        existing.input_tokens += input_tokens;
-                        existing.output_tokens += output_tokens;
-                        existing.total_tokens += input_tokens + output_tokens;
-                    } else {
-                        report.by_model.push(ModelTokenTotal {
-                            model,
-                            agent,
-                            input_tokens,
-                            output_tokens,
-                            total_tokens: input_tokens + output_tokens,
-                        });
-                    }
+                if let Some(existing) = report
+                    .by_model
+                    .iter_mut()
+                    .find(|item| item.agent == agent && item.model == model)
+                {
+                    existing.input_tokens += input_tokens;
+                    existing.output_tokens += output_tokens;
+                    existing.total_tokens += input_tokens + output_tokens;
+                } else {
+                    report.by_model.push(ModelTokenTotal {
+                        model,
+                        agent,
+                        input_tokens,
+                        output_tokens,
+                        total_tokens: input_tokens + output_tokens,
+                    });
                 }
             }
         }

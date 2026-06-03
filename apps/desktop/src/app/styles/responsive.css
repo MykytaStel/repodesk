@@ -1,0 +1,61 @@
+@media (max-width: 1180px) {
+  :root { --sidebar-w: 220px; }
+  .main-area { padding: 22px 20px 48px; }
+  .topbar { grid-template-columns: 1fr; }
+  .content-grid,
+  .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .route-summary-grid,
+  .route-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .code-grid { grid-template-columns: 1fr; }
+  .provider-panel,
+  .file-browser-panel,
+  .code-preview-panel { grid-column: 1 / -1; }
+  .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
+  .sidebar {
+    position: static;
+    width: 100%;
+    min-width: 0;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .nav-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .main-area {
+    height: auto;
+    overflow: visible;
+    padding: 18px 14px 42px;
+  }
+  .status-strip,
+  .content-grid,
+  .dashboard-grid,
+  .checklist-grid,
+  .snippet-grid,
+  .route-summary-grid,
+  .route-detail-grid,
+  .settings-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+  .span-2 { grid-column: span 1; }
+  h1 { font-size: 32px; }
+  .table-row,
+  .debug-event summary {
+    grid-template-columns: 1fr;
+  }
+  .row-meta {
+    justify-content: flex-start;
+    text-align: left;
+  }
+}

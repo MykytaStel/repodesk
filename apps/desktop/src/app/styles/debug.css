@@ -1,0 +1,29 @@
+.debug-event {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(12, 17, 24, 0.72);
+}
+.debug-event summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  cursor: pointer;
+}
+.debug-event summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.debug-event summary span,
+.debug-event summary small {
+  color: var(--muted);
+}
+.debug-event.error { border-color: rgba(255, 127, 147, 0.34); }
+.debug-event pre {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+}

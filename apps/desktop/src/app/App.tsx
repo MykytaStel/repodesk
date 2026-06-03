@@ -1,51 +1,28 @@
 import { useEffect, useState } from "react";
 import "./App.css";
-import { DashboardTab } from "../features/dashboard/DashboardTab";
 import { EconomyMode } from "../features/routing/EconomyControl";
-import { WorkflowTab } from "../features/workflow/WorkflowTab";
-import { TokensTab } from "../features/tokens/TokensTab";
-import { ModelsTab } from "../features/models/ModelsTab";
-import { CodeTab } from "../features/code/CodeTab";
-import { GitTab } from "../features/git/GitTab";
-import { SettingsTab } from "../features/settings/SettingsTab";
-import { SystemTab } from "../features/system/SystemTab";
-import { DebugTab } from "../features/debug/DebugTab";
-import { MemoryTab } from "../features/memory/MemoryTab";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { useGit } from "../features/git/useGit";
-import { useWorkflow } from "../features/workflow/useWorkflow";
-import { useCode } from "../features/code/useCode";
 import { useModels } from "../features/models/useModels";
 import { useTokens } from "../features/tokens/useTokens";
 import { StartupSkeleton } from "../shared/ui/SharedComponents";
 import { TabErrorBoundary } from "../shared/ui/TabErrorBoundary";
 import type { TabId, Theme } from "../shared/types/api";
 import { formatNumber } from "../shared/utils/helpers";
-
-const tabs: Array<{ id: TabId; title: string; subtitle: string }> = [
-  { id: "dashboard", title: "Dashboard", subtitle: "Daily state" },
-  { id: "workflow", title: "Workflow", subtitle: "Next step" },
-  { id: "tokens", title: "Tokens", subtitle: "Usage + cost" },
-  { id: "models", title: "Models", subtitle: "Runtime health" },
-  { id: "code", title: "Code", subtitle: "Changed files" },
-  { id: "git", title: "Git", subtitle: "Workspace" },
-  { id: "memory", title: "Memory", subtitle: "Project context" },
-  { id: "settings", title: "Settings", subtitle: "Providers" },
-  { id: "system", title: "System Registry", subtitle: "Skills & MCP" },
-  { id: "debug", title: "Debug", subtitle: "Traces" },
-];
+import { StatusBox } from "./StatusBox";
+import { APP_TABS, renderAppTab } from "./tabs";
+import { STORAGE_KEYS } from "./constants";
+import { readStoredActiveTab, readStoredEconomyMode, readStoredTheme } from "./storage";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabId>(() => (window.localStorage.getItem("repodesk.activeTab") as TabId) || "dashboard");
-  const [theme, setTheme] = useState<Theme>(() => (window.localStorage.getItem("repodesk.theme") as Theme) || "system");
-  const [economyMode, setEconomyMode] = useState<EconomyMode>(() => (window.localStorage.getItem("repodesk.economyMode") as EconomyMode) || "balanced");
+  const [activeTab, setActiveTab] = useState<TabId>(readStoredActiveTab);
+  const [theme, setTheme] = useState<Theme>(readStoredTheme);
+  const [economyMode, setEconomyMode] = useState<EconomyMode>(readStoredEconomyMode);
 
   // React Query hooks driving the shell state
   const { projectName, taskTitle, hasProject, hasTask, isLoading: workspaceLoading } = useWorkspace();
-  const { git, dirty, dirtyCount, branch, isLoading: gitLoading } = useGit();
-  const { workflow, nextAction, isLoading: workflowLoading } = useWorkflow();
-  const { changedFiles, isLoading: codeLoading } = useCode();
-  const { models, isLoading: modelsLoading } = useModels();
+  const { dirty, dirtyCount } = useGit();
+  const { models } = useModels();
   const { tokens } = useTokens();
 
   const workingProviders = models?.providers?.filter((provider: any) => provider.reachability === "working").length ?? 0;
@@ -53,15 +30,15 @@ export default function App() {
 
 
   useEffect(() => {
-    window.localStorage.setItem("repodesk.activeTab", activeTab);
+    window.localStorage.setItem(STORAGE_KEYS.activeTab, activeTab);
   }, [activeTab]);
 
   useEffect(() => {
-    window.localStorage.setItem("repodesk.economyMode", economyMode);
+    window.localStorage.setItem(STORAGE_KEYS.economyMode, economyMode);
   }, [economyMode]);
 
   useEffect(() => {
-    window.localStorage.setItem("repodesk.theme", theme);
+    window.localStorage.setItem(STORAGE_KEYS.theme, theme);
     const root = document.documentElement;
 
     const updateTheme = () => {
@@ -85,28 +62,7 @@ export default function App() {
 
   function renderActiveTab() {
     if (booting) return <StartupSkeleton />;
-    let content: React.ReactNode;
-    if (activeTab === "dashboard") {
-      content = <DashboardTab setActiveTab={setActiveTab as any} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
-    } else if (activeTab === "workflow") {
-      content = <WorkflowTab economyMode={economyMode} />;
-    } else if (activeTab === "tokens") {
-      content = <TokensTab />;
-    } else if (activeTab === "models") {
-      content = <ModelsTab setActiveTab={setActiveTab as any} />;
-    } else if (activeTab === "code") {
-      content = <CodeTab />;
-    } else if (activeTab === "git") {
-      content = <GitTab />;
-    } else if (activeTab === "memory") {
-      content = <MemoryTab />;
-    } else if (activeTab === "settings") {
-      content = <SettingsTab />;
-    } else if (activeTab === "system") {
-      content = <SystemTab />;
-    } else {
-      content = <DebugTab />;
-    }
+    const content = renderAppTab({ activeTab, economyMode, setActiveTab, setEconomyMode });
     return (
       <TabErrorBoundary tabId={activeTab}>
         {content}
@@ -123,7 +79,7 @@ export default function App() {
             <div><strong>RepoDesk</strong><span>AI control cockpit</span></div>
           </div>
           <nav className="nav-list">
-            {tabs.map((tab) => (
+            {APP_TABS.map((tab) => (
               <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
                 <strong>{tab.title}</strong><span>{tab.subtitle}</span>
               </button>
@@ -155,25 +111,6 @@ export default function App() {
         </header>
         {renderActiveTab()}
       </main>
-    </div>
-  );
-}
-
-function StatusBox({ label, value, ok }: { label: string; value: string; ok: boolean }) {
-  return (
-    <div className={`status-box ${ok ? "ok" : "warn"}`} style={{ position: "relative" }}>
-      <div style={{
-        position: "absolute",
-        top: "10px",
-        right: "10px",
-        width: "6px",
-        height: "6px",
-        borderRadius: "50%",
-        backgroundColor: ok ? "var(--accent)" : "var(--warning)",
-        boxShadow: ok ? "0 0 8px var(--accent)" : "0 0 8px var(--warning)",
-      }} />
-      <span>{label}</span>
-      <strong>{value}</strong>
     </div>
   );
 }

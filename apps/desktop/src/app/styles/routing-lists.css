@@ -1,0 +1,139 @@
+.route-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.route-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.route-summary-grid div,
+.route-list,
+.route-candidate {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(12, 17, 24, 0.72);
+}
+
+.route-summary-grid div {
+  padding: 10px 11px;
+}
+
+.route-summary-grid span,
+.route-summary-grid strong,
+.route-list strong,
+.route-list span,
+.route-candidate strong,
+.route-candidate span {
+  display: block;
+  min-width: 0;
+}
+
+.route-summary-grid span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+.route-summary-grid strong {
+  margin-top: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.route-list {
+  padding: 11px 12px;
+}
+
+.route-list strong {
+  margin-bottom: 7px;
+  font-size: 13px;
+}
+
+.route-list span {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.route-list.ok { border-color: rgba(115, 227, 165, 0.26); }
+.route-list.warn { border-color: rgba(246, 207, 101, 0.32); }
+.route-list.danger { border-color: rgba(255, 127, 147, 0.32); }
+
+.route-candidate-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.route-candidate {
+  padding: 10px;
+}
+
+.route-candidate span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.route-candidate.blocked {
+  opacity: .72;
+  border-color: rgba(255, 127, 147, 0.25);
+}
+
+.model-list {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.model-row,
+.snippet-card {
+  padding: 11px 12px;
+}
+.model-row strong,
+.model-row span,
+.snippet-card strong,
+.snippet-card span {
+  display: block;
+  min-width: 0;
+}
+.model-row strong,
+.snippet-card strong {
+  overflow-wrap: anywhere;
+}
+.model-row span,
+.snippet-card span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.file-list.scroll-area {
+  max-height: 500px;
+  overflow: auto;
+}
+.file-list.small { max-height: 260px; }
+
+.file-row {
+  width: 100%;
+  min-height: 40px;
+  padding: 9px 10px;
+  text-align: left;
+}
+.file-row.active {
+  border-color: rgba(94, 224, 174, 0.46);
+  background: rgba(94, 224, 174, 0.08);
+}
