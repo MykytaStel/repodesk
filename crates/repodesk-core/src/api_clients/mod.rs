@@ -102,7 +102,9 @@ pub struct LlmResponse {
     pub output_tokens: usize,
 }
 
-pub trait LlmProvider {
+/// `Send + Sync` so a boxed provider can be held across `.await` points (e.g. in
+/// the orchestrator runner, and in Tauri commands which require `Send` futures).
+pub trait LlmProvider: Send + Sync {
     /// Legacy one-shot generate (used by the Memory Brain). Kept for back-compat.
     fn generate(
         &self,

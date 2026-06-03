@@ -61,6 +61,9 @@ export const queryKeys = {
     proposals: (project: string) => ["memory_proposals", project] as const,
     preview: (project: string) => ["memory_brain_preview", project] as const,
   },
+  orchestrate: {
+    status: ["orchestrate_status"] as const,
+  },
 };
 
 /** Wrapper for Tauri invoke that throws on error. */

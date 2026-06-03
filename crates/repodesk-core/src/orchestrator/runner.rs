@@ -135,15 +135,15 @@ pub async fn run_plan(
                 .estimated_cost_units;
 
         // Cost ceiling — check before any spend.
-        if let Some(max) = opts.max_cost {
-            if state.running_cost + projected_cost > max {
-                state.ceiling_hit = true;
-                state.push(blocked(
-                    step,
-                    format!("blocked: would exceed --max-cost ({max:.3} units)"),
-                ));
-                continue;
-            }
+        if let Some(max) = opts.max_cost
+            && state.running_cost + projected_cost > max
+        {
+            state.ceiling_hit = true;
+            state.push(blocked(
+                step,
+                format!("blocked: would exceed --max-cost ({max:.3} units)"),
+            ));
+            continue;
         }
 
         if opts.dry_run {

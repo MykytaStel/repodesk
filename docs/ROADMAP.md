@@ -66,6 +66,18 @@ Scope:
 - Add release checklist.
 - Add backup/restore for local state.
 
+### Milestone 6 — Multi-agent orchestrator (in progress)
+
+RepoDesk moves from a human-in-the-loop *coach* to a *conductor* that actually runs sub-agents.
+See [ORCHESTRATOR.md](ORCHESTRATOR.md).
+
+Scope:
+- Real provider clients (Anthropic/OpenAI/Gemini + Ollama) behind `LlmProvider::complete`. ✅
+- Plan the active task into sub-agents, each routed per-task to the cheapest capable model. ✅
+- Run sub-agents in dependency order, each with its own bounded Memory-Brain context; capture
+  outputs as human-reviewable proposals; safety/budget/cost gates; CLI + desktop "Orchestrate" tab. ✅
+- Next: concurrent execution of independent steps; LLM-assisted / user-authored plans.
+
 ## Development priorities
 
 1. Stability before new features.

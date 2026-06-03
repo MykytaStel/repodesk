@@ -268,7 +268,11 @@ pub fn run() {
             commands::memory_proposals_list,
             commands::memory_proposal_accept,
             commands::memory_proposal_reject,
-            commands::memory_reconcile_conflict
+            commands::memory_reconcile_conflict,
+            commands::orchestrate_plan,
+            commands::orchestrate_run,
+            commands::orchestrate_status,
+            commands::orchestrate_show
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -4,6 +4,7 @@ import { DebugTab } from "../features/debug/DebugTab";
 import { GitTab } from "../features/git/GitTab";
 import { MemoryTab } from "../features/memory/MemoryTab";
 import { ModelsTab } from "../features/models/ModelsTab";
+import { OrchestrateTab } from "../features/orchestrate/OrchestrateTab";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import { SettingsTab } from "../features/settings/SettingsTab";
 import { SystemTab } from "../features/system/SystemTab";
@@ -19,6 +20,7 @@ export const APP_TABS: Array<{ id: TabId; title: string; subtitle: string }> = [
   { id: "code", title: "Code", subtitle: "Changed files" },
   { id: "git", title: "Git", subtitle: "Workspace" },
   { id: "memory", title: "Memory", subtitle: "Project context" },
+  { id: "orchestrate", title: "Orchestrate", subtitle: "Sub-agents" },
   { id: "settings", title: "Settings", subtitle: "Providers" },
   { id: "system", title: "System Registry", subtitle: "Skills & MCP" },
   { id: "debug", title: "Debug", subtitle: "Traces" },
@@ -50,6 +52,8 @@ export function renderAppTab({
       return <GitTab />;
     case "memory":
       return <MemoryTab />;
+    case "orchestrate":
+      return <OrchestrateTab setActiveTab={setActiveTab} />;
     case "settings":
       return <SettingsTab />;
     case "system":
