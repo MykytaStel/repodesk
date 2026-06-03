@@ -16,6 +16,7 @@ pub mod init;
 pub mod judge;
 pub mod memory;
 pub mod module_registry;
+pub mod orchestrator;
 pub mod paths;
 pub mod peripherals;
 pub mod persistence;

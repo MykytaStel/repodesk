@@ -104,6 +104,65 @@ impl super::LlmProvider for OllamaClient {
 
         Box::pin(async move { client.get(&url).send().await.is_ok() })
     }
+
+    fn complete(
+        &self,
+        request: super::LlmRequest,
+    ) -> super::ProviderFuture<RepoDeskResult<super::LlmResponse>> {
+        let url = format!("{}/api/generate", self.base_url);
+        // Ollama has no system field on /api/generate; prepend it to the prompt.
+        let prompt = match &request.system {
+            Some(system) if !system.trim().is_empty() => {
+                format!("{system}\n\n{}", request.prompt)
+            }
+            _ => request.prompt.clone(),
+        };
+        // The request model wins; fall back to the client default.
+        let model = if request.model.trim().is_empty() {
+            self.default_model.clone()
+        } else {
+            request.model.clone()
+        };
+        let req = OllamaGenerateRequest {
+            model: model.clone(),
+            prompt: prompt.clone(),
+            stream: false,
+        };
+        let client = self.client.clone();
+
+        Box::pin(async move {
+            let resp = client.post(&url).json(&req).send().await.map_err(|e| {
+                RepoDeskError::ProviderUnavailable {
+                    provider: "ollama".to_string(),
+                    detail: format!("failed to connect to Ollama: {e}"),
+                }
+            })?;
+
+            if !resp.status().is_success() {
+                return Err(RepoDeskError::Api(format!(
+                    "Ollama API error: {}",
+                    resp.status()
+                )));
+            }
+
+            let gen_resp: OllamaGenerateResponse = resp
+                .json()
+                .await
+                .map_err(|e| RepoDeskError::Api(format!("Failed to parse Ollama response: {e}")))?;
+
+            // Ollama's basic response carries no usage counts; estimate them so
+            // the call still shows up in the token ledger.
+            let input_tokens = crate::tokens::estimate_text(&prompt).estimated_tokens;
+            let output_tokens = crate::tokens::estimate_text(&gen_resp.response).estimated_tokens;
+
+            Ok(super::LlmResponse {
+                text: gen_resp.response,
+                model,
+                input_tokens,
+                output_tokens,
+            })
+        })
+    }
 }
 
 #[cfg(test)]

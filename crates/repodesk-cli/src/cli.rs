@@ -144,6 +144,10 @@ pub enum Command {
         #[command(subcommand)]
         command: MemoryCommand,
     },
+    Orchestrate {
+        #[command(subcommand)]
+        command: OrchestrateCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -529,4 +533,31 @@ pub enum MemoryCommand {
     Delete {
         id: i64,
     },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OrchestrateCommand {
+    /// Show the sub-agent plan for the active task (routes each step; no execution).
+    Plan {
+        #[arg(long)]
+        goal: Option<String>,
+    },
+    /// Execute the plan: each sub-agent runs on its own context, routed model.
+    Run {
+        #[arg(long)]
+        goal: Option<String>,
+        /// Preview only — route and gate every step, but make no provider calls.
+        #[arg(long)]
+        dry_run: bool,
+        /// Cost ceiling in cost units; halts before a step that would exceed it.
+        #[arg(long = "max-cost")]
+        max_cost: Option<f64>,
+        /// Confirm execution of a plan that includes paid provider steps.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Show the most recent orchestration run for the active task.
+    Status,
+    /// Show a specific run by id.
+    Show { run_id: String },
 }

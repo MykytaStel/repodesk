@@ -21,6 +21,7 @@ pub mod inspect;
 pub mod judge;
 pub mod memory;
 pub mod modules;
+pub mod orchestrate;
 pub mod peripherals;
 pub mod project;
 pub mod prompt;
@@ -72,5 +73,8 @@ pub fn dispatch(cli: Cli) -> Result<()> {
         Command::Tokens { command } => tokens::handle_tokens_command(command),
         Command::Budget { command } => budget::handle_budget_command(command),
         Command::Memory { command } => memory::handle_memory_command(command),
+        Command::Orchestrate { command } => {
+            orchestrate::handle_orchestrate_command(command)
+        }
     }
 }
