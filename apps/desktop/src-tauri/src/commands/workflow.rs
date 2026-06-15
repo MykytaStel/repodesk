@@ -210,6 +210,18 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
         .ok()
         .and_then(|(_, path)| read_file_if_exists(&path, 5000));
 
+    let snapshot = repodesk_core::git_workspace::build_git_workspace_snapshot();
+    let git = repodesk_core::workflow::GitCommitContext {
+        is_repo: snapshot.is_git_repo,
+        is_dirty: snapshot.is_dirty,
+        changed_count: snapshot.changed_files.len(),
+        has_conflicts: snapshot
+            .changed_files
+            .iter()
+            .any(|file| file.status_label == "conflict"),
+        branch: snapshot.branch,
+    };
+
     let state = repodesk_core::workflow::build_product_workflow_state(
         repodesk_core::workflow::ProductWorkflowStateParams {
             generated_at_ms,
@@ -225,6 +237,7 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
             checks_summary,
             token_estimate,
             checks_summary_preview,
+            git,
         },
     );
 

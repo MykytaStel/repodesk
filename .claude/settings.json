@@ -12,7 +12,10 @@
       "Bash(python3 -c ' *)",
       "Bash(REPODESK_HOME=/tmp/repodesk-dev cargo test --package repodesk-core safety:: security:: guard::)",
       "Bash(REPODESK_HOME=/tmp/repodesk-dev cargo test --package repodesk-core)",
-      "Bash(echo \"fmt exit=$?\")"
+      "Bash(echo \"fmt exit=$?\")",
+      "Bash(REPODESK_HOME=/tmp/repodesk-dev cargo test -p repodesk-core engine::)",
+      "Bash(npm --prefix apps/desktop run build)",
+      "Bash(echo \"verify-fast exit=$?\")"
     ]
   }
 }

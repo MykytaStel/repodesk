@@ -56,6 +56,16 @@ export type ArtifactContent = {
   size_bytes: number;
 };
 
+export type CommitReadiness = {
+  status: "ready" | "blocked" | "warning" | "nothing_to_commit" | "not_a_repo";
+  headline: string;
+  blockers: string[];
+  warnings: string[];
+  is_dirty: boolean;
+  changed_count: number;
+  branch?: string | null;
+};
+
 export type ProductWorkflowState = {
   generated_at_ms: number;
   overall_status: string;
@@ -71,6 +81,7 @@ export type ProductWorkflowState = {
   prompts_ok: boolean;
   checks_ok: boolean;
   safety_ok: boolean;
+  commit_readiness: CommitReadiness;
   project_info: CommandResult;
   task_status: CommandResult;
   workflow_hint: CommandResult;

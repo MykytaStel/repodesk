@@ -53,6 +53,35 @@ pub struct ArtifactStatus {
     pub size_bytes: u64,
 }
 
+/// Minimal Git facts the workflow engine needs to reason about commit readiness.
+/// Kept as plain scalars so the engine stays deterministic and unit-testable
+/// without shelling out to `git`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GitCommitContext {
+    pub is_repo: bool,
+    pub is_dirty: bool,
+    pub changed_count: usize,
+    pub has_conflicts: bool,
+    pub branch: Option<String>,
+}
+
+/// Verdict on whether the working tree is safe to commit right now.
+///
+/// This is the culmination of the product workflow: checks passed, no secrets
+/// in context, and no new High/Critical findings from RepoPilot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitReadiness {
+    /// One of: `ready`, `blocked`, `warning`, `nothing_to_commit`, `not_a_repo`.
+    pub status: String,
+    /// Short human-readable summary suitable for a CTA/banner.
+    pub headline: String,
+    pub blockers: Vec<String>,
+    pub warnings: Vec<String>,
+    pub is_dirty: bool,
+    pub changed_count: usize,
+    pub branch: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductWorkflowStateParams {
     pub generated_at_ms: u128,
@@ -68,6 +97,8 @@ pub struct ProductWorkflowStateParams {
     pub checks_summary: ArtifactStatus,
     pub token_estimate: ArtifactStatus,
     pub checks_summary_preview: Option<String>,
+    #[serde(default)]
+    pub git: GitCommitContext,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -86,6 +117,7 @@ pub struct ProductWorkflowState {
     pub prompts_ok: bool,
     pub checks_ok: bool,
     pub safety_ok: bool,
+    pub commit_readiness: CommitReadiness,
     pub project_info: CommandResult,
     pub task_status: CommandResult,
     pub workflow_hint: CommandResult,

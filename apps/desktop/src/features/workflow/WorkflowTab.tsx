@@ -24,6 +24,48 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
     return asRecord(source)[key];
   }
 
+  function renderCommitReadiness() {
+    const readiness = asRecord(getValue(workflow, "commit_readiness"));
+    const status = getString(readiness, "status", "");
+    if (!status) return null;
+
+    const tone: "ok" | "warn" | "danger" | "neutral" =
+      status === "ready" ? "ok" : status === "warning" ? "warn" : status === "blocked" ? "danger" : "neutral";
+    const label =
+      status === "ready" ? "Ready to commit"
+      : status === "warning" ? "Review before commit"
+      : status === "blocked" ? "Commit blocked"
+      : status === "nothing_to_commit" ? "Nothing to commit"
+      : "Not a Git repo";
+
+    const blockers = asArray(getValue(readiness, "blockers")).map((item) => String(item));
+    const warnings = asArray(getValue(readiness, "warnings")).map((item) => String(item));
+    const branch = getString(readiness, "branch", "");
+    const changed = Number(getValue(readiness, "changed_count") ?? 0);
+
+    return (
+      <section className="panel commit-readiness wide-panel">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Commit readiness</p>
+            <h2>{getString(readiness, "headline", label)}</h2>
+          </div>
+          <span className={`pill ${tone}`}>{label}</span>
+        </div>
+        <div className="route-summary-grid">
+          {branch && <div><span>Branch</span><strong>{branch}</strong></div>}
+          <div><span>Changed files</span><strong>{formatNumber(changed)}</strong></div>
+        </div>
+        {(blockers.length > 0 || warnings.length > 0) && (
+          <div className="route-detail-grid">
+            {blockers.length > 0 && <RouteList title="Blockers" tone="danger" items={blockers} />}
+            {warnings.length > 0 && <RouteList title="Warnings" tone="warn" items={warnings} />}
+          </div>
+        )}
+      </section>
+    );
+  }
+
   function renderBestRoutePanel() {
     const decision = routing?.decision;
     const request = routing?.request;
@@ -86,6 +128,8 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
           <button className="ghost-button" onClick={() => void queryClient.invalidateQueries()} disabled={isBusy}>Refresh workflow</button>
         </div>
       </section>
+
+      {renderCommitReadiness()}
 
       {renderBestRoutePanel()}
 
