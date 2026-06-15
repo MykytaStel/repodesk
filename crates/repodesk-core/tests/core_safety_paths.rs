@@ -19,6 +19,7 @@ use tempfile::TempDir;
 struct Fixture {
     _home: TempDir,
     run_dir: PathBuf,
+    project_path: PathBuf,
 }
 
 impl Fixture {
@@ -43,7 +44,7 @@ fn setup() -> Fixture {
 
     add_project(AddProjectInput {
         name: "demo".to_string(),
-        path: project_path,
+        path: project_path.clone(),
         project_type: "rust".to_string(),
         main_language: Some("rust".to_string()),
     })
@@ -58,6 +59,7 @@ fn setup() -> Fixture {
     Fixture {
         _home: home,
         run_dir: task.config.run_dir,
+        project_path,
     }
 }
 
@@ -203,4 +205,29 @@ fn judge_blocks_on_secret_context_even_when_prepared() {
 
     let report = judge_agent("codex").expect("judge");
     assert_eq!(report.decision, JudgementDecision::Block);
+}
+
+// --- context::build_context (bounded by construction) ------------------------
+
+#[test]
+#[serial]
+fn build_context_does_not_leak_repo_file_contents() {
+    let fx = setup();
+    // A secret file living in the project must never have its *contents* pulled
+    // into the generated context pack. build_context only ingests RepoDesk-managed
+    // files + git metadata (names/stats), never arbitrary repo file bodies.
+    let secret = "AKIAIOSFODNN7EXAMPLE";
+    std::fs::write(
+        fx.project_path.join("leak.env"),
+        format!("aws_key={secret}\n"),
+    )
+    .expect("write secret file");
+
+    repodesk_core::context::build_context().expect("build_context");
+
+    let context = std::fs::read_to_string(fx.run_dir.join("context.md")).expect("read context");
+    assert!(
+        !context.contains(secret),
+        "context pack leaked raw repo file contents"
+    );
 }

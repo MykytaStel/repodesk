@@ -22,7 +22,10 @@
       "Bash(sed -n '/impl Default for BudgetConfig/,/^}/p' crates/repodesk-core/src/usage/budget.rs)",
       "Bash(sed -n '/trait ConfigStore/,/^}/p' crates/repodesk-core/src/utils.rs)",
       "Bash(sed -n '/fn load_config/,/^    }/p;/fn ensure_config/,/^    }/p' crates/repodesk-core/src/utils.rs)",
-      "Bash(rustfmt --edition 2024 crates/repodesk-core/tests/core_safety_paths.rs)"
+      "Bash(rustfmt --edition 2024 crates/repodesk-core/tests/core_safety_paths.rs)",
+      "Bash(git pull *)",
+      "Bash(repopilot scan *)",
+      "Bash(echo \"scan exit=$?\")"
     ]
   }
 }
