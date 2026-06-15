@@ -157,3 +157,85 @@ pub fn safety_rules_text() -> String {
 "#
     .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_labels_are_stable() {
+        assert_eq!(SafetyLevel::Ok.as_label(), "OK");
+        assert_eq!(SafetyLevel::Warning.as_label(), "WARNING");
+        assert_eq!(SafetyLevel::Block.as_label(), "BLOCK");
+    }
+
+    #[test]
+    fn clean_text_produces_no_findings() {
+        let report = scan_text("doc", "This is an ordinary line of documentation.");
+        assert_eq!(report.level, SafetyLevel::Ok);
+        assert!(report.findings.is_empty());
+        assert_eq!(report.target, "doc");
+    }
+
+    #[test]
+    fn private_key_marker_blocks() {
+        let report = scan_text("ctx", "-----BEGIN PRIVATE KEY-----\nabc\n");
+        assert_eq!(report.level, SafetyLevel::Block);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.level == SafetyLevel::Block)
+        );
+    }
+
+    #[test]
+    fn block_patterns_are_case_insensitive() {
+        // The marker constant is upper-case; a lower-case occurrence must still match.
+        let report = scan_text("ctx", "found aws_secret_access_key in env dump");
+        assert_eq!(report.level, SafetyLevel::Block);
+    }
+
+    #[test]
+    fn warning_patterns_escalate_to_warning_only() {
+        let report = scan_text("ctx", "the api_key field needs a password");
+        assert_eq!(report.level, SafetyLevel::Warning);
+        assert!(!report.findings.is_empty());
+        assert!(
+            report
+                .findings
+                .iter()
+                .all(|f| f.level == SafetyLevel::Warning)
+        );
+    }
+
+    #[test]
+    fn block_takes_precedence_over_warning() {
+        // Contains both a warning marker ("password") and a block marker (private key).
+        let report = scan_text("ctx", "password: x\n-----BEGIN OPENSSH PRIVATE KEY-----");
+        assert_eq!(report.level, SafetyLevel::Block);
+    }
+
+    #[test]
+    fn format_report_renders_empty_and_populated() {
+        let clean = scan_text("ctx", "nothing here");
+        let rendered = format_safety_report(&clean);
+        assert!(rendered.contains("Safety scan: OK"));
+        assert!(rendered.contains("No obvious secret or safety markers detected."));
+
+        let dirty = scan_text("ctx", "-----BEGIN PRIVATE KEY-----");
+        let rendered = format_safety_report(&dirty);
+        assert!(rendered.contains("Safety scan: BLOCK"));
+        assert!(rendered.contains("Findings:"));
+        assert!(rendered.contains("reason:"));
+        assert!(rendered.contains("recommendation:"));
+    }
+
+    #[test]
+    fn rules_text_mentions_block_and_warning_handling() {
+        let text = safety_rules_text();
+        assert!(text.contains("BLOCK"));
+        assert!(text.contains("WARNING"));
+        assert!(text.contains("Never send secrets"));
+    }
+}

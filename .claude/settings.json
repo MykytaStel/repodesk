@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(REPODESK_HOME=/tmp/repodesk-dev cargo test --workspace)",
+      "Bash(echo \"=== FMT EXIT: $? ===\")",
+      "Bash(./scripts/verify-fast.sh)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(./scripts/secret-scan-basic.sh)",
+      "Bash(./scripts/health-report.sh)",
+      "Bash(repopilot review *)",
+      "Bash(echo \"review exit=$?\")",
+      "Bash(python3 -c ' *)",
+      "Bash(REPODESK_HOME=/tmp/repodesk-dev cargo test --package repodesk-core safety:: security:: guard::)",
+      "Bash(REPODESK_HOME=/tmp/repodesk-dev cargo test --package repodesk-core)",
+      "Bash(echo \"fmt exit=$?\")"
+    ]
+  }
+}

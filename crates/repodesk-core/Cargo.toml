@@ -11,7 +11,7 @@ serde = { version = "1", features = ["derive"] }
 thiserror = "2.0.18"
 toml = "0.8.2"
 serde_json = "1.0.150"
-tokio = { version = "1.52.3", features = ["fs", "rt", "macros", "time"] }
+tokio = { version = "1.52.3", features = ["fs", "rt", "rt-multi-thread", "macros", "time"] }
 async-recursion = "1.1.1"
 shlex = "2.0.1"
 regex = "1.12.3"

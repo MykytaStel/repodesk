@@ -311,3 +311,102 @@ pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
 
     findings
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_labels_are_stable() {
+        assert_eq!(SecurityLevel::Ok.as_label(), "OK");
+        assert_eq!(SecurityLevel::Warning.as_label(), "WARNING");
+        assert_eq!(SecurityLevel::Block.as_label(), "BLOCK");
+    }
+
+    #[test]
+    fn default_policy_is_conservative() {
+        let policy = SecurityPolicy::default();
+        assert!(!policy.allow_unrestricted_shell);
+        assert!(!policy.allow_secret_access);
+        assert!(!policy.allow_external_network_by_default);
+        assert!(policy.require_preflight_for_paid_agents);
+        assert!(policy.require_context_before_agent);
+        assert!(policy.require_checks_before_patch_agent);
+        assert!(policy.require_prompt_files_before_agent);
+        assert!(policy.patch_agents.contains(&"codex".to_string()));
+        assert!(policy.paid_agents.contains(&"codex".to_string()));
+        assert!(!policy.blocked_path_patterns.is_empty());
+    }
+
+    #[test]
+    fn blocked_path_flags_secret_fragments() {
+        assert!(is_blocked_path(".env").is_some());
+        assert!(is_blocked_path("config/.env.local").is_some());
+        assert!(is_blocked_path("home/user/id_rsa").is_some());
+        assert!(is_blocked_path("my_secret_notes.txt").is_some());
+        assert!(is_blocked_path("path/to/credentials.json").is_some());
+    }
+
+    #[test]
+    fn blocked_path_flags_sensitive_suffixes() {
+        assert!(is_blocked_path("server.pem").is_some());
+        assert!(is_blocked_path("key.p12").is_some());
+        assert!(is_blocked_path("data/app.sqlite").is_some());
+        assert!(is_blocked_path("diagram.png").is_some());
+    }
+
+    #[test]
+    fn blocked_path_is_case_insensitive() {
+        assert!(is_blocked_path("Config/.ENV").is_some());
+        assert!(is_blocked_path("Server.PEM").is_some());
+    }
+
+    #[test]
+    fn ordinary_source_paths_are_allowed() {
+        assert!(is_blocked_path("src/main.rs").is_none());
+        assert!(is_blocked_path("crates/repodesk-core/src/security.rs").is_none());
+        assert!(is_blocked_path("README.md").is_none());
+    }
+
+    #[test]
+    fn secret_scan_detects_known_markers() {
+        assert_eq!(
+            scan_text_for_secrets("key=AKIAIOSFODNN7EXAMPLE"),
+            vec!["AWS Access Key ID".to_string()]
+        );
+        assert!(
+            scan_text_for_secrets("sk_live_0123456789abcdefghij0123")
+                .contains(&"Stripe Live Key".to_string())
+        );
+        assert!(
+            scan_text_for_secrets("api_key=abcdefghijklmnopqrstuvwxyz")
+                .contains(&"Generic API Key or Token".to_string())
+        );
+        assert!(
+            scan_text_for_secrets("-----BEGIN RSA PRIVATE KEY-----")
+                .contains(&"Private Key block".to_string())
+        );
+    }
+
+    #[test]
+    fn secret_scan_is_clean_on_ordinary_text() {
+        assert!(scan_text_for_secrets("just some regular prose without secrets").is_empty());
+        // A short token value should not trip the 20+ char generic heuristic.
+        assert!(scan_text_for_secrets("token=short").is_empty());
+    }
+
+    #[test]
+    fn secret_scan_reports_multiple_findings() {
+        let text = "AKIAIOSFODNN7EXAMPLE and -----BEGIN PRIVATE KEY-----";
+        let findings = scan_text_for_secrets(text);
+        assert!(findings.contains(&"AWS Access Key ID".to_string()));
+        assert!(findings.contains(&"Private Key block".to_string()));
+    }
+
+    #[test]
+    fn format_security_policy_renders_key_fields() {
+        let rendered = format_security_policy(&SecurityPolicy::default());
+        assert!(rendered.contains("allow unrestricted shell: false"));
+        assert!(rendered.contains("Blocked path patterns:"));
+    }
+}

@@ -202,3 +202,64 @@ fn count_changed_files(project_path: &Path) -> usize {
         _ => 0,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_labels_are_stable() {
+        assert_eq!(GuardLevel::Ok.as_label(), "OK");
+        assert_eq!(GuardLevel::Warning.as_label(), "WARNING");
+        assert_eq!(GuardLevel::Block.as_label(), "BLOCK");
+    }
+
+    #[test]
+    fn expected_prompt_file_maps_known_agents() {
+        let dir = Path::new("/runs/task");
+        assert_eq!(
+            expected_prompt_file(dir, "codex"),
+            Some(dir.join("prompt.codex.md"))
+        );
+        assert_eq!(
+            expected_prompt_file(dir, "chatgpt"),
+            Some(dir.join("prompt.chatgpt.md"))
+        );
+        assert_eq!(
+            expected_prompt_file(dir, "review"),
+            Some(dir.join("prompt.review.md"))
+        );
+        assert_eq!(
+            expected_prompt_file(dir, "gemini"),
+            Some(dir.join("prompt.review.md"))
+        );
+    }
+
+    #[test]
+    fn expected_prompt_file_is_none_for_unknown_agent() {
+        assert_eq!(expected_prompt_file(Path::new("/runs"), "mystery"), None);
+    }
+
+    #[test]
+    fn count_changed_files_returns_zero_outside_git() {
+        // A non-existent directory makes the git invocation fail, which must
+        // degrade safely to zero rather than panicking.
+        let count = count_changed_files(Path::new("/nonexistent/path/for/guard/test"));
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn format_guard_result_includes_level_agent_and_sections() {
+        let result = GuardResult {
+            level: GuardLevel::Warning,
+            agent: "codex".to_string(),
+            reasons: vec!["a reason".to_string()],
+            recommendations: vec!["a recommendation".to_string()],
+        };
+        let rendered = format_guard_result(&result);
+        assert!(rendered.contains("Preflight: WARNING"));
+        assert!(rendered.contains("Agent: codex"));
+        assert!(rendered.contains("  - a reason"));
+        assert!(rendered.contains("  - a recommendation"));
+    }
+}
