@@ -193,6 +193,12 @@ pub enum ChecksCommand {
     Run,
     Last,
     Summarize,
+    /// Register a check command on the active project
+    Add {
+        /// The check command, e.g. `repopilot review . --fail-on new-high`
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        command: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

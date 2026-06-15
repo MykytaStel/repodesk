@@ -168,6 +168,29 @@ pub fn update_project_ignore_rules(
     Ok(config)
 }
 
+/// Register a check command on a project. The command is validated against the
+/// same allowlist `run_checks` enforces, so an unrunnable check can never be
+/// stored. Idempotent: re-adding an existing check is a no-op.
+pub fn add_project_check(name: &str, command: &str) -> RepoDeskResult<ProjectConfig> {
+    let command = command.trim().to_string();
+    crate::checks::is_allowed_check_command(&command)
+        .map_err(RepoDeskError::InvalidCheckCommand)?;
+
+    let mut config = get_project(name)?;
+    if config.checks.iter().any(|existing| existing == &command) {
+        return Ok(config);
+    }
+
+    config.checks.push(command);
+    config.updated_at = Utc::now();
+
+    let paths = RepoDeskPaths::resolve()?;
+    let project_file = paths.project_config_file(name);
+    write_project_config(&project_file, &config)?;
+
+    Ok(config)
+}
+
 fn write_project_config(path: &Path, config: &ProjectConfig) -> RepoDeskResult<()> {
     let content = toml::to_string_pretty(config)?;
     fs::write(path, content)?;

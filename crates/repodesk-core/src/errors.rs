@@ -44,6 +44,9 @@ pub enum RepoDeskError {
     #[error("project path does not exist: {0}")]
     ProjectPathDoesNotExist(String),
 
+    #[error("invalid check command: {0}")]
+    InvalidCheckCommand(String),
+
     // ── Security / sandbox ─────────────────────────────────────────────────
     /// Raised when the command sandbox blocks a shell command that is not on
     /// the allow-list or matches a known-dangerous pattern.
@@ -130,7 +133,8 @@ impl RepoDeskError {
             | Self::ActiveTaskNotSet(_)
             | Self::TaskNotFound(_)
             | Self::InvalidProjectName(_)
-            | Self::ProjectPathDoesNotExist(_) => ErrorCategory::Configuration,
+            | Self::ProjectPathDoesNotExist(_)
+            | Self::InvalidCheckCommand(_) => ErrorCategory::Configuration,
 
             Self::SandboxBlocked { .. } | Self::SecretDetected { .. } => {
                 ErrorCategory::SecurityBlock

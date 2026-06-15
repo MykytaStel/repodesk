@@ -59,11 +59,32 @@ pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
         .next()
         .ok_or_else(|| "Could not parse command executable".to_string())?;
 
-    // Approved list of binaries for checkers/test runners/compilers
+    // Approved list of binaries for checkers/test runners/compilers.
+    // `repopilot` is a local-first, read-only review/scan tool (no shell needed —
+    // it takes --format/--output flags), so it is safe to run as a project check.
     let allowed_binaries = [
-        "cargo", "npm", "pnpm", "yarn", "python", "python3", "pytest", "go", "make", "gradle",
-        "mvn", "deno", "npx", "bun", "jest", "vitest", "eslint", "prettier", "flake8", "mypy",
+        "cargo",
+        "npm",
+        "pnpm",
+        "yarn",
+        "python",
+        "python3",
+        "pytest",
+        "go",
+        "make",
+        "gradle",
+        "mvn",
+        "deno",
+        "npx",
+        "bun",
+        "jest",
+        "vitest",
+        "eslint",
+        "prettier",
+        "flake8",
+        "mypy",
         "black",
+        "repopilot",
     ];
 
     if !allowed_binaries.contains(&binary) {
@@ -442,6 +463,8 @@ mod tests {
         assert!(is_allowed_check_command("cargo fmt --all -- --check").is_ok());
         assert!(is_allowed_check_command("pnpm typecheck").is_ok());
         assert!(is_allowed_check_command("python -m pytest").is_ok());
+        assert!(is_allowed_check_command("repopilot review . --fail-on new-high").is_ok());
+        assert!(is_allowed_check_command("repopilot scan . --fail-on-priority p1").is_ok());
 
         // Invalid binaries
         assert!(is_allowed_check_command("rm -rf /").is_err());

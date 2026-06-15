@@ -49,7 +49,7 @@ use repodesk_core::peripherals::{
     format_peripherals,
 };
 use repodesk_core::projects::{
-    AddProjectInput, add_project, get_active_project, list_projects, use_project,
+    AddProjectInput, add_project, add_project_check, get_active_project, list_projects, use_project,
 };
 use repodesk_core::prompts::{PromptKind, generate_prompt};
 use repodesk_core::safety::{
@@ -115,6 +115,19 @@ pub fn handle_checks_command(command: ChecksCommand) -> Result<()> {
             println!("Checks summary updated:");
             println!("  log: {}", result.log_file.display());
             println!("  summary: {}", result.summary_file.display());
+        }
+        ChecksCommand::Add { command } => {
+            let project = get_active_project()?;
+            let command = command.join(" ");
+            let config = add_project_check(&project.name, &command)?;
+
+            println!("Registered check on '{}':", config.name);
+            println!("  {command}");
+            println!();
+            println!("  all checks:");
+            for check in &config.checks {
+                println!("    - {check}");
+            }
         }
     }
 
