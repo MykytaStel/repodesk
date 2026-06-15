@@ -1,0 +1,160 @@
+//! Integration tests for the stateful safety/guard/security paths.
+//!
+//! These functions read the active project + task from `REPODESK_HOME`, so each
+//! test runs against an isolated temporary home. `REPODESK_HOME` is a process-global
+//! env var, so every test here is `#[serial]` to prevent cross-test interference.
+
+use std::path::PathBuf;
+
+use repodesk_core::guard::{GuardLevel, preflight};
+use repodesk_core::projects::{AddProjectInput, add_project, use_project};
+use repodesk_core::safety::{SafetyLevel, scan_active_context};
+use repodesk_core::security::{SecurityLevel, audit_security_policy};
+use repodesk_core::tasks::{NewTaskInput, create_task};
+use serial_test::serial;
+use tempfile::TempDir;
+
+/// An isolated RepoDesk home with one active project and one active task.
+struct Fixture {
+    _home: TempDir,
+    run_dir: PathBuf,
+}
+
+impl Fixture {
+    fn write_run_file(&self, name: &str, content: &str) {
+        std::fs::write(self.run_dir.join(name), content).expect("write run file");
+    }
+}
+
+/// Build a fresh home + active project/task. Callers must be `#[serial]`.
+fn setup() -> Fixture {
+    let home = TempDir::new().expect("tempdir");
+    // SAFETY: all callers are `#[serial]`, so no other thread touches the env
+    // concurrently while we set the per-test home.
+    unsafe {
+        std::env::set_var("REPODESK_HOME", home.path());
+    }
+
+    repodesk_core::init::init_home().expect("init_home");
+
+    let project_path = home.path().join("project");
+    std::fs::create_dir_all(&project_path).expect("project dir");
+
+    add_project(AddProjectInput {
+        name: "demo".to_string(),
+        path: project_path,
+        project_type: "rust".to_string(),
+        main_language: Some("rust".to_string()),
+    })
+    .expect("add_project");
+    use_project("demo").expect("use_project");
+
+    let task = create_task(NewTaskInput {
+        title: "demo task".to_string(),
+    })
+    .expect("create_task");
+
+    Fixture {
+        _home: home,
+        run_dir: task.config.run_dir,
+    }
+}
+
+// --- safety::scan_active_context ---------------------------------------------
+
+#[test]
+#[serial]
+fn scan_active_context_is_ok_for_clean_content() {
+    let fx = setup();
+    fx.write_run_file(
+        "context.md",
+        "Ordinary task notes. Nothing sensitive here.\n",
+    );
+
+    let report = scan_active_context().expect("scan");
+    assert_eq!(report.level, SafetyLevel::Ok);
+    assert!(report.findings.is_empty());
+}
+
+#[test]
+#[serial]
+fn scan_active_context_blocks_on_private_key() {
+    let fx = setup();
+    fx.write_run_file(
+        "context.md",
+        "config dump:\n-----BEGIN PRIVATE KEY-----\nMII...\n",
+    );
+
+    let report = scan_active_context().expect("scan");
+    assert_eq!(report.level, SafetyLevel::Block);
+}
+
+#[test]
+#[serial]
+fn scan_active_context_errors_without_context_file() {
+    let _fx = setup();
+    // No context.md written -> the scan cannot read the file.
+    assert!(scan_active_context().is_err());
+}
+
+// --- security::audit_security_policy -----------------------------------------
+
+#[test]
+#[serial]
+fn audit_warns_when_context_and_checks_missing() {
+    let _fx = setup();
+    // Default policy is conservative, but required artifacts are absent.
+    let audit = audit_security_policy().expect("audit");
+    assert_eq!(audit.level, SecurityLevel::Warning);
+    assert!(audit.findings.iter().any(|f| f.contains("context.md")));
+    assert!(
+        audit
+            .findings
+            .iter()
+            .any(|f| f.contains("checks-summary.md"))
+    );
+}
+
+#[test]
+#[serial]
+fn audit_is_ok_when_required_artifacts_present() {
+    let fx = setup();
+    fx.write_run_file("context.md", "task context\n");
+    fx.write_run_file("checks-summary.md", "Overall status: `passed`\n");
+
+    let audit = audit_security_policy().expect("audit");
+    assert_eq!(audit.level, SecurityLevel::Ok);
+}
+
+// --- guard::preflight --------------------------------------------------------
+
+#[test]
+#[serial]
+fn preflight_blocks_when_context_missing() {
+    let _fx = setup();
+    let result = preflight("codex").expect("preflight");
+    assert_eq!(result.level, GuardLevel::Block);
+    assert!(result.reasons.iter().any(|r| r.contains("context.md")));
+}
+
+#[test]
+#[serial]
+fn preflight_warns_when_prompt_and_summary_missing() {
+    let fx = setup();
+    fx.write_run_file("context.md", "small clean context\n");
+    // No prompt.codex.md and no checks-summary.md -> two warnings, no block.
+    let result = preflight("codex").expect("preflight");
+    assert_eq!(result.level, GuardLevel::Warning);
+}
+
+#[test]
+#[serial]
+fn preflight_is_ok_when_everything_ready() {
+    let fx = setup();
+    fx.write_run_file("context.md", "small clean context\n");
+    fx.write_run_file("prompt.codex.md", "bounded prompt\n");
+    fx.write_run_file("checks-summary.md", "Overall status: `passed`\n");
+
+    let result = preflight("codex").expect("preflight");
+    assert_eq!(result.level, GuardLevel::Ok);
+}
