@@ -12,6 +12,7 @@ pub mod models;
 pub mod orchestrate;
 pub mod project;
 pub mod routing;
+pub mod security;
 pub mod settings;
 pub mod system;
 pub mod task;
@@ -29,6 +30,7 @@ pub use journal::*;
 pub use memory::*;
 pub use orchestrate::*;
 pub use project::*;
+pub use security::*;
 pub use settings::*;
 pub use task::*;
 

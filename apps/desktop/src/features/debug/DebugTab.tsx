@@ -11,7 +11,7 @@ import { useModels } from "../models/useModels";
 import { useSettings } from "../settings/useSettings";
 
 export function DebugTab() {
-  const { debugEvents, artifactKind, artifactContent, loadArtifact } = useDebug();
+  const { debugEvents, artifactKind, artifactContent, requestArtifact, pendingPaid, confirmPaidReveal, cancelPaidReveal } = useDebug();
   const { snapshot, dbState } = useWorkspace();
   const { workflow, history } = useWorkflow();
   const { git } = useGit();
@@ -29,14 +29,30 @@ export function DebugTab() {
       <section className="panel wide-panel">
         <div className="panel-title-row">
           <div><p className="eyebrow">Artifacts</p><h2>Prompt and context viewer</h2></div>
-          <button className="tiny-button" onClick={() => void loadArtifact(artifactKind)}>Load</button>
+          <button className="tiny-button" onClick={() => void requestArtifact(artifactKind)}>Load</button>
         </div>
         <div className="button-row compact-buttons">
           {["context", "smart_context", "prompt_codex", "prompt_chatgpt", "prompt_review", "checks_summary", "token_estimate"].map((kind) => (
-            <button key={kind} className={artifactKind === kind ? "tiny-button active" : "tiny-button"} onClick={() => void loadArtifact(kind)}>{kind}</button>
+            <button key={kind} className={artifactKind === kind ? "tiny-button active" : "tiny-button"} onClick={() => void requestArtifact(kind)}>{kind}</button>
           ))}
         </div>
-        <pre className="code-panel tall">{artifactContent || "Choose an artifact to preview."}</pre>
+        {pendingPaid ? (
+          <div className={`notice ${pendingPaid.gate.decision === "BLOCK" ? "danger" : "warn"}`}>
+            <strong>Paid/cloud agent hand-off: {pendingPaid.gate.agent}</strong>
+            <p>RepoDesk will not send anything automatically. Safety judgement: <strong>{pendingPaid.gate.decision}</strong>. Review before copying this prompt into an external tool.</p>
+            {pendingPaid.gate.reasons.length > 0 && (
+              <ul className="compact-list">
+                {pendingPaid.gate.reasons.slice(0, 4).map((reason) => <li key={reason}>{reason}</li>)}
+              </ul>
+            )}
+            <div className="button-row">
+              <button className="primary-button" onClick={() => void confirmPaidReveal()}>Reveal prompt anyway</button>
+              <button className="ghost-button" onClick={() => cancelPaidReveal()}>Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <pre className="code-panel tall">{artifactContent || "Choose an artifact to preview."}</pre>
+        )}
       </section>
       <section className="panel wide-panel">
         <p className="eyebrow">Command traces</p>

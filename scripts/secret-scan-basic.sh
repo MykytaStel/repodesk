@@ -8,32 +8,42 @@ if ! command -v git >/dev/null 2>&1; then
   exit 0
 fi
 
-PATTERN='(api[_-]?key|secret|password|passwd|private[_-]?key|authorization:|bearer[[:space:]]+[a-zA-Z0-9._-]+|token[[:space:]]*=|access[_-]?token|refresh[_-]?token)'
+# Detect literal secret *values*, not identifiers. Flagging variable names like
+# `api_key: String` or `env("OPENAI_API_KEY")` is noise; what matters is a real
+# secret value committed to the tree. Each alternative below targets a value:
+#   - a secret-named field assigned a long quoted literal
+#   - a long bare token assigned after `=`
+#   - AWS access key ids, private-key blocks, bearer tokens
+#   - well-known provider token prefixes (Slack/Stripe/GitHub)
+PATTERN='(api[_-]?key|secret|token|password|passwd|access[_-]?token|refresh[_-]?token)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][A-Za-z0-9._/+=-]{16,}["'"'"']'
+PATTERN+='|[A-Z_]*(API_KEY|SECRET|TOKEN|PASSWORD)[A-Z_]*=[[:space:]]*[A-Za-z0-9._/+=-]{24,}'
+PATTERN+='|AKIA[0-9A-Z]{16}'
+PATTERN+='|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+PATTERN+='|bearer[[:space:]]+[A-Za-z0-9._-]{20,}'
+PATTERN+='|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[0-9A-Za-z]{16,}|ghp_[0-9A-Za-z]{20,}|github_pat_[0-9A-Za-z_]{20,}'
 
 set +e
+# Excluded paths: build output, lockfiles, the secret-scanner modules themselves
+# (they contain secret *patterns* by design), and test fixtures (they embed fake
+# example secrets to exercise the scanners).
 RESULTS=$(git grep -n -I -E "$PATTERN" -- \
   ':!target' \
   ':!tmp' \
   ':!apps/desktop/node_modules' \
   ':!apps/desktop/dist' \
   ':!*.lock' \
-  ':!docs/SECURITY_MODEL.md' \
+  ':!crates/repodesk-core/src/security.rs' \
+  ':!crates/repodesk-core/src/safety.rs' \
+  ':!crates/repodesk-core/tests' \
   ':!scripts/secret-scan-basic.sh' 2>/dev/null)
 STATUS=$?
 set -e
 
 if [[ $STATUS -eq 0 && -n "$RESULTS" ]]; then
-  # Filter out known false positives from code references, docs, and scripts
-  set +e
-  CLEANED=$(echo "$RESULTS" | grep -v -E "(api_key_env_var|api_key_set|allow_secret_access|secret_access|no secrets|secret scanning|secret read|secret ingestion|security_policy|secret_key_env_var|api_key_enabled|api_key_env|api_key_value|rejects_api_key|error_summary|auth_status|reachability|allow_paid_agents|codex_quota_status|preferred_patch_provider|preferred_compression_provider|preferred_review_provider|api_key_set|secret-like|api_key-like|password-like|secret scan|do not share secrets|pre-commit-safe.sh|secret-scan-basic.sh|private keys|authorization header-like|No obvious secret|obvious secret|BEGIN|END|No secrets committed|pull_request_template|CHECKPOINT.md|TESTING_GUIDE.md|ROADMAP.md|PRODUCT_MVP_PLAN.md|NEXT_DEVELOPMENT_PLAN.md|git-workspace-awareness.md|desktop-experience-mvp.md|\.gitignore|debug-bundle.sh|health-report.sh|pre-commit-safe.sh|verify-all.sh|README.md|Scan context|Scan active|Notes must not|let Ok\(api_key\)|if api_key|Bearer \{api_key\}|contains\(\"secret\"\)|\(_, \"secrets\"\)|\(\"any\", \"secrets\"\)|\"secret access\"|secret read|secret ingestion|forbidden_actions|Potential secret exposure|\"api_key\"|\"secret\"|Do not commit|Detects secrets|read secrets|Do not include raw secrets|value.contains\(\"secret\"\)|should not receive secrets|do not expose secrets|AWS secret access key|Remove secrets|Policy allows|Keep secrets|Do not send secrets|allow secret access|secrets\.\*|Do not touch secrets|lower.contains\(\"secret\"\)|Do not send secrets|blocked_fragments|x-goog-api-key|not a secret|must not contain secrets|Password-like|Authorization header-like)")
-  set -e
-  
-  if [[ -n "$CLEANED" ]]; then
-    echo "WARN: potential sensitive strings found:"
-    echo "$CLEANED"
-    echo "Review these before committing. False positives are possible."
-    exit 1
-  fi
+  echo "WARN: potential hardcoded secret values found:"
+  echo "$RESULTS"
+  echo "Review these before committing. False positives are possible."
+  exit 1
 fi
 
-echo "OK: no obvious sensitive strings found"
+echo "OK: no obvious hardcoded secret values found"

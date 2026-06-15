@@ -45,8 +45,12 @@ pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
         return Err("Command is empty".to_string());
     }
 
-    // Check for dangerous shell symbols or characters that allow command injection/chaining
-    let dangerous_chars = [';', '&', '|', '<', '>', '$', '`', '\n', '\r'];
+    // Check for dangerous shell symbols or characters that allow command injection/chaining.
+    // Subshell parens `(` `)` and backslash `\` never appear in legitimate check commands
+    // but enable subshells and escaping, so they are rejected too.
+    let dangerous_chars = [
+        ';', '&', '|', '<', '>', '$', '`', '\n', '\r', '(', ')', '\\',
+    ];
     for &ch in &dangerous_chars {
         if trimmed.contains(ch) {
             return Err(format!("Command contains restricted character '{ch}'"));
@@ -479,5 +483,19 @@ mod tests {
         assert!(is_allowed_check_command("cargo test < file.txt").is_err());
         assert!(is_allowed_check_command("cargo test $VAR").is_err());
         assert!(is_allowed_check_command("cargo test `id`").is_err());
+
+        // Subshell / escaping vectors
+        assert!(is_allowed_check_command("cargo test $(rm -rf /)").is_err());
+        assert!(is_allowed_check_command("cargo test (echo hi)").is_err());
+        assert!(is_allowed_check_command("cargo\\ntest").is_err());
+
+        // Absolute / relative paths to a binary are not bare allowlisted names
+        assert!(is_allowed_check_command("/bin/rm -rf /").is_err());
+        assert!(is_allowed_check_command("./evil.sh").is_err());
+        assert!(is_allowed_check_command("../evil cargo").is_err());
+
+        // Empty / whitespace-only
+        assert!(is_allowed_check_command("").is_err());
+        assert!(is_allowed_check_command("   ").is_err());
     }
 }
