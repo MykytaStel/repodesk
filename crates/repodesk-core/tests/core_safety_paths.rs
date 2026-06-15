@@ -7,6 +7,7 @@
 use std::path::PathBuf;
 
 use repodesk_core::guard::{GuardLevel, preflight};
+use repodesk_core::judge::{JudgementDecision, judge_agent};
 use repodesk_core::projects::{AddProjectInput, add_project, use_project};
 use repodesk_core::safety::{SafetyLevel, scan_active_context};
 use repodesk_core::security::{SecurityLevel, audit_security_policy};
@@ -157,4 +158,49 @@ fn preflight_is_ok_when_everything_ready() {
 
     let result = preflight("codex").expect("preflight");
     assert_eq!(result.level, GuardLevel::Ok);
+}
+
+// --- judge::judge_agent (composes preflight + safety + budget) ----------------
+
+#[test]
+#[serial]
+fn judge_blocks_when_context_missing() {
+    let _fx = setup();
+    // No context.md -> preflight blocks -> overall BLOCK.
+    let report = judge_agent("codex").expect("judge");
+    assert_eq!(report.decision, JudgementDecision::Block);
+}
+
+#[test]
+#[serial]
+fn judge_warns_with_bare_context() {
+    let fx = setup();
+    fx.write_run_file("context.md", "small clean context\n");
+    // Context is safe and within budget, but prompt/summary are missing -> WARN.
+    let report = judge_agent("codex").expect("judge");
+    assert_eq!(report.decision, JudgementDecision::Warn);
+}
+
+#[test]
+#[serial]
+fn judge_allows_when_everything_ready() {
+    let fx = setup();
+    fx.write_run_file("context.md", "small clean context\n");
+    fx.write_run_file("prompt.codex.md", "bounded prompt\n");
+    fx.write_run_file("checks-summary.md", "Overall status: `passed`\n");
+
+    let report = judge_agent("codex").expect("judge");
+    assert_eq!(report.decision, JudgementDecision::Allow);
+}
+
+#[test]
+#[serial]
+fn judge_blocks_on_secret_context_even_when_prepared() {
+    let fx = setup();
+    fx.write_run_file("context.md", "-----BEGIN PRIVATE KEY-----\nMII...\n");
+    fx.write_run_file("prompt.codex.md", "bounded prompt\n");
+    fx.write_run_file("checks-summary.md", "Overall status: `passed`\n");
+
+    let report = judge_agent("codex").expect("judge");
+    assert_eq!(report.decision, JudgementDecision::Block);
 }

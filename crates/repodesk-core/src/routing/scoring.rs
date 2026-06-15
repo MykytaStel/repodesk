@@ -301,3 +301,159 @@ fn risk_contains_block(value: &str) -> bool {
         || value.contains("secret")
         || value.contains("credential")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(task_kind: TaskKind) -> RouteRequest {
+        RouteRequest {
+            task_kind,
+            estimated_input_tokens: 4_000,
+            estimated_output_tokens: 1_000,
+            risk_level: "ok".to_string(),
+            changed_file_count: 2,
+            requires_write: false,
+            context_safe: Some(true),
+            checks_ok: Some(true),
+            guard_allowed: Some(true),
+            git_dirty: Some(false),
+            max_cost_units: None,
+            economy_mode: None,
+        }
+    }
+
+    fn capacity(kind: ProviderKind) -> ProviderCapacity {
+        ProviderCapacity {
+            provider: "provider".to_string(),
+            label: "Provider".to_string(),
+            kind,
+            enabled: true,
+            auth_status: "configured".to_string(),
+            reachability: "working".to_string(),
+            models: vec!["model-a".to_string()],
+            preferred_model: None,
+            daily_remaining_tokens: 100_000,
+            estimated_cost_units: 1.0,
+            quota_status: QuotaStatus::Available,
+            paid_agents_allowed: true,
+            max_patch_files: 8,
+        }
+    }
+
+    fn score(
+        task: TaskKind,
+        mutate: impl FnOnce(&mut RouteRequest, &mut ProviderCapacity),
+    ) -> RouteCandidate {
+        let mut req = request(task);
+        let mut cap = capacity(ProviderKind::Paid);
+        mutate(&mut req, &mut cap);
+        score_capacity(&req, &cap, &BudgetConfig::default())
+    }
+
+    #[test]
+    fn unsafe_context_blocks_paid_provider() {
+        let candidate = score(TaskKind::Plan, |req, _| req.context_safe = Some(false));
+        assert!(candidate.blocked);
+        assert!(candidate.blockers.iter().any(|b| b.contains("not safe")));
+    }
+
+    #[test]
+    fn risk_marker_blocks_paid_provider() {
+        let candidate = score(TaskKind::Plan, |req, _| {
+            req.risk_level = "secret".to_string()
+        });
+        assert!(candidate.blocked);
+    }
+
+    #[test]
+    fn disabled_paid_agent_is_blocked() {
+        let candidate = score(TaskKind::Plan, |_, cap| cap.paid_agents_allowed = false);
+        assert!(candidate.blocked);
+        assert!(candidate.blockers.iter().any(|b| b.contains("disabled")));
+    }
+
+    #[test]
+    fn checks_task_never_routes_to_paid_or_local() {
+        let paid = score_capacity(
+            &request(TaskKind::Checks),
+            &capacity(ProviderKind::Paid),
+            &BudgetConfig::default(),
+        );
+        assert!(paid.blocked);
+        let local = score_capacity(
+            &request(TaskKind::Checks),
+            &capacity(ProviderKind::Local),
+            &BudgetConfig::default(),
+        );
+        assert!(local.blocked);
+    }
+
+    #[test]
+    fn paid_hard_token_limit_blocks() {
+        let candidate = score(TaskKind::Plan, |req, _| {
+            req.estimated_input_tokens = 50_000;
+            req.estimated_output_tokens = 50_000;
+        });
+        assert!(candidate.blocked);
+        assert!(candidate.blockers.iter().any(|b| b.contains("hard limit")));
+    }
+
+    #[test]
+    fn unsafe_context_blocks_patch_agent() {
+        let mut req = request(TaskKind::Patch);
+        req.requires_write = true;
+        req.context_safe = Some(false);
+        let candidate = score_capacity(
+            &req,
+            &capacity(ProviderKind::PatchAgent),
+            &BudgetConfig::default(),
+        );
+        assert!(candidate.blocked);
+    }
+
+    #[test]
+    fn patch_agent_blocked_when_guard_disallows() {
+        let mut req = request(TaskKind::Patch);
+        req.requires_write = true;
+        req.guard_allowed = Some(false);
+        let candidate = score_capacity(
+            &req,
+            &capacity(ProviderKind::PatchAgent),
+            &BudgetConfig::default(),
+        );
+        assert!(candidate.blocked);
+        assert!(
+            candidate
+                .blockers
+                .iter()
+                .any(|b| b.contains("Guard preflight"))
+        );
+    }
+
+    #[test]
+    fn economy_mode_prefers_local_over_paid() {
+        let mut req = request(TaskKind::Compress);
+        req.economy_mode = Some("economy".to_string());
+        let local = score_capacity(
+            &req,
+            &capacity(ProviderKind::Local),
+            &BudgetConfig::default(),
+        );
+        let paid = score_capacity(
+            &req,
+            &capacity(ProviderKind::Paid),
+            &BudgetConfig::default(),
+        );
+        assert!(local.score > paid.score);
+    }
+
+    #[test]
+    fn disabled_capacity_is_blocked_regardless_of_kind() {
+        let mut cap = capacity(ProviderKind::Local);
+        cap.enabled = false;
+        let candidate =
+            score_capacity(&request(TaskKind::Compress), &cap, &BudgetConfig::default());
+        assert!(candidate.blocked);
+    }
+}
