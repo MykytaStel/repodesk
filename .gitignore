@@ -211,6 +211,11 @@ report.md
 generated/
 .codegen/
 
+# Tauri app icons must be committed so `tauri build` works from a fresh clone.
+# The macOS "Icon?" rule above otherwise hides them.
+!apps/desktop/src-tauri/icons/
+!apps/desktop/src-tauri/icons/**
+
 # RepoDesk desktop/local artifacts
 apps/desktop/node_modules/
 apps/desktop/dist/
@@ -220,5 +225,7 @@ apps/desktop/src-tauri/target/
 /runs/
 /.repodesk-debug/
 .repopilot/
-.claude/
-.claude
+# Shared AI context (CLAUDE.md, AGENTS.md, .claude/settings.json, .claude/agents/)
+# IS committed so any AI/agent gets project context without re-deriving it.
+# Only personal, machine-specific overrides stay local:
+.claude/settings.local.json
