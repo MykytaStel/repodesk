@@ -25,6 +25,12 @@ route work to the right (preferably local) model → know when it's safe to comm
 - Frontend: `npm --prefix apps/desktop run build` (tsc + vite).
 - Scripts: `./scripts/verify-fast.sh` (fast gate), `./scripts/verify-all.sh` (full gate),
   `./scripts/secret-scan-basic.sh`, `./scripts/health-report.sh`, `./scripts/smoke-desktop.sh`.
+- E2E: `./scripts/e2e-smoke.sh` (Playwright daily-loop smoke; mocked Tauri IPC, runs
+  anywhere incl. macOS + headless CI), `./scripts/e2e-native.sh` (real-backend
+  tauri-driver + WebdriverIO; **Linux only** — tauri-driver has no macOS support).
+- **The frontend uses `pnpm`, not npm** (there's a `pnpm-lock.yaml`); install with
+  `pnpm --dir apps/desktop install`. The tauri.conf `beforeBuildCommand`/AGENTS examples
+  still say `npm run …`, which works (npm only runs the script against pnpm's node_modules).
 - Run the app: `./scripts/dev-desktop.sh`. Build a bundle: `npm --prefix apps/desktop run desktop:build`.
 
 ## Conventions (do these)
@@ -49,8 +55,12 @@ route work to the right (preferably local) model → know when it's safe to comm
   metadata) — keep it that way. Secret scanning gates content before AI use.
 
 ## CI/CD
-- `.github/workflows/ci.yml` — gates (fmt, clippy, tests, frontend build, secret-scan) on
-  every PR + push to `main`. Mirror it locally with `./scripts/verify-all.sh`.
+- `.github/workflows/ci.yml` — gates (fmt, clippy, tests, frontend build, secret-scan) +
+  the Playwright daily-loop E2E smoke on every PR + push to `main`. Mirror the gates locally
+  with `./scripts/verify-all.sh` and the smoke with `./scripts/e2e-smoke.sh`.
+- `.github/workflows/e2e-native.yml` — real-backend tauri-driver + WebdriverIO smoke (full
+  release build, Linux) on push to `main` + manual dispatch. Heavy, so it's not a per-PR gate
+  yet; promote to `pull_request` once stable. Local equivalent: `./scripts/e2e-native.sh`.
 - `.github/workflows/release.yml` — push a tag `vX.Y.Z` to build all-platform installers via
   `tauri-action` and open a **draft** GitHub Release (keep `tauri.conf.json` version in sync).
 - `.github/workflows/audit.yml` — weekly RustSec advisory scan (informational).
