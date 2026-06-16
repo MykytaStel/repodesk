@@ -39,6 +39,14 @@ pub struct TaskInfo {
     pub task_markdown_file: PathBuf,
 }
 
+/// A task in the active project's run history, flagged if it is the active one.
+/// Mirrors `projects::ProjectInfo` so the desktop can render a task switcher.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskSummary {
+    pub config: TaskConfig,
+    pub is_active: bool,
+}
+
 pub fn create_task(input: NewTaskInput) -> RepoDeskResult<TaskInfo> {
     init::init_home()?;
 
@@ -114,6 +122,91 @@ pub fn show_active_task() -> RepoDeskResult<TaskInfo> {
 
 pub fn task_status() -> RepoDeskResult<TaskInfo> {
     show_active_task()
+}
+
+/// List every task recorded for the active project, newest first, flagging the
+/// active one. Dirs without a readable `task.toml` are skipped (not fatal) so a
+/// half-written or foreign directory never breaks the switcher.
+pub fn list_tasks() -> RepoDeskResult<Vec<TaskSummary>> {
+    let project = get_active_project()?;
+    let paths = RepoDeskPaths::resolve()?;
+
+    let active_id = read_active_task_id(&paths, &project.name);
+    let project_runs = paths.runs_dir.join(&project.name);
+
+    let mut tasks = Vec::new();
+    if project_runs.exists() {
+        for entry in fs::read_dir(&project_runs)? {
+            let entry = entry?;
+            let task_file = entry.path().join("task.toml");
+            if !task_file.exists() {
+                continue;
+            }
+            if let Ok(config) = read_task_config(&task_file) {
+                let is_active = active_id.as_deref() == Some(config.id.as_str());
+                tasks.push(TaskSummary { config, is_active });
+            }
+        }
+    }
+
+    tasks.sort_by(|a, b| b.config.created_at.cmp(&a.config.created_at));
+    Ok(tasks)
+}
+
+/// Switch the active task of the active project to `task_id`. The id is
+/// validated and confirmed to exist before the pointer is rewritten, so a bad
+/// id never leaves the project without an active task.
+pub fn use_task(task_id: &str) -> RepoDeskResult<TaskInfo> {
+    let task_id = task_id.trim();
+    validate_task_id(task_id)?;
+
+    let project = get_active_project()?;
+    let paths = RepoDeskPaths::resolve()?;
+
+    let run_dir = paths.runs_dir.join(&project.name).join(task_id);
+    let task_file = run_dir.join("task.toml");
+    if !task_file.exists() {
+        return Err(RepoDeskError::TaskNotFound(task_id.to_string()));
+    }
+
+    let config = read_task_config(&task_file)?;
+    let task_markdown_file = run_dir.join("task.md");
+
+    let active_task_file = active_task_file_for_project(&paths, &project.name);
+    fs::write(active_task_file, format!("{task_id}\n"))?;
+
+    Ok(TaskInfo {
+        config,
+        task_file,
+        task_markdown_file,
+    })
+}
+
+/// Read the active task id for a project, if one is set and non-empty.
+fn read_active_task_id(paths: &RepoDeskPaths, project_name: &str) -> Option<String> {
+    let active_task_file = active_task_file_for_project(paths, project_name);
+    let id = fs::read_to_string(active_task_file)
+        .ok()?
+        .trim()
+        .to_string();
+    if id.is_empty() { None } else { Some(id) }
+}
+
+/// Task ids are generated as `<timestamp>[-<slug>]` (ascii alphanumerics and
+/// dashes). Reject anything else so a caller-supplied id can never escape the
+/// project's run directory via separators or `..`.
+fn validate_task_id(task_id: &str) -> RepoDeskResult<()> {
+    let valid = !task_id.is_empty()
+        && task_id != "."
+        && task_id != ".."
+        && task_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-');
+    if valid {
+        Ok(())
+    } else {
+        Err(RepoDeskError::TaskNotFound(task_id.to_string()))
+    }
 }
 
 fn active_task_file_for_project(paths: &RepoDeskPaths, project_name: &str) -> PathBuf {

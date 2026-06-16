@@ -102,6 +102,43 @@ pub fn task_show() -> CommandResult {
     }
 }
 
+/// List every task in the active project, newest first, for the task switcher.
+/// Returns structured data (not a CLI string) since the UI renders it directly.
+#[tauri::command]
+pub fn task_list() -> Result<Vec<repodesk_core::tasks::TaskSummary>, ErrorPayload> {
+    repodesk_core::tasks::list_tasks().map_err(ErrorPayload::from)
+}
+
+/// Switch the active task to `task_id` within the active project.
+#[tauri::command]
+pub fn task_use(task_id: String) -> Result<CommandResult, ErrorPayload> {
+    validate_short_id("Task id", &task_id)?;
+    match repodesk_core::tasks::use_task(task_id.trim()) {
+        Ok(task) => {
+            let stdout = format!(
+                "Active task set to '{}'\n  title: {}\n  run dir: {}",
+                task.config.id,
+                task.config.title,
+                task.config.run_dir.display()
+            );
+            Ok(CommandResult {
+                ok: true,
+                command: format!("repodesk task use {}", task_id),
+                stdout,
+                stderr: String::new(),
+                exit_code: Some(0),
+            })
+        }
+        Err(e) => Ok(CommandResult {
+            ok: false,
+            command: format!("repodesk task use {}", task_id),
+            stdout: String::new(),
+            stderr: e.to_string(),
+            exit_code: Some(1),
+        }),
+    }
+}
+
 #[tauri::command]
 pub async fn product_workflow_state() -> ProductWorkflowState {
     build_product_workflow_state()

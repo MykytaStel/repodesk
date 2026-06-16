@@ -161,6 +161,29 @@ export async function taskNew(title: string): Promise<CommandResult> {
   return invoke("task_new", { title });
 }
 
+export type TaskSummary = {
+  config: {
+    id: string;
+    project_name: string;
+    title: string;
+    status: "open" | "closed";
+    run_dir: string;
+    created_at: string;
+    updated_at: string;
+  };
+  is_active: boolean;
+};
+
+/** List every task in the active project, newest first. */
+export async function taskList(): Promise<TaskSummary[]> {
+  return invoke("task_list");
+}
+
+/** Switch the active task within the active project. */
+export async function taskUse(taskId: string): Promise<CommandResult> {
+  return invoke("task_use", { taskId });
+}
+
 export async function taskStatus(): Promise<CommandResult> {
   return invoke("task_status");
 }

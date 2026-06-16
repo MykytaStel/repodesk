@@ -10,6 +10,7 @@ use repodesk_core::guard::{GuardLevel, preflight};
 use repodesk_core::judge::{JudgementDecision, judge_agent};
 use repodesk_core::persistence::{count_action_runs, recent_action_runs, record_action_run};
 use repodesk_core::projects::{AddProjectInput, add_project, use_project};
+use repodesk_core::repopilot::{load_history, parse_review_json, record_report};
 use repodesk_core::safety::{SafetyLevel, scan_active_context};
 use repodesk_core::security::{SecurityLevel, audit_security_policy};
 use repodesk_core::tasks::{NewTaskInput, create_task};
@@ -63,6 +64,83 @@ fn setup() -> Fixture {
         run_dir: task.config.run_dir,
         project_path,
     }
+}
+
+// --- repopilot health trend --------------------------------------------------
+
+#[test]
+#[serial]
+fn repopilot_trend_appends_real_reviews_and_skips_errors() {
+    let _fx = setup();
+
+    // Fresh task: no history yet.
+    assert!(load_history().expect("load").points.is_empty());
+
+    let first = parse_review_json(
+        r#"{"health_score": 80, "findings": [{"severity":"high","file":"a.rs"}]}"#,
+    );
+    let after_first = record_report(&first).expect("record first");
+    assert_eq!(after_first.points.len(), 1);
+    assert_eq!(after_first.points[0].health_score, Some(80));
+    assert_eq!(after_first.points[0].blocking, 1);
+
+    // An errored report (e.g. RepoPilot not installed) must not pollute the trend.
+    let errored = parse_review_json("not json");
+    let after_error = record_report(&errored).expect("record error");
+    assert_eq!(after_error.points.len(), 1);
+
+    let second = parse_review_json(r#"{"health_score": 95, "findings": []}"#);
+    let after_second = record_report(&second).expect("record second");
+    assert_eq!(after_second.points.len(), 2);
+    assert_eq!(after_second.points[1].health_score, Some(95));
+
+    // Persistence roundtrips through the run dir.
+    assert_eq!(load_history().expect("reload").points.len(), 2);
+}
+
+// --- task switching ----------------------------------------------------------
+
+#[test]
+#[serial]
+fn list_tasks_orders_newest_first_and_use_task_switches_active() {
+    use repodesk_core::tasks::{list_tasks, use_task};
+
+    let _fx = setup(); // creates "demo task", set active.
+
+    // Second task becomes the newly active one.
+    create_task(NewTaskInput {
+        title: "second task".to_string(),
+    })
+    .expect("create second");
+
+    let tasks = list_tasks().expect("list");
+    assert_eq!(tasks.len(), 2);
+    // Newest first; the second task is active, the first is not.
+    assert_eq!(tasks[0].config.title, "second task");
+    assert!(tasks[0].is_active);
+    assert_eq!(tasks[1].config.title, "demo task");
+    assert!(!tasks[1].is_active);
+
+    // Switch back to the first task.
+    let first_id = tasks[1].config.id.clone();
+    let switched = use_task(&first_id).expect("use_task");
+    assert_eq!(switched.config.id, first_id);
+
+    let tasks = list_tasks().expect("relist");
+    assert!(tasks[1].is_active, "first task is active after switch");
+    assert!(!tasks[0].is_active);
+
+    // A bogus id is rejected without disturbing the active pointer.
+    assert!(use_task("../escape").is_err());
+    assert!(use_task("does-not-exist").is_err());
+    assert_eq!(
+        repodesk_core::tasks::show_active_task()
+            .expect("active")
+            .config
+            .id,
+        first_id,
+        "active task unchanged after rejected switches"
+    );
 }
 
 // --- safety::scan_active_context ---------------------------------------------

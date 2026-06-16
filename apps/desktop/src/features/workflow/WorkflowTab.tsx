@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
 import { projectAdd, taskNew } from "../../shared/api/workflow";
 import { useWorkflow } from "./useWorkflow";
+import { TaskSwitcher } from "./TaskSwitcher";
 import { useRouting } from "../routing/useRouting";
 import { useTokens } from "../tokens/useTokens";
 import { useGit } from "../git/useGit";
@@ -249,6 +250,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
 
       {needsOnboarding ? renderOnboarding() : (
         <>
+          <TaskSwitcher />
           {renderCommitReadiness()}
           {renderBestRoutePanel()}
 

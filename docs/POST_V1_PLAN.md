@@ -114,6 +114,18 @@ RepoPilot inline per-file findings in the Code tab + auto-run review + trend ove
 multi-task / multi-project switching with per-task history; finish the multi-agent
 orchestrator; broader provider support (LM Studio, richer model health, cost trends).
 
+- **N6-A ✅** RepoPilot inline findings + per-task health trend. Core `repopilot::group_by_file`
+  (per-file buckets, worst-severity sort) + a bounded health-score trend persisted to
+  `<run_dir>/repopilot/history.json` (`record_report`/`load_history`); errored reviews never
+  recorded. New `repopilot_history` command; Code tab renders per-file badges, an inline findings
+  panel, and an SVG health sparkline, auto-running one review when opened with changes.
+- **N6-B ✅** Multi-task switching. Core `tasks::list_tasks` (newest-first) + `use_task` (id
+  validated against run-dir escape) + `TaskSummary`; `task_list`/`task_use` commands; a
+  `TaskSwitcher` panel in the onboarded Workflow tab (switch active task or create one inline,
+  invalidating downstream state). Per-task history views still open.
+- Remaining: finish the multi-agent orchestrator; broader providers (LM Studio, richer model
+  health, cost trends); per-task history views.
+
 ## Suggested order
 N1 → N2 → N3 → N4 is the "ship reliably" backbone (in order). N5 is debt cleanup that makes
 N2 less flaky (slot near N2). N6 is growth, after the release pipeline is trustworthy.

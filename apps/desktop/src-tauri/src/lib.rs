@@ -240,6 +240,8 @@ pub fn run() {
             commands::task_new,
             commands::task_status,
             commands::task_show,
+            commands::task_list,
+            commands::task_use,
             commands::token_usage_snapshot,
             commands::log_token_usage,
             commands::estimate_raw_text,
@@ -280,6 +282,7 @@ pub fn run() {
             commands::paid_agent_gate,
             commands::commit_ready_changes,
             commands::repopilot_findings,
+            commands::repopilot_history,
             commands::backup_state,
             commands::restore_state
         ])
