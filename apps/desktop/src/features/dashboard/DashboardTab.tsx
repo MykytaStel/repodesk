@@ -9,6 +9,7 @@ import { useGit } from "../git/useGit";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { useWorkflow } from "../workflow/useWorkflow";
 import { useQueryClient } from "@tanstack/react-query";
+import { callCommand } from "../../shared/api/queries";
 
 interface DashboardTabProps {
   setActiveTab: (tab: any) => void;
@@ -30,6 +31,19 @@ export function DashboardTab({
   const { nextAction, doNextSafeStep, isRunning } = useWorkflow();
 
   const isBusy = isRunning || isLoadingTokens || isLoadingRouting || isLoadingModels || isLoadingGit || isLoadingWorkspace;
+
+  const [rp, setRp] = useState<any>(null);
+  const [rpLoading, setRpLoading] = useState(false);
+  async function runRepopilot() {
+    setRpLoading(true);
+    try {
+      setRp(await callCommand<any>("repopilot_findings"));
+    } catch (error: any) {
+      setRp({ error: error?.message || String(error) });
+    } finally {
+      setRpLoading(false);
+    }
+  }
 
   const refreshAll = () => queryClient.invalidateQueries();
   const readiness = [
@@ -92,6 +106,51 @@ export function DashboardTab({
     );
   }
 
+  function renderRepopilotPanel() {
+    return (
+      <section className="panel wide-panel">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">RepoPilot review</p>
+            <h2>{rp && rp.health_score != null ? `Health ${rp.health_score}` : "Code review findings"}</h2>
+          </div>
+          <button className="tiny-button" disabled={rpLoading} onClick={() => void runRepopilot()}>{rpLoading ? "Reviewing…" : "Run review"}</button>
+        </div>
+        {!rp ? (
+          <p className="muted">Run a local RepoPilot review of the current diff to surface High/Critical findings before committing.</p>
+        ) : rp.error ? (
+          <div className="notice danger">{rp.error}</div>
+        ) : (
+          <>
+            <div className="route-summary-grid">
+              <div><span>Critical</span><strong>{rp.counts.critical}</strong></div>
+              <div><span>High</span><strong>{rp.counts.high}</strong></div>
+              <div><span>Medium</span><strong>{rp.counts.medium}</strong></div>
+              <div><span>Low</span><strong>{rp.counts.low}</strong></div>
+            </div>
+            {rp.total === 0 ? (
+              <p className="muted">No findings in the current diff.</p>
+            ) : (
+              <ul className="findings-list">
+                {rp.findings.slice(0, 10).map((finding: any, index: number) => {
+                  const tone = finding.severity === "CRITICAL" || finding.severity === "HIGH" ? "danger" : finding.severity === "MEDIUM" ? "warn" : "neutral";
+                  return (
+                    <li key={index} className="finding">
+                      <span className={`pill ${tone}`}>{finding.severity}</span>
+                      <strong>{finding.title}</strong>
+                      {finding.file && <small>{finding.file}{finding.line ? `:${finding.line}` : ""}</small>}
+                    </li>
+                  );
+                })}
+                {rp.total > 10 && <li className="muted">+{rp.total - 10} more</li>}
+              </ul>
+            )}
+          </>
+        )}
+      </section>
+    );
+  }
+
   return (
     <div className="content-grid dashboard-grid">
       {tokens && tokens.totals.total_tokens > 15000 && (
@@ -111,7 +170,9 @@ export function DashboardTab({
       </section>
 
       {renderBestRoutePanel()}
-      
+
+      {renderRepopilotPanel()}
+
       <EconomyControl mode={economyMode} setMode={setEconomyMode} isBusy={isBusy} />
 
       <section className="panel">

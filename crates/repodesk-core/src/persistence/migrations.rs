@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 /// The schema version the current binary expects.
-pub const TARGET_VERSION: i64 = 1;
+pub const TARGET_VERSION: i64 = 2;
 
 fn db_err(context: &str, e: impl std::fmt::Display) -> RepoDeskError {
     RepoDeskError::Database(format!("{context}: {e}"))
@@ -31,6 +31,11 @@ pub fn run_migrations(conn: &Connection) -> RepoDeskResult<()> {
     if current < 1 {
         migrate_to_v1(conn)?;
         set_version(conn, 1)?;
+    }
+
+    if current < 2 {
+        migrate_to_v2(conn)?;
+        set_version(conn, 2)?;
     }
 
     Ok(())
@@ -127,6 +132,23 @@ fn migrate_to_v1(conn: &Connection) -> RepoDeskResult<()> {
     Ok(())
 }
 
+/// Migration 2 — desktop action history moves from a JSONL file into SQLite so
+/// it persists with the rest of the local state and can be backed up together.
+fn migrate_to_v2(conn: &Connection) -> RepoDeskResult<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS action_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action_id TEXT NOT NULL,
+            ok INTEGER NOT NULL,
+            finished_at_ms INTEGER NOT NULL,
+            payload TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create action_runs table", e))?;
+    Ok(())
+}
+
 fn column_exists(conn: &Connection, table: &str, column: &str) -> RepoDeskResult<bool> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -217,5 +239,11 @@ mod tests {
             })
             .unwrap();
         assert_eq!(proposal_count, 0);
+
+        // v2: action_runs table exists.
+        let action_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM action_runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(action_count, 0);
     }
 }

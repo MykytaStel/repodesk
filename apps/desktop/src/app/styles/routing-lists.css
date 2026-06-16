@@ -137,3 +137,21 @@
   border-color: rgba(94, 224, 174, 0.46);
   background: rgba(94, 224, 174, 0.08);
 }
+
+.findings-list {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+.findings-list .finding {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.findings-list .finding strong { flex: 1; min-width: 0; font-size: 13px; }
+.findings-list .finding small { color: var(--muted); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }

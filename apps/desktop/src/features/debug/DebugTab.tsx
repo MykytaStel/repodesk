@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { stringifyPreview } from "../../shared/ui/SharedComponents";
+import { callCommand } from "../../shared/api/queries";
 
 import { useDebug } from "./useDebug";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
@@ -19,6 +20,35 @@ export function DebugTab() {
   const { tokens } = useTokens();
   const { models } = useModels();
   const { providerSettings } = useSettings();
+
+  const [backupMsg, setBackupMsg] = useState("");
+  const [restorePath, setRestorePath] = useState("");
+  const [dataBusy, setDataBusy] = useState(false);
+
+  async function runBackup() {
+    setDataBusy(true);
+    try {
+      const path = await callCommand<string>("backup_state");
+      setBackupMsg(`Backed up to ${path}`);
+    } catch (error: any) {
+      setBackupMsg(error?.message || String(error));
+    } finally {
+      setDataBusy(false);
+    }
+  }
+
+  async function runRestore() {
+    setDataBusy(true);
+    try {
+      const result = await callCommand<string>("restore_state", { path: restorePath });
+      setBackupMsg(result);
+    } catch (error: any) {
+      setBackupMsg(error?.message || String(error));
+    } finally {
+      setDataBusy(false);
+    }
+  }
+
   return (
     <div className="content-grid">
       <section className="hero-panel wide-panel">
@@ -65,6 +95,20 @@ export function DebugTab() {
           ))}
         </div>
       </section>
+      <section className="panel wide-panel">
+        <p className="eyebrow">Local data</p>
+        <h2>Backup &amp; restore</h2>
+        <p className="muted">Action history, memory, events, and token ledger live in one local SQLite database.</p>
+        <div className="button-row">
+          <button className="primary-button" disabled={dataBusy} onClick={() => void runBackup()}>Back up now</button>
+        </div>
+        <div className="form-grid">
+          <label>Restore from path<input value={restorePath} onChange={(e) => setRestorePath(e.target.value)} placeholder="/path/to/repodesk-….sqlite" /></label>
+          <button className="ghost-button" disabled={dataBusy || !restorePath.trim()} onClick={() => void runRestore()}>Restore</button>
+        </div>
+        {backupMsg && <div className="notice">{backupMsg}</div>}
+      </section>
+
       <section className="panel wide-panel"><p className="eyebrow">Action history</p><pre className="code-panel tall">{(history && history.length) ? stringifyPreview(history, 8000) : "No action history yet."}</pre></section>
       <section className="panel wide-panel"><p className="eyebrow">Raw state</p><pre className="code-panel tall">{stringifyPreview({ snapshot, workflow, git, codeWorkbench, tokens, models, providerSettings, dbState }, 14000)}</pre></section>
     </div>

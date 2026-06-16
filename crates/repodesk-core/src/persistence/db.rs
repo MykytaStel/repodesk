@@ -9,6 +9,41 @@ pub fn get_db_path() -> RepoDeskResult<PathBuf> {
     Ok(paths.config_dir.join("repodesk.sqlite"))
 }
 
+/// Copy the local SQLite database to `dest` for backup. Ensures the DB exists
+/// (and is migrated) first.
+pub fn backup_to(dest: &std::path::Path) -> RepoDeskResult<()> {
+    let _ = init_db()?;
+    let src = get_db_path()?;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(&src, dest).map_err(|e| {
+        crate::errors::RepoDeskError::Database(format!("Failed to back up database: {e}"))
+    })?;
+    Ok(())
+}
+
+/// Restore the local SQLite database from a backup at `src`. The restored file
+/// is migrated to the current schema before returning.
+pub fn restore_from(src: &std::path::Path) -> RepoDeskResult<()> {
+    if !src.exists() {
+        return Err(crate::errors::RepoDeskError::Database(format!(
+            "Backup file does not exist: {}",
+            src.display()
+        )));
+    }
+    let dest = get_db_path()?;
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::copy(src, &dest).map_err(|e| {
+        crate::errors::RepoDeskError::Database(format!("Failed to restore database: {e}"))
+    })?;
+    // Open + migrate the restored database so an older backup converges.
+    let _ = init_db()?;
+    Ok(())
+}
+
 pub fn init_db() -> RepoDeskResult<Connection> {
     let db_path = get_db_path()?;
     let conn = Connection::open(&db_path)

@@ -1,16 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+pub mod backup;
 pub mod diagnostic;
 pub mod journal;
 pub mod memory;
 pub mod models;
 pub mod orchestrate;
 pub mod project;
+pub mod repopilot;
 pub mod routing;
 pub mod security;
 pub mod settings;
@@ -25,11 +25,13 @@ pub use system::*;
 pub use tokens::*;
 pub use workflow::*;
 
+pub use backup::*;
 pub use diagnostic::*;
 pub use journal::*;
 pub use memory::*;
 pub use orchestrate::*;
 pub use project::*;
+pub use repopilot::*;
 pub use security::*;
 pub use settings::*;
 pub use task::*;
@@ -65,20 +67,6 @@ pub(crate) fn workspace_root() -> PathBuf {
     }
 
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-pub(crate) fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(workspace_root)
-}
-
-pub(crate) fn history_file() -> PathBuf {
-    home_dir()
-        .join(".repodesk")
-        .join("desktop")
-        .join("action-history.jsonl")
 }
 
 pub(crate) fn truncate_text(value: &str, max_chars: usize) -> String {

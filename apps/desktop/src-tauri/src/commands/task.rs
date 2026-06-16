@@ -1,7 +1,7 @@
 use super::{
     ActionRunResult, ArtifactContent, CommandResult, DesktopAction, ErrorPayload,
-    ProductWorkflowState, artifact_path, build_product_workflow_state, find_action, history_file,
-    now_ms, run_cli, save_action_history, truncate_text, validate_short_id, validate_text,
+    ProductWorkflowState, artifact_path, build_product_workflow_state, find_action, now_ms,
+    run_cli, save_action_history, truncate_text, validate_short_id, validate_text,
 };
 use std::fs;
 
@@ -223,15 +223,5 @@ pub async fn run_next_safe_step() -> Result<ActionRunResult, ErrorPayload> {
 
 #[tauri::command]
 pub fn action_history() -> Vec<ActionRunResult> {
-    let file = history_file();
-    let Ok(content) = fs::read_to_string(file) else {
-        return vec![];
-    };
-
-    content
-        .lines()
-        .rev()
-        .take(50)
-        .filter_map(|line| serde_json::from_str::<ActionRunResult>(line).ok())
-        .collect()
+    repodesk_core::persistence::recent_action_runs(50).unwrap_or_default()
 }

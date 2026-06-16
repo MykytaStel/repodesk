@@ -36,6 +36,7 @@ pub mod command_sandbox;
 pub mod dashboard;
 pub mod git_audit;
 pub mod repo_map;
+pub mod repopilot;
 pub mod routing;
 pub mod runtime;
 pub mod sandbox;

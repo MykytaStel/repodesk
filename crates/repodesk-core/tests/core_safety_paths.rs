@@ -8,10 +8,12 @@ use std::path::PathBuf;
 
 use repodesk_core::guard::{GuardLevel, preflight};
 use repodesk_core::judge::{JudgementDecision, judge_agent};
+use repodesk_core::persistence::{count_action_runs, recent_action_runs, record_action_run};
 use repodesk_core::projects::{AddProjectInput, add_project, use_project};
 use repodesk_core::safety::{SafetyLevel, scan_active_context};
 use repodesk_core::security::{SecurityLevel, audit_security_policy};
 use repodesk_core::tasks::{NewTaskInput, create_task};
+use repodesk_core::workflow::{ActionRunResult, CommandResult};
 use serial_test::serial;
 use tempfile::TempDir;
 
@@ -230,4 +232,37 @@ fn build_context_does_not_leak_repo_file_contents() {
         !context.contains(secret),
         "context pack leaked raw repo file contents"
     );
+}
+
+// --- persistence::action_history (SQLite, migration v2) ----------------------
+
+#[test]
+#[serial]
+fn action_history_round_trips_through_sqlite() {
+    let _fx = setup();
+
+    let run = ActionRunResult {
+        id: "context-build".to_string(),
+        title: "Build context".to_string(),
+        risk: "safe".to_string(),
+        category: "Context".to_string(),
+        started_at_ms: 1,
+        finished_at_ms: 2,
+        result: CommandResult {
+            ok: true,
+            command: "repodesk context build".to_string(),
+            stdout: "done".to_string(),
+            stderr: String::new(),
+            exit_code: Some(0),
+        },
+    };
+
+    record_action_run(&run).expect("record");
+    record_action_run(&run).expect("record 2");
+
+    assert_eq!(count_action_runs().expect("count"), 2);
+    let recent = recent_action_runs(10).expect("recent");
+    assert_eq!(recent.len(), 2);
+    assert_eq!(recent[0].id, "context-build");
+    assert!(recent[0].result.ok);
 }

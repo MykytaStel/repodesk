@@ -17,16 +17,9 @@ pub(crate) fn find_action(action_id: &str) -> Option<DesktopAction> {
 }
 
 pub(crate) fn save_action_history(result: &ActionRunResult) {
-    let file = history_file();
-    if let Some(parent) = file.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-
-    if let Ok(line) = serde_json::to_string(result)
-        && let Ok(mut handle) = OpenOptions::new().create(true).append(true).open(file)
-    {
-        let _ = writeln!(handle, "{line}");
-    }
+    // Action history now lives in SQLite (migration v2) so it persists with the
+    // rest of local state and is covered by backup/restore.
+    let _ = repodesk_core::persistence::record_action_run(result);
 }
 
 fn active_task_run_dir() -> Option<PathBuf> {

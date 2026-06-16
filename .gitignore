@@ -221,3 +221,4 @@ apps/desktop/src-tauri/target/
 /.repodesk-debug/
 .repopilot/
 .claude/
+.claude

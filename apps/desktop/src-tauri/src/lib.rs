@@ -274,7 +274,10 @@ pub fn run() {
             commands::orchestrate_status,
             commands::orchestrate_show,
             commands::paid_agent_gate,
-            commands::commit_ready_changes
+            commands::commit_ready_changes,
+            commands::repopilot_findings,
+            commands::backup_state,
+            commands::restore_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
