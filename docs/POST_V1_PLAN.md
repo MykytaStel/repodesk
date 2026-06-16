@@ -88,10 +88,26 @@ supply chain, governance). **Done on `feat/n3.5-release-hardening`:**
 **Pending (you):** see `docs/RELEASE_READINESS_TODO.md` — LICENSE choice, updater + Apple
 signing secrets, Windows signing, updater canary, branch protection, legal/privacy review.
 
-### N5 — Replace deprecated `run_cli` dispatch
+### N5 — Replace deprecated `run_cli` dispatch  ✅
 Call `repodesk-core` services directly from Tauri commands (data is already structured);
 delete `run_cli`, the `stdio_override` usage, and the allowlist shim. **Exit:** no
 process-global stdio redirection in the desktop crate; actions return typed results.
+
+**Done** (uncommitted working tree; branch/commit at owner's discretion):
+- New `apps/desktop/src-tauri/src/commands/action_service.rs::run_action` — an `async fn` that
+  maps each catalog action `id` to a direct `repodesk-core` call (`workflow_next`,
+  `diagnose_workflow`, `build_context`, `build_smart_context().await`, `generate_prompt`,
+  `scan_active_context`, `audit_security_policy`, `judge_agent`, routing, `run_checks`,
+  `git_audit`) and returns a typed `CommandResult`. `run_desktop_action` now `.await`s it.
+- Deleted `run_cli` from `commands/mod.rs` — gone: the `stdio_override` stdout/stderr capture,
+  the temp-logfile read/cleanup, the clap reparse of argv, and the separate hardcoded
+  subcommand allowlist. The **action catalog is now the allowlist**; `run_action` has a
+  fallback arm that rejects any unregistered id.
+- Dropped the `repodesk-cli`, `clap`, and `stdio-override` dependencies from the desktop
+  `Cargo.toml` (only `run_cli` used them). The desktop crate no longer depends on the CLI crate.
+- Tests: replaced the two `run_cli` tests with `run_action_executes_whitelisted_action`
+  (routing — no project/task state needed) and `run_action_rejects_unknown_action`. All 15
+  desktop lib tests pass; clippy + fmt clean; workspace builds.
 
 ### N6 — Product depth (pick by value)
 RepoPilot inline per-file findings in the Code tab + auto-run review + trend over time;

@@ -1,7 +1,7 @@
 use super::{
     ActionRunResult, ArtifactContent, CommandResult, DesktopAction, ErrorPayload,
-    ProductWorkflowState, artifact_path, build_product_workflow_state, find_action, now_ms,
-    run_cli, save_action_history, truncate_text, validate_short_id, validate_text,
+    ProductWorkflowState, action_service, artifact_path, build_product_workflow_state, find_action,
+    now_ms, save_action_history, truncate_text, validate_short_id, validate_text,
 };
 use std::fs;
 
@@ -170,7 +170,7 @@ pub async fn run_desktop_action(action_id: String) -> Result<ActionRunResult, Er
         },
     );
 
-    let result = run_cli(&action.args);
+    let result = action_service::run_action(&action).await;
     let finished_at_ms = now_ms();
     let duration_ms = finished_at_ms.saturating_sub(started_at_ms);
 

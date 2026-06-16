@@ -3,6 +3,7 @@ use std::env;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+pub mod action_service;
 pub mod backup;
 pub mod diagnostic;
 pub mod journal;
@@ -135,122 +136,6 @@ pub(crate) fn validate_path(value: &str) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-// DEPRECATED: Replace in-process CLI dispatch with a proper service layer instead of calling CLI commands from desktop.
-pub(crate) fn run_cli(args: &[String]) -> CommandResult {
-    if args.is_empty() {
-        return CommandResult {
-            ok: false,
-            command: "repodesk".into(),
-            stdout: "".into(),
-            stderr: "Empty command arguments".into(),
-            exit_code: Some(1),
-        };
-    }
-
-    let allowed_subcommands = [
-        "init",
-        "project",
-        "task",
-        "context",
-        "prompt",
-        "checks",
-        "agents",
-        "guard",
-        "brain",
-        "capabilities",
-        "security",
-        "doctor",
-        "ai",
-        "ui",
-        "desktop",
-        "cost",
-        "safety",
-        "peripherals",
-        "workflow",
-        "events",
-        "judge",
-        "access",
-        "modules",
-        "session",
-        "inspect",
-        "smartcontext",
-        "receipts",
-        "git",
-        "dashboard",
-        "runtime",
-        "sandbox",
-        "tokens",
-        "budget",
-    ];
-    let sub = args[0].to_lowercase();
-    if !allowed_subcommands.contains(&sub.as_str()) {
-        return CommandResult {
-            ok: false,
-            command: format!("repodesk {}", args.join(" ")),
-            stdout: "".into(),
-            stderr: format!(
-                "Blocked: Subcommand '{}' is not registered or allowed.",
-                sub
-            ),
-            exit_code: Some(1),
-        };
-    }
-
-    use clap::Parser;
-    let mut cli_args = vec!["repodesk".to_string()];
-    cli_args.extend(args.iter().cloned());
-    let parsed = repodesk_cli::cli::Cli::try_parse_from(cli_args);
-
-    let temp_dir = std::env::temp_dir();
-    let now = now_ms();
-    let stdout_path = temp_dir.join(format!("repodesk-stdout-{now}.log"));
-    let stderr_path = temp_dir.join(format!("repodesk-stderr-{now}.log"));
-
-    // Set up stdout/stderr redirection
-    let stdout_guard = stdio_override::StdoutOverride::from_file(&stdout_path).ok();
-    let stderr_guard = stdio_override::StderrOverride::from_file(&stderr_path).ok();
-
-    let (ok, mut stdout, mut stderr) = match parsed {
-        Ok(cli) => match repodesk_cli::commands::dispatch(cli) {
-            Ok(_) => (true, String::new(), String::new()),
-            Err(error) => (false, String::new(), error.to_string()),
-        },
-        Err(e) => (false, String::new(), e.to_string()),
-    };
-
-    // Drop guards to flush standard output and close override files
-    drop(stdout_guard);
-    drop(stderr_guard);
-
-    // Read the logs
-    if let Ok(content) = std::fs::read_to_string(&stdout_path)
-        && !content.is_empty()
-    {
-        stdout = content;
-    }
-    if let Ok(content) = std::fs::read_to_string(&stderr_path)
-        && !content.is_empty()
-    {
-        if stderr.is_empty() {
-            stderr = content;
-        } else {
-            stderr = format!("{stderr}\n{content}");
-        }
-    }
-
-    // Clean up temp files
-    let _ = std::fs::remove_file(&stdout_path);
-    let _ = std::fs::remove_file(&stderr_path);
-
-    CommandResult {
-        ok,
-        command: format!("repodesk {}", args.join(" ")),
-        stdout,
-        stderr,
-        exit_code: if ok { Some(0) } else { Some(1) },
-    }
 }
 
 pub(crate) fn validate_model_name(label: &str, value: &str) -> Result<(), String> {
