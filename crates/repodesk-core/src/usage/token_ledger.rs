@@ -162,10 +162,10 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
 
     report
         .by_agent
-        .sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+        .sort_by_key(|b| std::cmp::Reverse(b.total_tokens));
     report
         .by_model
-        .sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+        .sort_by_key(|b| std::cmp::Reverse(b.total_tokens));
 
     Ok(report)
 }
@@ -244,8 +244,8 @@ fn parse_token_report_content(content: &str) -> TokenReport {
         }
     }
 
-    by_agent.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
-    by_model.sort_by(|a, b| b.total_tokens.cmp(&a.total_tokens));
+    by_agent.sort_by_key(|b| std::cmp::Reverse(b.total_tokens));
+    by_model.sort_by_key(|b| std::cmp::Reverse(b.total_tokens));
 
     TokenReport {
         entries_count,

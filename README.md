@@ -1,6 +1,11 @@
 # RepoDesk
 
+[![CI](https://github.com/MykytaStel/repodesk/actions/workflows/ci.yml/badge.svg)](https://github.com/MykytaStel/repodesk/actions/workflows/ci.yml)
+
 Personal local AI operations hub for managing AI-assisted development workflows.
+
+> AI/agent context lives in [AGENTS.md](AGENTS.md); CI gates (fmt, clippy, tests, frontend
+> build, secret scan) run on every PR via [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Slice 1
 

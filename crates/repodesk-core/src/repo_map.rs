@@ -203,9 +203,9 @@ impl RepoScanner {
             })
             .collect::<Vec<_>>();
 
-        languages.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+        languages.sort_by_key(|b| std::cmp::Reverse(b.bytes));
 
-        self.hotspots.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+        self.hotspots.sort_by_key(|b| std::cmp::Reverse(b.bytes));
         self.hotspots.truncate(MAX_HOTSPOTS);
         self.important_files.sort();
         self.important_files.dedup();

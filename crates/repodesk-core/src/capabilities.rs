@@ -64,7 +64,7 @@ pub fn recommend_capabilities(need: &str) -> RepoDeskResult<Vec<Capability>> {
         })
         .collect::<Vec<_>>();
 
-    matches.sort_by(|a, b| risk_weight(&a.risk).cmp(&risk_weight(&b.risk)));
+    matches.sort_by_key(|a| risk_weight(&a.risk));
 
     Ok(matches)
 }

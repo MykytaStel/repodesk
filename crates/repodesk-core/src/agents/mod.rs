@@ -59,7 +59,7 @@ pub fn recommend_agents(category: &str) -> RepoDeskResult<Vec<AgentConfig>> {
         matches = load_agents_config()?.agents;
     }
 
-    matches.sort_by(|a, b| a.default_budget_tokens.cmp(&b.default_budget_tokens));
+    matches.sort_by_key(|a| a.default_budget_tokens);
 
     Ok(matches)
 }

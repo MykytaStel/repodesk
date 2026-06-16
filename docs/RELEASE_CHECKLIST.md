@@ -26,11 +26,12 @@ RepoDesk ships as a local-first Tauri desktop app. This checklist takes a green
 - [ ] Confirm `bundle.icon` in `tauri.conf.json` references the generated files.
 
 ## 4. Build the bundle
-- [ ] `npm --prefix apps/desktop run desktop:build` (alias for `tauri build`).
-- [ ] Artifacts land under `apps/desktop/src-tauri/target/release/bundle/`:
-      - macOS: `.app` and `.dmg`
-      - Linux: `.AppImage` / `.deb`
-      - Windows: `.msi` / `.exe`
+- **Automated (preferred):** push a tag `vX.Y.Z` → `.github/workflows/release.yml`
+  (tauri-action) builds macOS (arm64 + x64), Linux, and Windows installers and opens a
+  **draft** GitHub Release with the artifacts. Review the draft, then publish.
+- **Local (manual):** `npm --prefix apps/desktop run desktop:build` (alias for `tauri build`);
+  artifacts land under `target/release/bundle/` (macOS `.app`/`.dmg`, Linux `.AppImage`/`.deb`,
+  Windows `.msi`/`.exe`).
 
 ## 5. Signing & notarization (per platform)
 - [ ] macOS: sign with a Developer ID and notarize (`APPLE_*` / signing identity).
