@@ -367,24 +367,30 @@ mod tests {
     }
 
     #[test]
-    fn run_cli_dispatches_allowed_command() {
-        // `run_cli` installs a process-global stdout override to capture CLI
-        // output. Under libtest's parallel harness that capture races with other
-        // tests, so the *content* of stdout is not a reliable invariant here
-        // (it can pick up another thread's output). The stable contract is that
-        // an allowlisted subcommand dispatches successfully.
-        let result = commands::run_cli(&["project".into(), "list".into()]);
-        assert!(result.ok, "allowed command should dispatch: {result:?}");
+    fn run_action_executes_whitelisted_action() {
+        // The action catalog *is* the allowlist now: a registered action maps to
+        // a direct `repodesk-core` call with a typed result — no CLI reparse and
+        // no process-global stdout capture (the old flaky-test source). Routing
+        // needs no project/task state, so it is a stable positive case.
+        let action = commands::find_action("runtime-route-patch").expect("action is registered");
+        let result = tauri::async_runtime::block_on(commands::action_service::run_action(&action));
+        assert!(result.ok, "whitelisted action should run: {result:?}");
+        assert!(!result.stdout.is_empty());
     }
 
     #[test]
-    fn run_cli_rejects_unapproved_commands() {
-        let result = commands::run_cli(&["rm".into(), "-rf".into(), "/".into()]);
+    fn run_action_rejects_unknown_action() {
+        let action = repodesk_core::workflow::DesktopAction {
+            id: "rm-rf-root".into(),
+            title: "blocked".into(),
+            description: "blocked".into(),
+            category: "blocked".into(),
+            risk: "blocked".into(),
+            command_preview: "repodesk rm -rf /".into(),
+            args: vec!["rm".into(), "-rf".into(), "/".into()],
+        };
+        let result = tauri::async_runtime::block_on(commands::action_service::run_action(&action));
         assert!(!result.ok);
-        assert!(
-            result
-                .stderr
-                .contains("Blocked: Subcommand 'rm' is not registered or allowed.")
-        );
+        assert!(result.stderr.contains("is not registered or allowed"));
     }
 }

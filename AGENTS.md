@@ -49,8 +49,12 @@ route work to the right (preferably local) model → know when it's safe to comm
   Format only the files you touched: `rustfmt --edition 2024 <leaf-file>`.
 - **Build/test the workspace**, not a single crate in isolation where avoidable; crate feature
   unification matters (tokio `rt-multi-thread` lives in core's Cargo.toml).
-- The desktop `run_cli` shim uses **process-global stdout capture** — do not assert on its
-  captured content in parallel tests (it races libtest). It is DEPRECATED; prefer calling core directly.
+- Desktop actions (`run_desktop_action`) dispatch through
+  `commands/action_service.rs::run_action`, which calls `repodesk-core` services directly and
+  returns a typed `CommandResult`. The action catalog (`repodesk_core::workflow::action_catalog`)
+  **is** the allowlist. The old `run_cli` in-process CLI dispatch (process-global stdout capture,
+  the historical flaky-test source) is gone — don't reintroduce it; to expose a new action, add a
+  catalog entry plus a `match` arm in `run_action`.
 - `build_context` never dumps raw repo file contents (only RepoDesk-managed files + git
   metadata) — keep it that way. Secret scanning gates content before AI use.
 
@@ -87,5 +91,5 @@ checked explicitly (never on launch).
 - **v1.0 reached** — MVP→Product phases P1–P7 done; an (unsigned) `RepoDesk_1.0.0_aarch64.dmg`
   builds and validates locally.
 - **Next**: `docs/POST_V1_PLAN.md` (N1 CI → N2 E2E → N3 signing/updater → N4 cross-platform →
-  N5 remove `run_cli` debt → N6 product depth). General direction in `docs/ROADMAP.md`.
+  N5 remove `run_cli` debt ✅ → N6 product depth). General direction in `docs/ROADMAP.md`.
 </content>
