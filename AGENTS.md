@@ -63,14 +63,19 @@ route work to the right (preferably local) model → know when it's safe to comm
   yet; promote to `pull_request` once stable. Local equivalent: `./scripts/e2e-native.sh`.
 - `.github/workflows/release.yml` — push a tag `vX.Y.Z` to build all-platform installers via
   `tauri-action` and open a **draft** GitHub Release (keep `tauri.conf.json` version in sync).
+  Updater signing (`TAURI_SIGNING_*`) + macOS Developer ID signing/notarization (`APPLE_*`) are
+  wired as secrets; both stay dormant (unsigned, no error) until the secrets are added — see
+  `docs/RELEASE_CHECKLIST.md` §10.
 - `.github/workflows/audit.yml` — weekly RustSec advisory scan (informational).
 - `.github/dependabot.yml` — weekly grouped dependency PRs (cargo / npm / actions).
 
 ## Security model
 See `docs/SECURITY_MODEL.md` (threat model + enforcement map). Summary: bounded context by
 construction, path denylist + traversal guard on file reads, safety/judge gate before AI,
-confirm-before-paid-AI at hand-off, value-focused pre-commit secret scan, tight Tauri CSP +
-minimal capability, auto-updater disabled until real signing key.
+confirm-before-paid-AI at hand-off, value-focused pre-commit secret scan, tight Tauri CSP
+(`connect-src` narrowed to the updater endpoint only) + minimal capability, auto-updater
+enabled with a real minisign key (private key is a CI secret) installing only signed bundles,
+checked explicitly (never on launch).
 
 ## Status & roadmap
 - **v1.0 reached** — MVP→Product phases P1–P7 done; an (unsigned) `RepoDesk_1.0.0_aarch64.dmg`

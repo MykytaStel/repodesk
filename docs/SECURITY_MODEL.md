@@ -123,12 +123,16 @@ about the limits. Updated during P2 (security hardening).
    private-key blocks, `ghp_`/`sk_live_`/`xox…` prefixes), not identifiers.
 
 ### Desktop (Tauri) posture
-- CSP: `default-src 'self'`, no `unsafe` in `script-src`; no `connect-src` to external
-  hosts (the webview makes no outbound network calls; provider calls go through Rust).
-- Capability scoped to `core:default` for the `main` window; no `fs`/`http`/`shell`
-  plugins are enabled.
-- The auto-updater is **disabled** (no signing key yet). It must only be re-enabled in
-  packaging (P7) with a real signing key and a trusted endpoint.
+- CSP: `default-src 'self'`, no `unsafe` in `script-src`. `connect-src` is narrowed to
+  `'self'` plus exactly the updater endpoint hosts (`github.com`,
+  `objects.githubusercontent.com`) — the only outbound webview calls; provider calls go
+  through Rust.
+- Capability scoped to `core:default` + `updater:default` for the `main` window; no
+  `fs`/`http`/`shell` plugins are enabled.
+- The auto-updater is **enabled** with a real minisign key (public key in
+  `tauri.conf.json`; private key + password are CI secrets only) and a trusted GitHub
+  Releases endpoint. The plugin installs **only** signature-verified bundles, and update
+  checks are **explicit**, never run automatically on launch (local-first).
 
 ### Known limitations (non-goals for now)
 - The check allowlist does not sandbox the commands it permits.

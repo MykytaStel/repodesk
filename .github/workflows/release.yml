@@ -66,12 +66,29 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signing/notarization secrets slot in here later (N3) — unset = unsigned build.
+          # Auto-updater signing. Required for updater artifacts (.sig + latest.json)
+          # to be produced/uploaded; the public key lives in tauri.conf.json. Generate
+          # with `tauri signer generate` and store the private key + password as secrets
+          # (see docs/RELEASE_CHECKLIST.md §6).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS Developer ID signing + notarization. DORMANT until these secrets
+          # are added: when unset, tauri-action produces an unsigned build (no error);
+          # when set, it signs + notarizes automatically. See RELEASE_CHECKLIST.md §5.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
           releaseName: 'RepoDesk ${{ github.ref_name }}'
-          releaseBody: 'Download the installer for your platform from the assets below. Unsigned build — see docs/RELEASE_CHECKLIST.md.'
+          releaseBody: 'Download the installer for your platform from the assets below. See docs/RELEASE_CHECKLIST.md.'
           releaseDraft: true
           prerelease: false
+          # Upload the updater manifest (latest.json) so the GitHub Releases endpoint
+          # in tauri.conf.json resolves. No-op without the signing key above.
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
