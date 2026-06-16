@@ -20,11 +20,22 @@ GitHub Actions runs `fmt`, `clippy -D warnings`, `cargo test --workspace`,
 `secret-scan-basic.sh`, and the frontend build on every PR + `main`. Cache cargo + node.
 **Exit:** red PRs are blocked; `verify-all.sh` is mirrored in CI.
 
-### N2 — Live + E2E verification
+### N2 — Live + E2E verification  ✅ (hybrid)
 `tauri-driver` + WebdriverIO (or Playwright) smoke that launches the app and completes the
 daily loop (onboard → context → checks → commit-readiness), asserting key UI states; a
 first-run test against a throwaway `REPODESK_HOME`. **Exit:** one command runs an automated
 GUI smoke, wired into CI where headless is possible.
+
+**Done — hybrid, because `tauri-driver` can't run on macOS (WKWebView has no WebDriver):**
+- **Playwright + mock IPC** (`apps/desktop/e2e/`, `./scripts/e2e-smoke.sh`): drives the real
+  React daily-loop UI in headless Chromium with a faked Tauri IPC layer (`mock-ipc.ts` defines
+  `window.__TAURI_INTERNALS__`). Runs anywhere incl. macOS; gates every PR via `ci.yml`.
+  Covers onboarded daily loop + first-run onboarding; asserts the frontend issues the loop's
+  commands through IPC. No app changes needed.
+- **tauri-driver + WebdriverIO** (`apps/desktop/e2e-native/`, `./scripts/e2e-native.sh`):
+  real-backend smoke against the compiled binary + `repodesk-core`, first-run against a
+  throwaway `REPODESK_HOME`. Linux only → runs in `e2e-native.yml` on push to `main`/dispatch
+  (heavy full build; not yet a per-PR gate).
 
 ### N3 — Signing, notarization, auto-updater
 macOS Developer ID signing + notarization in CI (secrets-gated). Re-enable

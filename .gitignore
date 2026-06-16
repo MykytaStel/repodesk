@@ -224,6 +224,15 @@ generated/
 apps/desktop/node_modules/
 apps/desktop/dist/
 apps/desktop/src-tauri/target/
+
+# E2E (Playwright + WebdriverIO/tauri-driver) outputs
+apps/desktop/test-results/
+apps/desktop/playwright-report/
+apps/desktop/blob-report/
+apps/desktop/.playwright/
+apps/desktop/e2e-native/node_modules/
+apps/desktop/e2e-native/.wdio/
+apps/desktop/e2e-native/logs/
 /target/
 /tmp/
 /runs/

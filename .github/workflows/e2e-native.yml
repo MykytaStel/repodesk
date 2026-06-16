@@ -1,0 +1,75 @@
+name: E2E (native)
+
+# Real-backend Tauri E2E: drives the compiled binary via tauri-driver +
+# WebdriverIO (Linux only — tauri-driver has no macOS support). This does a full
+# release build, so it runs on push to main + on demand rather than blocking every
+# PR. The fast frontend smoke (Playwright, mock IPC) runs per-PR in ci.yml.
+# Promote to `pull_request` once it has proven stable.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  native:
+    name: tauri-driver + WebdriverIO smoke
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tauri + WebDriver system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            webkit2gtk-driver \
+            xvfb
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        run: pnpm --dir apps/desktop install --frozen-lockfile
+
+      - name: Build desktop app (release)
+        run: pnpm --dir apps/desktop tauri build --no-bundle
+
+      - name: Install native E2E harness deps
+        run: pnpm --dir apps/desktop/e2e-native install
+
+      # Throwaway REPODESK_HOME → first-run state (no project/task), so the smoke
+      # asserts the onboarding funnel through the real frontend + IPC + core.
+      - name: Run native smoke
+        run: |
+          export REPODESK_HOME="$(mktemp -d)"
+          echo "REPODESK_HOME=$REPODESK_HOME"
+          xvfb-run -a pnpm --dir apps/desktop/e2e-native test
