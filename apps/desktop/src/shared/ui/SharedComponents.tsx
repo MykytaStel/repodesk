@@ -88,6 +88,21 @@ export function MetricCard({ label, value, detail, tone = "neutral" }: { label: 
   return <section className={`panel metric ${tone}`}><p className="eyebrow">{label}</p><h2>{value}</h2><p className="muted">{detail}</p></section>;
 }
 
+/** Generic inline SVG sparkline over a numeric series (auto-scaled to its max). */
+export function Sparkline({ values, width = 200, height = 40, label }: { values: number[]; width?: number; height?: number; label?: string }) {
+  if (values.length < 2) return null;
+  const max = Math.max(...values, 1);
+  const xs = values.map((_, i) => (i / (values.length - 1)) * width);
+  const ys = values.map((v) => height - (Math.max(0, v) / max) * height);
+  const line = xs.map((x, i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(" ");
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label={label ?? "trend"}>
+      <polyline points={`0,${height} ${xs.map((x, i) => `${x},${ys[i]}`).join(" ")} ${width},${height}`} className="trend-fill" />
+      <path d={line} className="trend-line" fill="none" />
+    </svg>
+  );
+}
+
 export function UsageRows({ rows, empty }: { rows: any[]; empty: string }) {
   if (rows.length === 0) return <p className="muted">{empty}</p>;
   

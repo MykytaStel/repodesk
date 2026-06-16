@@ -4,8 +4,10 @@ import {
   planHasPaidStep,
   type OrchestrationPlan,
   type OrchestrationRun,
+  type RunSummary,
   type SubAgentResult,
   type SubAgentStatus,
+  type TaskEvent,
 } from "../../shared/api/orchestrate";
 import { MetricCard, errorToMessage, formatCost, formatNumber } from "../../shared/ui/SharedComponents";
 import type { TabId } from "../../shared/types/api";
@@ -125,14 +127,98 @@ function RunPanel({
   );
 }
 
+function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+}
+
+function HistoryPanel({
+  runs,
+  activeRunId,
+  onSelect,
+  busy,
+}: {
+  runs: RunSummary[];
+  activeRunId?: string;
+  onSelect: (runId: string) => void;
+  busy: boolean;
+}) {
+  return (
+    <section className="panel">
+      <p className="eyebrow">History</p>
+      {runs.length === 0 ? (
+        <p className="muted" style={{ margin: 0 }}>
+          No runs yet for this task. Preview a plan and run it to build history.
+        </p>
+      ) : (
+        <div className="table-list" style={{ marginTop: 8 }}>
+          {runs.map((run) => (
+            <button
+              key={run.run_id}
+              className={`table-row file-row ${run.run_id === activeRunId ? "active" : ""}`}
+              onClick={() => onSelect(run.run_id)}
+              disabled={busy}
+              style={{ textAlign: "left" }}
+            >
+              <span className="task-row-main">
+                <strong>{run.goal || run.run_id}</strong>
+                <small>
+                  {run.run_id} · {fmtTime(run.started_at)} · {run.step_count} step
+                  {run.step_count === 1 ? "" : "s"} · {formatCost(run.total_cost_units, "units")}
+                </small>
+              </span>
+              <span className="file-badges">
+                {run.dry_run && <span className="pill neutral">dry</span>}
+                <span className="pill">{run.status}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function TimelinePanel({ events }: { events: TaskEvent[] }) {
+  if (events.length === 0) return null;
+  return (
+    <section className="panel">
+      <p className="eyebrow">Task activity</p>
+      <div className="table-list" style={{ marginTop: 8 }}>
+        {events.slice(0, 20).map((event, i) => (
+          <div className="table-row flex-col items-start gap-sm" key={`${event.timestamp}-${i}`}>
+            <div className="w-full flex justify-between items-center">
+              <strong style={{ fontSize: 13 }}>{event.message}</strong>
+              <span className="muted" style={{ fontSize: 12 }}>
+                {fmtTime(event.timestamp)}
+              </span>
+            </div>
+            <div className="row-meta">
+              <span>{event.module_name}</span>
+              <span>{event.level}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) => void }) {
   const orchestrate = useOrchestrate();
   const [goal, setGoal] = useState("");
   const [maxCost, setMaxCost] = useState("");
+  const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
 
   const busy = orchestrate.plan.isPending || orchestrate.run.isPending;
-  const currentRun = orchestrate.run.data ?? orchestrate.status;
-  const error = orchestrate.run.error ?? orchestrate.plan.error;
+  // A run just executed wins; otherwise a history selection; otherwise the latest run.
+  const currentRun = orchestrate.run.data ?? selectedRun ?? orchestrate.status;
+  const error = orchestrate.run.error ?? orchestrate.plan.error ?? orchestrate.showRun.error;
+
+  async function selectRun(runId: string) {
+    const detail = await orchestrate.showRun.mutateAsync(runId);
+    if (detail) setSelectedRun(detail);
+  }
 
   async function handlePreview() {
     await orchestrate.plan.mutateAsync(goal);
@@ -230,6 +316,15 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       {currentRun && (
         <RunPanel run={currentRun} onOpenMemory={setActiveTab ? () => setActiveTab("memory") : undefined} />
       )}
+
+      <HistoryPanel
+        runs={orchestrate.runs}
+        activeRunId={currentRun?.run_id}
+        onSelect={(runId) => void selectRun(runId)}
+        busy={orchestrate.showRun.isPending}
+      />
+
+      <TimelinePanel events={orchestrate.timeline} />
     </div>
   );
 }

@@ -19,6 +19,18 @@ export function useOrchestrate() {
     enabled: ready,
   });
 
+  const runs = useQuery({
+    queryKey: queryKeys.orchestrate.runs,
+    queryFn: () => (ready ? api.orchestrationRuns() : Promise.resolve([])),
+    enabled: ready,
+  });
+
+  const timeline = useQuery({
+    queryKey: queryKeys.orchestrate.timeline,
+    queryFn: () => (ready ? api.taskTimeline() : Promise.resolve([])),
+    enabled: ready,
+  });
+
   const plan = useMutation({
     mutationFn: (goal: string) => api.orchestratePlan(goal || undefined),
   });
@@ -28,9 +40,16 @@ export function useOrchestrate() {
       api.orchestrateRun(v.goal || undefined, v.dryRun, v.maxCost ?? null),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.runs });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.timeline });
       // A real run produced memory capture proposals — refresh the review queue.
       queryClient.invalidateQueries({ queryKey: queryKeys.memory.proposals(projectName) });
     },
+  });
+
+  // Load a specific past run's full detail (for the history list → RunPanel).
+  const showRun = useMutation({
+    mutationFn: (runId: string) => api.orchestrateShow(runId),
   });
 
   return {
@@ -40,7 +59,10 @@ export function useOrchestrate() {
     ready,
     status: status.data ?? null,
     statusLoading: status.isLoading,
+    runs: runs.data ?? [],
+    timeline: timeline.data ?? [],
     plan,
     run,
+    showRun,
   };
 }

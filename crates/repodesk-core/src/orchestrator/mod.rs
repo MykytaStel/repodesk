@@ -15,8 +15,8 @@ pub mod runner;
 pub mod types;
 
 pub use plan::{available_capacities, build_plan, route_steps};
-pub use runner::{RunOptions, load_latest_run, load_run, run_plan};
+pub use runner::{RunOptions, list_runs, load_latest_run, load_run, run_plan};
 pub use types::{
-    OrchestrationPlan, OrchestrationRun, RunStatus, SubAgentResult, SubAgentStatus, SubAgentTask,
-    topological_order,
+    OrchestrationPlan, OrchestrationRun, RunStatus, RunSummary, SubAgentResult, SubAgentStatus,
+    SubAgentTask, topological_order,
 };

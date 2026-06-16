@@ -41,6 +41,7 @@ export const queryKeys = {
   tokens: {
     usage: ["token_usage_snapshot"] as const,
     estimates: ["get_project_file_token_estimates"] as const,
+    costTrend: ["token_cost_trend"] as const,
   },
   routing: {
     snapshot: (economyMode: string) => ["routing_snapshot", economyMode] as const,
@@ -63,6 +64,8 @@ export const queryKeys = {
   },
   orchestrate: {
     status: ["orchestrate_status"] as const,
+    runs: ["orchestration_runs"] as const,
+    timeline: ["task_timeline"] as const,
   },
 };
 

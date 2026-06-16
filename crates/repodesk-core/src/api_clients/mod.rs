@@ -139,6 +139,8 @@ impl ProviderCredential {
 #[derive(Debug, Clone, Default)]
 pub struct ProviderSettings {
     pub ollama: ProviderCredential,
+    /// LM Studio's OpenAI-compatible local server (no key; runs at localhost).
+    pub lm_studio: ProviderCredential,
     pub anthropic: ProviderCredential,
     pub openai: ProviderCredential,
     pub gemini: ProviderCredential,
@@ -153,6 +155,11 @@ impl ProviderSettings {
                 api_key: None,
                 base_url: env("OLLAMA_BASE_URL"),
                 default_model: env("OLLAMA_MODEL"),
+            },
+            lm_studio: ProviderCredential {
+                api_key: None,
+                base_url: env("LM_STUDIO_BASE_URL"),
+                default_model: env("LM_STUDIO_MODEL"),
             },
             anthropic: ProviderCredential {
                 api_key: env("ANTHROPIC_API_KEY"),
@@ -175,7 +182,8 @@ impl ProviderSettings {
     /// Which configured providers currently have a usable client (key present,
     /// or local Ollama which needs none). Used for plan/route gating.
     pub fn available_providers(&self) -> Vec<&'static str> {
-        let mut out = vec!["ollama"];
+        // Both local providers need no key; they're always offered for routing.
+        let mut out = vec!["ollama", "lm_studio"];
         if self.anthropic.has_key() {
             out.push("anthropic");
         }
@@ -197,11 +205,29 @@ pub fn provider_for(
     settings: &ProviderSettings,
 ) -> RepoDeskResult<Box<dyn LlmProvider>> {
     match name.trim().to_ascii_lowercase().as_str() {
-        "ollama" | "local" | "lm_studio" | "llamafile" | "localai" => {
-            Ok(Box::new(OllamaClient::new(
-                settings.ollama.base_url.clone(),
-                settings.ollama.default_model.clone(),
-            )))
+        "ollama" | "local" | "llamafile" | "localai" => Ok(Box::new(OllamaClient::new(
+            settings.ollama.base_url.clone(),
+            settings.ollama.default_model.clone(),
+        ))),
+        // LM Studio serves an OpenAI-compatible API (not Ollama's), so it uses the
+        // OpenAI client pointed at the local endpoint. It ignores auth, but the
+        // client treats a non-empty key as "available", so a placeholder is used
+        // when none is configured.
+        "lm_studio" | "lmstudio" => {
+            let key = settings
+                .lm_studio
+                .api_key
+                .clone()
+                .filter(|k| !k.trim().is_empty())
+                .unwrap_or_else(|| "lm-studio".to_string());
+            let base_url = Some(
+                settings
+                    .lm_studio
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "http://localhost:1234".to_string()),
+            );
+            Ok(Box::new(OpenAiClient::new(key, base_url)))
         }
         "anthropic" | "claude" => Ok(Box::new(AnthropicClient::new(
             require_key("anthropic", "ANTHROPIC_API_KEY", &settings.anthropic)?,
@@ -298,12 +324,23 @@ mod tests {
     #[test]
     fn available_providers_lists_keyed_only() {
         let mut settings = ProviderSettings::default();
-        assert_eq!(settings.available_providers(), vec!["ollama"]);
+        // Both local providers need no key and are always offered.
+        assert_eq!(settings.available_providers(), vec!["ollama", "lm_studio"]);
         settings.openai.api_key = Some("sk".to_string());
         settings.gemini.api_key = Some("g".to_string());
         let avail = settings.available_providers();
+        assert!(avail.contains(&"lm_studio"));
         assert!(avail.contains(&"openai"));
         assert!(avail.contains(&"gemini"));
         assert!(!avail.contains(&"anthropic"));
+    }
+
+    #[test]
+    fn provider_for_lm_studio_uses_local_openai_endpoint_without_a_key() {
+        // LM Studio needs no real key (the OpenAI-compatible local server ignores
+        // auth), so building its client must succeed with default settings.
+        let settings = ProviderSettings::default();
+        assert!(provider_for("lm_studio", &settings).is_ok());
+        assert!(provider_for("lmstudio", &settings).is_ok());
     }
 }

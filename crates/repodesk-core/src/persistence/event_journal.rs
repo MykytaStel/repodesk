@@ -156,6 +156,17 @@ pub fn read_events(limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
     Ok(entries.into_iter().rev().take(keep).collect())
 }
 
+/// The most recent events for a single task, newest-first. Backs the per-task
+/// activity timeline; filters by `task_id` before applying `limit`.
+pub fn read_task_events(task_id: &str, limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
+    let all = read_events(usize::MAX)?;
+    Ok(all
+        .into_iter()
+        .filter(|entry| entry.task_id == task_id)
+        .take(limit)
+        .collect())
+}
+
 /// Build a `EventJournalSnapshot` — the primary type exposed to the Tauri UI.
 pub fn journal_snapshot(limit: usize) -> EventJournalSnapshot {
     let all_entries = read_events(usize::MAX).unwrap_or_default();

@@ -54,6 +54,27 @@ export type OrchestrationRun = {
   total_cost_units: number;
 };
 
+export type RunSummary = {
+  run_id: string;
+  goal: string;
+  status: RunStatus;
+  dry_run: boolean;
+  started_at: string;
+  finished_at: string;
+  step_count: number;
+  total_cost_units: number;
+};
+
+export type TaskEvent = {
+  timestamp: string;
+  project: string;
+  task_id: string;
+  module_name: string;
+  level: string;
+  message: string;
+  metadata: Record<string, string>;
+};
+
 const PAID_PROVIDERS = ["chatgpt", "codex", "openai", "gpt", "gemini", "anthropic", "claude"];
 
 /** Whether a plan includes any paid-provider step (used to warn before running). */
@@ -79,4 +100,12 @@ export async function orchestrateStatus(): Promise<OrchestrationRun | null> {
 
 export async function orchestrateShow(runId: string): Promise<OrchestrationRun | null> {
   return invoke("orchestrate_show", { runId });
+}
+
+export async function orchestrationRuns(): Promise<RunSummary[]> {
+  return invoke("orchestration_runs");
+}
+
+export async function taskTimeline(): Promise<TaskEvent[]> {
+  return invoke("task_timeline");
 }

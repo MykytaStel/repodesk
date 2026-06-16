@@ -122,13 +122,39 @@ orchestrator; broader provider support (LM Studio, richer model health, cost tre
 - **N6-B ✅** Multi-task switching. Core `tasks::list_tasks` (newest-first) + `use_task` (id
   validated against run-dir escape) + `TaskSummary`; `task_list`/`task_use` commands; a
   `TaskSwitcher` panel in the onboarded Workflow tab (switch active task or create one inline,
-  invalidating downstream state). Per-task history views still open.
-- Remaining: finish the multi-agent orchestrator; broader providers (LM Studio, richer model
-  health, cost trends); per-task history views.
+  invalidating downstream state).
+- **Remaining N6 items closed in N7** (below): finished orchestrator (run history + concurrency),
+  per-task history views, broader providers (LM Studio, cost trends).
+
+### N7 — Close out the post-v1 plan  ✅
+The three open N6 threads, done as bounded, independently-green increments (each its own
+branch; new core behavior unit-tested; gates kept green).
+
+- **N7-A ✅** Orchestrator run history + per-task timeline. Core `orchestrator::list_runs`
+  (newest-first `RunSummary` list, skips the rolling `latest.json` pointer) +
+  `event_journal::read_task_events` (task-scoped, newest-first). New `orchestration_runs` /
+  `task_timeline` commands; the Orchestrate tab gained a **History** panel (click a past run to
+  load its full detail into the existing run panel) and a **Task activity** timeline.
+- **N7-B ✅** LM Studio as a first-class route + cost trends. `ProviderSettings` gained an
+  `lm_studio` credential (env `LM_STUDIO_BASE_URL`/`LM_STUDIO_MODEL`, default
+  `http://localhost:1234`); it's always offered like Ollama and routed through the
+  **OpenAI-compatible** client (LM Studio's API), not Ollama's. Added an `lm_studio` routing
+  capacity so the engine/orchestrator can actually pick it. Cost trends:
+  `token_ledger::cost_trend(days)` aggregates the SQLite ledger per UTC day; new
+  `token_cost_trend` command + a reusable `<Sparkline>` and a cost-trend panel in the Tokens
+  tab. (LM Studio endpoint is env-configured; no Settings form field was added — env/default
+  parity, matching how providers are surfaced today.)
+- **N7-C ✅** Concurrent independent orchestrator steps. The runner now executes in dependency
+  **waves** (`orchestrator::dependency_waves`, layered Kahn): a deterministic ascending-index
+  decision pass gates each step and reserves projected cost (so the `--max-cost` ceiling stays
+  deterministic), then a wave's provider calls run concurrently via `tokio::JoinSet`, and
+  results are recorded in index order — so a run is identical regardless of which call finishes
+  first. Dry-run stays fully deterministic.
 
 ## Suggested order
 N1 → N2 → N3 → N4 is the "ship reliably" backbone (in order). N5 is debt cleanup that makes
-N2 less flaky (slot near N2). N6 is growth, after the release pipeline is trustworthy.
+N2 less flaky (slot near N2). N6 is growth, after the release pipeline is trustworthy. N7
+closes out the remaining N6 depth items.
 
 ## Working agreement
 Branch per phase; keep all gates green; new behavior needs a test; use

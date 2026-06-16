@@ -170,6 +170,76 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
     Ok(report)
 }
 
+/// One day's aggregated usage on the cost trend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CostTrendPoint {
+    /// UTC calendar date, `YYYY-MM-DD`.
+    pub date: String,
+    pub total_tokens: usize,
+    pub cost_units: f64,
+}
+
+/// Aggregate the token ledger into a per-UTC-day cost trend over the last
+/// `days` calendar days (oldest-first, days with no usage included as zero so
+/// the sparkline has a continuous x-axis). Cost is derived per ledger row from
+/// the agent's configured rate, mirroring `read_token_report`'s cost model.
+pub fn cost_trend(days: usize) -> RepoDeskResult<Vec<CostTrendPoint>> {
+    use std::collections::HashMap;
+
+    init::init_home()?;
+    let cost_config = crate::usage::cost::load_cost_config()?;
+
+    // date -> (tokens, cost_units)
+    let mut by_date: HashMap<chrono::NaiveDate, (usize, f64)> = HashMap::new();
+
+    if let Ok(conn) = crate::persistence::db::init_db()
+        && let Ok(mut stmt) =
+            conn.prepare("SELECT timestamp, agent, input_tokens, output_tokens FROM token_ledger")
+    {
+        let rows = stmt.query_map([], |row| {
+            let timestamp_str: String = row.get(0)?;
+            let agent: String = row.get(1)?;
+            let input_tokens: usize = row.get(2)?;
+            let output_tokens: usize = row.get(3)?;
+            Ok((timestamp_str, agent, input_tokens, output_tokens))
+        });
+
+        if let Ok(rows) = rows {
+            for (timestamp_str, agent, input_tokens, output_tokens) in rows.flatten() {
+                let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&timestamp_str) else {
+                    continue;
+                };
+                let date = dt.with_timezone(&Utc).date_naive();
+                let cost = crate::usage::cost::estimate_agent_cost(
+                    &cost_config,
+                    &agent,
+                    input_tokens,
+                    output_tokens,
+                )
+                .estimated_cost_units;
+                let entry = by_date.entry(date).or_insert((0, 0.0));
+                entry.0 += input_tokens + output_tokens;
+                entry.1 += cost;
+            }
+        }
+    }
+
+    // Emit a continuous window ending today, oldest-first.
+    let window = days.max(1);
+    let today = Utc::now().date_naive();
+    let mut points = Vec::with_capacity(window);
+    for offset in (0..window).rev() {
+        let date = today - chrono::Duration::days(offset as i64);
+        let (tokens, cost) = by_date.get(&date).copied().unwrap_or((0, 0.0));
+        points.push(CostTrendPoint {
+            date: date.format("%Y-%m-%d").to_string(),
+            total_tokens: tokens,
+            cost_units: cost,
+        });
+    }
+    Ok(points)
+}
+
 fn parse_token_report_content(content: &str) -> TokenReport {
     let mut entries_count = 0usize;
     let mut total_input_tokens = 0usize;

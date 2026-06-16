@@ -3,9 +3,16 @@
 //! environment; the Ollama endpoint/model come from saved desktop settings.
 
 use repodesk_core::api_clients::ProviderSettings;
-use repodesk_core::orchestrator::{self, OrchestrationPlan, OrchestrationRun, RunOptions};
+use repodesk_core::orchestrator::{
+    self, OrchestrationPlan, OrchestrationRun, RunOptions, RunSummary,
+};
+use repodesk_core::persistence::event_journal::{self, EventEntry};
+use repodesk_core::tasks::show_active_task;
 
 use super::ErrorPayload;
+
+const MAX_RUNS: usize = 50;
+const MAX_TIMELINE_EVENTS: usize = 100;
 
 const MAX_GOAL_LEN: usize = 2_000;
 
@@ -63,4 +70,23 @@ pub async fn orchestrate_status() -> Result<Option<OrchestrationRun>, ErrorPaylo
 #[tauri::command]
 pub async fn orchestrate_show(run_id: String) -> Result<Option<OrchestrationRun>, ErrorPayload> {
     Ok(orchestrator::load_run(&run_id)?)
+}
+
+/// Every persisted run for the active task, newest-first, as lightweight
+/// summaries for the history list.
+#[tauri::command]
+pub async fn orchestration_runs() -> Result<Vec<RunSummary>, ErrorPayload> {
+    let mut runs = orchestrator::list_runs()?;
+    runs.truncate(MAX_RUNS);
+    Ok(runs)
+}
+
+/// The active task's recent activity timeline (event journal, newest-first).
+#[tauri::command]
+pub async fn task_timeline() -> Result<Vec<EventEntry>, ErrorPayload> {
+    let task_id = show_active_task()?.config.id;
+    Ok(event_journal::read_task_events(
+        &task_id,
+        MAX_TIMELINE_EVENTS,
+    )?)
 }

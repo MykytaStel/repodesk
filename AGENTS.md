@@ -91,5 +91,7 @@ checked explicitly (never on launch).
 - **v1.0 reached** — MVP→Product phases P1–P7 done; an (unsigned) `RepoDesk_1.0.0_aarch64.dmg`
   builds and validates locally.
 - **Next**: `docs/POST_V1_PLAN.md` (N1 CI → N2 E2E → N3 signing/updater → N4 cross-platform →
-  N5 remove `run_cli` debt ✅ → N6 product depth). General direction in `docs/ROADMAP.md`.
+  N5 remove `run_cli` debt ✅ → N6 product depth ✅ → N7 close-out ✅: orchestrator run history
+  + per-task timeline, LM Studio first-class route + cost trends, concurrent orchestrator
+  steps via dependency waves). General direction in `docs/ROADMAP.md`.
 </content>

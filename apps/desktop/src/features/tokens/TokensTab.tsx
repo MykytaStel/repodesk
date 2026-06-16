@@ -1,13 +1,13 @@
 import React from "react";
 import { useState } from "react";
-import { formatNumber, formatCost, statusTone, MetricCard, UsageRows } from "../../shared/ui/SharedComponents";
+import { formatNumber, formatCost, statusTone, MetricCard, UsageRows, Sparkline } from "../../shared/ui/SharedComponents";
 import { useTokens } from "./useTokens";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 
 interface TokensTabProps {}
 
 export function TokensTab({}: TokensTabProps) {
-  const { tokens, fileTokenEstimates, loadEstimates, logTokenUsage, saveIgnoreRules } = useTokens();
+  const { tokens, fileTokenEstimates, costTrend, loadEstimates, logTokenUsage, saveIgnoreRules } = useTokens();
   const { projectConfig } = useWorkspace();
   const [tokenLogForm, setTokenLogForm] = useState({ provider: "manual", model: "", inputTokens: "0", outputTokens: "0", category: "general", notes: "" });
   const isBusy = false;
@@ -83,6 +83,39 @@ export function TokensTab({}: TokensTabProps) {
               <span>{((tokens.totals.today_total_tokens / (tokens.totals.today_total_tokens + tokens.totals.remaining_daily_tokens || 1)) * 100).toFixed(1)}% used</span>
               <span>Resetting daily (UTC)</span>
             </div>
+          </div>
+        </section>
+      )}
+
+      {costTrend.length > 0 && (
+        <section className="panel wide-panel">
+          <div className="panel-title-row">
+            <div>
+              <p className="eyebrow">Cost trend</p>
+              <h2>Last {costTrend.length} days</h2>
+            </div>
+            <span className="pill neutral">
+              {formatCost(costTrend.reduce((sum, p) => sum + p.cost_units, 0), tokens?.cost_estimate.currency_label)} total
+            </span>
+          </div>
+          <Sparkline values={costTrend.map((p) => p.cost_units)} width={320} height={48} label="Daily cost units" />
+          <div className="table-list" style={{ marginTop: 8 }}>
+            {costTrend
+              .filter((p) => p.total_tokens > 0)
+              .slice(-7)
+              .reverse()
+              .map((p) => (
+                <div className="table-row" key={p.date}>
+                  <span>{p.date}</span>
+                  <div className="row-meta">
+                    <span>{formatNumber(p.total_tokens)} tokens</span>
+                    <strong>{formatCost(p.cost_units, tokens?.cost_estimate.currency_label)}</strong>
+                  </div>
+                </div>
+              ))}
+            {costTrend.every((p) => p.total_tokens === 0) && (
+              <p className="muted" style={{ margin: 0 }}>No usage logged in this window yet.</p>
+            )}
           </div>
         </section>
       )}

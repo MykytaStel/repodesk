@@ -92,6 +92,30 @@ export const onboardedFixtures: CommandFixtures = {
   ],
   action_history: [],
 
+  orchestration_runs: [
+    {
+      run_id: "run-20260616-101500",
+      goal: "Wire N2 E2E smoke",
+      status: "completed",
+      dry_run: false,
+      started_at: "2026-06-16T10:15:00Z",
+      finished_at: "2026-06-16T10:16:30Z",
+      step_count: 3,
+      total_cost_units: 0,
+    },
+  ],
+  task_timeline: [
+    {
+      timestamp: "2026-06-16T10:16:30Z",
+      project: "RepoDesk",
+      task_id: "task-n2-e2e",
+      module_name: "orchestrator",
+      level: "info",
+      message: "orchestration run-20260616-101500 finished: Completed",
+      metadata: { run_id: "run-20260616-101500" },
+    },
+  ],
+
   routing_snapshot: {
     request: { task_kind: "edit", changed_file_count: 3 },
     decision: {

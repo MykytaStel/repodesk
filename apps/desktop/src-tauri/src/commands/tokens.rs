@@ -262,3 +262,13 @@ pub fn log_token_usage(input: LogTokenUsageInput) -> Result<TokenUsageSnapshot, 
 pub fn estimate_raw_text(text: String) -> repodesk_core::tokens::TokenEstimate {
     repodesk_core::tokens::estimate_text(&text)
 }
+
+/// Per-day token/cost trend over the last `days` calendar days (oldest-first,
+/// continuous — empty days are zero). Defaults to 14 days, capped at 90.
+#[tauri::command]
+pub fn token_cost_trend(
+    days: Option<usize>,
+) -> Result<Vec<repodesk_core::usage::token_ledger::CostTrendPoint>, ErrorPayload> {
+    let window = days.unwrap_or(14).clamp(1, 90);
+    repodesk_core::usage::token_ledger::cost_trend(window).map_err(ErrorPayload::from)
+}

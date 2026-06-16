@@ -6,14 +6,22 @@
 
 use std::path::PathBuf;
 
+use repodesk_core::api_clients::{ProviderSettings, ThinkingLevel};
 use repodesk_core::guard::{GuardLevel, preflight};
 use repodesk_core::judge::{JudgementDecision, judge_agent};
+use repodesk_core::orchestrator::{
+    OrchestrationPlan, OrchestrationRun, RunOptions, RunStatus, SubAgentResult, SubAgentStatus,
+    SubAgentTask, list_runs, run_plan,
+};
+use repodesk_core::persistence::event_journal::{LogEventInput, log_event, read_task_events};
 use repodesk_core::persistence::{count_action_runs, recent_action_runs, record_action_run};
 use repodesk_core::projects::{AddProjectInput, add_project, use_project};
 use repodesk_core::repopilot::{load_history, parse_review_json, record_report};
+use repodesk_core::routing::types::TaskKind;
 use repodesk_core::safety::{SafetyLevel, scan_active_context};
 use repodesk_core::security::{SecurityLevel, audit_security_policy};
-use repodesk_core::tasks::{NewTaskInput, create_task};
+use repodesk_core::tasks::{NewTaskInput, create_task, show_active_task};
+use repodesk_core::usage::token_ledger::{LogTokenInput, cost_trend, log_token_event};
 use repodesk_core::workflow::{ActionRunResult, CommandResult};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -373,4 +381,231 @@ fn action_history_round_trips_through_sqlite() {
     assert_eq!(recent.len(), 2);
     assert_eq!(recent[0].id, "context-build");
     assert!(recent[0].result.ok);
+}
+
+// --- N7-A: orchestrator run history + per-task timeline ----------------------
+
+/// A minimal persisted run with the given id/goal/status.
+fn write_run(orchestrate_dir: &std::path::Path, run_id: &str, goal: &str, status: RunStatus) {
+    let run = OrchestrationRun {
+        run_id: run_id.to_string(),
+        project: "demo".to_string(),
+        task_id: "task".to_string(),
+        goal: goal.to_string(),
+        status,
+        dry_run: false,
+        started_at: "2026-06-17T10:00:00Z".to_string(),
+        finished_at: "2026-06-17T10:01:00Z".to_string(),
+        results: vec![SubAgentResult {
+            task_id: "step-1".to_string(),
+            agent: "ollama".to_string(),
+            provider: "ollama".to_string(),
+            model: "llama3".to_string(),
+            status: SubAgentStatus::Ok,
+            output: String::new(),
+            input_tokens: 10,
+            output_tokens: 5,
+            cost_units: 0.0,
+            captured_proposals: 0,
+            notes: Vec::new(),
+        }],
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+        total_cost_units: 0.0,
+    };
+    let json = serde_json::to_string_pretty(&run).expect("serialize run");
+    std::fs::write(orchestrate_dir.join(format!("{run_id}.json")), &json).expect("write run");
+    // The rolling pointer must be ignored by list_runs.
+    std::fs::write(orchestrate_dir.join("latest.json"), &json).expect("write latest");
+}
+
+#[test]
+#[serial]
+fn list_runs_returns_summaries_newest_first_and_skips_latest_pointer() {
+    let fx = setup();
+    let dir = fx.run_dir.join("orchestrate");
+    std::fs::create_dir_all(&dir).expect("orchestrate dir");
+
+    write_run(
+        &dir,
+        "run-20260617-100000",
+        "older goal",
+        RunStatus::Completed,
+    );
+    write_run(
+        &dir,
+        "run-20260617-110000",
+        "newer goal",
+        RunStatus::Partial,
+    );
+
+    let runs = list_runs().expect("list_runs");
+    // Two run files (latest.json is skipped, not counted as a third).
+    assert_eq!(runs.len(), 2);
+    // Newest-first by run id timestamp.
+    assert_eq!(runs[0].run_id, "run-20260617-110000");
+    assert_eq!(runs[0].goal, "newer goal");
+    assert_eq!(runs[0].status, RunStatus::Partial);
+    assert_eq!(runs[0].step_count, 1);
+    assert_eq!(runs[1].run_id, "run-20260617-100000");
+}
+
+#[test]
+#[serial]
+fn read_task_events_filters_to_the_active_task() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active task").config.id;
+
+    log_event(LogEventInput {
+        module_name: "orchestrator".to_string(),
+        level: "info".to_string(),
+        message: "run finished".to_string(),
+        metadata: vec![],
+    })
+    .expect("log event");
+
+    let events = read_task_events(&active_id, 10).expect("read_task_events");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].task_id, active_id);
+    assert_eq!(events[0].message, "run finished");
+
+    // A different task id sees none of the active task's events.
+    let other = read_task_events("some-other-task", 10).expect("read_task_events other");
+    assert!(other.is_empty());
+}
+
+#[test]
+#[serial]
+fn cost_trend_returns_a_continuous_window_with_todays_usage() {
+    let _fx = setup();
+
+    // No usage yet: a 7-day window is still 7 zero points, oldest-first.
+    let empty = cost_trend(7).expect("cost_trend empty");
+    assert_eq!(empty.len(), 7);
+    assert!(
+        empty
+            .iter()
+            .all(|p| p.total_tokens == 0 && p.cost_units == 0.0)
+    );
+
+    // Log usage today; it lands on the last (most recent) point.
+    log_token_event(LogTokenInput {
+        agent: "ollama".to_string(),
+        model: Some("llama3".to_string()),
+        input_tokens: 1_000,
+        output_tokens: 500,
+        category: "orchestrate".to_string(),
+        notes: None,
+    })
+    .expect("log token");
+
+    let trend = cost_trend(7).expect("cost_trend");
+    assert_eq!(trend.len(), 7);
+    let today = &trend[trend.len() - 1];
+    assert_eq!(today.total_tokens, 1_500);
+    // Dates are ascending (oldest-first).
+    assert!(trend.windows(2).all(|w| w[0].date <= w[1].date));
+}
+
+// --- N7-C: wave-based orchestrator execution --------------------------------
+
+/// A diamond plan: analyze → {build, doc} → review. The two middle steps share
+/// a wave (independent), exercising concurrent scheduling.
+fn diamond_plan(project: &str, task_id: &str, provider: &str) -> OrchestrationPlan {
+    let mk = |id: &str, deps: &[&str]| SubAgentTask {
+        id: id.to_string(),
+        title: id.to_string(),
+        kind: TaskKind::Plan,
+        agent: provider.to_string(),
+        provider: provider.to_string(),
+        model: None,
+        thinking: ThinkingLevel::None,
+        instruction: format!("do {id}"),
+        depends_on: deps.iter().map(|d| d.to_string()).collect(),
+        budget_tokens: 500,
+        allow_write: false,
+    };
+    OrchestrationPlan {
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "diamond".to_string(),
+        steps: vec![
+            mk("analyze", &[]),
+            mk("build", &["analyze"]),
+            mk("doc", &["analyze"]),
+            mk("review", &["build", "doc"]),
+        ],
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn dry_run_executes_waves_in_deterministic_index_order() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+
+    let plan = diamond_plan("demo", &active_id, "chatgpt");
+    let opts = RunOptions {
+        dry_run: true,
+        max_cost: None,
+        settings: ProviderSettings::default(),
+    };
+    let run = run_plan(&plan, &opts).await.expect("run_plan");
+
+    assert_eq!(run.status, RunStatus::DryRun);
+    // Results are recorded in plan/index order regardless of wave grouping.
+    let ids: Vec<&str> = run.results.iter().map(|r| r.task_id.as_str()).collect();
+    assert_eq!(ids, vec!["analyze", "build", "doc", "review"]);
+    // Dry run previews every step as Ok (no provider calls made).
+    assert!(run.results.iter().all(|r| r.status == SubAgentStatus::Ok));
+}
+
+#[tokio::test]
+#[serial]
+async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+
+    let plan = diamond_plan("demo", &active_id, "chatgpt");
+    // Per-step projected cost is identical, so a ceiling just above one step's
+    // cost admits exactly the first step and blocks the rest — independent of
+    // wave concurrency.
+    let one_step_cost = run_plan(
+        &plan,
+        &RunOptions {
+            dry_run: true,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+        },
+    )
+    .await
+    .expect("baseline")
+    .results[0]
+        .cost_units;
+    assert!(
+        one_step_cost > 0.0,
+        "chatgpt should project a non-zero cost"
+    );
+
+    let run = run_plan(
+        &plan,
+        &RunOptions {
+            dry_run: true,
+            max_cost: Some(one_step_cost * 1.5),
+            settings: ProviderSettings::default(),
+        },
+    )
+    .await
+    .expect("ceiling run");
+
+    // First step admitted; once the ceiling trips, everything after is stopped.
+    assert_eq!(run.results[0].task_id, "analyze");
+    assert_eq!(run.results[0].status, SubAgentStatus::Ok);
+    assert!(
+        run.results
+            .iter()
+            .skip(1)
+            .all(|r| r.status == SubAgentStatus::Blocked || r.status == SubAgentStatus::Skipped),
+        "downstream steps must be blocked/skipped once the ceiling trips"
+    );
 }

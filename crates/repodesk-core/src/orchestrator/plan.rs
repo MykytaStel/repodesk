@@ -195,6 +195,18 @@ mod tests {
     }
 
     #[test]
+    fn lm_studio_is_offered_as_a_local_capacity_without_a_key() {
+        let budget = BudgetConfig::default();
+        let settings = ProviderSettings::default();
+        let caps = available_capacities(&settings, &budget);
+        // LM Studio is local: present even with no provider keys configured.
+        assert!(
+            caps.iter().any(|c| c.provider == "lm_studio"),
+            "lm_studio should be a routable local capacity"
+        );
+    }
+
+    #[test]
     fn available_capacities_keeps_keyed_paid_providers() {
         let budget = BudgetConfig::default();
         let mut settings = ProviderSettings::default();
