@@ -75,3 +75,30 @@ select:focus { border-color: rgba(94, 224, 174, 0.54); }
   min-height: 18px;
   accent-color: var(--accent);
 }
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  align-items: end;
+}
+.form-grid button { min-height: 40px; }
+
+.commit-box {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.changed-files {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.changed-files li { color: var(--text); }
+.changed-files code { margin-right: 6px; }

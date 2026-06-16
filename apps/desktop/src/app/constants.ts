@@ -7,7 +7,7 @@ export const STORAGE_KEYS = {
   theme: "repodesk.theme",
 } as const;
 
-export const DEFAULT_ACTIVE_TAB: TabId = "dashboard";
+export const DEFAULT_ACTIVE_TAB: TabId = "workflow";
 export const DEFAULT_ECONOMY_MODE: EconomyMode = "balanced";
 export const DEFAULT_THEME: Theme = "system";
 

@@ -96,7 +96,19 @@
 
 .nav-list {
   display: grid;
-  gap: 8px;
+  gap: 14px;
+}
+.nav-group {
+  display: grid;
+  gap: 6px;
+}
+.nav-group-title {
+  margin: 0 0 2px 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
 }
 
 .nav-list button {

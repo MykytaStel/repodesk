@@ -84,6 +84,74 @@ use std::time::Instant;
 
 static WORKFLOW_CACHE: Mutex<Option<(ProductWorkflowState, Instant)>> = Mutex::new(None);
 
+/// Stage all changes and commit them, but only after the commit-readiness gate
+/// passes. The gate is re-evaluated server-side here — the UI verdict is never
+/// trusted. Uses `git` with argument arrays (no shell) so the message cannot
+/// inject commands.
+#[tauri::command]
+pub fn commit_ready_changes(message: String) -> Result<CommandResult, String> {
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Err("Commit message cannot be empty".into());
+    }
+    if trimmed.chars().count() > 500 {
+        return Err("Commit message is too long".into());
+    }
+    if trimmed.contains('\0') || trimmed.contains('\r') {
+        return Err("Commit message contains unsupported characters".into());
+    }
+
+    let state = build_product_workflow_state();
+    match state.commit_readiness.status.as_str() {
+        "blocked" => {
+            return Err(format!(
+                "Commit blocked: {}",
+                state.commit_readiness.blockers.join("; ")
+            ));
+        }
+        "not_a_repo" => return Err("Active project is not a Git repository.".into()),
+        "nothing_to_commit" => return Err("Working tree is clean — nothing to commit.".into()),
+        _ => {}
+    }
+
+    let project =
+        repodesk_core::projects::get_active_project().map_err(|error| error.to_string())?;
+    let path = project.path;
+
+    let add = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .args(["add", "-A"])
+        .output()
+        .map_err(|error| format!("git add failed: {error}"))?;
+    if !add.status.success() {
+        return Err(format!(
+            "git add failed: {}",
+            String::from_utf8_lossy(&add.stderr)
+        ));
+    }
+
+    let commit = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&path)
+        .args(["commit", "-m", trimmed])
+        .output()
+        .map_err(|error| format!("git commit failed: {error}"))?;
+
+    // Drop the cached workflow state so the UI re-reads the new clean tree.
+    if let Ok(mut cache) = WORKFLOW_CACHE.lock() {
+        *cache = None;
+    }
+
+    Ok(CommandResult {
+        ok: commit.status.success(),
+        command: "git commit".into(),
+        stdout: String::from_utf8_lossy(&commit.stdout).to_string(),
+        stderr: String::from_utf8_lossy(&commit.stderr).to_string(),
+        exit_code: commit.status.code(),
+    })
+}
+
 pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
     if let Ok(cache) = WORKFLOW_CACHE.lock()
         && let Some((ref state, ref last_updated)) = *cache

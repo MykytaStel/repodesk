@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
+import { projectAdd, taskNew } from "../../shared/api/workflow";
 import { useWorkflow } from "./useWorkflow";
 import { useRouting } from "../routing/useRouting";
 import { useTokens } from "../tokens/useTokens";
@@ -11,17 +12,85 @@ interface WorkflowTabProps {
 }
 
 export function WorkflowTab({ economyMode }: WorkflowTabProps) {
-  const { workflow, nextAction, doNextSafeStep, isRunning, history } = useWorkflow();
+  const { workflow, nextAction, doNextSafeStep, isRunning, history, commitChanges, isCommitting, commitError } = useWorkflow();
   const { routing } = useRouting(economyMode);
   const { tokens } = useTokens();
-  const { dirty } = useGit();
+  const { git, dirty } = useGit();
   const queryClient = useQueryClient();
   const isBusy = isRunning;
   const lastResult = ((history[0] as any)?.result as unknown) ?? null;
   const steps = asArray(getValue(workflow, "steps"));
 
+  const projectOk = Boolean(getValue(workflow, "project_ok"));
+  const taskOk = Boolean(getValue(workflow, "task_ok"));
+  const needsOnboarding = !projectOk || !taskOk;
+
+  const [commitMessage, setCommitMessage] = useState("");
+  const [confirmCommit, setConfirmCommit] = useState(false);
+  const [onboardError, setOnboardError] = useState("");
+  const [projName, setProjName] = useState("");
+  const [projPath, setProjPath] = useState("");
+  const [projType, setProjType] = useState("rust");
+  const [taskTitle, setTaskTitle] = useState("");
+
   function getValue(source: unknown, key: string): unknown {
     return asRecord(source)[key];
+  }
+
+  async function addProject() {
+    setOnboardError("");
+    try {
+      await projectAdd({ name: projName.trim(), path: projPath.trim(), project_type: projType.trim() || "generic", main_language: null });
+      setProjName(""); setProjPath("");
+      await queryClient.invalidateQueries();
+    } catch (error: any) {
+      setOnboardError(error?.message || String(error));
+    }
+  }
+
+  async function createTask() {
+    setOnboardError("");
+    try {
+      await taskNew(taskTitle.trim());
+      setTaskTitle("");
+      await queryClient.invalidateQueries();
+    } catch (error: any) {
+      setOnboardError(error?.message || String(error));
+    }
+  }
+
+  async function runCommit() {
+    try {
+      await commitChanges(commitMessage.trim());
+      setCommitMessage("");
+      setConfirmCommit(false);
+    } catch {
+      // commitError is surfaced from the hook below.
+    }
+  }
+
+  function renderOnboarding() {
+    return (
+      <section className="panel onboarding wide-panel">
+        <p className="eyebrow">Get started</p>
+        <h2>{!projectOk ? "Step 1 · Connect a project" : "Step 2 · Create a task"}</h2>
+        <p className="lead">RepoDesk works one task at a time. Connect a project, then create the task you want to work on.</p>
+        {!projectOk ? (
+          <div className="form-grid">
+            <label>Name<input value={projName} onChange={(e) => setProjName(e.target.value)} placeholder="my-app" /></label>
+            <label>Path<input value={projPath} onChange={(e) => setProjPath(e.target.value)} placeholder="/Users/you/code/my-app" /></label>
+            <label>Type<input value={projType} onChange={(e) => setProjType(e.target.value)} placeholder="rust" /></label>
+            <button className="primary-button" disabled={!projName.trim() || !projPath.trim()} onClick={() => void addProject()}>Connect project</button>
+          </div>
+        ) : (
+          <div className="form-grid">
+            <label>Task title<input value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} placeholder="Add login rate-limit" /></label>
+            <button className="primary-button" disabled={!taskTitle.trim()} onClick={() => void createTask()}>Create task</button>
+          </div>
+        )}
+        {onboardError && <div className="notice danger">{onboardError}</div>}
+      </section>
+    );
   }
 
   function renderCommitReadiness() {
@@ -42,6 +111,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
     const warnings = asArray(getValue(readiness, "warnings")).map((item) => String(item));
     const branch = getString(readiness, "branch", "");
     const changed = Number(getValue(readiness, "changed_count") ?? 0);
+    const canCommit = status === "ready" || status === "warning";
 
     return (
       <section className="panel commit-readiness wide-panel">
@@ -61,6 +131,54 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
             {blockers.length > 0 && <RouteList title="Blockers" tone="danger" items={blockers} />}
             {warnings.length > 0 && <RouteList title="Warnings" tone="warn" items={warnings} />}
           </div>
+        )}
+        {canCommit && (
+          <div className="commit-box">
+            <input
+              value={commitMessage}
+              onChange={(e) => setCommitMessage(e.target.value)}
+              placeholder="Commit message"
+              disabled={isCommitting}
+            />
+            {!confirmCommit ? (
+              <button className="primary-button" disabled={!commitMessage.trim() || isCommitting} onClick={() => setConfirmCommit(true)}>
+                Commit {changed} file{changed === 1 ? "" : "s"}…
+              </button>
+            ) : (
+              <div className="button-row">
+                <button className="primary-button" disabled={isCommitting} onClick={() => void runCommit()}>
+                  {isCommitting ? "Committing…" : `Confirm commit to ${branch || "branch"}`}
+                </button>
+                <button className="ghost-button" disabled={isCommitting} onClick={() => setConfirmCommit(false)}>Cancel</button>
+              </div>
+            )}
+            {warnings.length > 0 && <p className="muted">Committing with {warnings.length} warning(s) — review above first.</p>}
+            {commitError && <div className="notice danger">{commitError.message}</div>}
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  function renderChangedFiles() {
+    const files = asArray(getValue(git, "changed_files"));
+    return (
+      <section className="panel">
+        <p className="eyebrow">What changed</p>
+        {files.length === 0 ? (
+          <p className="muted">Working tree is clean.</p>
+        ) : (
+          <ul className="changed-files">
+            {files.slice(0, 12).map((file, index) => {
+              const record = asRecord(file);
+              return (
+                <li key={getString(record, "path", String(index))}>
+                  <code>{getString(record, "status_code", "")}</code> {getString(record, "path", "")}
+                </li>
+              );
+            })}
+            {files.length > 12 && <li className="muted">+{files.length - 12} more</li>}
+          </ul>
         )}
       </section>
     );
@@ -124,43 +242,48 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
         <h1>{getString(workflow, "primary_cta", nextAction?.label ?? "One safe next step")}</h1>
         <p className="lead">{nextAction?.description ?? "Connect a project and task, then build bounded context before model usage."}</p>
         <div className="button-row">
-          <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy}>{nextAction?.label ?? "Do next safe step"}</button>
+          <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy || needsOnboarding}>{nextAction?.label ?? "Do next safe step"}</button>
           <button className="ghost-button" onClick={() => void queryClient.invalidateQueries()} disabled={isBusy}>Refresh workflow</button>
         </div>
       </section>
 
-      {renderCommitReadiness()}
+      {needsOnboarding ? renderOnboarding() : (
+        <>
+          {renderCommitReadiness()}
+          {renderBestRoutePanel()}
 
-      {renderBestRoutePanel()}
+          <section className="panel wide-panel">
+            <div className="timeline">
+              {steps.length === 0 ? <p className="muted">No workflow steps loaded yet.</p> : steps.map((step, index) => {
+                const record = asRecord(step);
+                const status = getString(record, "status", "unknown");
+                return (
+                  <div key={getString(record, "id", String(index))} className={`timeline-step ${statusTone(status)}`}>
+                    <span>{index + 1}</span>
+                    <strong>{getString(record, "title", `Step ${index + 1}`)}</strong>
+                    <small>{status}</small>
+                    <p>{getString(record, "description", "")}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
 
-      <section className="panel wide-panel">
-        <div className="timeline">
-          {steps.length === 0 ? <p className="muted">No workflow steps loaded yet.</p> : steps.map((step, index) => {
-            const record = asRecord(step);
-            const status = getString(record, "status", "unknown");
-            return (
-              <div key={getString(record, "id", String(index))} className={`timeline-step ${statusTone(status)}`}>
-                <span>{index + 1}</span>
-                <strong>{getString(record, "title", `Step ${index + 1}`)}</strong>
-                <small>{status}</small>
-                <p>{getString(record, "description", "")}</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+          <section className="panel">
+            <p className="eyebrow">Next action</p>
+            <h2>{nextAction?.label ?? "No action loaded"}</h2>
+            <p className="muted">{nextAction?.description ?? "Open Settings to connect project and task."}</p>
+            {dirty && <div className="notice warn">Workspace has Git changes. Review them before agent-like actions.</div>}
+          </section>
 
-      <section className="panel">
-        <p className="eyebrow">Next action</p>
-        <h2>{nextAction?.label ?? "No action loaded"}</h2>
-        <p className="muted">{nextAction?.description ?? "Open Settings to connect project and task."}</p>
-        {dirty && <div className="notice warn">Workspace has Git changes. Review them before agent-like actions.</div>}
-      </section>
+          {renderChangedFiles()}
 
-      <section className="panel">
-        <p className="eyebrow">Last result</p>
-        <pre className="code-panel compact">{lastResult ? stringifyPreview(lastResult, 4000) : "No action has run in this session."}</pre>
-      </section>
+          <section className="panel">
+            <p className="eyebrow">Last result</p>
+            <pre className="code-panel compact">{lastResult ? stringifyPreview(lastResult, 4000) : "No action has run in this session."}</pre>
+          </section>
+        </>
+      )}
     </div>
   );
 }

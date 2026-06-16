@@ -10,7 +10,7 @@ import { TabErrorBoundary } from "../shared/ui/TabErrorBoundary";
 import type { TabId, Theme } from "../shared/types/api";
 import { formatNumber } from "../shared/utils/helpers";
 import { StatusBox } from "./StatusBox";
-import { APP_TABS, renderAppTab } from "./tabs";
+import { APP_TABS, TAB_GROUP_ORDER, renderAppTab } from "./tabs";
 import { STORAGE_KEYS } from "./constants";
 import { readStoredActiveTab, readStoredEconomyMode, readStoredTheme } from "./storage";
 
@@ -79,10 +79,15 @@ export default function App() {
             <div><strong>RepoDesk</strong><span>AI control cockpit</span></div>
           </div>
           <nav className="nav-list">
-            {APP_TABS.map((tab) => (
-              <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
-                <strong>{tab.title}</strong><span>{tab.subtitle}</span>
-              </button>
+            {TAB_GROUP_ORDER.map((group) => (
+              <div key={group} className="nav-group">
+                <p className="nav-group-title">{group}</p>
+                {APP_TABS.filter((tab) => tab.group === group).map((tab) => (
+                  <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
+                    <strong>{tab.title}</strong><span>{tab.subtitle}</span>
+                  </button>
+                ))}
+              </div>
             ))}
           </nav>
         </div>

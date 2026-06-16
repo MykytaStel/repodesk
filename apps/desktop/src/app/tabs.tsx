@@ -12,19 +12,26 @@ import { TokensTab } from "../features/tokens/TokensTab";
 import { WorkflowTab } from "../features/workflow/WorkflowTab";
 import type { TabId } from "../shared/types/api";
 
-export const APP_TABS: Array<{ id: TabId; title: string; subtitle: string }> = [
-  { id: "dashboard", title: "Dashboard", subtitle: "Daily state" },
-  { id: "workflow", title: "Workflow", subtitle: "Next step" },
-  { id: "tokens", title: "Tokens", subtitle: "Usage + cost" },
-  { id: "models", title: "Models", subtitle: "Runtime health" },
-  { id: "code", title: "Code", subtitle: "Changed files" },
-  { id: "git", title: "Git", subtitle: "Workspace" },
-  { id: "memory", title: "Memory", subtitle: "Project context" },
-  { id: "orchestrate", title: "Orchestrate", subtitle: "Sub-agents" },
-  { id: "settings", title: "Settings", subtitle: "Providers" },
-  { id: "system", title: "System Registry", subtitle: "Skills & MCP" },
-  { id: "debug", title: "Debug", subtitle: "Traces" },
+export type TabGroup = "Work" | "AI" | "System";
+
+export const APP_TABS: Array<{ id: TabId; title: string; subtitle: string; group: TabGroup }> = [
+  // Work — the daily loop; Workflow is the home surface.
+  { id: "workflow", title: "Workflow", subtitle: "Next step", group: "Work" },
+  { id: "dashboard", title: "Dashboard", subtitle: "Daily state", group: "Work" },
+  { id: "git", title: "Git", subtitle: "Workspace", group: "Work" },
+  { id: "code", title: "Code", subtitle: "Changed files", group: "Work" },
+  // AI — providers, routing, memory, orchestration.
+  { id: "models", title: "Models", subtitle: "Runtime health", group: "AI" },
+  { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI" },
+  { id: "memory", title: "Memory", subtitle: "Project context", group: "AI" },
+  { id: "orchestrate", title: "Orchestrate", subtitle: "Sub-agents", group: "AI" },
+  // System — configuration and diagnostics.
+  { id: "settings", title: "Settings", subtitle: "Providers", group: "System" },
+  { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System" },
+  { id: "debug", title: "Debug", subtitle: "Traces", group: "System" },
 ];
+
+export const TAB_GROUP_ORDER: TabGroup[] = ["Work", "AI", "System"];
 
 export function renderAppTab({
   activeTab,

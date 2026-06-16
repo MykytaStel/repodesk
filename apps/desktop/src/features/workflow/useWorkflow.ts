@@ -41,6 +41,15 @@ export function useWorkflow() {
     }
   });
 
+  const commitMutation = useMutation({
+    mutationFn: async (message: string) => {
+      return await callCommand<{ ok: boolean; stdout: string; stderr: string }>("commit_ready_changes", { message });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries();
+    }
+  });
+
   const workflow = state.data;
   const actions = actionsQuery.data ?? [];
   const nextActionId = findNextActionId(workflow, actions, hasProject, hasTask);
@@ -55,5 +64,8 @@ export function useWorkflow() {
     runAction: runActionMutation.mutateAsync,
     doNextSafeStep: doNextSafeStepMutation.mutateAsync,
     isRunning: runActionMutation.isPending || doNextSafeStepMutation.isPending,
+    commitChanges: commitMutation.mutateAsync,
+    isCommitting: commitMutation.isPending,
+    commitError: commitMutation.error as Error | null,
   };
 }
