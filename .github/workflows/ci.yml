@@ -20,7 +20,7 @@ jobs:
     name: Gates (fmt, clippy, tests, frontend, secret-scan)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Tauri v2 Linux build dependencies (the desktop crate links WebKitGTK).
       - name: Install Tauri system dependencies
@@ -42,12 +42,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: pnpm
