@@ -37,10 +37,24 @@ GUI smoke, wired into CI where headless is possible.
   throwaway `REPODESK_HOME`. Linux only → runs in `e2e-native.yml` on push to `main`/dispatch
   (heavy full build; not yet a per-PR gate).
 
-### N3 — Signing, notarization, auto-updater
+### N3 — Signing, notarization, auto-updater  ◑ (updater done; signing wired, secrets pending)
 macOS Developer ID signing + notarization in CI (secrets-gated). Re-enable
 `tauri-plugin-updater` with a real key + trusted endpoint (see `RELEASE_CHECKLIST.md` §6) and
 narrow CSP `connect-src` to it. **Exit:** signed/notarized artifacts on tagged releases.
+
+**Done:**
+- **Auto-updater re-enabled** with a real minisign key (public key in `tauri.conf.json`;
+  private key generated locally, kept out of the repo, to be stored as a CI secret). Endpoint =
+  GitHub Releases `latest.json`; `connect-src` narrowed to `github.com` +
+  `objects.githubusercontent.com`; `updater:default` capability granted; plugin registered in
+  `lib.rs`. Installs only signature-verified bundles, checked explicitly (not on launch).
+  `release.yml` produces `.sig` + `latest.json` (`includeUpdaterJson`, `createUpdaterArtifacts`).
+- **Signing/notarization plumbing** wired into `release.yml` (`TAURI_SIGNING_*` + `APPLE_*`),
+  dormant until secrets exist. Setup steps in `RELEASE_CHECKLIST.md` §10.
+
+**Pending (needs your inputs):** add the updater signing secrets to make a tagged release
+actually ship update artifacts; obtain an Apple Developer ID + add the `APPLE_*` secrets to
+reach the "signed/notarized artifacts" exit.
 
 ### N4 — Cross-platform release
 CI matrix builds `.dmg` (x86_64 + aarch64), `.AppImage`/`.deb`, `.msi`; smoke each.

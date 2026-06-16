@@ -21,6 +21,7 @@ repodesk-cli = { path = "../../../crates/repodesk-cli" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+tauri-plugin-updater = "2"
 thiserror = "2.0.18"
 ureq = { version = "3.3.0", features = ["json"] }
 clap = { version = "4", features = ["derive"] }
