@@ -65,7 +65,8 @@ route work to the right (preferably local) model → know when it's safe to comm
   `tauri-action` and open a **draft** GitHub Release (keep `tauri.conf.json` version in sync).
   Updater signing (`TAURI_SIGNING_*`) + macOS Developer ID signing/notarization (`APPLE_*`) are
   wired as secrets; both stay dormant (unsigned, no error) until the secrets are added — see
-  `docs/RELEASE_CHECKLIST.md` §10.
+  `docs/RELEASE_CHECKLIST.md` §10. A `verify-release` job then asserts every platform installer
+  (+ a complete `latest.json` when signed) is attached, via `scripts/verify-release-artifacts.sh`.
 - `.github/workflows/audit.yml` — weekly RustSec advisory scan (informational).
 - `.github/dependabot.yml` — weekly grouped dependency PRs (cargo / npm / actions).
 
