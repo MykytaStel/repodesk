@@ -69,6 +69,11 @@ route work to the right (preferably local) model → know when it's safe to comm
   (+ a complete `latest.json` when signed) is attached, via `scripts/verify-release-artifacts.sh`.
 - `.github/workflows/audit.yml` — weekly RustSec advisory scan (informational).
 - `.github/dependabot.yml` — weekly grouped dependency PRs (cargo / npm / actions).
+- CI also gates **supply chain** (`cargo-deny`, config in `deny.toml`) and **secrets**
+  (`gitleaks`, allowlist in `.gitleaks.toml`), plus a non-gating coverage report. The release
+  workflow has a tag↔version guard (`scripts/check-version-sync.sh`).
+- Pre-launch owner actions (LICENSE, signing secrets, etc.) live in
+  `docs/RELEASE_READINESS_TODO.md`. Governance: `SECURITY.md`, `PRIVACY.md`, `CONTRIBUTING.md`.
 
 ## Security model
 See `docs/SECURITY_MODEL.md` (threat model + enforcement map). Summary: bounded context by

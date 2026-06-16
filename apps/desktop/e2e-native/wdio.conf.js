@@ -18,19 +18,31 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const releaseDir = resolve(__dirname, "../src-tauri/target/release");
+
+// RepoDesk is a Cargo *workspace*, so `tauri build` emits the binary to the
+// workspace-root `target/release`, NOT the crate-local `src-tauri/target`. Search
+// the workspace-root dir first (honoring CARGO_TARGET_DIR), then the crate-local
+// path as a fallback for non-workspace layouts.
+const releaseDirs = [
+  process.env.CARGO_TARGET_DIR && resolve(process.env.CARGO_TARGET_DIR, "release"),
+  resolve(__dirname, "../../../target/release"), // workspace root
+  resolve(__dirname, "../src-tauri/target/release"), // crate-local fallback
+].filter(Boolean);
 
 // The cargo bin target is `repodesk-desktop`; the bundler/productName can also
 // yield `RepoDesk`. Allow an explicit override and fall back across candidates.
 function resolveApplication() {
-  const candidates = [process.env.TAURI_APP_BINARY, "repodesk-desktop", "RepoDesk"].filter(Boolean);
-  for (const candidate of candidates) {
-    const full = candidate.startsWith("/") ? candidate : resolve(releaseDir, candidate);
-    if (existsSync(full)) return full;
+  const names = [process.env.TAURI_APP_BINARY, "repodesk-desktop", "RepoDesk"].filter(Boolean);
+  for (const name of names) {
+    if (name.startsWith("/") && existsSync(name)) return name;
+    for (const dir of releaseDirs) {
+      const full = resolve(dir, name);
+      if (existsSync(full)) return full;
+    }
   }
   throw new Error(
-    `No built Tauri binary found in ${releaseDir} (tried: ${candidates.join(", ")}).\n` +
-      "Build it first: pnpm --dir apps/desktop tauri build",
+    `No built Tauri binary found (looked in: ${releaseDirs.join(", ")}; ` +
+      `names: ${names.join(", ")}).\nBuild it first: pnpm --dir apps/desktop tauri build`,
   );
 }
 

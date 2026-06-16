@@ -27,6 +27,7 @@ REPODESK_HOME="$(mktemp -d)" xvfb-run -a pnpm --dir apps/desktop/e2e-native test
 Or just: `./scripts/e2e-native.sh` from the repo root.
 
 ## Knobs
-- `TAURI_APP_BINARY` — explicit path to the built binary (default: auto-resolve
-  `src-tauri/target/release/{repodesk-desktop,RepoDesk}`).
+- `TAURI_APP_BINARY` — explicit path to the built binary (default: auto-resolve from the
+  Cargo **workspace-root** `target/release/{repodesk-desktop,RepoDesk}`, honoring
+  `CARGO_TARGET_DIR`, with the crate-local `src-tauri/target/release` as a fallback).
 - `TAURI_DRIVER` — path to the `tauri-driver` binary (default: on PATH).

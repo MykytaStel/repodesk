@@ -9,7 +9,23 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Guard: a release tag must match tauri.conf.json's version, or the updater
+  # advertises a version users never see. Fails fast before any build.
+  version-check:
+    name: Tag ↔ version sync
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag matches configured version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            ./scripts/check-version-sync.sh "${{ github.ref_name }}"
+          else
+            echo "Not a tag (manual dispatch) — skipping version-sync guard."
+          fi
+
   release:
+    needs: version-check
     permissions:
       contents: write
     strategy:

@@ -23,9 +23,9 @@ PATTERN+='|bearer[[:space:]]+[A-Za-z0-9._-]{20,}'
 PATTERN+='|xox[baprs]-[A-Za-z0-9-]{10,}|sk_live_[0-9A-Za-z]{16,}|ghp_[0-9A-Za-z]{20,}|github_pat_[0-9A-Za-z_]{20,}'
 
 set +e
-# Excluded paths: build output, lockfiles, the secret-scanner modules themselves
-# (they contain secret *patterns* by design), and test fixtures (they embed fake
-# example secrets to exercise the scanners).
+# Excluded paths: build output, lockfiles, the secret-scanner modules + configs
+# themselves (they contain secret *patterns* by design), and test fixtures (they
+# embed fake example secrets to exercise the scanners).
 RESULTS=$(git grep -n -I -E "$PATTERN" -- \
   ':!target' \
   ':!tmp' \
@@ -35,7 +35,8 @@ RESULTS=$(git grep -n -I -E "$PATTERN" -- \
   ':!crates/repodesk-core/src/security.rs' \
   ':!crates/repodesk-core/src/safety.rs' \
   ':!crates/repodesk-core/tests' \
-  ':!scripts/secret-scan-basic.sh' 2>/dev/null)
+  ':!scripts/secret-scan-basic.sh' \
+  ':!.gitleaks.toml' 2>/dev/null)
 STATUS=$?
 set -e
 
