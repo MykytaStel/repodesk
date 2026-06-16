@@ -13,10 +13,14 @@ export function TaskSwitcher() {
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
 
-  const { data: tasks = [], isLoading } = useQuery<TaskSummary[]>({
+  const { data, isLoading } = useQuery<TaskSummary[]>({
     queryKey: ["task_list"],
     queryFn: taskList,
   });
+  // `taskList` can resolve to null (e.g. before a project/task exists, or a
+  // command that returns nothing); the `= []` query default only covers
+  // `undefined`, so coalesce null too rather than crash on `tasks.length`.
+  const tasks = data ?? [];
 
   const refetchAll = () => queryClient.invalidateQueries();
 

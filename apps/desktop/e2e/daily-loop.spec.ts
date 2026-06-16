@@ -16,8 +16,9 @@ test.describe("daily loop (onboarded)", () => {
     await expect(page.getByText("AI control cockpit")).toBeVisible();
     // Header shows the active project name from get_active_project_config.
     await expect(page.getByRole("heading", { level: 2, name: "RepoDesk" })).toBeVisible();
-    // Status strip reflects the mocked snapshot.
-    await expect(page.getByText("Wire N2 E2E smoke")).toBeVisible();
+    // Status strip reflects the mocked snapshot. Scope to the header: the task
+    // title also appears in the workflow TaskSwitcher panel.
+    await expect(page.locator("header").getByText("Wire N2 E2E smoke")).toBeVisible();
     await expect(page.getByText("3 changes")).toBeVisible();
     await expect(page.getByText("1/2 working")).toBeVisible();
   });

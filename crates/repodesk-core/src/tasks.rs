@@ -149,7 +149,7 @@ pub fn list_tasks() -> RepoDeskResult<Vec<TaskSummary>> {
         }
     }
 
-    tasks.sort_by(|a, b| b.config.created_at.cmp(&a.config.created_at));
+    tasks.sort_by_key(|t| std::cmp::Reverse(t.config.created_at));
     Ok(tasks)
 }
 

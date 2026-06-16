@@ -22,6 +22,21 @@ export const onboardedFixtures: CommandFixtures = {
   },
   db_status: { ok: true, path: "/tmp/repodesk-dev/repodesk.db" },
 
+  task_list: [
+    {
+      config: {
+        id: "task-n2-e2e",
+        project_name: "RepoDesk",
+        title: "Wire N2 E2E smoke",
+        status: "open",
+        run_dir: "/tmp/repodesk-dev/RepoDesk/task-n2-e2e",
+        created_at: "2026-06-16T10:00:00Z",
+        updated_at: "2026-06-16T10:00:00Z",
+      },
+      is_active: true,
+    },
+  ],
+
   git_workspace_snapshot: {
     branch: "feat/n2-e2e",
     is_dirty: true,
