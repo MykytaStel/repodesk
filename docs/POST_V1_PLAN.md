@@ -70,6 +70,24 @@ script is OS-agnostic (matches by extension + arch) and unit-tested locally via
 in CI (impractical/flaky for windowed installers) — covered by the N2 Linux native E2E + the
 manual checklist §8.
 
+### N3.5 — Release hardening  ✅ (engineering side)
+A pre-launch hardening pass surfaced by a release-readiness review (testing, security,
+supply chain, governance). **Done on `feat/n3.5-release-hardening`:**
+- **Governance:** `SECURITY.md` (private vuln reporting), `PRIVACY.md` (data-egress
+  statement grounded in env-only keys + no telemetry), `CONTRIBUTING.md`, `CHANGELOG.md`,
+  issue templates.
+- **Supply chain:** `deny.toml` + `cargo-deny` CI job (RustSec vulnerabilities, license
+  allowlist, source allowlist; unmaintained scoped to our crates so Tauri/GTK3 noise
+  doesn't block). Validated locally — all checks pass.
+- **Secrets:** `gitleaks` CI job (+ `.gitleaks.toml` allowlist) on top of the basic scan.
+- **Release safety:** tag↔version guard (`scripts/check-version-sync.sh` + `version-check`
+  job gating the release matrix) so the updater can't advertise a mismatched version.
+- **Tests:** the "context never leaks file bodies" test now uses a real git repo (proves
+  changed-file *names* appear but *bodies* never do). Coverage report job added (non-gating).
+
+**Pending (you):** see `docs/RELEASE_READINESS_TODO.md` — LICENSE choice, updater + Apple
+signing secrets, Windows signing, updater canary, branch protection, legal/privacy review.
+
 ### N5 — Replace deprecated `run_cli` dispatch
 Call `repodesk-core` services directly from Tauri commands (data is already structured);
 delete `run_cli`, the `stdio_override` usage, and the allowlist shim. **Exit:** no

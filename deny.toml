@@ -1,0 +1,49 @@
+# cargo-deny configuration — supply-chain gate for the Rust workspace.
+# Run locally: cargo deny check
+# CI: see .github/workflows/ci.yml (supply-chain job).
+
+[advisories]
+version = 2
+# Security *vulnerabilities* always fail the gate (default).
+# Scope *unmaintained* advisories to our own workspace crates: the Tauri 2 Linux
+# stack transitively pulls gtk3-rs bindings flagged unmaintained
+# (RUSTSEC-2024-0411..0418) with no fix until Tauri's GTK4 migration — gating on
+# those would block every build for something we cannot action.
+unmaintained = "workspace"
+# Add specific advisory IDs here only with a justification + upstream tracking link.
+ignore = []
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Skip our own first-party (unpublished) workspace crates — their license is the
+# product's own licensing decision, tracked in RELEASE_READINESS_TODO.md, not a
+# third-party supply-chain concern.
+private = { ignore = true }
+# SPDX licenses permitted in the dependency tree. Anything outside this list fails
+# the gate, forcing a conscious decision before a new license enters the product.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "MPL-2.0",
+  "Unicode-DFS-2016",
+  "Unicode-3.0",
+  "CC0-1.0",
+  "BSL-1.0",
+  "OpenSSL",
+  "CDLA-Permissive-2.0",
+]
+
+[bans]
+# Duplicate dependency versions are common and not worth failing on; surface as a warning.
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -213,23 +213,53 @@ fn judge_blocks_on_secret_context_even_when_prepared() {
 
 #[test]
 #[serial]
-fn build_context_does_not_leak_repo_file_contents() {
+fn build_context_includes_git_metadata_but_not_file_bodies() {
     let fx = setup();
-    // A secret file living in the project must never have its *contents* pulled
-    // into the generated context pack. build_context only ingests RepoDesk-managed
-    // files + git metadata (names/stats), never arbitrary repo file bodies.
-    let secret = "AKIAIOSFODNN7EXAMPLE";
+
+    // Make the project a real git repo so build_context actually exercises its
+    // git-metadata path (branch / status / diff-stat / changed-file *names*).
+    let git = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&fx.project_path)
+            .output()
+            .expect("run git");
+        assert!(status.status.success(), "git {:?} failed", args);
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    git(&["config", "commit.gpgsign", "false"]);
+
+    // A tracked source file whose *body* is a secret that must never be ingested
+    // into the context pack — only RepoDesk-managed files + git metadata may be.
+    let body_secret = "TOPSECRETBODY_DO_NOT_LEAK_8f3a";
+    let source = fx.project_path.join("leaked_source.rs");
     std::fs::write(
-        fx.project_path.join("leak.env"),
-        format!("aws_key={secret}\n"),
+        &source,
+        format!("fn main() {{ let k = \"{body_secret}\"; }}\n"),
     )
-    .expect("write secret file");
+    .expect("write source");
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "init"]);
+    // Modify it so it shows up as a changed file (status + diff --name-only).
+    std::fs::write(
+        &source,
+        format!("fn main() {{ let k = \"{body_secret}\"; let n = 1; }}\n"),
+    )
+    .expect("modify source");
 
     repodesk_core::context::build_context().expect("build_context");
-
     let context = std::fs::read_to_string(fx.run_dir.join("context.md")).expect("read context");
+
+    // The changed-file *name* is included (proves the git-metadata path ran)...
     assert!(
-        !context.contains(secret),
+        context.contains("leaked_source.rs"),
+        "expected changed-file name in context pack (git metadata)"
+    );
+    // ...but the file *body* must never be.
+    assert!(
+        !context.contains(body_secret),
         "context pack leaked raw repo file contents"
     );
 }

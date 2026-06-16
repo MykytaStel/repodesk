@@ -1,0 +1,22 @@
+title = "RepoDesk gitleaks config"
+
+# Start from gitleaks' built-in ruleset, then allowlist known non-secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known-safe non-secrets: secret-scanner fixtures, docs examples, and the PUBLIC updater key."
+paths = [
+  # The secret-detection engine + its tests embed secret *patterns* by design.
+  '''crates/repodesk-core/src/security\.rs''',
+  '''crates/repodesk-core/src/safety\.rs''',
+  '''crates/repodesk-core/src/command_sandbox\.rs''',
+  '''crates/repodesk-core/tests/.*''',
+  '''scripts/secret-scan-basic\.sh''',
+]
+regexes = [
+  # AWS's canonical documentation example key (used in tests/docs).
+  '''AKIAIOSFODNN7EXAMPLE''',
+  # The updater PUBLIC key (minisign) committed in tauri.conf.json — public by design.
+  '''dW50cnVzdGVk[A-Za-z0-9+/=]+''',
+]
