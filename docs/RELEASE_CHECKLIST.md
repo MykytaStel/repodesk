@@ -33,6 +33,18 @@ RepoDesk ships as a local-first Tauri desktop app. This checklist takes a green
   artifacts land under `target/release/bundle/` (macOS `.app`/`.dmg`, Linux `.AppImage`/`.deb`,
   Windows `.msi`/`.exe`).
 
+### Expected artifact set (all must be attached)
+The `verify-release` job (`needs: release`) asserts every item below is attached and fails the
+run otherwise — so a partial cross-platform release can't slip through. Mirror it locally with
+`./scripts/verify-release-artifacts.sh <tag>` (or pipe asset names via `REPODESK_RELEASE_ASSETS`).
+- [ ] macOS Apple Silicon `.dmg` (`aarch64`/`arm64`)
+- [ ] macOS Intel `.dmg` (`x64`/`x86_64`)
+- [ ] Linux `.AppImage`
+- [ ] Linux `.deb`
+- [ ] Windows installer (`.exe` NSIS and/or `.msi`)
+- [ ] When updater signing is active (any `.sig` present): `latest.json` covering all four
+      platforms (`darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, `windows-x86_64`).
+
 ## 5. Signing & notarization (per platform)
 The release workflow (`.github/workflows/release.yml`) already wires the signing
 env into `tauri-action`; it stays **dormant** (unsigned build, no error) until the

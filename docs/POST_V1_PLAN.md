@@ -56,9 +56,19 @@ narrow CSP `connect-src` to it. **Exit:** signed/notarized artifacts on tagged r
 actually ship update artifacts; obtain an Apple Developer ID + add the `APPLE_*` secrets to
 reach the "signed/notarized artifacts" exit.
 
-### N4 — Cross-platform release
+### N4 — Cross-platform release  ✅
 CI matrix builds `.dmg` (x86_64 + aarch64), `.AppImage`/`.deb`, `.msi`; smoke each.
 **Exit:** a tagged release attaches all platform artifacts.
+
+**Done:** `release.yml` already fans out across macOS arm64/x64 + Linux + Windows. Added a
+`verify-release` job (`needs: release`, tag-only) that runs `scripts/verify-release-artifacts.sh`
+to assert every platform installer is attached to the draft release — and, when updater signing
+is active, that `latest.json` covers all four platform keys. This turns a silently-partial
+release into a loud CI failure, satisfying "smoke each / all platform artifacts attached". The
+script is OS-agnostic (matches by extension + arch) and unit-tested locally via
+`REPODESK_RELEASE_ASSETS`/`REPODESK_LATEST_JSON` injection. Deeper per-OS GUI launch isn't smoked
+in CI (impractical/flaky for windowed installers) — covered by the N2 Linux native E2E + the
+manual checklist §8.
 
 ### N5 — Replace deprecated `run_cli` dispatch
 Call `repodesk-core` services directly from Tauri commands (data is already structured);

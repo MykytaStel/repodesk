@@ -92,3 +92,20 @@ jobs:
           # in tauri.conf.json resolves. No-op without the signing key above.
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # N4: fail loudly if the cross-platform matrix didn't attach every installer
+  # (or, when signing is active, if latest.json doesn't cover all four platforms).
+  verify-release:
+    name: Verify all platform artifacts attached
+    needs: release
+    # Only meaningful for tag releases (a manual dispatch has no published tag release).
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/verify-release-artifacts.sh "${{ github.ref_name }}"
