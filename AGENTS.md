@@ -48,6 +48,14 @@ route work to the right (preferably local) model → know when it's safe to comm
 - `build_context` never dumps raw repo file contents (only RepoDesk-managed files + git
   metadata) — keep it that way. Secret scanning gates content before AI use.
 
+## CI/CD
+- `.github/workflows/ci.yml` — gates (fmt, clippy, tests, frontend build, secret-scan) on
+  every PR + push to `main`. Mirror it locally with `./scripts/verify-all.sh`.
+- `.github/workflows/release.yml` — push a tag `vX.Y.Z` to build all-platform installers via
+  `tauri-action` and open a **draft** GitHub Release (keep `tauri.conf.json` version in sync).
+- `.github/workflows/audit.yml` — weekly RustSec advisory scan (informational).
+- `.github/dependabot.yml` — weekly grouped dependency PRs (cargo / npm / actions).
+
 ## Security model
 See `docs/SECURITY_MODEL.md` (threat model + enforcement map). Summary: bounded context by
 construction, path denylist + traversal guard on file reads, safety/judge gate before AI,

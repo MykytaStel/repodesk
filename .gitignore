@@ -156,6 +156,10 @@ models/
 .local-models/
 ollama/
 .ollama/
+
+# ...but never ignore frontend source that lives in a `models/` feature folder.
+!apps/desktop/src/features/models/
+!apps/desktop/src/features/models/**
 *.gguf
 *.ggml
 *.safetensors
@@ -225,7 +229,8 @@ apps/desktop/src-tauri/target/
 /runs/
 /.repodesk-debug/
 .repopilot/
-# Shared AI context (CLAUDE.md, AGENTS.md, .claude/settings.json, .claude/agents/)
-# IS committed so any AI/agent gets project context without re-deriving it.
-# Only personal, machine-specific overrides stay local:
+# Shared AI context (CLAUDE.md, AGENTS.md, .claude/agents/) IS committed so any
+# AI/agent gets project context without re-deriving it.
+# Permission allowlists are local/volatile (the harness rewrites them) — keep out of git:
+.claude/settings.json
 .claude/settings.local.json

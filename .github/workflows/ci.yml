@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Never touch a real ~/.repodesk during CI.
+  REPODESK_HOME: /tmp/repodesk-dev
+
+jobs:
+  verify:
+    name: Gates (fmt, clippy, tests, frontend, secret-scan)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Tauri v2 Linux build dependencies (the desktop crate links WebKitGTK).
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+
+      - name: Install frontend deps
+        run: pnpm --dir apps/desktop install --frozen-lockfile
+
+      # The frontend dist must exist before the Rust build: the desktop crate's
+      # `tauri::generate_context!` embeds it at compile time, and dist/ is gitignored.
+      - name: Build frontend
+        run: pnpm --dir apps/desktop run build
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+      - name: Secret scan
+        run: ./scripts/secret-scan-basic.sh

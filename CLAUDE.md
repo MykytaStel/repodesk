@@ -6,8 +6,8 @@ and roadmap status).
 
 ## Claude-specific notes
 - Subagents for this repo are in `.claude/agents/` (e.g. `verify-gates`, `test-author`).
-- Permission allowlist is in `.claude/settings.json` (committed); personal overrides go in
-  `.claude/settings.local.json` (git-ignored — never commit it).
+- Permission allowlists (`.claude/settings.json`, `.claude/settings.local.json`) are
+  git-ignored on purpose — the harness rewrites them, so they stay local and out of diffs.
 - When adding tests, follow `crates/repodesk-core/tests/core_safety_paths.rs`: temp
   `REPODESK_HOME` fixture + `#[serial]`.
 - Reserve full gates (`./scripts/verify-all.sh`) for handoff; run only the tests relevant to a

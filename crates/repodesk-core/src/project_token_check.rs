@@ -31,7 +31,7 @@ pub fn get_project_file_token_estimates() -> RepoDeskResult<Vec<FileTokenEstimat
     )?;
 
     // Sort by estimated tokens descending
-    estimates.sort_by(|a, b| b.estimated_tokens.cmp(&a.estimated_tokens));
+    estimates.sort_by_key(|b| std::cmp::Reverse(b.estimated_tokens));
 
     // Cap at top 250 files to prevent rendering bloat
     if estimates.len() > 250 {
