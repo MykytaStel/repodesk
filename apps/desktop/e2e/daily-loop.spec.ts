@@ -35,13 +35,34 @@ test.describe("daily loop (onboarded)", () => {
     await expect(page.getByRole("button", { name: "Build bounded context" })).toBeEnabled();
   });
 
-  test("navigates the Work tabs without crashing", async ({ page }) => {
-    for (const tab of ["Dashboard", "Git", "Code"]) {
+  test("navigates every tab without crashing", async ({ page }) => {
+    // Visit all surfaces — partial mock data must render an empty state, never
+    // the error boundary ("This view crashed" / "Something went wrong").
+    const tabs = ["Dashboard", "Git", "Code", "Models", "Tokens", "Memory", "Orchestrate", "Settings", "System Registry", "Debug"];
+    for (const tab of tabs) {
       await page.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
-      // Each tab keeps the shell intact (no error boundary).
       await expect(page.locator(".app-shell")).toBeVisible();
+      await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
     }
+  });
+
+  test("command palette opens with Ctrl-K and navigates", async ({ page }) => {
+    // Wait for the app to mount (so the global keydown listener is attached).
+    await expect(page.getByRole("heading", { level: 1, name: "Run safety checks" })).toBeVisible();
+    await page.locator("body").click();
+    await page.keyboard.press("ControlOrMeta+k");
+    const input = page.getByPlaceholder("Search tabs and actions…");
+    await expect(input).toBeVisible();
+    await input.fill("Git");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { level: 1, name: "feat/n2-e2e" })).toBeVisible();
+  });
+
+  test("project switcher lists connected projects", async ({ page }) => {
+    await page.getByRole("button", { name: /RepoDesk/ }).first().click();
+    await expect(page.getByRole("button", { name: /my-api/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Connect project/ })).toBeVisible();
   });
 
   test("frontend actually issued the daily-loop commands through IPC", async ({ page }) => {

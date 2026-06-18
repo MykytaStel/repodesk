@@ -22,6 +22,13 @@ export const onboardedFixtures: CommandFixtures = {
   },
   db_status: { ok: true, path: "/tmp/repodesk-dev/repodesk.db" },
 
+  project_list_configs: [
+    { name: "RepoDesk", path: "/Users/you/code/repodesk", project_type: "rust" },
+    { name: "my-api", path: "/Users/you/code/my-api", project_type: "node" },
+  ],
+  git_file_diff:
+    "diff --git a/src/app.ts b/src/app.ts\n@@ -1,3 +1,4 @@\n context\n-old line\n+new line\n+added line\n",
+
   task_list: [
     {
       config: {
@@ -60,10 +67,20 @@ export const onboardedFixtures: CommandFixtures = {
   },
 
   token_usage_snapshot: {
-    totals: { total_tokens: 12840 },
-    cost_estimate: { currency_label: "USD" },
-    by_agent: [],
+    totals: {
+      entries_count: 4,
+      total_input_tokens: 9000,
+      total_output_tokens: 3840,
+      total_tokens: 12840,
+      today_total_tokens: 4000,
+      remaining_daily_tokens: 96000,
+    },
+    by_provider: [{ provider: "ollama", model: null, input_tokens: 9000, output_tokens: 3840, total_tokens: 12840, estimated_cost_units: 0, currency_label: "USD" }],
     by_model: [],
+    active_artifacts: [
+      { kind: "context", title: "Context pack", path: "context.md", exists: true, estimated_tokens: 1800, status: "ok", recommendation: "" },
+    ],
+    cost_estimate: { estimated_total_units: 0, currency_label: "USD", note: "local estimate" },
   },
 
   product_workflow_state: {

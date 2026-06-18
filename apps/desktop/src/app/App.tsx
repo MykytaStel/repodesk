@@ -1,6 +1,9 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import "./App.css";
 import { EconomyMode } from "../features/routing/EconomyControl";
+import { CommandPalette, type Command } from "../shared/ui/CommandPalette";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { useGit } from "../features/git/useGit";
 import { useModels } from "../features/models/useModels";
@@ -11,13 +14,15 @@ import type { TabId, Theme } from "../shared/types/api";
 import { formatNumber } from "../shared/utils/helpers";
 import { StatusBox } from "./StatusBox";
 import { APP_TABS, TAB_GROUP_ORDER, renderAppTab } from "./tabs";
-import { STORAGE_KEYS } from "./constants";
+import { STORAGE_KEYS, THEME_OPTIONS } from "./constants";
 import { readStoredActiveTab, readStoredEconomyMode, readStoredTheme } from "./storage";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>(readStoredActiveTab);
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [economyMode, setEconomyMode] = useState<EconomyMode>(readStoredEconomyMode);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   // React Query hooks driving the shell state
   const { projectName, taskTitle, hasProject, hasTask, isLoading: workspaceLoading } = useWorkspace();
@@ -60,12 +65,49 @@ export default function App() {
     }
   }, [theme]);
 
+  // Global keyboard shortcuts: ⌘K / Ctrl-K opens the palette; ⌘1..9 jump tabs.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      if (mod && /^[1-9]$/.test(e.key)) {
+        const idx = Number(e.key) - 1;
+        if (idx < APP_TABS.length) {
+          e.preventDefault();
+          setActiveTab(APP_TABS[idx].id);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const commands = useMemo<Command[]>(() => {
+    const tabCommands: Command[] = APP_TABS.map((tab) => ({
+      id: `goto:${tab.id}`,
+      label: `Go to ${tab.title}`,
+      hint: tab.subtitle,
+      run: () => setActiveTab(tab.id),
+    }));
+    const actions: Command[] = [
+      { id: "action:refresh", label: "Refresh workspace", hint: "reload all data", run: () => void queryClient.invalidateQueries() },
+      { id: "action:theme-dark", label: "Theme: Dark", run: () => setTheme("dark") },
+      { id: "action:theme-light", label: "Theme: Light", run: () => setTheme("light") },
+      { id: "action:theme-system", label: "Theme: Auto", run: () => setTheme("system") },
+    ];
+    return [...tabCommands, ...actions];
+  }, [queryClient]);
+
   function renderActiveTab() {
     if (booting) return <StartupSkeleton />;
     const content = renderAppTab({ activeTab, economyMode, setActiveTab, setEconomyMode });
     return (
       <TabErrorBoundary tabId={activeTab}>
-        {content}
+        <Suspense fallback={<StartupSkeleton />}>{content}</Suspense>
       </TabErrorBoundary>
     );
   }
@@ -92,12 +134,17 @@ export default function App() {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <p className="eyebrow" style={{ marginBottom: 8 }}>Theme</p>
-          <div className="theme-switcher">
-            <button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")}>Light</button>
-            <button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")}>Dark</button>
-            <button className={theme === "system" ? "active" : ""} onClick={() => setTheme("system")}>Auto</button>
-          </div>
+          <label className="theme-select-label" htmlFor="theme-select">Theme</label>
+          <select
+            id="theme-select"
+            className="theme-select"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as Theme)}
+          >
+            {THEME_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </aside>
 
@@ -105,7 +152,7 @@ export default function App() {
         <header className="topbar">
           <div className="topbar-title">
             <p className="eyebrow">Active workspace</p>
-            <h2>{projectName}</h2>
+            <ProjectSwitcher projectName={projectName} onConnectProject={() => setActiveTab("settings")} />
           </div>
           <div className="status-strip">
             <StatusBox label="Task" value={taskTitle} ok={hasTask} />
@@ -116,6 +163,7 @@ export default function App() {
         </header>
         {renderActiveTab()}
       </main>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
     </div>
   );
 }

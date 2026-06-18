@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default local-only desktop capability for RepoDesk core commands.","local":true,"windows":["main"],"permissions":["core:default","updater:default"]}}
+{"default":{"identifier":"default","description":"Default local-only desktop capability for RepoDesk core commands.","local":true,"windows":["main"],"permissions":["core:default","updater:default","dialog:default"]}}

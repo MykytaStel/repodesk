@@ -7,6 +7,49 @@
   gap: 12px;
 }
 
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 28px 16px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: var(--surface-3);
+}
+.empty-state-msg { margin: 0; color: var(--muted); font-size: 14px; }
+.empty-state-hint { margin: 0; color: var(--muted-2); font-size: 12px; }
+
+.progress-track {
+  width: 100%;
+  height: 12px;
+  margin-top: 4px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.4s ease-in-out;
+}
+
+.dev-details { margin-top: 12px; }
+.dev-details > summary {
+  cursor: pointer;
+  color: var(--muted-2);
+  font-size: 12px;
+  font-weight: 700;
+  list-style: revert;
+  padding: 4px 0;
+}
+.dev-details > summary:hover { color: var(--muted); }
+.dev-details > .code-panel { margin-top: 8px; }
+
 .card,
 .check-card,
 .snippet-card,

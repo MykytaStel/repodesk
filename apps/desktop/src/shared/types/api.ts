@@ -1,7 +1,7 @@
 export type TabId = "dashboard" | "workflow" | "tokens" | "models" | "code" | "git" | "memory" | "orchestrate" | "settings" | "system" | "debug";
 export type DebugStatus = "success" | "error";
 export type ToastKind = "success" | "error" | "warning" | "info";
-export type Theme = "dark" | "light" | "system";
+export type Theme = "dark" | "light" | "system" | "midnight" | "nord" | "high-contrast";
 export type UnknownRecord = Record<string, unknown>;
 
 export interface DebugEvent {

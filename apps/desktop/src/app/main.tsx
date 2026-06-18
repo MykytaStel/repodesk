@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-query";
 import App from "./App";
 import { ErrorBoundary } from "../shared/ui/ErrorBoundary";
+import { ToastProvider } from "../shared/ui/Toast";
 import { reportError } from "../shared/utils/errors";
 
 // Every query/mutation failure flows through the central reporter (console +
@@ -33,7 +34,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <ErrorBoundary scope="app" fullscreen>
       <QueryClientProvider client={queryClient}>
-        <App />
+        <ToastProvider>
+          <App />
+        </ToastProvider>
       </QueryClientProvider>
     </ErrorBoundary>
   </React.StrictMode>,

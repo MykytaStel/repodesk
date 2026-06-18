@@ -224,6 +224,38 @@ pub fn run_git_captured(project_path: &Path, args: &[&str]) -> String {
     }
 }
 
+/// The unified diff for a single file in the working tree. `cached` selects the
+/// staged diff; otherwise the unstaged diff. `file` must be a repo-relative path
+/// (it comes from the changed-files list) — absolute or traversal (`..`) paths
+/// are rejected so a diff can never reach outside the project.
+pub fn file_diff(project_path: &Path, file: &str, cached: bool) -> String {
+    let trimmed = file.trim();
+    if trimmed.is_empty()
+        || Path::new(trimmed).is_absolute()
+        || Path::new(trimmed)
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return String::new();
+    }
+    let mut args = vec!["diff", "--no-color"];
+    if cached {
+        args.push("--cached");
+    }
+    args.push("--");
+    args.push(trimmed);
+    run_git_captured(project_path, &args)
+}
+
+/// The unified diff for a file in the *active project*. Returns an empty string
+/// when there is no active project or no diff for the path.
+pub fn active_file_diff(file: &str, cached: bool) -> String {
+    match projects::get_active_project() {
+        Ok(project) => file_diff(project.path.as_path(), file, cached),
+        Err(_) => String::new(),
+    }
+}
+
 pub fn git_lines(project_path: &Path, args: &[&str]) -> Vec<String> {
     let output = run_git_captured(project_path, args);
     output

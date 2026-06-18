@@ -94,4 +94,10 @@ checked explicitly (never on launch).
   N5 remove `run_cli` debt ✅ → N6 product depth ✅ → N7 close-out ✅: orchestrator run history
   + per-task timeline, LM Studio first-class route + cost trends, concurrent orchestrator
   steps via dependency waves). General direction in `docs/ROADMAP.md`.
+- **P8 product-UX** (branch `feat/p8-product-ux`): native folder picker for the project path
+  (`tauri-plugin-dialog`), UI robustness (null-safety sweep, themed light-mode, `EmptyState`),
+  curated theme palettes (midnight/nord/high-contrast) via `[data-theme]` tokens, features
+  (⌘K command palette, header project switcher, clickable git diff viewer, toast notifications),
+  and perf (tabs `React.lazy` code-split). Frontend leans on CSS-variable tokens in
+  `apps/desktop/src/app/styles/foundation.css` — theme via `data-theme`, never hardcode colors.
 </content>

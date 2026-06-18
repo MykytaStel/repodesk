@@ -1,16 +1,21 @@
-import { CodeTab } from "../features/code/CodeTab";
-import { DashboardTab } from "../features/dashboard/DashboardTab";
-import { DebugTab } from "../features/debug/DebugTab";
-import { GitTab } from "../features/git/GitTab";
-import { MemoryTab } from "../features/memory/MemoryTab";
-import { ModelsTab } from "../features/models/ModelsTab";
-import { OrchestrateTab } from "../features/orchestrate/OrchestrateTab";
+import { lazy } from "react";
 import { EconomyMode } from "../features/routing/EconomyControl";
-import { SettingsTab } from "../features/settings/SettingsTab";
-import { SystemTab } from "../features/system/SystemTab";
-import { TokensTab } from "../features/tokens/TokensTab";
-import { WorkflowTab } from "../features/workflow/WorkflowTab";
 import type { TabId } from "../shared/types/api";
+
+// Tabs are code-split: only the active tab's chunk is fetched, keeping the
+// initial bundle small. Each feature module exports a named component, so the
+// lazy loader maps it to a default export.
+const DashboardTab = lazy(() => import("../features/dashboard/DashboardTab").then((m) => ({ default: m.DashboardTab })));
+const WorkflowTab = lazy(() => import("../features/workflow/WorkflowTab").then((m) => ({ default: m.WorkflowTab })));
+const TokensTab = lazy(() => import("../features/tokens/TokensTab").then((m) => ({ default: m.TokensTab })));
+const ModelsTab = lazy(() => import("../features/models/ModelsTab").then((m) => ({ default: m.ModelsTab })));
+const CodeTab = lazy(() => import("../features/code/CodeTab").then((m) => ({ default: m.CodeTab })));
+const GitTab = lazy(() => import("../features/git/GitTab").then((m) => ({ default: m.GitTab })));
+const MemoryTab = lazy(() => import("../features/memory/MemoryTab").then((m) => ({ default: m.MemoryTab })));
+const OrchestrateTab = lazy(() => import("../features/orchestrate/OrchestrateTab").then((m) => ({ default: m.OrchestrateTab })));
+const SettingsTab = lazy(() => import("../features/settings/SettingsTab").then((m) => ({ default: m.SettingsTab })));
+const SystemTab = lazy(() => import("../features/system/SystemTab").then((m) => ({ default: m.SystemTab })));
+const DebugTab = lazy(() => import("../features/debug/DebugTab").then((m) => ({ default: m.DebugTab })));
 
 export type TabGroup = "Work" | "AI" | "System";
 

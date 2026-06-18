@@ -609,3 +609,41 @@ async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
         "downstream steps must be blocked/skipped once the ceiling trips"
     );
 }
+
+// --- P8: git file diff -------------------------------------------------------
+
+#[test]
+#[serial]
+fn file_diff_returns_unstaged_changes_and_rejects_traversal() {
+    use repodesk_core::git_workspace::file_diff;
+    let fx = setup();
+
+    let git = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(&fx.project_path)
+            .output()
+            .expect("run git");
+        assert!(status.status.success(), "git {:?} failed", args);
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    std::fs::write(fx.project_path.join("a.txt"), "line one\n").expect("write");
+    git(&["add", "-A"]);
+    git(&["commit", "-q", "-m", "init"]);
+    std::fs::write(fx.project_path.join("a.txt"), "line one\nline two\n").expect("modify");
+
+    let diff = file_diff(&fx.project_path, "a.txt", false);
+    assert!(
+        diff.contains("+line two"),
+        "diff should show the added line:\n{diff}"
+    );
+    assert!(diff.contains("a.txt"), "diff header should name the file");
+
+    // Path traversal / absolute paths never produce a diff.
+    assert_eq!(file_diff(&fx.project_path, "../escape", false), "");
+    assert_eq!(file_diff(&fx.project_path, "/etc/passwd", false), "");
+    assert_eq!(file_diff(&fx.project_path, "", false), "");
+}

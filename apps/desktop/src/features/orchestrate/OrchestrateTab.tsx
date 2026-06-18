@@ -9,7 +9,7 @@ import {
   type SubAgentStatus,
   type TaskEvent,
 } from "../../shared/api/orchestrate";
-import { MetricCard, errorToMessage, formatCost, formatNumber } from "../../shared/ui/SharedComponents";
+import { MetricCard, errorToMessage, formatCost, formatNumber, EmptyState } from "../../shared/ui/SharedComponents";
 import type { TabId } from "../../shared/types/api";
 
 const STATUS_COLOR: Record<SubAgentStatus, string> = {
@@ -144,12 +144,10 @@ function HistoryPanel({
   busy: boolean;
 }) {
   return (
-    <section className="panel">
+    <section className="panel wide-panel">
       <p className="eyebrow">History</p>
       {runs.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          No runs yet for this task. Preview a plan and run it to build history.
-        </p>
+        <EmptyState message="No runs yet for this task." hint="Preview a plan and run it to build history." />
       ) : (
         <div className="table-list" style={{ marginTop: 8 }}>
           {runs.map((run) => (
@@ -182,7 +180,7 @@ function HistoryPanel({
 function TimelinePanel({ events }: { events: TaskEvent[] }) {
   if (events.length === 0) return null;
   return (
-    <section className="panel">
+    <section className="panel wide-panel">
       <p className="eyebrow">Task activity</p>
       <div className="table-list" style={{ marginTop: 8 }}>
         {events.slice(0, 20).map((event, i) => (

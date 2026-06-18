@@ -19,10 +19,28 @@ export const TAB_IDS: readonly TabId[] = [
   "code",
   "git",
   "memory",
+  "orchestrate",
   "settings",
   "system",
   "debug",
 ];
 
 export const ECONOMY_MODES: readonly EconomyMode[] = ["economy", "balanced", "quality"] as const;
-export const THEMES: readonly Theme[] = ["dark", "light", "system"] as const;
+export const THEMES: readonly Theme[] = [
+  "system",
+  "dark",
+  "light",
+  "midnight",
+  "nord",
+  "high-contrast",
+] as const;
+
+/** Theme options with display labels for the theme menu. */
+export const THEME_OPTIONS: ReadonlyArray<{ value: Theme; label: string }> = [
+  { value: "system", label: "Auto" },
+  { value: "dark", label: "Dark" },
+  { value: "light", label: "Light" },
+  { value: "midnight", label: "Midnight" },
+  { value: "nord", label: "Nord" },
+  { value: "high-contrast", label: "High contrast" },
+];

@@ -15,7 +15,7 @@
   min-width: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(12, 17, 24, 0.72);
+  background: var(--surface-3);
 }
 
 .route-summary-grid div {

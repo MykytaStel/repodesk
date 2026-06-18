@@ -1,12 +1,15 @@
 import { statusTone, getString, Toggle } from "../../shared/ui/SharedComponents";
 
 import { useQueryClient } from "@tanstack/react-query";
+import { pickDirectory, basename } from "../../shared/api/dialog";
+import { useToast } from "../../shared/ui/Toast";
 import { useSettings } from "./useSettings";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { queryKeys } from "../../shared/api/queries";
 
 export function SettingsTab() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const { dbState, projectName } = useWorkspace();
   const {
     providerSettings,
@@ -32,6 +35,27 @@ export function SettingsTab() {
   const loadProjectMemory = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
   };
+
+  const saveProviderSettings = async () => {
+    if (!providerSettings) return;
+    try {
+      await saveSettings(providerSettings);
+      toast.success("Provider settings saved");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not save settings");
+    }
+  };
+
+  const browseForProjectPath = async () => {
+    const path = await pickDirectory();
+    if (!path) return;
+    setSetupForm((prev) => ({
+      ...prev,
+      projectPath: path,
+      // Default the name from the folder when the user hasn't typed one.
+      projectName: prev.projectName.trim() ? prev.projectName : basename(path),
+    }));
+  };
   
   const refreshAll = (label: string) => {
     queryClient.invalidateQueries();
@@ -47,7 +71,7 @@ export function SettingsTab() {
         <h1>Project, task, and provider controls.</h1>
         <p className="lead">Provider settings store URLs, toggles, and environment variable names only. Raw API keys stay outside RepoDesk settings.</p>
         <div className="button-row">
-          <button className="primary-button" onClick={() => void saveSettings(providerSettings)} disabled={isSavingSettings || isBusy}>Save provider settings</button>
+          <button className="primary-button" onClick={() => void saveProviderSettings()} disabled={isSavingSettings || isBusy}>Save provider settings</button>
           <button className="ghost-button" onClick={() => void refreshAll("Refreshing settings")} disabled={isBusy}>Refresh</button>
         </div>
       </section>
@@ -59,7 +83,12 @@ export function SettingsTab() {
             Current active project: <strong>{projectName}</strong>
           </div>
           <label>Project name<input value={setupForm.projectName} onChange={(event) => setSetupForm({ ...setupForm, projectName: event.target.value })} /></label>
-          <label>Project path<input value={setupForm.projectPath} onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })} placeholder="/Users/mykyta/Documents/projects/repodesk" /></label>
+          <label>Project path
+            <div className="input-with-action">
+              <input value={setupForm.projectPath} onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })} placeholder="/Users/you/code/my-app" />
+              <button type="button" className="ghost-button" onClick={() => void browseForProjectPath()}>Browse…</button>
+            </div>
+          </label>
           <label>Project type<input value={setupForm.projectType} onChange={(event) => setSetupForm({ ...setupForm, projectType: event.target.value })} /></label>
           <label>Main language<input value={setupForm.mainLanguage} onChange={(event) => setSetupForm({ ...setupForm, mainLanguage: event.target.value })} /></label>
           <button className="primary-button full" onClick={() => void addProjectFromSetup().catch(() => undefined)} disabled={isAddingProject || isBusy}>

@@ -10,7 +10,7 @@
   padding: 14px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: rgba(12, 17, 24, 0.72);
+  background: var(--surface-3);
 }
 
 .timeline-step span {

@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
 import { projectAdd, taskNew } from "../../shared/api/workflow";
+import { pickDirectory, basename } from "../../shared/api/dialog";
 import { useWorkflow } from "./useWorkflow";
 import { TaskSwitcher } from "./TaskSwitcher";
 import { useRouting } from "../routing/useRouting";
@@ -36,6 +37,13 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
 
   function getValue(source: unknown, key: string): unknown {
     return asRecord(source)[key];
+  }
+
+  async function browseForPath() {
+    const path = await pickDirectory();
+    if (!path) return;
+    setProjPath(path);
+    if (!projName.trim()) setProjName(basename(path));
   }
 
   async function addProject() {
@@ -79,7 +87,12 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
         {!projectOk ? (
           <div className="form-grid">
             <label>Name<input value={projName} onChange={(e) => setProjName(e.target.value)} placeholder="my-app" /></label>
-            <label>Path<input value={projPath} onChange={(e) => setProjPath(e.target.value)} placeholder="/Users/you/code/my-app" /></label>
+            <label>Path
+              <div className="input-with-action">
+                <input value={projPath} onChange={(e) => setProjPath(e.target.value)} placeholder="/Users/you/code/my-app" />
+                <button type="button" className="ghost-button" onClick={() => void browseForPath()}>Browse…</button>
+              </div>
+            </label>
             <label>Type<input value={projType} onChange={(e) => setProjType(e.target.value)} placeholder="rust" /></label>
             <button className="primary-button" disabled={!projName.trim() || !projPath.trim()} onClick={() => void addProject()}>Connect project</button>
           </div>
@@ -188,8 +201,8 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   function renderBestRoutePanel() {
     const decision = routing?.decision;
     const request = routing?.request;
-    const recommended = decision?.candidates.find((candidate: any) => candidate.provider === decision.recommended_provider);
-    const candidateRows = decision?.candidates.slice(0, 5) ?? [];
+    const recommended = decision?.candidates?.find((candidate: any) => candidate.provider === decision.recommended_provider);
+    const candidateRows = decision?.candidates?.slice(0, 5) ?? [];
 
     return (
       <section className="panel route-panel wide-panel">

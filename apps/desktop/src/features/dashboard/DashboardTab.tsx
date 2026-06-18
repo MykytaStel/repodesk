@@ -58,8 +58,8 @@ export function DashboardTab({
   function renderBestRoutePanel() {
     const decision = routing?.decision;
     const request = routing?.request;
-    const recommended = decision?.candidates.find((candidate: any) => candidate.provider === decision.recommended_provider);
-    const candidateRows = decision?.candidates.slice(0, 5) ?? [];
+    const recommended = decision?.candidates?.find((candidate: any) => candidate.provider === decision.recommended_provider);
+    const candidateRows = decision?.candidates?.slice(0, 5) ?? [];
 
     return (
       <section className="panel route-panel wide-panel">

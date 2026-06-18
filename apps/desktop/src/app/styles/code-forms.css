@@ -46,13 +46,23 @@ select {
   min-height: 40px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: rgba(5, 9, 13, 0.78);
+  background: var(--input-bg);
   color: var(--text);
   padding: 9px 10px;
   outline: none;
 }
 
 textarea { resize: vertical; }
+
+/* An input paired with an inline action button (e.g. a "Browse…" folder picker). */
+.input-with-action {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.input-with-action input { flex: 1; }
+.input-with-action button { white-space: nowrap; min-height: 40px; }
+
 input:focus,
 textarea:focus,
 select:focus { border-color: rgba(94, 224, 174, 0.54); }
@@ -102,3 +112,28 @@ select:focus { border-color: rgba(94, 224, 174, 0.54); }
 }
 .changed-files li { color: var(--text); }
 .changed-files code { margin-right: 6px; }
+
+/* Branch heading: keep long branch names from blowing up the hero. */
+.branch-heading { word-break: break-word; font-size: clamp(22px, 3vw, 34px); }
+
+/* Clickable changed-file buttons + colorized diff view (Git tab). */
+.diff-file-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin: 1px 0;
+}
+.diff-file-btn:hover { background: var(--surface-2); transform: none; box-shadow: none; }
+.diff-file-btn.active { background: var(--surface-2); border-color: var(--border-strong); }
+.diff-file-btn code { background: transparent; border: none; padding: 0; color: var(--text); }
+
+.diff-view { font-size: 12px; line-height: 1.5; }
+.diff-line { white-space: pre-wrap; word-break: break-word; padding: 0 6px; border-radius: 3px; }
+.diff-add { background: rgba(94, 224, 174, 0.14); color: var(--success); }
+.diff-del { background: rgba(255, 127, 147, 0.14); color: var(--danger); }
+.diff-hunk { color: var(--accent-2); font-weight: 700; }
+.diff-meta { color: var(--muted-2); }

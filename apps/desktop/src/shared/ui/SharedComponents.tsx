@@ -88,6 +88,16 @@ export function MetricCard({ label, value, detail, tone = "neutral" }: { label: 
   return <section className={`panel metric ${tone}`}><p className="eyebrow">{label}</p><h2>{value}</h2><p className="muted">{detail}</p></section>;
 }
 
+/** Consistent "nothing here yet" placeholder for empty lists/panels. */
+export function EmptyState({ message, hint }: { message: string; hint?: string }) {
+  return (
+    <div className="empty-state">
+      <p className="empty-state-msg">{message}</p>
+      {hint && <p className="empty-state-hint">{hint}</p>}
+    </div>
+  );
+}
+
 /** Generic inline SVG sparkline over a numeric series (auto-scaled to its max). */
 export function Sparkline({ values, width = 200, height = 40, label }: { values: number[]; width?: number; height?: number; label?: string }) {
   if (values.length < 2) return null;
@@ -134,8 +144,45 @@ export function RouteList({ title, items, tone }: { title: string; items: string
   return <div className={`route-list ${tone}`}><strong>{title}</strong>{items.slice(0, 4).map((item) => <span key={item}>{item}</span>)}</div>;
 }
 
-export function FileGroup({ title, files }: { title: string; files: string[] }) {
-  return <section className="panel"><div className="panel-title-row compact"><h2>{title}</h2><span className="pill">{files.length}</span></div><div className="file-list scroll-area small">{files.length ? files.map((file) => <code key={file}>{file}</code>) : <p className="muted">No files.</p>}</div></section>;
+export function FileGroup({ title, files, onSelect, activeFile }: { title: string; files: string[]; onSelect?: (file: string) => void; activeFile?: string }) {
+  return (
+    <section className="panel">
+      <div className="panel-title-row compact"><h2>{title}</h2><span className="pill">{files.length}</span></div>
+      <div className="file-list scroll-area small">
+        {files.length ? (
+          files.map((file) =>
+            onSelect ? (
+              <button key={file} className={`diff-file-btn ${file === activeFile ? "active" : ""}`} onClick={() => onSelect(file)} title={file}>
+                <code>{file}</code>
+              </button>
+            ) : (
+              <code key={file}>{file}</code>
+            ),
+          )
+        ) : (
+          <p className="muted">No files.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Colorized read-only unified diff (git diff output). */
+export function DiffView({ diff }: { diff: string }) {
+  const lines = diff.split("\n");
+  return (
+    <pre className="diff-view code-panel scrollable">
+      {lines.map((line, i) => {
+        const cls =
+          line.startsWith("+") && !line.startsWith("+++") ? "diff-add"
+          : line.startsWith("-") && !line.startsWith("---") ? "diff-del"
+          : line.startsWith("@@") ? "diff-hunk"
+          : line.startsWith("diff ") || line.startsWith("index ") || line.startsWith("+++") || line.startsWith("---") ? "diff-meta"
+          : "";
+        return <div key={i} className={`diff-line ${cls}`}>{line || " "}</div>;
+      })}
+    </pre>
+  );
 }
 
 export function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {

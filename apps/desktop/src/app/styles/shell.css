@@ -27,42 +27,28 @@
   margin-top: 32px;
 }
 
-.theme-switcher {
-  display: flex;
-  gap: 4px;
-  background: rgba(0, 0, 0, 0.1);
-  padding: 4px;
+.theme-select-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted-2);
+}
+
+.theme-select {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
-}
-
-.theme-switcher button {
-  flex: 1;
-  padding: 6px;
-  font-size: 11px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
   font-weight: 700;
-  min-height: 28px;
-  text-transform: uppercase;
-  letter-spacing: .05em;
-  transition: all 0.2s ease;
 }
-
-.theme-switcher button:hover {
-  color: var(--text);
-  transform: none;
-  box-shadow: none;
-  border-color: transparent;
-}
-
-.theme-switcher button.active {
-  background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-}
+.theme-select:hover { border-color: var(--border-strong); }
 
 .brand {
   display: flex;
@@ -165,6 +151,9 @@
   gap: 16px;
   align-items: stretch;
   margin-bottom: 20px;
+  /* Sit above the content panels so the project-switcher dropdown overlays them. */
+  position: relative;
+  z-index: 20;
 }
 
 .topbar-title,
@@ -243,3 +232,46 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Project switcher (topbar) */
+.project-switcher { position: relative; }
+.project-switcher-trigger { display: flex; align-items: center; gap: 8px; background: transparent; border: none; padding: 0; }
+.project-switcher-trigger:hover { transform: none; box-shadow: none; border-color: transparent; }
+.project-switcher-trigger h2 { margin: 0; }
+.project-switcher-caret { color: var(--muted-2); font-size: 12px; }
+.project-switcher-menu {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 50; min-width: 240px; padding: 6px;
+  border-radius: 10px; border: 1px solid var(--border-strong); background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+.project-switcher-empty { padding: 8px 10px; margin: 0; }
+.project-switcher-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 8px 10px;
+  border-radius: 7px; border: none; background: transparent; color: var(--text); font-weight: 600;
+}
+.project-switcher-item:hover:not(:disabled) { background: var(--surface-2); transform: none; box-shadow: none; }
+.project-switcher-item.active { color: var(--accent); }
+.project-switcher-check { width: 14px; color: var(--accent); }
+.project-switcher-name { flex: 1; }
+.project-switcher-type { font-size: 11px; color: var(--muted-2); text-transform: uppercase; }
+.project-switcher-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+
+/* Command palette (Cmd-K) */
+.cmdk-overlay {
+  position: fixed; inset: 0; z-index: 70; display: flex; justify-content: center; align-items: flex-start;
+  padding-top: 12vh; background: rgba(3, 6, 10, 0.55); backdrop-filter: blur(4px);
+}
+.cmdk-panel {
+  width: min(560px, calc(100vw - 32px)); border-radius: 14px; border: 1px solid var(--border-strong);
+  background: var(--surface); box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5); overflow: hidden;
+}
+.cmdk-input { width: 100%; border: none; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 16px 18px; font-size: 15px; }
+.cmdk-list { max-height: 50vh; overflow-y: auto; padding: 6px; }
+.cmdk-empty { padding: 14px; margin: 0; text-align: center; }
+.cmdk-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; text-align: left;
+  padding: 10px 12px; border-radius: 8px; border: none; background: transparent; color: var(--text); font-weight: 600;
+}
+.cmdk-item.active, .cmdk-item:hover { background: var(--surface-2); transform: none; box-shadow: none; }
+.cmdk-hint { font-size: 12px; color: var(--muted-2); }
+.cmdk-footer { display: flex; gap: 16px; padding: 9px 14px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted-2); }

@@ -1,6 +1,6 @@
 import React from "react";
 import { useState } from "react";
-import { formatNumber, formatCost, statusTone, MetricCard, UsageRows, Sparkline } from "../../shared/ui/SharedComponents";
+import { formatNumber, formatCost, statusTone, MetricCard, UsageRows, Sparkline, EmptyState } from "../../shared/ui/SharedComponents";
 import { useTokens } from "./useTokens";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 
@@ -40,12 +40,17 @@ export function TokensTab({}: TokensTabProps) {
         </div>
       </section>
 
-      <MetricCard label="Input" value={formatNumber(tokens?.totals.total_input_tokens)} detail="Logged input tokens" />
-      <MetricCard label="Output" value={formatNumber(tokens?.totals.total_output_tokens)} detail="Logged output tokens" />
-      <MetricCard label="Entries" value={formatNumber(tokens?.totals.entries_count)} detail="Ledger rows" />
-      <MetricCard label="Estimated cost" value={formatCost(tokens?.cost_estimate.estimated_total_units, tokens?.cost_estimate.currency_label)} detail="Local planning units" />
+      <MetricCard label="Input" value={formatNumber(tokens?.totals?.total_input_tokens)} detail="Logged input tokens" />
+      <MetricCard label="Output" value={formatNumber(tokens?.totals?.total_output_tokens)} detail="Logged output tokens" />
+      <MetricCard label="Entries" value={formatNumber(tokens?.totals?.entries_count)} detail="Ledger rows" />
+      <MetricCard label="Estimated cost" value={formatCost(tokens?.cost_estimate?.estimated_total_units, tokens?.cost_estimate?.currency_label)} detail="Local planning units" />
 
-      {tokens && (
+      {tokens?.totals && (() => {
+        const todayUsed = tokens.totals.today_total_tokens ?? 0;
+        const remaining = tokens.totals.remaining_daily_tokens ?? 0;
+        const hardLimit = todayUsed + remaining;
+        const pctUsed = hardLimit > 0 ? Math.min(100, (todayUsed / hardLimit) * 100) : 0;
+        return (
         <section className="panel wide-panel flex-col gap-lg">
           <div className="panel-title-row flex justify-between items-center">
             <div>
@@ -53,39 +58,28 @@ export function TokensTab({}: TokensTabProps) {
               <h2 className="mt-xs text-xl" style={{ margin: "4px 0 0 0" }}>Remaining Daily Budget</h2>
             </div>
             <span className="pill ok text-base font-bold">
-              {formatNumber(tokens.totals.remaining_daily_tokens)} tokens left
+              {formatNumber(remaining)} tokens left
             </span>
           </div>
-          
+
           <div className="flex-col gap-sm">
             <div className="flex justify-between font-medium text-base">
-              <span>Today's Usage: <strong>{formatNumber(tokens.totals.today_total_tokens)}</strong> tokens</span>
-              <span className="text-muted">Hard Limit: {formatNumber(tokens.totals.today_total_tokens + tokens.totals.remaining_daily_tokens)} tokens</span>
+              <span>Today's Usage: <strong>{formatNumber(todayUsed)}</strong> tokens</span>
+              <span className="text-muted">Hard Limit: {formatNumber(hardLimit)} tokens</span>
             </div>
-            
-            <div className="w-full mt-xs" style={{ 
-              height: "12px", 
-              backgroundColor: "rgba(255, 255, 255, 0.08)", 
-              borderRadius: "6px", 
-              overflow: "hidden",
-              border: "1px solid var(--border)"
-            }}>
-              <div style={{ 
-                width: `${Math.min(100, (tokens.totals.today_total_tokens / (tokens.totals.today_total_tokens + tokens.totals.remaining_daily_tokens || 1)) * 100)}%`, 
-                height: "100%", 
-                background: "linear-gradient(90deg, #10b981 0%, #3b82f6 100%)",
-                transition: "width 0.4s ease-in-out",
-                borderRadius: "6px"
-              }} />
+
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: `${pctUsed}%` }} />
             </div>
-            
+
             <div className="flex justify-between text-sm mt-xs text-muted">
-              <span>{((tokens.totals.today_total_tokens / (tokens.totals.today_total_tokens + tokens.totals.remaining_daily_tokens || 1)) * 100).toFixed(1)}% used</span>
+              <span>{pctUsed.toFixed(1)}% used</span>
               <span>Resetting daily (UTC)</span>
             </div>
           </div>
         </section>
-      )}
+        );
+      })()}
 
       {costTrend.length > 0 && (
         <section className="panel wide-panel">
@@ -135,7 +129,7 @@ export function TokensTab({}: TokensTabProps) {
               </div>
             </div>
           ))}
-          {!tokens?.active_artifacts.length && <p className="muted">No active task artifacts yet.</p>}
+          {(tokens?.active_artifacts ?? []).length === 0 && <EmptyState message="No active task artifacts yet." />}
         </div>
       </section>
 

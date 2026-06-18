@@ -14,6 +14,16 @@ mod git_workspace_commands {
     -> Result<repodesk_core::git_workspace::GitWorkspaceSnapshot, String> {
         Ok(repodesk_core::git_workspace::build_git_workspace_snapshot())
     }
+
+    /// Unified diff for a single changed file in the active project. `cached`
+    /// selects the staged diff; the path is repo-relative and traversal-guarded
+    /// in core.
+    #[tauri::command]
+    pub fn git_file_diff(path: String, cached: bool) -> Result<String, String> {
+        Ok(repodesk_core::git_workspace::active_file_diff(
+            &path, cached,
+        ))
+    }
 }
 
 mod code_workbench_commands {
@@ -217,10 +227,13 @@ pub fn run() {
         // (see tauri.conf.json plugins.updater). The plugin only verifies/installs
         // signed update bundles; it is not triggered automatically on launch.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Native file/folder pickers (used to choose a project directory).
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             code_workbench_commands::read_code_file,
             code_workbench_commands::code_workbench_snapshot,
             git_workspace_commands::git_workspace_snapshot,
+            git_workspace_commands::git_file_diff,
             ai_discovery_commands::ai_discovery_scan,
             commands::desktop_snapshot,
             commands::product_workflow_state,
@@ -251,6 +264,7 @@ pub fn run() {
             commands::routing_decision,
             commands::routing_snapshot,
             commands::get_active_project_config,
+            commands::project_list_configs,
             commands::save_project_ignore_rules,
             commands::get_project_file_token_estimates,
             commands::get_api_env_diagnostic,

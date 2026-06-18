@@ -177,6 +177,14 @@ pub fn get_active_project_config() -> Result<repodesk_core::projects::ProjectCon
     repodesk_core::projects::get_active_project().map_err(ErrorPayload::from)
 }
 
+/// Structured list of connected projects (for the header project switcher).
+#[tauri::command]
+pub fn project_list_configs() -> Result<Vec<repodesk_core::projects::ProjectConfig>, ErrorPayload> {
+    repodesk_core::projects::list_projects()
+        .map(|projects| projects.into_iter().map(|p| p.config).collect())
+        .map_err(ErrorPayload::from)
+}
+
 #[tauri::command]
 pub async fn save_project_ignore_rules(ignore_rules: Vec<String>) -> Result<(), ErrorPayload> {
     let active = repodesk_core::projects::read_active_project().map_err(ErrorPayload::from)?;
