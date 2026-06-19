@@ -302,6 +302,10 @@ pub async fn run_plan(
     };
 
     persist_run(&run).await?;
+    // Record the outcome ledger (the N8 learning signal). Dry runs carry no
+    // signal and are skipped inside `record_run`; a ledger error never fails a
+    // run that already completed.
+    let _ = crate::outcomes::record_run(plan, &run);
     let _ = log_event(LogEventInput {
         module_name: "orchestrator".to_string(),
         level: "info".to_string(),

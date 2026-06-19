@@ -148,6 +148,10 @@ pub enum Command {
         #[command(subcommand)]
         command: OrchestrateCommand,
     },
+    Outcomes {
+        #[command(subcommand)]
+        command: OutcomesCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -566,4 +570,23 @@ pub enum OrchestrateCommand {
     Status,
     /// Show a specific run by id.
     Show { run_id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OutcomesCommand {
+    /// List recent recorded step outcomes (the learning signal), newest first.
+    List {
+        /// Maximum rows to show.
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    /// Aggregate outcomes for the active project per (task kind, provider).
+    Stats,
+    /// Confirm or override a verdict for one outcome row (human-in-the-loop).
+    Confirm {
+        /// The outcome row id (from `outcomes list`).
+        id: i64,
+        /// The verdict: good, bad, or neutral.
+        verdict: String,
+    },
 }

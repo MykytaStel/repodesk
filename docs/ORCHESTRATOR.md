@@ -87,6 +87,26 @@ tokens/cost/status and run totals, and deep-links into the **Memory** tab to rev
 proposals. Tauri commands: `orchestrate_plan`, `orchestrate_run`, `orchestrate_status`,
 `orchestrate_show`.
 
+## Outcome ledger (N8-A — the "Hermes" learning signal)
+
+Every **real** (non-dry-run) step is recorded to a `run_outcomes` SQLite table
+(migration v3) by `outcomes::record_run` after the run is persisted: the routed
+provider/model, token usage, cost, and a **verdict** (`good` for a clean step,
+`bad` for a failure/block, `neutral` for a skipped/manual step). The verdict
+starts provisional (`verdict_source = auto`) and only becomes authoritative when
+a human confirms it (`outcomes confirm <id> <good|bad>` → `verdict_source =
+human`) — the same propose→approve discipline the Memory Brain uses.
+
+`outcomes::outcome_stats(project)` aggregates the ledger into per-(task_kind,
+provider) success rates and average cost. This is **read-only fuel** for the
+adaptive router (N8-B); recording an outcome never changes routing on its own.
+
+```bash
+repodesk outcomes list [--limit N]      # recent step outcomes, newest first
+repodesk outcomes stats                 # success rate + avg cost per kind/provider
+repodesk outcomes confirm <id> <good|bad|neutral>
+```
+
 ## Invariants
 
 - Durable Memory Brain mutations stay human-approved (propose→accept); only in-run handoff is automatic.
@@ -95,6 +115,9 @@ proposals. Tauri commands: `orchestrate_plan`, `orchestrate_run`, `orchestrate_s
 
 ## Deferred
 
-- Concurrent execution of independent steps (currently sequential in topological order).
-- LLM-assisted task decomposition (currently a deterministic analyze→implement→review template;
-  user-authored plans via config are a natural next step).
+- **N8-B adaptive routing**: feed `outcome_stats` back into `routing::scoring` as a learned
+  bias, so the router prefers what has actually worked on *this* project (kept explainable, not
+  a black box; confirmed `human` verdicts weighted above provisional `auto` ones).
+- **N8-C autonomous loop + LLM planning**: a "run task to completion" mode (plan → run → checks
+  → re-plan/retry on failure under budget/safety guardrails) and LLM-assisted decomposition to
+  replace the static analyze→implement→review template.

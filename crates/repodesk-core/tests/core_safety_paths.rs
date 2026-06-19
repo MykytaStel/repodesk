@@ -647,3 +647,166 @@ fn file_diff_returns_unstaged_changes_and_rejects_traversal() {
     assert_eq!(file_diff(&fx.project_path, "/etc/passwd", false), "");
     assert_eq!(file_diff(&fx.project_path, "", false), "");
 }
+
+// --- N8-A: orchestrator outcome ledger (the Hermes learning signal) ----------
+
+/// A plan + run pair with a mix of outcomes: one clean step, one failure, one
+/// skipped step — exercising all three auto-verdicts.
+fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationRun) {
+    let step = |id: &str, kind: TaskKind| SubAgentTask {
+        id: id.to_string(),
+        title: id.to_string(),
+        kind,
+        agent: "ollama".to_string(),
+        provider: "ollama".to_string(),
+        model: Some("llama3".to_string()),
+        thinking: ThinkingLevel::None,
+        instruction: format!("do {id}"),
+        depends_on: Vec::new(),
+        budget_tokens: 500,
+        allow_write: false,
+    };
+    let plan = OrchestrationPlan {
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "mixed".to_string(),
+        steps: vec![
+            step("analyze", TaskKind::Plan),
+            step("implement", TaskKind::Patch),
+            step("review", TaskKind::Review),
+        ],
+    };
+    let result = |id: &str, status: SubAgentStatus, cost: f64| SubAgentResult {
+        task_id: id.to_string(),
+        agent: "ollama".to_string(),
+        provider: "ollama".to_string(),
+        model: "llama3".to_string(),
+        status,
+        output: String::new(),
+        input_tokens: 10,
+        output_tokens: 5,
+        cost_units: cost,
+        captured_proposals: 0,
+        notes: Vec::new(),
+    };
+    let run = OrchestrationRun {
+        run_id: "run-20260619-120000".to_string(),
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "mixed".to_string(),
+        status: RunStatus::Partial,
+        dry_run: false,
+        started_at: "2026-06-19T12:00:00Z".to_string(),
+        finished_at: "2026-06-19T12:01:00Z".to_string(),
+        results: vec![
+            result("analyze", SubAgentStatus::Ok, 0.2),
+            result("implement", SubAgentStatus::Failed, 0.0),
+            result("review", SubAgentStatus::Skipped, 0.0),
+        ],
+        total_input_tokens: 30,
+        total_output_tokens: 15,
+        total_cost_units: 0.2,
+    };
+    (plan, run)
+}
+
+#[test]
+#[serial]
+fn record_run_writes_one_outcome_per_step_with_auto_verdicts() {
+    use repodesk_core::outcomes::{self, Verdict};
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+
+    let (plan, run) = mixed_run("demo", &active_id);
+    let written = outcomes::record_run(&plan, &run).expect("record_run");
+    assert_eq!(written, 3);
+
+    let rows = outcomes::list_outcomes(10).expect("list_outcomes");
+    assert_eq!(rows.len(), 3);
+    // All start provisional (auto, unconfirmed).
+    assert!(
+        rows.iter()
+            .all(|r| r.verdict_source == "auto" && !r.confirmed)
+    );
+
+    let verdict_of = |step: &str| {
+        rows.iter()
+            .find(|r| r.step_id == step)
+            .unwrap_or_else(|| panic!("missing step {step}"))
+            .verdict
+    };
+    assert_eq!(verdict_of("analyze"), Verdict::Good);
+    assert_eq!(verdict_of("implement"), Verdict::Bad);
+    assert_eq!(verdict_of("review"), Verdict::Neutral);
+
+    // The patch step carries its TaskKind from the plan, not the run.
+    let implement = rows.iter().find(|r| r.step_id == "implement").unwrap();
+    assert_eq!(implement.task_kind, "patch");
+}
+
+#[test]
+#[serial]
+fn outcome_stats_aggregate_success_rate_per_kind_and_provider() {
+    use repodesk_core::outcomes;
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+
+    let (plan, run) = mixed_run("demo", &active_id);
+    outcomes::record_run(&plan, &run).expect("record_run");
+
+    let stats = outcomes::outcome_stats("demo").expect("stats");
+    let stat_for = |kind: &str| {
+        stats
+            .iter()
+            .find(|s| s.task_kind == kind && s.provider == "ollama")
+            .unwrap_or_else(|| panic!("missing stat for {kind}"))
+    };
+
+    // plan/ollama: one good, no bad → 100% success.
+    assert_eq!(stat_for("plan").success_rate, Some(1.0));
+    // patch/ollama: one bad, no good → 0% success.
+    assert_eq!(stat_for("patch").success_rate, Some(0.0));
+    // review/ollama: only a neutral row → no scored signal yet.
+    let review = stat_for("review");
+    assert_eq!(review.success_rate, None);
+    assert_eq!(review.neutral, 1);
+}
+
+#[test]
+#[serial]
+fn confirm_outcome_flips_verdict_to_human_and_dry_runs_are_not_recorded() {
+    use repodesk_core::outcomes::{self, Verdict};
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+
+    let (plan, mut run) = mixed_run("demo", &active_id);
+
+    // A dry run carries no learning signal — nothing is recorded.
+    run.dry_run = true;
+    assert_eq!(outcomes::record_run(&plan, &run).expect("dry"), 0);
+    assert!(outcomes::list_outcomes(10).expect("list").is_empty());
+
+    // The real run records, then a human overrides the failed step to "good".
+    run.dry_run = false;
+    outcomes::record_run(&plan, &run).expect("record");
+    let implement_id = outcomes::list_outcomes(10)
+        .expect("list")
+        .into_iter()
+        .find(|r| r.step_id == "implement")
+        .expect("implement row")
+        .id;
+
+    outcomes::confirm_outcome(implement_id, Verdict::Good).expect("confirm");
+
+    let updated = outcomes::list_outcomes(10)
+        .expect("list")
+        .into_iter()
+        .find(|r| r.id == implement_id)
+        .expect("row still present");
+    assert_eq!(updated.verdict, Verdict::Good);
+    assert_eq!(updated.verdict_source, "human");
+    assert!(updated.confirmed);
+
+    // Confirming an unknown id is an error, not a silent no-op.
+    assert!(outcomes::confirm_outcome(999_999, Verdict::Bad).is_err());
+}

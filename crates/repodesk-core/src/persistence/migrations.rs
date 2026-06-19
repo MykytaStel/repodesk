@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 /// The schema version the current binary expects.
-pub const TARGET_VERSION: i64 = 2;
+pub const TARGET_VERSION: i64 = 3;
 
 fn db_err(context: &str, e: impl std::fmt::Display) -> RepoDeskError {
     RepoDeskError::Database(format!("{context}: {e}"))
@@ -36,6 +36,11 @@ pub fn run_migrations(conn: &Connection) -> RepoDeskResult<()> {
     if current < 2 {
         migrate_to_v2(conn)?;
         set_version(conn, 2)?;
+    }
+
+    if current < 3 {
+        migrate_to_v3(conn)?;
+        set_version(conn, 3)?;
     }
 
     Ok(())
@@ -149,6 +154,47 @@ fn migrate_to_v2(conn: &Connection) -> RepoDeskResult<()> {
     Ok(())
 }
 
+/// Migration 3 — the orchestrator outcome ledger (the N8 "Hermes" learning
+/// signal). One row per executed sub-agent step records what was routed where,
+/// what it cost, and how it turned out. The auto-verdict is provisional until a
+/// human confirms it (`verdict_source` flips to `human`); this is the same
+/// propose→approve discipline the Memory Brain uses. The adaptive router reads
+/// the aggregate of these rows; nothing here mutates routing on its own.
+fn migrate_to_v3(conn: &Connection) -> RepoDeskResult<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS run_outcomes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            project TEXT NOT NULL,
+            task_id TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            step_id TEXT NOT NULL,
+            task_kind TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cost_units REAL NOT NULL DEFAULT 0.0,
+            verdict TEXT NOT NULL DEFAULT 'neutral',
+            verdict_source TEXT NOT NULL DEFAULT 'auto',
+            confirmed INTEGER NOT NULL DEFAULT 0,
+            notes TEXT NOT NULL DEFAULT ''
+        )",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create run_outcomes table", e))?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_outcomes_project_kind_provider
+            ON run_outcomes (project, task_kind, provider)",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create idx_outcomes_project_kind_provider", e))?;
+
+    Ok(())
+}
+
 fn column_exists(conn: &Connection, table: &str, column: &str) -> RepoDeskResult<bool> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -245,5 +291,11 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM action_runs", [], |row| row.get(0))
             .unwrap();
         assert_eq!(action_count, 0);
+
+        // v3: run_outcomes table exists.
+        let outcome_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM run_outcomes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(outcome_count, 0);
     }
 }
