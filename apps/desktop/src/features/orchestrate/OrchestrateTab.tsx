@@ -89,7 +89,7 @@ function RunPanel({
         Run {run.run_id} — {run.status}
         {run.dry_run ? " (dry run)" : ""}
       </p>
-      <div className="content-grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", marginBottom: 12 }}>
+      <div className="card-row" style={{ marginBottom: 12 }}>
         <MetricCard label="Input tokens" value={formatNumber(run.total_input_tokens)} detail="across sub-agents" />
         <MetricCard label="Output tokens" value={formatNumber(run.total_output_tokens)} detail="across sub-agents" />
         <MetricCard label="Cost" value={formatCost(run.total_cost_units, "units")} detail={run.dry_run ? "projected" : "actual"} />

@@ -40,10 +40,12 @@ export function TokensTab({}: TokensTabProps) {
         </div>
       </section>
 
-      <MetricCard label="Input" value={formatNumber(tokens?.totals?.total_input_tokens)} detail="Logged input tokens" />
-      <MetricCard label="Output" value={formatNumber(tokens?.totals?.total_output_tokens)} detail="Logged output tokens" />
-      <MetricCard label="Entries" value={formatNumber(tokens?.totals?.entries_count)} detail="Ledger rows" />
-      <MetricCard label="Estimated cost" value={formatCost(tokens?.cost_estimate?.estimated_total_units, tokens?.cost_estimate?.currency_label)} detail="Local planning units" />
+      <div className="card-row">
+        <MetricCard label="Input" value={formatNumber(tokens?.totals?.total_input_tokens)} detail="Logged input tokens" />
+        <MetricCard label="Output" value={formatNumber(tokens?.totals?.total_output_tokens)} detail="Logged output tokens" />
+        <MetricCard label="Entries" value={formatNumber(tokens?.totals?.entries_count)} detail="Ledger rows" />
+        <MetricCard label="Estimated cost" value={formatCost(tokens?.cost_estimate?.estimated_total_units, tokens?.cost_estimate?.currency_label)} detail="Local planning units" />
+      </div>
 
       {tokens?.totals && (() => {
         const todayUsed = tokens.totals.today_total_tokens ?? 0;

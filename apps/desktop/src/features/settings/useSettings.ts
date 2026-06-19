@@ -21,6 +21,10 @@ interface ProviderSettings {
   openai_api_key_env_var: string;
   gemini_api_enabled: boolean;
   gemini_api_key_env_var: string;
+  anthropic_api_enabled: boolean;
+  anthropic_api_key: string;
+  openai_api_key: string;
+  gemini_api_key: string;
   allow_paid_agents: boolean;
   codex_quota_status: string;
   preferred_patch_provider: string;

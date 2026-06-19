@@ -192,6 +192,26 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
             "provider.gemini_api_key_env_var",
             &defaults.gemini_api_key_env_var,
         )?,
+        anthropic_api_enabled: get_bool(
+            &connection,
+            "provider.anthropic_api_enabled",
+            defaults.anthropic_api_enabled,
+        )?,
+        anthropic_api_key: get_string(
+            &connection,
+            "provider.anthropic_api_key",
+            &defaults.anthropic_api_key,
+        )?,
+        openai_api_key: get_string(
+            &connection,
+            "provider.openai_api_key",
+            &defaults.openai_api_key,
+        )?,
+        gemini_api_key: get_string(
+            &connection,
+            "provider.gemini_api_key",
+            &defaults.gemini_api_key,
+        )?,
         allow_paid_agents: get_bool(
             &connection,
             "provider.allow_paid_agents",
@@ -295,6 +315,26 @@ pub fn save_provider_settings(settings: ProviderSettings) -> Result<ProviderSett
     )?;
     set_setting(
         &connection,
+        "provider.anthropic_api_enabled",
+        &settings.anthropic_api_enabled.to_string(),
+    )?;
+    set_setting(
+        &connection,
+        "provider.anthropic_api_key",
+        &settings.anthropic_api_key,
+    )?;
+    set_setting(
+        &connection,
+        "provider.openai_api_key",
+        &settings.openai_api_key,
+    )?;
+    set_setting(
+        &connection,
+        "provider.gemini_api_key",
+        &settings.gemini_api_key,
+    )?;
+    set_setting(
+        &connection,
         "provider.allow_paid_agents",
         &settings.allow_paid_agents.to_string(),
     )?;
@@ -331,6 +371,9 @@ pub fn validate_provider_settings(settings: &ProviderSettings) -> Result<(), Str
     validate_safe_text("Ollama model", &settings.ollama_model, 80)?;
     validate_env_var("OpenAI API key env var", &settings.openai_api_key_env_var)?;
     validate_env_var("Gemini API key env var", &settings.gemini_api_key_env_var)?;
+    validate_api_key("Anthropic API key", &settings.anthropic_api_key)?;
+    validate_api_key("OpenAI API key", &settings.openai_api_key)?;
+    validate_api_key("Gemini API key", &settings.gemini_api_key)?;
     validate_codex_quota_status(&settings.codex_quota_status)?;
     validate_safe_text("Notes", &settings.notes, 1_000)?;
 
@@ -421,6 +464,24 @@ fn validate_env_var(label: &str, value: &str) -> Result<(), String> {
         ));
     }
 
+    Ok(())
+}
+
+/// A pasted API key may legitimately look like a secret (that's the point), so
+/// it skips the secret-rejecting checks `validate_safe_text`/`validate_env_var`
+/// apply. It only guards length and control characters. Empty is allowed
+/// (key not configured, or "keep existing" handled before save).
+fn validate_api_key(label: &str, value: &str) -> Result<(), String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    if trimmed.len() > 400 {
+        return Err(format!("{label} is too long"));
+    }
+    if trimmed.chars().any(|ch| ch.is_control()) {
+        return Err(format!("{label} must not contain control characters"));
+    }
     Ok(())
 }
 

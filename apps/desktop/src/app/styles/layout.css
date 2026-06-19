@@ -1,20 +1,48 @@
+/* The page is a centered single column of full-width panels — sparse tabs read
+   as intentional (balanced margins) instead of clustering to the left. Card
+   rows and two-pane work surfaces opt into their own grids below. */
 .content-grid {
   width: 100%;
-  max-width: var(--content-max);
+  max-width: 1080px;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+/* `wide-panel` is the default here (full column width); kept as a no-op so
+   existing markup needs no churn. */
+.wide-panel { width: 100%; }
+
+/* A flowing row of cards inside the column (dashboard metrics, settings setup). */
+.card-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--space-4);
   align-items: start;
 }
 
-.dashboard-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.wide-panel { grid-column: 1 / -1; }
-.code-grid {
-  grid-template-columns: minmax(280px, .82fr) minmax(0, 1.38fr);
+/* Two-pane work surfaces (Git, Code): a narrow list column + a wide canvas.
+   These get extra width since diffs/previews benefit from it. */
+.two-column-grid {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.95fr) minmax(0, 1.7fr);
+  gap: var(--space-4);
+  align-items: start;
+  max-width: 1320px;
 }
-.file-browser-panel { grid-column: span 1; }
-.code-preview-panel { grid-column: span 1; }
-.provider-panel { grid-column: span 2; }
+.left-column,
+.right-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
 
 .panel,
 .hero-panel {
@@ -24,10 +52,10 @@
 }
 
 .hero-panel {
-  min-height: 220px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
+  gap: var(--space-2);
 }
 
 .eyebrow {
@@ -39,26 +67,28 @@
   font-weight: 900;
 }
 
-h1, h2, h3, p { overflow-wrap: anywhere; }
+/* Headings wrap at word boundaries (never mid-word) and stay balanced. */
+h1, h2, h3 { overflow-wrap: normal; word-break: normal; text-wrap: balance; }
+p { overflow-wrap: break-word; }
 h1 {
-  max-width: 920px;
+  max-width: 40ch;
   margin: 0;
-  font-size: clamp(30px, 4vw, 48px);
-  line-height: 1.02;
-  letter-spacing: 0;
+  font-size: clamp(22px, 2.2vw, 30px);
+  line-height: 1.15;
+  letter-spacing: -0.01em;
 }
 h2 {
   margin: 0;
-  font-size: 23px;
-  line-height: 1.16;
-  letter-spacing: 0;
+  font-size: 19px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
 }
-h3 { margin: 0; font-size: 17px; }
+h3 { margin: 0; font-size: 16px; }
 .lead {
-  max-width: 780px;
-  margin: var(--space-3) 0 0;
+  max-width: 64ch;
+  margin: var(--space-1) 0 0;
   color: var(--muted);
-  line-height: 1.55;
+  line-height: 1.5;
 }
 .muted,
 .panel p {

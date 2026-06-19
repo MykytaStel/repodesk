@@ -25,6 +25,17 @@ fn orchestrator_settings() -> ProviderSettings {
     if let Ok(saved) = crate::store::read_provider_settings() {
         settings.ollama.base_url = Some(saved.ollama_url);
         settings.ollama.default_model = Some(saved.ollama_model);
+        settings.lm_studio.base_url = Some(saved.lm_studio_url);
+        // Keys pasted into the app take precedence over environment variables.
+        if !saved.anthropic_api_key.trim().is_empty() {
+            settings.anthropic.api_key = Some(saved.anthropic_api_key);
+        }
+        if !saved.openai_api_key.trim().is_empty() {
+            settings.openai.api_key = Some(saved.openai_api_key);
+        }
+        if !saved.gemini_api_key.trim().is_empty() {
+            settings.gemini.api_key = Some(saved.gemini_api_key);
+        }
     }
     settings
 }

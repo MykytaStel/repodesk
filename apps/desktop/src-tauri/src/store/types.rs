@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
 
+/// Placeholder the read API substitutes for a stored key so the real secret is
+/// never sent to the frontend. On save, a field still equal to this mask means
+/// "keep the existing stored key" (the user didn't retype it).
+pub const STORED_KEY_MASK: &str = "••••••••";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DbStatus {
     pub path: String,
@@ -27,6 +32,13 @@ pub struct ProviderSettings {
     pub openai_api_key_env_var: String,
     pub gemini_api_enabled: bool,
     pub gemini_api_key_env_var: String,
+    pub anthropic_api_enabled: bool,
+    /// API keys pasted into the app and stored in the local SQLite DB
+    /// (`~/.repodesk/repodesk.db`). Used in preference to the matching env var
+    /// when non-empty. Never returned raw to the frontend (masked on read).
+    pub anthropic_api_key: String,
+    pub openai_api_key: String,
+    pub gemini_api_key: String,
     pub allow_paid_agents: bool,
     pub codex_quota_status: String,
     pub preferred_patch_provider: String,
@@ -54,6 +66,10 @@ impl Default for ProviderSettings {
             openai_api_key_env_var: "OPENAI_API_KEY".to_string(),
             gemini_api_enabled: false,
             gemini_api_key_env_var: "GEMINI_API_KEY".to_string(),
+            anthropic_api_enabled: false,
+            anthropic_api_key: String::new(),
+            openai_api_key: String::new(),
+            gemini_api_key: String::new(),
             allow_paid_agents: true,
             codex_quota_status: "unknown".to_string(),
             preferred_patch_provider: "codex".to_string(),

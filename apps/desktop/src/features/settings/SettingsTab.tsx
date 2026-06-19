@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { statusTone, getString, Toggle } from "../../shared/ui/SharedComponents";
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -19,7 +20,6 @@ export function SettingsTab() {
     setupForm,
     setSetupForm,
     setupNotice,
-    taskNotice,
     memoryAppendInput,
     setMemoryAppendInput,
     saveSettings,
@@ -28,12 +28,48 @@ export function SettingsTab() {
     isAppendingMemory,
     addProjectFromSetup,
     isAddingProject,
-    createTaskFromSetup,
-    isCreatingTask,
   } = useSettings();
+
+  const [showConnect, setShowConnect] = useState(false);
+  const [keyDraft, setKeyDraft] = useState({ anthropic: "", openai: "", gemini: "" });
 
   const loadProjectMemory = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
+  };
+
+  const saveApiKeys = async () => {
+    if (!providerSettings) return;
+    try {
+      await saveSettings({
+        ...providerSettings,
+        // A blank field keeps the existing key (backend preserves the masked value).
+        anthropic_api_key: keyDraft.anthropic.trim() || providerSettings.anthropic_api_key,
+        openai_api_key: keyDraft.openai.trim() || providerSettings.openai_api_key,
+        gemini_api_key: keyDraft.gemini.trim() || providerSettings.gemini_api_key,
+        // Pasting a key enables the matching API provider for routing + discovery.
+        anthropic_api_enabled: keyDraft.anthropic.trim() ? true : providerSettings.anthropic_api_enabled,
+        openai_api_enabled: keyDraft.openai.trim() ? true : providerSettings.openai_api_enabled,
+        gemini_api_enabled: keyDraft.gemini.trim() ? true : providerSettings.gemini_api_enabled,
+      });
+      setKeyDraft({ anthropic: "", openai: "", gemini: "" });
+      queryClient.invalidateQueries({ queryKey: queryKeys.routing.apiEnv });
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.health });
+      toast.success("API keys saved locally");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not save API keys");
+    }
+  };
+
+  const removeKey = async (field: "anthropic_api_key" | "openai_api_key" | "gemini_api_key") => {
+    if (!providerSettings) return;
+    try {
+      await saveSettings({ ...providerSettings, [field]: "" });
+      queryClient.invalidateQueries({ queryKey: queryKeys.routing.apiEnv });
+      queryClient.invalidateQueries({ queryKey: queryKeys.models.health });
+      toast.success("Key removed");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not remove key");
+    }
   };
 
   const saveProviderSettings = async () => {
@@ -56,10 +92,6 @@ export function SettingsTab() {
       projectName: prev.projectName.trim() ? prev.projectName : basename(path),
     }));
   };
-  
-  const refreshAll = (label: string) => {
-    queryClient.invalidateQueries();
-  };
 
   if (!providerSettings) {
     return <div className="content-grid"><section className="panel"><p>Loading settings...</p></section></div>;
@@ -68,49 +100,100 @@ export function SettingsTab() {
     <div className="content-grid">
       <section className="hero-panel wide-panel">
         <p className="eyebrow">Settings</p>
-        <h1>Project, task, and provider controls.</h1>
-        <p className="lead">Provider settings store URLs, toggles, and environment variable names only. Raw API keys stay outside RepoDesk settings.</p>
-        <div className="button-row">
-          <button className="primary-button" onClick={() => void saveProviderSettings()} disabled={isSavingSettings || isBusy}>Save provider settings</button>
-          <button className="ghost-button" onClick={() => void refreshAll("Refreshing settings")} disabled={isBusy}>Refresh</button>
-        </div>
+        <h1>API keys, providers, and workspace.</h1>
+        <p className="lead">Paste your own Anthropic and OpenAI (Codex) keys below — they're stored locally in <code>~/.repodesk</code>, never committed, never sent to repos or context packs. Local engines (Ollama, LM Studio) need no key.</p>
       </section>
 
-      <section className="panel">
-        <p className="eyebrow">Connect project</p><h2>Active workspace</h2>
-        <div className="form-stack">
-          <div className="notice" style={{ padding: "10px 12px" }}>
-            Current active project: <strong>{projectName}</strong>
+      {/* API keys — the thing most people come here for, so it's first. */}
+      <section className="panel wide-panel flex-col gap-lg">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">API keys</p>
+            <h2>Bring your own keys</h2>
           </div>
-          <label>Project name<input value={setupForm.projectName} onChange={(event) => setSetupForm({ ...setupForm, projectName: event.target.value })} /></label>
-          <label>Project path
-            <div className="input-with-action">
-              <input value={setupForm.projectPath} onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })} placeholder="/Users/you/code/my-app" />
-              <button type="button" className="ghost-button" onClick={() => void browseForProjectPath()}>Browse…</button>
-            </div>
-          </label>
-          <label>Project type<input value={setupForm.projectType} onChange={(event) => setSetupForm({ ...setupForm, projectType: event.target.value })} /></label>
-          <label>Main language<input value={setupForm.mainLanguage} onChange={(event) => setSetupForm({ ...setupForm, mainLanguage: event.target.value })} /></label>
-          <button className="primary-button full" onClick={() => void addProjectFromSetup().catch(() => undefined)} disabled={isAddingProject || isBusy}>
-            {isAddingProject ? "Adding and activating..." : "Add and activate project"}
-          </button>
-          {setupNotice && <div className={`notice ${setupNotice.tone}`}>{setupNotice.message}</div>}
+          <span className={`pill ${statusTone(Boolean(dbState))}`}>DB {getString(dbState, "ok", "-")}</span>
         </div>
+        <div className="form-stack">
+          <KeyField
+            label="Anthropic (Claude)"
+            hint="Powers Claude routing. Starts with sk-ant-…"
+            placeholder="sk-ant-…"
+            stored={Boolean(providerSettings.anthropic_api_key)}
+            fromEnv={Boolean(apiEnvDiagnostic?.anthropic_api_key_set) && !providerSettings.anthropic_api_key}
+            value={keyDraft.anthropic}
+            onChange={(v) => setKeyDraft((p) => ({ ...p, anthropic: v }))}
+            onRemove={() => void removeKey("anthropic_api_key")}
+          />
+          <KeyField
+            label="OpenAI (Codex / ChatGPT)"
+            hint="Powers Codex/GPT routing. Starts with sk-…"
+            placeholder="sk-…"
+            stored={Boolean(providerSettings.openai_api_key)}
+            fromEnv={Boolean(apiEnvDiagnostic?.openai_api_key_set) && !providerSettings.openai_api_key}
+            value={keyDraft.openai}
+            onChange={(v) => setKeyDraft((p) => ({ ...p, openai: v }))}
+            onRemove={() => void removeKey("openai_api_key")}
+          />
+          <KeyField
+            label="Google (Gemini)"
+            hint="Optional. Powers Gemini routing."
+            placeholder="AIza…"
+            stored={Boolean(providerSettings.gemini_api_key)}
+            fromEnv={Boolean(apiEnvDiagnostic?.gemini_api_key_set) && !providerSettings.gemini_api_key}
+            value={keyDraft.gemini}
+            onChange={(v) => setKeyDraft((p) => ({ ...p, gemini: v }))}
+            onRemove={() => void removeKey("gemini_api_key")}
+          />
+          <div className="button-row">
+            <button className="primary-button" onClick={() => void saveApiKeys()} disabled={isSavingSettings || isBusy}>
+              {isSavingSettings ? "Saving…" : "Save API keys"}
+            </button>
+            <span className="muted text-sm">Leave a field blank to keep its saved key. Keys are masked after saving.</span>
+          </div>
+        </div>
+        <details>
+          <summary className="muted text-sm" style={{ cursor: "pointer" }}>Prefer environment variables instead?</summary>
+          <p className="text-sm text-muted mt-sm">
+            You can still export <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, or{" "}
+            <code>GEMINI_API_KEY</code> in your shell before launching RepoDesk. An in-app key always
+            takes precedence over the environment.
+          </p>
+        </details>
       </section>
 
-      <section className="panel">
-        <p className="eyebrow">Task</p><h2>Create active task</h2>
-        <div className="form-stack">
-          <label>Task title<input value={setupForm.taskTitle} onChange={(event) => setSetupForm({ ...setupForm, taskTitle: event.target.value })} /></label>
-          <button className="primary-button full" onClick={() => void createTaskFromSetup().catch(() => undefined)} disabled={isCreatingTask || isBusy}>
-            {isCreatingTask ? "Creating task..." : "Create task"}
+      {/* Connect project — collapsed by default; usually a one-time action. */}
+      <section className="panel wide-panel">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Workspace</p>
+            <h2>Active project: {projectName}</h2>
+          </div>
+          <button className="ghost-button" onClick={() => setShowConnect((v) => !v)}>
+            {showConnect ? "Close" : "+ Connect a project"}
           </button>
-          {taskNotice && <div className={`notice ${taskNotice.tone}`}>{taskNotice.message}</div>}
         </div>
+        {showConnect && (
+          <div className="form-stack" style={{ marginTop: "var(--space-4)" }}>
+            <label>Project name<input value={setupForm.projectName} onChange={(event) => setSetupForm({ ...setupForm, projectName: event.target.value })} /></label>
+            <label>Project path
+              <div className="input-with-action">
+                <input value={setupForm.projectPath} onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })} placeholder="/Users/you/code/my-app" />
+                <button type="button" className="ghost-button" onClick={() => void browseForProjectPath()}>Browse…</button>
+              </div>
+            </label>
+            <label>Project type<input value={setupForm.projectType} onChange={(event) => setSetupForm({ ...setupForm, projectType: event.target.value })} /></label>
+            <label>Main language<input value={setupForm.mainLanguage} onChange={(event) => setSetupForm({ ...setupForm, mainLanguage: event.target.value })} /></label>
+            <button className="primary-button full" onClick={() => void addProjectFromSetup().catch(() => undefined)} disabled={isAddingProject || isBusy}>
+              {isAddingProject ? "Adding and activating..." : "Add and activate project"}
+            </button>
+            {setupNotice && <div className={`notice ${setupNotice.tone}`}>{setupNotice.message}</div>}
+            <p className="muted text-sm">Create and switch tasks from the <strong>Workflow</strong> tab.</p>
+          </div>
+        )}
       </section>
 
       <section className="panel wide-panel">
-        <div className="panel-title-row"><div><p className="eyebrow">Provider settings</p><h2>Runtime configuration</h2></div><span className={`pill ${statusTone(Boolean(dbState))}`}>DB {getString(dbState, "ok", "-")}</span></div>
+        <div className="panel-title-row"><div><p className="eyebrow">Provider settings</p><h2>Runtime configuration</h2></div><button className="ghost-button" onClick={() => void saveProviderSettings()} disabled={isSavingSettings || isBusy}>Save changes</button></div>
         <div className="settings-grid">
           <Toggle label="Ollama enabled" checked={providerSettings.ollama_enabled} onChange={(value) => saveSettings({ ...providerSettings, ollama_enabled: value })} />
           <Toggle label="LM Studio enabled" checked={providerSettings.lm_studio_enabled} onChange={(value) => saveSettings({ ...providerSettings, lm_studio_enabled: value })} />
@@ -183,74 +266,51 @@ export function SettingsTab() {
         </div>
       </section>
 
-      <section className="panel wide-panel flex-col gap-lg">
-        <div className="panel-title-row">
-          <div>
-            <p className="eyebrow m-0">Security & API Credentials</p>
-            <h2 className="mt-xs">Secure API Environment Diagnostic</h2>
-          </div>
-        </div>
-        <p className="muted">
-          RepoDesk detects system environment variables to securely sign API requests without storing plaintext credentials in local files or databases.
-        </p>
-
-        <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))" }}>
-          <div className="card flex justify-between items-center p-md">
-            <div className="flex-col">
-              <strong className="text-base mb-xs" style={{ display: "block" }}>OPENAI_API_KEY</strong>
-              <span className="text-sm text-muted">For OpenAI GPT models and tools</span>
-            </div>
-            <span className={`pill flex items-center gap-xs ${apiEnvDiagnostic?.openai_api_key_set ? "ok" : "warn"}`}>
-              {apiEnvDiagnostic?.openai_api_key_set ? "🛡️ Securely Loaded" : "⚠️ Missing"}
-            </span>
-          </div>
-
-          <div className="card flex justify-between items-center p-md">
-            <div className="flex-col">
-              <strong className="text-base mb-xs" style={{ display: "block" }}>GEMINI_API_KEY</strong>
-              <span className="text-sm text-muted">For Gemini reasoning and chat models</span>
-            </div>
-            <span className={`pill flex items-center gap-xs ${apiEnvDiagnostic?.gemini_api_key_set ? "ok" : "warn"}`}>
-              {apiEnvDiagnostic?.gemini_api_key_set ? "🛡️ Securely Loaded" : "⚠️ Missing"}
-            </span>
-          </div>
-
-          <div className="card flex justify-between items-center p-md">
-            <div className="flex-col">
-              <strong className="text-base mb-xs" style={{ display: "block" }}>ANTHROPIC_API_KEY</strong>
-              <span className="text-sm text-muted">For Anthropic Claude models and agents</span>
-            </div>
-            <span className={`pill flex items-center gap-xs ${apiEnvDiagnostic?.anthropic_api_key_set ? "ok" : "warn"}`}>
-              {apiEnvDiagnostic?.anthropic_api_key_set ? "🛡️ Securely Loaded" : "⚠️ Missing"}
-            </span>
-          </div>
-        </div>
-
-        <div className="p-md mt-sm" style={{
-          borderRadius: "8px",
-          backgroundColor: "rgba(255, 255, 255, 0.04)",
-          borderLeft: "4px solid var(--border)"
-        }}>
-          <div className="text-base font-bold mb-xs">💡 How to configure environment variables permanently on macOS:</div>
-          <p className="text-sm text-muted m-0">
-            To ensure RepoDesk and your terminal sessions can securely load credentials, add them to your shell config file (typically <code>~/.zshrc</code>). Run the following commands in your terminal:
-          </p>
-          <pre style={{
-            backgroundColor: "rgba(0, 0, 0, 0.3)",
-            padding: "10px",
-            borderRadius: "4px",
-            fontSize: "12px",
-            margin: "10px 0 0 0",
-            fontFamily: "monospace",
-            overflowX: "auto"
-          }}>
-            {`echo 'export OPENAI_API_KEY="your-openai-key"' >> ~/.zshrc
-echo 'export GEMINI_API_KEY="your-gemini-key"' >> ~/.zshrc
-echo 'export ANTHROPIC_API_KEY="your-anthropic-key"' >> ~/.zshrc
-source ~/.zshrc`}
-          </pre>
-        </div>
-      </section>
     </div>
+  );
+}
+
+/** One labelled, masked API-key input with a status pill and a remove action. */
+function KeyField({
+  label,
+  hint,
+  placeholder,
+  stored,
+  fromEnv,
+  value,
+  onChange,
+  onRemove,
+}: {
+  label: string;
+  hint: string;
+  placeholder: string;
+  stored: boolean;
+  fromEnv: boolean;
+  value: string;
+  onChange: (value: string) => void;
+  onRemove: () => void;
+}) {
+  const status = stored ? { tone: "ok", text: "Saved in app" } : fromEnv ? { tone: "neutral", text: "From environment" } : { tone: "warn", text: "Not configured" };
+  return (
+    <label>
+      <span className="flex items-center gap-sm" style={{ marginBottom: 4 }}>
+        <strong>{label}</strong>
+        <span className={`pill ${status.tone}`}>{status.text}</span>
+      </span>
+      <div className="input-with-action">
+        <input
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          placeholder={stored ? "•••••••• saved — leave blank to keep" : placeholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {stored && (
+          <button type="button" className="ghost-button" onClick={onRemove}>Remove</button>
+        )}
+      </div>
+      <span className="text-sm text-muted">{hint}</span>
+    </label>
   );
 }

@@ -4,7 +4,7 @@ import type { MemoryStats } from "./utils";
 
 export function MemoryMetrics({ stats }: { stats: MemoryStats }) {
   return (
-    <>
+    <div className="card-row">
       <BrainMetric label="Active entries" value={formatNumber(stats.activeCount)} detail="in the brain" tone="ok" />
       <BrainMetric label="Pinned" value={formatNumber(stats.pinnedCount)} detail="always in context" tone="neutral" />
       <BrainMetric
@@ -19,7 +19,7 @@ export function MemoryMetrics({ stats }: { stats: MemoryStats }) {
         detail="need resolution"
         tone={stats.conflictCount > 0 ? "danger" : "neutral"}
       />
-    </>
+    </div>
   );
 }
 

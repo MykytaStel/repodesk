@@ -4,7 +4,7 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   --sidebar-w: 248px;
-  --content-max: 1320px;
+  --content-max: 1480px;
 
   /* Spacing scale — one rhythm for the whole app (comfortable density). */
   --space-1: 4px;

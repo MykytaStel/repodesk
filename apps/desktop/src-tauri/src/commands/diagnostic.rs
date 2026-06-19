@@ -141,15 +141,17 @@ pub async fn desktop_snapshot() -> serde_json::Value {
 
 #[tauri::command]
 pub fn get_api_env_diagnostic() -> ApiEnvDiagnostic {
+    let env_set = |name: &str| {
+        std::env::var(name)
+            .map(|val| !val.trim().is_empty())
+            .unwrap_or(false)
+    };
+    // A key counts as configured if it's stored in-app OR present in the env.
+    let saved = crate::store::read_provider_settings().unwrap_or_default();
+    let stored = |key: &str| !key.trim().is_empty();
     ApiEnvDiagnostic {
-        openai_api_key_set: std::env::var("OPENAI_API_KEY")
-            .map(|val| !val.trim().is_empty())
-            .unwrap_or(false),
-        gemini_api_key_set: std::env::var("GEMINI_API_KEY")
-            .map(|val| !val.trim().is_empty())
-            .unwrap_or(false),
-        anthropic_api_key_set: std::env::var("ANTHROPIC_API_KEY")
-            .map(|val| !val.trim().is_empty())
-            .unwrap_or(false),
+        openai_api_key_set: stored(&saved.openai_api_key) || env_set("OPENAI_API_KEY"),
+        gemini_api_key_set: stored(&saved.gemini_api_key) || env_set("GEMINI_API_KEY"),
+        anthropic_api_key_set: stored(&saved.anthropic_api_key) || env_set("ANTHROPIC_API_KEY"),
     }
 }

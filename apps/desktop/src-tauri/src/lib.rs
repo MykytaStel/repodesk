@@ -375,7 +375,7 @@ mod tests {
 
         let snapshot = commands::model_health_from_settings(&settings);
 
-        assert_eq!(snapshot.providers.len(), 6);
+        assert_eq!(snapshot.providers.len(), 7);
         assert!(
             snapshot
                 .providers

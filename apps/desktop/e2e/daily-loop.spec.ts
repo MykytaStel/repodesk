@@ -62,7 +62,8 @@ test.describe("daily loop (onboarded)", () => {
   test("project switcher lists connected projects", async ({ page }) => {
     await page.getByRole("button", { name: /RepoDesk/ }).first().click();
     await expect(page.getByRole("button", { name: /my-api/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Connect project/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Open from folder/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Connect with details/ })).toBeVisible();
   });
 
   test("frontend actually issued the daily-loop commands through IPC", async ({ page }) => {

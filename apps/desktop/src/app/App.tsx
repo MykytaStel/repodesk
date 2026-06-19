@@ -4,6 +4,7 @@ import "./App.css";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import { CommandPalette, type Command } from "../shared/ui/CommandPalette";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { ThemeMenu } from "./ThemeMenu";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { useGit } from "../features/git/useGit";
 import { useModels } from "../features/models/useModels";
@@ -14,7 +15,7 @@ import type { TabId, Theme } from "../shared/types/api";
 import { formatNumber } from "../shared/utils/helpers";
 import { StatusBox } from "./StatusBox";
 import { APP_TABS, TAB_GROUP_ORDER, renderAppTab } from "./tabs";
-import { STORAGE_KEYS, THEME_OPTIONS } from "./constants";
+import { STORAGE_KEYS } from "./constants";
 import { readStoredActiveTab, readStoredEconomyMode, readStoredTheme } from "./storage";
 
 export default function App() {
@@ -134,17 +135,7 @@ export default function App() {
           </nav>
         </div>
         <div className="sidebar-footer">
-          <label className="theme-select-label" htmlFor="theme-select">Theme</label>
-          <select
-            id="theme-select"
-            className="theme-select"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as Theme)}
-          >
-            {THEME_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+          <ThemeMenu theme={theme} onChange={setTheme} />
         </div>
       </aside>
 

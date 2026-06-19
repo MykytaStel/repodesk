@@ -31,7 +31,7 @@ export function EconomyControl({ mode, setMode, isBusy }: EconomyControlProps) {
   ];
 
   return (
-    <section className="panel wide-panel" style={{ marginTop: 16 }}>
+    <section className="panel wide-panel">
       <div className="panel-title-row">
         <div>
           <p className="eyebrow">Routing Strategy</p>

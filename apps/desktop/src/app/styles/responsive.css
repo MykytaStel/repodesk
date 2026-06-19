@@ -1,15 +1,10 @@
 @media (max-width: 1180px) {
   :root { --sidebar-w: 220px; }
-  .main-area { padding: 22px 20px 48px; }
+  .main-area { padding: var(--space-5) var(--space-4) var(--space-6); }
   .topbar { grid-template-columns: 1fr; }
-  .content-grid,
-  .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two-column-grid { grid-template-columns: 1fr; }
   .route-summary-grid,
   .route-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .code-grid { grid-template-columns: 1fr; }
-  .provider-panel,
-  .file-browser-panel,
-  .code-preview-panel { grid-column: 1 / -1; }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 

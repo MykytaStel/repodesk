@@ -151,6 +151,20 @@ fn provider_working(
     }
 }
 
+/// Resolve a provider key: an in-app stored key wins; otherwise fall back to the
+/// named environment variable. Returns the key and a label describing its source
+/// for the "missing" hint.
+fn resolve_key(stored: &str, env_var: &str) -> (Option<String>, String) {
+    let stored = stored.trim();
+    if !stored.is_empty() {
+        return (Some(stored.to_string()), "in-app key".to_string());
+    }
+    match env::var(env_var) {
+        Ok(value) if !value.trim().is_empty() => (Some(value), format!("${env_var}")),
+        _ => (None, format!("${env_var}")),
+    }
+}
+
 fn join_url(base: &str, suffix: &str) -> String {
     format!(
         "{}/{}",
@@ -276,26 +290,21 @@ fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
         return disabled_provider("openai", "OpenAI API");
     }
 
-    let env_name = settings.openai_api_key_env_var.trim();
-    let Ok(api_key) = env::var(env_name) else {
+    let (key, source) = resolve_key(
+        &settings.openai_api_key,
+        settings.openai_api_key_env_var.trim(),
+    );
+    let Some(api_key) = key else {
         return provider_error(
             "openai",
             "OpenAI API",
             "auth_missing",
             "auth_missing",
-            format!("Set {env_name} to enable live OpenAI model discovery."),
+            format!(
+                "Add an OpenAI key in Settings or set {source} to enable live model discovery."
+            ),
         );
     };
-
-    if api_key.trim().is_empty() {
-        return provider_error(
-            "openai",
-            "OpenAI API",
-            "auth_missing",
-            "auth_missing",
-            format!("Set {env_name} to enable live OpenAI model discovery."),
-        );
-    }
 
     let authorization = format!("Bearer {api_key}");
     match request_json(
@@ -352,26 +361,19 @@ fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
         return disabled_provider("gemini", "Gemini API");
     }
 
-    let env_name = settings.gemini_api_key_env_var.trim();
-    let Ok(api_key) = env::var(env_name) else {
+    let (key, source) = resolve_key(
+        &settings.gemini_api_key,
+        settings.gemini_api_key_env_var.trim(),
+    );
+    let Some(api_key) = key else {
         return provider_error(
             "gemini",
             "Gemini API",
             "auth_missing",
             "auth_missing",
-            format!("Set {env_name} to enable live Gemini model discovery."),
+            format!("Add a Gemini key in Settings or set {source} to enable live model discovery."),
         );
     };
-
-    if api_key.trim().is_empty() {
-        return provider_error(
-            "gemini",
-            "Gemini API",
-            "auth_missing",
-            "auth_missing",
-            format!("Set {env_name} to enable live Gemini model discovery."),
-        );
-    }
 
     match request_json(
         "https://generativelanguage.googleapis.com/v1beta/models",
@@ -425,6 +427,76 @@ fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
     }
 }
 
+fn anthropic_health(settings: &store::ProviderSettings) -> ProviderHealth {
+    if !settings.anthropic_api_enabled {
+        return disabled_provider("anthropic", "Anthropic API");
+    }
+
+    let (key, source) = resolve_key(&settings.anthropic_api_key, "ANTHROPIC_API_KEY");
+    let Some(api_key) = key else {
+        return provider_error(
+            "anthropic",
+            "Anthropic API",
+            "auth_missing",
+            "auth_missing",
+            format!(
+                "Add an Anthropic key in Settings or set {source} to enable live model discovery."
+            ),
+        );
+    };
+
+    match request_json(
+        "https://api.anthropic.com/v1/models",
+        &[
+            ("x-api-key", api_key.as_str()),
+            ("anthropic-version", "2023-06-01"),
+        ],
+    ) {
+        Ok(value) => {
+            let models = value
+                .get("data")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            item.get("id").and_then(|value| value.as_str()).map(|id| {
+                                model_status(
+                                    "anthropic",
+                                    id.to_string(),
+                                    item.get("display_name")
+                                        .and_then(|value| value.as_str())
+                                        .map(str::to_string),
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            provider_working("anthropic", "Anthropic API", "configured", models)
+        }
+        Err(error) => {
+            let reachability = match error.status {
+                Some(401 | 403) => "auth_missing",
+                Some(429) => "rate_limited",
+                _ => "unreachable",
+            };
+            let auth_status = if reachability == "auth_missing" {
+                "auth_missing"
+            } else {
+                "configured"
+            };
+            provider_error(
+                "anthropic",
+                "Anthropic API",
+                auth_status,
+                reachability,
+                error.summary,
+            )
+        }
+    }
+}
+
 pub(crate) fn model_health_from_settings(
     settings: &store::ProviderSettings,
 ) -> ModelHealthSnapshot {
@@ -456,6 +528,10 @@ pub(crate) fn model_health_from_settings(
         let s = s.clone();
         move || gemini_health(&s)
     });
+    let t_anthropic = std::thread::spawn({
+        let s = s.clone();
+        move || anthropic_health(&s)
+    });
 
     let providers = vec![
         t_ollama
@@ -475,6 +551,9 @@ pub(crate) fn model_health_from_settings(
         t_gemini
             .join()
             .unwrap_or_else(|_| disabled_provider("gemini", "Gemini API")),
+        t_anthropic
+            .join()
+            .unwrap_or_else(|_| disabled_provider("anthropic", "Anthropic API")),
     ];
     let mut warnings = Vec::new();
 

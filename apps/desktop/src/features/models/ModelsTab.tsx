@@ -24,27 +24,29 @@ export function ModelsTab({ setActiveTab }: ModelsTabProps) {
 
       {(models?.warnings ?? []).map((warning: string) => <div className="notice warn wide-panel" key={warning}>{warning}</div>)}
 
-      {(models?.providers ?? []).map((provider: any) => (
-        <section className="panel provider-panel" key={provider.id}>
-          <div className="panel-title-row">
-            <div><p className="eyebrow">{provider.id}</p><h2>{provider.label}</h2></div>
-            <span className={`pill ${statusTone(provider.reachability)}`}>{provider.reachability}</span>
-          </div>
-          <div className="provider-meta">
-            <span>auth: {provider.auth_status}</span>
-            <span>{provider.models.length} models</span>
-          </div>
-          {provider.error_summary && <div className="notice warn">{provider.error_summary}</div>}
-          <div className="model-list">
-            {provider.models.length === 0 ? <p className="muted">No models visible for this provider.</p> : provider.models.slice(0, 80).map((model: any) => (
-              <div className="model-row" key={`${provider.id}-${model.id}`}>
-                <strong>{model.id}</strong>
-                {model.notes && <span>{model.notes}</span>}
-              </div>
-            ))}
-          </div>
-        </section>
-      ))}
+      <div className="provider-grid">
+        {(models?.providers ?? []).map((provider: any) => (
+          <section className="panel provider-panel" key={provider.id}>
+            <div className="panel-title-row">
+              <div><p className="eyebrow">{provider.id}</p><h2>{provider.label}</h2></div>
+              <span className={`pill ${statusTone(provider.reachability)}`}>{provider.reachability}</span>
+            </div>
+            <div className="provider-meta">
+              <span>auth: {provider.auth_status}</span>
+              <span>{provider.models.length} models</span>
+            </div>
+            {provider.error_summary && <div className="notice warn">{provider.error_summary}</div>}
+            <div className="model-list">
+              {provider.models.length === 0 ? <p className="muted">No models visible for this provider.</p> : provider.models.slice(0, 80).map((model: any) => (
+                <div className="model-row" key={`${provider.id}-${model.id}`}>
+                  <strong>{model.id}</strong>
+                  {model.notes && <span>{model.notes}</span>}
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 }
