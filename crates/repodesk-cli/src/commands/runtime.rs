@@ -95,7 +95,19 @@ pub fn handle_runtime_command(command: RuntimeCommand) -> Result<()> {
             let budget = repodesk_core::usage::budget::load_budget_config().unwrap_or_default();
             let request = repodesk_core::routing::route_request_for_need(&need);
             let capacities = repodesk_core::routing::default_capacities(&budget);
-            let decision = repodesk_core::routing::route_request(&request, &capacities, &budget);
+            // Apply the active project's learned bias (N8-B) so the inspection
+            // reflects what the brain has learned; empty (no-op) without signal
+            // or an active project.
+            let bias = repodesk_core::projects::read_active_project()
+                .ok()
+                .and_then(|project| repodesk_core::outcomes::routing_bias(&project).ok())
+                .unwrap_or_default();
+            let decision = repodesk_core::routing::route_request_with_bias(
+                &request,
+                &capacities,
+                &budget,
+                &bias,
+            );
             print!(
                 "{}",
                 repodesk_core::routing::format_route_decision(&decision)

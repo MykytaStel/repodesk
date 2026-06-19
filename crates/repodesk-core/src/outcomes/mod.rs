@@ -10,4 +10,4 @@ pub mod model;
 pub mod store;
 
 pub use model::{OutcomeRecord, ProviderStat, Verdict};
-pub use store::{confirm_outcome, list_outcomes, outcome_stats, record_run};
+pub use store::{confirm_outcome, list_outcomes, outcome_stats, record_run, routing_bias};

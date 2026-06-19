@@ -2,7 +2,7 @@
 //! migration v3). Writes one row per executed step, lets a human confirm or flip
 //! a verdict, and aggregates rows into per-(task_kind, provider) stats.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use chrono::Utc;
 use rusqlite::params;
@@ -10,26 +10,27 @@ use rusqlite::params;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::orchestrator::types::{OrchestrationPlan, OrchestrationRun};
 use crate::persistence::db::init_db;
-use crate::routing::types::TaskKind;
+use crate::routing::types::{BiasEntry, RouteBias, TaskKind};
 
 use super::model::{OutcomeRecord, ProviderStat, Verdict};
 
-fn db_err(context: &str, e: impl std::fmt::Display) -> RepoDeskError {
-    RepoDeskError::Database(format!("{context}: {e}"))
+/// Tuning for the learned routing bias (N8-B). The nudge is deliberately small
+/// so it can sway a close call but never override the deterministic rules.
+/// A human-confirmed verdict counts double toward both rate and confidence.
+mod bias {
+    /// Minimum signal weight before a (kind, provider) pair gets any bias.
+    pub const MIN_WEIGHT: f64 = 3.0;
+    /// Weight at which confidence saturates (full strength of the nudge).
+    pub const SATURATION: f64 = 8.0;
+    /// Maximum absolute score adjustment (scores are ~0..150, base 100).
+    pub const MAX_ADJUSTMENT: f64 = 20.0;
+    /// A human-confirmed row counts this many times an auto row.
+    pub const HUMAN_WEIGHT: f64 = 2.0;
+    pub const AUTO_WEIGHT: f64 = 1.0;
 }
 
-/// Canonical snake_case label for a `TaskKind` (matches its serde rename).
-fn task_kind_label(kind: TaskKind) -> &'static str {
-    match kind {
-        TaskKind::Compress => "compress",
-        TaskKind::Summarize => "summarize",
-        TaskKind::Plan => "plan",
-        TaskKind::Review => "review",
-        TaskKind::Patch => "patch",
-        TaskKind::Debug => "debug",
-        TaskKind::Checks => "checks",
-        TaskKind::Manual => "manual",
-    }
+fn db_err(context: &str, e: impl std::fmt::Display) -> RepoDeskError {
+    RepoDeskError::Database(format!("{context}: {e}"))
 }
 
 /// Canonical snake_case label for a step status (matches its serde rename).
@@ -84,7 +85,7 @@ pub fn record_run(plan: &OrchestrationPlan, run: &OrchestrationRun) -> RepoDeskR
                 run.task_id,
                 run.run_id,
                 result.task_id,
-                task_kind_label(kind),
+                kind.as_label(),
                 result.provider,
                 result.model,
                 status_label(result.status),
@@ -149,9 +150,9 @@ pub fn list_outcomes(limit: usize) -> RepoDeskResult<Vec<OutcomeRecord>> {
 }
 
 /// Aggregate outcomes for the active project into per-(task_kind, provider)
-/// stats, the signal the adaptive router reads. Confirmed `human` rows and
-/// provisional `auto` rows are counted equally for now; weighting them is N8-B's
-/// job. Sorted by task_kind then provider for stable output.
+/// stats for human display (every row counted equally). The adaptive router
+/// reads the *weighted* signal from [`routing_bias`], not this; keep this one
+/// faithful to the raw ledger. Sorted by task_kind then provider for stability.
 pub fn outcome_stats(project: &str) -> RepoDeskResult<Vec<ProviderStat>> {
     let conn = init_db()?;
     let mut stmt = conn
@@ -207,6 +208,71 @@ pub fn outcome_stats(project: &str) -> RepoDeskResult<Vec<ProviderStat>> {
         out.push(row.map_err(|e| db_err("Failed to decode stat row", e))?);
     }
     Ok(out)
+}
+
+/// Build the learned [`RouteBias`] for a project from its outcome ledger — the
+/// N8-B signal the adaptive router consumes. For each (task_kind, provider)
+/// pair, good/bad verdicts are summed with human-confirmed rows weighted double;
+/// pairs below [`bias::MIN_WEIGHT`] signal get no entry (routing stays purely
+/// deterministic until there's evidence). The score adjustment is
+/// `(rate - 0.5) · 2 · MAX_ADJUSTMENT · confidence`, where confidence ramps with
+/// signal weight up to [`bias::SATURATION`] — so the nudge is bounded and grows
+/// with evidence. Neutral rows carry no signal and are ignored.
+pub fn routing_bias(project: &str) -> RepoDeskResult<RouteBias> {
+    let conn = init_db()?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT task_kind, provider,
+                    SUM(CASE WHEN verdict = 'good' THEN w ELSE 0 END) AS good_w,
+                    SUM(CASE WHEN verdict = 'bad'  THEN w ELSE 0 END) AS bad_w
+               FROM (
+                    SELECT task_kind, provider, verdict,
+                           CASE WHEN verdict_source = 'human' THEN ?2 ELSE ?3 END AS w
+                      FROM run_outcomes
+                     WHERE project = ?1
+               )
+              GROUP BY task_kind, provider",
+        )
+        .map_err(|e| db_err("Failed to prepare bias query", e))?;
+
+    let rows = stmt
+        .query_map(
+            rusqlite::params![project, bias::HUMAN_WEIGHT, bias::AUTO_WEIGHT],
+            |row| {
+                let task_kind: String = row.get(0)?;
+                let provider: String = row.get(1)?;
+                let good_w: f64 = row.get(2)?;
+                let bad_w: f64 = row.get(3)?;
+                Ok((task_kind, provider, good_w, bad_w))
+            },
+        )
+        .map_err(|e| db_err("Failed to read bias rows", e))?;
+
+    let mut entries: HashMap<(String, String), BiasEntry> = HashMap::new();
+    for row in rows {
+        let (task_kind, provider, good_w, bad_w) =
+            row.map_err(|e| db_err("Failed to decode bias row", e))?;
+        let total_w = good_w + bad_w;
+        if total_w < bias::MIN_WEIGHT {
+            continue;
+        }
+        let rate = good_w / total_w;
+        let confidence = (total_w / bias::SATURATION).min(1.0);
+        let adjustment = ((rate - 0.5) * 2.0 * bias::MAX_ADJUSTMENT * confidence).round() as i32;
+        if adjustment == 0 {
+            continue;
+        }
+        entries.insert(
+            (task_kind, provider),
+            BiasEntry {
+                adjustment,
+                success_rate: rate,
+                scored_weight: total_w,
+            },
+        );
+    }
+
+    Ok(RouteBias::new(entries))
 }
 
 fn row_to_record(row: &rusqlite::Row) -> rusqlite::Result<OutcomeRecord> {

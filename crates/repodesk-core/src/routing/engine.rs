@@ -2,10 +2,27 @@ use super::scoring::score_capacity;
 use super::types::*;
 use crate::usage::budget::BudgetConfig;
 
+/// Route a request using only the deterministic scoring rules (no learned
+/// bias). Equivalent to [`route_request_with_bias`] with an empty bias.
 pub fn route_request(
     request: &RouteRequest,
     capacities: &[ProviderCapacity],
     budget: &BudgetConfig,
+) -> RouteDecision {
+    route_request_with_bias(request, capacities, budget, &RouteBias::default())
+}
+
+/// Route a request, applying a learned [`RouteBias`] as a bounded nudge on top
+/// of the deterministic scores. The bias only shifts non-blocked model routes:
+/// it can break a tie or sway a close call toward what has worked on this
+/// project, but it never unblocks a route, touches the Manual/CheckRunner
+/// floors, or overrides a hard rule. Every applied nudge is recorded as a
+/// candidate warning so the decision stays explainable.
+pub fn route_request_with_bias(
+    request: &RouteRequest,
+    capacities: &[ProviderCapacity],
+    budget: &BudgetConfig,
+    bias: &RouteBias,
 ) -> RouteDecision {
     let mut candidates = capacities
         .iter()
@@ -17,6 +34,12 @@ pub fn route_request(
         .any(|candidate| candidate.kind == ProviderKind::Manual)
     {
         candidates.push(score_capacity(request, &manual_capacity(budget), budget));
+    }
+
+    if !bias.is_empty() {
+        for candidate in &mut candidates {
+            apply_bias(request, candidate, bias);
+        }
     }
 
     candidates.sort_by(|left, right| {
@@ -102,6 +125,36 @@ pub fn route_request(
             .estimated_input_tokens
             .saturating_add(request.estimated_output_tokens),
     }
+}
+
+/// Apply the learned bias to one candidate. Only non-blocked model routes are
+/// nudged (Manual/CheckRunner floors and blocked routes are left untouched), the
+/// adjusted score is re-clamped to the scoring range, and an explanation is
+/// recorded so the nudge is visible in the decision.
+fn apply_bias(request: &RouteRequest, candidate: &mut RouteCandidate, bias: &RouteBias) {
+    if candidate.blocked
+        || !matches!(
+            candidate.kind,
+            ProviderKind::Local | ProviderKind::Paid | ProviderKind::PatchAgent
+        )
+    {
+        return;
+    }
+    let Some(entry) = bias.lookup(request.task_kind, &candidate.provider) else {
+        return;
+    };
+    if entry.adjustment == 0 {
+        return;
+    }
+    candidate.score = (candidate.score + entry.adjustment).clamp(0, 150);
+    candidate.warnings.push(format!(
+        "Learned routing: {} has {:.0}% success on {} tasks here ({}{} adjustment).",
+        candidate.provider,
+        entry.success_rate * 100.0,
+        request.task_kind.as_label(),
+        if entry.adjustment >= 0 { "+" } else { "" },
+        entry.adjustment,
+    ));
 }
 
 pub fn manual_capacity(budget: &BudgetConfig) -> ProviderCapacity {
@@ -517,6 +570,60 @@ mod tests {
                 .iter()
                 .any(|warning| warning.contains("Workspace is dirty"))
         );
+    }
+
+    fn bias_of(task_kind: TaskKind, provider: &str, adjustment: i32) -> RouteBias {
+        let mut entries = std::collections::HashMap::new();
+        entries.insert(
+            (task_kind.as_label().to_string(), provider.to_string()),
+            BiasEntry {
+                adjustment,
+                success_rate: if adjustment >= 0 { 1.0 } else { 0.0 },
+                scored_weight: 8.0,
+            },
+        );
+        RouteBias::new(entries)
+    }
+
+    #[test]
+    fn learned_bias_flips_a_tie_between_equal_local_providers() {
+        let budget = BudgetConfig::default();
+        let caps = [
+            capacity("ollama", ProviderKind::Local),
+            capacity("lm_studio", ProviderKind::Local),
+            manual(),
+        ];
+
+        // No bias: a Plan task ties both locals, so provider_rank picks ollama.
+        let plain = route_request(&request(TaskKind::Plan), &caps, &budget);
+        assert_eq!(plain.recommended_provider, "ollama");
+
+        // A learned win for lm_studio on Plan tasks pulls it ahead.
+        let bias = bias_of(TaskKind::Plan, "lm_studio", 20);
+        let learned = route_request_with_bias(&request(TaskKind::Plan), &caps, &budget, &bias);
+        assert_eq!(learned.recommended_provider, "lm_studio");
+        // The nudge is explained on the chosen candidate.
+        assert!(
+            learned
+                .warnings
+                .iter()
+                .any(|w| w.contains("Learned routing") && w.contains("lm_studio")),
+            "the learned nudge should be surfaced: {:?}",
+            learned.warnings
+        );
+    }
+
+    #[test]
+    fn learned_bias_never_unblocks_a_blocked_route() {
+        let budget = BudgetConfig::default();
+        let mut paid = capacity("openai", ProviderKind::Paid);
+        paid.paid_agents_allowed = false; // hard block
+        // An absurdly large positive bias must not resurrect a blocked route.
+        let bias = bias_of(TaskKind::Plan, "openai", 150);
+        let decision =
+            route_request_with_bias(&request(TaskKind::Plan), &[paid, manual()], &budget, &bias);
+        assert_eq!(decision.recommended_provider, "manual");
+        assert_ne!(decision.recommended_provider, "openai");
     }
 
     #[test]

@@ -810,3 +810,102 @@ fn confirm_outcome_flips_verdict_to_human_and_dry_runs_are_not_recorded() {
     // Confirming an unknown id is an error, not a silent no-op.
     assert!(outcomes::confirm_outcome(999_999, Verdict::Bad).is_err());
 }
+
+// --- N8-B: learned routing bias from the outcome ledger ----------------------
+
+/// Record a run of `count` plan-kind steps on `provider`, all with `status`.
+fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize, ok: bool) {
+    use repodesk_core::outcomes;
+    let steps: Vec<SubAgentTask> = (0..count)
+        .map(|i| SubAgentTask {
+            id: format!("step-{i}"),
+            title: format!("step {i}"),
+            kind: TaskKind::Plan,
+            agent: provider.to_string(),
+            provider: provider.to_string(),
+            model: Some("m".to_string()),
+            thinking: ThinkingLevel::None,
+            instruction: String::new(),
+            depends_on: Vec::new(),
+            budget_tokens: 100,
+            allow_write: false,
+        })
+        .collect();
+    let results: Vec<SubAgentResult> = steps
+        .iter()
+        .map(|s| SubAgentResult {
+            task_id: s.id.clone(),
+            agent: provider.to_string(),
+            provider: provider.to_string(),
+            model: "m".to_string(),
+            status: if ok {
+                SubAgentStatus::Ok
+            } else {
+                SubAgentStatus::Failed
+            },
+            output: String::new(),
+            input_tokens: 1,
+            output_tokens: 1,
+            cost_units: 0.1,
+            captured_proposals: 0,
+            notes: Vec::new(),
+        })
+        .collect();
+    let plan = OrchestrationPlan {
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "g".to_string(),
+        steps,
+    };
+    let run = OrchestrationRun {
+        run_id: format!("run-2026{provider}{count}{ok}"),
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "g".to_string(),
+        status: RunStatus::Completed,
+        dry_run: false,
+        started_at: "2026-06-19T12:00:00Z".to_string(),
+        finished_at: "2026-06-19T12:01:00Z".to_string(),
+        results,
+        total_input_tokens: count,
+        total_output_tokens: count,
+        total_cost_units: 0.1 * count as f64,
+    };
+    outcomes::record_run(&plan, &run).expect("record_run");
+}
+
+#[test]
+#[serial]
+fn routing_bias_rewards_success_punishes_failure_and_needs_enough_signal() {
+    use repodesk_core::outcomes;
+    use repodesk_core::routing::types::TaskKind as TK;
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+
+    // 4 successful plan steps on ollama → above the min-weight threshold, so a
+    // positive nudge is learned.
+    record_plan_steps("demo", &active_id, "ollama", 4, true);
+    // 4 failed plan steps on chatgpt → a negative nudge.
+    record_plan_steps("demo", &active_id, "chatgpt", 4, false);
+    // Only 1 plan step on gemini → below threshold, no entry.
+    record_plan_steps("demo", &active_id, "gemini", 1, true);
+
+    let bias = outcomes::routing_bias("demo").expect("routing_bias");
+
+    let ollama = bias.lookup(TK::Plan, "ollama").expect("ollama entry");
+    assert!(
+        ollama.adjustment > 0,
+        "all-success should nudge positively, got {}",
+        ollama.adjustment
+    );
+    let chatgpt = bias.lookup(TK::Plan, "chatgpt").expect("chatgpt entry");
+    assert!(
+        chatgpt.adjustment < 0,
+        "all-failure should nudge negatively, got {}",
+        chatgpt.adjustment
+    );
+    // Below the signal threshold: no learned entry yet.
+    assert!(bias.lookup(TK::Plan, "gemini").is_none());
+    // A pair with no data at all is also absent.
+    assert!(bias.lookup(TK::Patch, "ollama").is_none());
+}

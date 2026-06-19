@@ -14,6 +14,23 @@ pub enum TaskKind {
     Manual,
 }
 
+impl TaskKind {
+    /// Canonical snake_case label (matches the serde rename). Used as a stable
+    /// key for the outcome ledger and the learned routing bias.
+    pub fn as_label(&self) -> &'static str {
+        match self {
+            TaskKind::Compress => "compress",
+            TaskKind::Summarize => "summarize",
+            TaskKind::Plan => "plan",
+            TaskKind::Review => "review",
+            TaskKind::Patch => "patch",
+            TaskKind::Debug => "debug",
+            TaskKind::Checks => "checks",
+            TaskKind::Manual => "manual",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
@@ -113,6 +130,45 @@ pub struct RouteCandidate {
     pub warnings: Vec<String>,
     pub required_guardrails: Vec<String>,
     pub estimated_cost_units: f64,
+}
+
+/// One learned routing adjustment for a (task_kind, provider) pair, derived from
+/// the outcome ledger ([`crate::outcomes`]). The router applies `adjustment` as a
+/// *bounded* nudge on top of the deterministic score — it can sway a tie or a
+/// close call toward what has worked, but never unblock a route or override a
+/// hard rule. `success_rate`/`scored_weight` are carried for explanation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct BiasEntry {
+    /// Signed score delta, already clamped to the bias ceiling.
+    pub adjustment: i32,
+    /// Weighted success rate (human-confirmed rows count double).
+    pub success_rate: f64,
+    /// Total signal weight behind this entry (the confidence proxy).
+    pub scored_weight: f64,
+}
+
+/// A learned bias over (task_kind, provider) pairs. An empty bias (the
+/// [`Default`]) is a no-op, so routing stays purely deterministic until the
+/// ledger has enough signal. Keyed by `(task_kind label, provider)`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RouteBias {
+    entries: std::collections::HashMap<(String, String), BiasEntry>,
+}
+
+impl RouteBias {
+    pub fn new(entries: std::collections::HashMap<(String, String), BiasEntry>) -> Self {
+        Self { entries }
+    }
+
+    /// The learned entry for a (task_kind, provider) pair, if one exists.
+    pub fn lookup(&self, task_kind: TaskKind, provider: &str) -> Option<&BiasEntry> {
+        self.entries
+            .get(&(task_kind.as_label().to_string(), provider.to_string()))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

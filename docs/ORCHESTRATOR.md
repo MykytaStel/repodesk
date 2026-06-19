@@ -98,8 +98,24 @@ a human confirms it (`outcomes confirm <id> <good|bad>` → `verdict_source =
 human`) — the same propose→approve discipline the Memory Brain uses.
 
 `outcomes::outcome_stats(project)` aggregates the ledger into per-(task_kind,
-provider) success rates and average cost. This is **read-only fuel** for the
-adaptive router (N8-B); recording an outcome never changes routing on its own.
+provider) success rates and average cost (raw, for human display). Recording an
+outcome never changes routing on its own.
+
+## Adaptive routing (N8-B — the brain learns)
+
+`outcomes::routing_bias(project)` turns the ledger into a `RouteBias`: for each
+(task_kind, provider) pair it sums good/bad verdicts (human-confirmed rows
+weighted double), and — once a pair clears a minimum signal weight — emits a
+**bounded score adjustment** `(rate − 0.5) · 2 · MAX · confidence`, where
+confidence ramps with evidence. `routing::route_request_with_bias` applies this
+as a nudge on top of the deterministic score: it can break a tie or sway a close
+call toward what has worked on *this* project, but it **never unblocks a route,
+touches the Manual/CheckRunner floors, or overrides a hard rule**, and every
+applied nudge is recorded as a candidate warning so the decision stays
+explainable. `build_plan` feeds the active project's bias into every step; the
+bias is empty (a pure no-op) until the ledger has enough signal, so routing stays
+deterministic out of the box. `repodesk runtime route --need …` shows the nudge
+in its warnings.
 
 ```bash
 repodesk outcomes list [--limit N]      # recent step outcomes, newest first
@@ -115,9 +131,6 @@ repodesk outcomes confirm <id> <good|bad|neutral>
 
 ## Deferred
 
-- **N8-B adaptive routing**: feed `outcome_stats` back into `routing::scoring` as a learned
-  bias, so the router prefers what has actually worked on *this* project (kept explainable, not
-  a black box; confirmed `human` verdicts weighted above provisional `auto` ones).
 - **N8-C autonomous loop + LLM planning**: a "run task to completion" mode (plan → run → checks
   → re-plan/retry on failure under budget/safety guardrails) and LLM-assisted decomposition to
   replace the static analyze→implement→review template.

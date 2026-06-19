@@ -8,8 +8,8 @@
 use crate::api_clients::{ProviderSettings, ThinkingLevel};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
-use crate::routing::engine::{default_capacities, route_request};
-use crate::routing::types::{ProviderCapacity, RouteRequest, TaskKind};
+use crate::routing::engine::{default_capacities, route_request_with_bias};
+use crate::routing::types::{ProviderCapacity, RouteBias, RouteRequest, TaskKind};
 use crate::tasks::show_active_task;
 use crate::usage::budget::{BudgetConfig, load_budget_config};
 
@@ -85,8 +85,14 @@ pub fn available_capacities(
 }
 
 /// Route the template steps against `caps`, assigning each a provider/model.
-/// Pure (no I/O) so it can be unit-tested with injected capacities.
-pub fn route_steps(caps: &[ProviderCapacity], budget: &BudgetConfig) -> Vec<SubAgentTask> {
+/// `bias` is the learned routing nudge from the outcome ledger (empty for a
+/// deterministic plan). Pure (no I/O) so it can be unit-tested with injected
+/// capacities and bias.
+pub fn route_steps(
+    caps: &[ProviderCapacity],
+    budget: &BudgetConfig,
+    bias: &RouteBias,
+) -> Vec<SubAgentTask> {
     TEMPLATE
         .iter()
         .map(|template| {
@@ -108,7 +114,7 @@ pub fn route_steps(caps: &[ProviderCapacity], budget: &BudgetConfig) -> Vec<SubA
                 max_cost_units: None,
                 economy_mode: None,
             };
-            let decision = route_request(&request, caps, budget);
+            let decision = route_request_with_bias(&request, caps, budget, bias);
             SubAgentTask {
                 id: template.id.to_string(),
                 title: template.title.to_string(),
@@ -138,12 +144,15 @@ pub fn build_plan(
         .unwrap_or_else(|| task.config.title.clone());
     let budget = load_budget_config()?;
     let caps = available_capacities(settings, &budget);
+    // Learned routing bias from this project's outcome ledger (N8-B). Empty —
+    // hence a no-op — until the ledger has enough confirmed/auto signal.
+    let bias = crate::outcomes::routing_bias(&project.name).unwrap_or_default();
 
     Ok(OrchestrationPlan {
         project: project.name,
         task_id: task.config.id,
         goal,
-        steps: route_steps(&caps, &budget),
+        steps: route_steps(&caps, &budget, &bias),
     })
 }
 
@@ -155,7 +164,7 @@ mod tests {
     fn routes_all_template_steps_with_a_provider() {
         let budget = BudgetConfig::default();
         let caps = default_capacities(&budget);
-        let steps = route_steps(&caps, &budget);
+        let steps = route_steps(&caps, &budget, &RouteBias::default());
 
         assert_eq!(steps.len(), 3);
         assert_eq!(steps[0].id, "analyze");
