@@ -587,6 +587,7 @@ async fn dry_run_executes_waves_in_deterministic_index_order() {
         dry_run: true,
         max_cost: None,
         settings: ProviderSettings::default(),
+        ..RunOptions::default()
     };
     let run = run_plan(&plan, &opts).await.expect("run_plan");
 
@@ -614,6 +615,7 @@ async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
             dry_run: true,
             max_cost: None,
             settings: ProviderSettings::default(),
+            ..RunOptions::default()
         },
     )
     .await
@@ -631,6 +633,7 @@ async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
             dry_run: true,
             max_cost: Some(one_step_cost * 1.5),
             settings: ProviderSettings::default(),
+            ..RunOptions::default()
         },
     )
     .await
@@ -661,6 +664,7 @@ async fn real_run_previews_coding_agent_without_provider_call() {
             dry_run: false,
             max_cost: None,
             settings: ProviderSettings::default(),
+            ..RunOptions::default()
         },
     )
     .await
@@ -674,7 +678,7 @@ async fn real_run_previews_coding_agent_without_provider_call() {
         result
             .notes
             .iter()
-            .any(|note| note.contains("command preview: codex [stdin: bounded prompt]")),
+            .any(|note| note.contains("command preview: codex exec --sandbox workspace-write --color never - [stdin: bounded prompt]")),
         "handoff notes should include the safe argv preview: {:?}",
         result.notes
     );
@@ -682,7 +686,69 @@ async fn real_run_previews_coding_agent_without_provider_call() {
         result
             .notes
             .iter()
-            .any(|note| note.contains("automatic CLI execution is not enabled"))
+            .any(|note| note.contains("explicit orchestrator approval"))
+    );
+}
+
+#[tokio::test]
+#[serial]
+#[cfg(unix)]
+async fn approved_coding_agent_runs_through_argv_executor() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+    let bin_dir = TempDir::new().expect("bin tempdir");
+    let fake_codex = bin_dir.path().join("codex");
+    std::fs::write(
+        &fake_codex,
+        "#!/bin/sh\ncat >/dev/null\necho agent-output\n",
+    )
+    .expect("write fake codex");
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake_codex, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod fake codex");
+
+    let old_path = std::env::var_os("PATH");
+    let new_path = match old_path.as_ref() {
+        Some(path) => {
+            let mut paths = vec![bin_dir.path().to_path_buf()];
+            paths.extend(std::env::split_paths(path));
+            std::env::join_paths(paths).expect("join path")
+        }
+        None => bin_dir.path().as_os_str().to_os_string(),
+    };
+    unsafe {
+        std::env::set_var("PATH", &new_path);
+    }
+
+    let run_result = run_plan(
+        &coding_agent_plan("demo", &active_id),
+        &RunOptions {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+            approve_coding_agents: true,
+            coding_agent_timeout_secs: 5,
+        },
+    )
+    .await;
+
+    unsafe {
+        match old_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+
+    let run = run_result.expect("run_plan");
+
+    assert_eq!(run.results.len(), 1);
+    let result = &run.results[0];
+    assert_eq!(result.status, SubAgentStatus::Ok);
+    assert!(result.output.contains("agent-output"));
+    assert!(
+        result.notes.iter().any(|note| note.contains("stdout:")),
+        "execution notes should include stdout receipt path: {:?}",
+        result.notes
     );
 }
 

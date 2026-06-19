@@ -42,6 +42,11 @@ pub struct LoopOptions {
     /// Human-in-the-loop: when false, the loop refuses to execute a plan that
     /// includes paid provider steps and stops with [`LoopStatus::NeedsApproval`].
     pub approve_paid: bool,
+    /// Human-in-the-loop: when false, coding-agent CLI steps are previewed but
+    /// not launched.
+    pub approve_coding_agents: bool,
+    /// Timeout for one coding-agent process.
+    pub coding_agent_timeout_secs: u64,
     /// Provider credentials/endpoints.
     pub settings: ProviderSettings,
 }
@@ -53,6 +58,8 @@ impl Default for LoopOptions {
             max_total_cost: None,
             dry_run: false,
             approve_paid: false,
+            approve_coding_agents: false,
+            coding_agent_timeout_secs: 600,
             settings: ProviderSettings::default(),
         }
     }
@@ -154,6 +161,8 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
                 dry_run: opts.dry_run,
                 max_cost: remaining,
                 settings: opts.settings.clone(),
+                approve_coding_agents: opts.approve_coding_agents,
+                coding_agent_timeout_secs: opts.coding_agent_timeout_secs,
             },
         )
         .await?;

@@ -23,11 +23,11 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
             let settings = ProviderSettings::from_env();
             let plan = orchestrator::build_plan(goal, &settings)?;
 
-            // The human stays the operator: a real paid run needs confirmation.
+            // The human stays the operator: paid/API and coding-agent runs need confirmation.
             if !dry_run && !yes && plan_has_paid_step(&plan) {
                 print!("{}", format_plan(&plan));
                 return Err(anyhow!(
-                    "This plan includes paid provider steps. Re-run with --yes to execute, \
+                    "This plan includes paid provider or coding-agent steps. Re-run with --yes to execute, \
                      or use --dry-run to preview cost and routing without calling any provider."
                 ));
             }
@@ -36,6 +36,8 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 dry_run,
                 max_cost,
                 settings,
+                approve_coding_agents: yes,
+                coding_agent_timeout_secs: 600,
             };
             let rt = tokio::runtime::Runtime::new()?;
             let run = rt.block_on(orchestrator::run_plan(&plan, &opts))?;
@@ -54,6 +56,8 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 max_total_cost: max_cost,
                 dry_run,
                 approve_paid: yes,
+                approve_coding_agents: yes,
+                coding_agent_timeout_secs: 600,
                 settings,
             };
             let rt = tokio::runtime::Runtime::new()?;
@@ -97,10 +101,11 @@ fn format_step(step: &SubAgentTask) -> String {
         step.depends_on.join(", ")
     };
     format!(
-        "  • {id}: {title}\n      agent/provider: {agent} → model: {model}\n      thinking: {thinking:?}  write: {write}  depends on: {deps}\n",
+        "  • {id}: {title}\n      executor/provider: {executor} → {provider} → model: {model}\n      thinking: {thinking:?}  write: {write}  depends on: {deps}\n",
         id = step.id,
         title = step.title,
-        agent = step.agent,
+        executor = step.resolved_executor_id(),
+        provider = step.resolved_provider_id().unwrap_or("(none)"),
         thinking = step.thinking,
         write = step.allow_write,
     )
@@ -175,7 +180,7 @@ fn format_loop(loop_run: &LoopRun) -> String {
     ));
     match loop_run.status {
         repodesk_core::orchestrator::LoopStatus::NeedsApproval => out.push_str(
-            "Paused: the plan includes paid steps. Re-run with --yes to allow paid execution.\n",
+            "Paused: the plan includes paid or coding-agent steps. Re-run with --yes to allow execution.\n",
         ),
         repodesk_core::orchestrator::LoopStatus::GuardrailBlocked => {
             out.push_str("Stopped at a safety/budget guardrail — resolve it, then re-run.\n")

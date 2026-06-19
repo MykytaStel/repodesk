@@ -562,7 +562,7 @@ pub enum OrchestrateCommand {
         /// Cost ceiling in cost units; halts before a step that would exceed it.
         #[arg(long = "max-cost")]
         max_cost: Option<f64>,
-        /// Confirm execution of a plan that includes paid provider steps.
+        /// Confirm execution of paid provider and coding-agent CLI steps.
         #[arg(long)]
         yes: bool,
     },
@@ -579,7 +579,7 @@ pub enum OrchestrateCommand {
         /// Preview only — a single pass, no provider calls.
         #[arg(long)]
         dry_run: bool,
-        /// Approve execution of plans that include paid provider steps.
+        /// Approve execution of paid provider and coding-agent CLI steps.
         #[arg(long)]
         yes: bool,
     },

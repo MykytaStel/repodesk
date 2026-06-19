@@ -37,7 +37,7 @@ use super::types::{
 };
 
 /// Options that govern a run.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct RunOptions {
     /// Preview only — route and gate every step, but make no provider calls.
     pub dry_run: bool,
@@ -45,6 +45,23 @@ pub struct RunOptions {
     pub max_cost: Option<f64>,
     /// Provider credentials/endpoints.
     pub settings: ProviderSettings,
+    /// Explicit human approval to launch coding-agent CLIs (`codex_cli`,
+    /// `claude_code_cli`). Paid-provider approval alone is not enough.
+    pub approve_coding_agents: bool,
+    /// Timeout for one coding-agent process.
+    pub coding_agent_timeout_secs: u64,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+            approve_coding_agents: false,
+            coding_agent_timeout_secs: 600,
+        }
+    }
 }
 
 /// Execute `plan` and return the aggregated run (also persisted to the run dir).
@@ -60,6 +77,9 @@ pub async fn run_plan(
     let waves = dependency_waves(&plan.steps)?;
     let budget = load_budget_config()?;
     let cost_config = load_cost_config()?;
+    let project = crate::projects::get_active_project()?;
+    let task = show_active_task()?;
+    let executor_output_dir = task.config.run_dir.join("executors").join(&run_id);
 
     // Shared base context (local; no network) — built once, reused per step.
     let base = build_base_context().await?;
@@ -157,17 +177,146 @@ pub async fn run_plan(
                     step.resolved_executor_id(),
                     step.allow_write,
                 );
-                let notes = match handoff {
-                    Ok(handoff) => handoff.notes,
+                let projected_cost = estimate_agent_cost(
+                    &cost_config,
+                    step.resolved_executor_id(),
+                    input_tokens,
+                    step.budget_tokens,
+                )
+                .estimated_cost_units;
+                if let Some(max) = opts.max_cost
+                    && state.running_cost + projected_cost > max
+                {
+                    state.ceiling_hit = true;
+                    state.push(blocked(
+                        step,
+                        format!("blocked: would exceed --max-cost ({max:.3} units)"),
+                    ));
+                    continue;
+                }
+                let notes = match &handoff {
+                    Ok(handoff) => {
+                        let mut notes = handoff.notes.clone();
+                        if !opts.dry_run && !opts.approve_coding_agents {
+                            notes.push(
+                                "coding-agent execution requires explicit approval (--yes in CLI)"
+                                    .to_string(),
+                            );
+                        }
+                        notes
+                    }
                     Err(error) => vec![format!("coding-agent handoff unavailable: {error}")],
                 };
+                if opts.dry_run || !opts.approve_coding_agents {
+                    state.push(SubAgentResult {
+                        status: if opts.dry_run {
+                            SubAgentStatus::Ok
+                        } else {
+                            SubAgentStatus::Skipped
+                        },
+                        input_tokens,
+                        cost_units: if opts.dry_run { projected_cost } else { 0.0 },
+                        notes,
+                        ..base_result(step)
+                    });
+                    continue;
+                }
+
+                let Ok(handoff) = handoff else {
+                    state.push(failed(step, notes.join("; ")));
+                    continue;
+                };
+                if !handoff.availability.available {
+                    state.push(failed(
+                        step,
+                        format!("coding-agent executable is missing: {}", notes.join("; ")),
+                    ));
+                    continue;
+                }
+
+                state.running_cost += projected_cost;
+                let command = handoff.command.clone();
+                let prompt = format!("{}\n\n{}", step_system_prompt(step), prompt);
+                let cwd = project.path.clone();
+                let output_dir = executor_output_dir.clone();
+                let timeout_secs = opts.coding_agent_timeout_secs;
+                let execution = tokio::task::spawn_blocking(move || {
+                    crate::executors::run_coding_agent_command(
+                        &command,
+                        &prompt,
+                        &cwd,
+                        &output_dir,
+                        timeout_secs,
+                    )
+                })
+                .await
+                .map_err(|error| {
+                    crate::errors::RepoDeskError::Api(format!("coding-agent task failed: {error}"))
+                })?;
+
+                let execution = match execution {
+                    Ok(execution) => execution,
+                    Err(error) => {
+                        state.running_cost -= projected_cost;
+                        state.push(failed(
+                            step,
+                            format!("coding-agent execution failed: {error}"),
+                        ));
+                        continue;
+                    }
+                };
+                let output_tokens = estimate_text(&execution.stdout).estimated_tokens;
+                let cost = estimate_agent_cost(
+                    &cost_config,
+                    step.resolved_executor_id(),
+                    input_tokens,
+                    output_tokens,
+                )
+                .estimated_cost_units;
+                state.running_cost += cost - projected_cost;
+                let _ = log_token_event(LogTokenInput {
+                    agent: step.resolved_executor_id().to_string(),
+                    model: Some(execution.executor_id.clone()),
+                    input_tokens,
+                    output_tokens,
+                    category: "orchestrate".to_string(),
+                    notes: Some(step.id.clone()),
+                });
+                let captured = if execution.status == "ok" {
+                    crate::memory::capture_from_text(
+                        &plan.project,
+                        &plan.task_id,
+                        step.resolved_executor_id(),
+                        &execution.stdout,
+                    )
+                    .map(|proposals| proposals.len())
+                    .unwrap_or(0)
+                } else {
+                    0
+                };
+                let mut notes = vec![
+                    format!("command: {}", execution.command_preview),
+                    format!("stdout: {}", execution.stdout_path),
+                    format!("stderr: {}", execution.stderr_path),
+                    format!("duration_ms: {}", execution.duration_ms),
+                ];
+                if execution.timed_out {
+                    notes.push("coding-agent process timed out and was killed".to_string());
+                }
+                if !execution.stderr.trim().is_empty() {
+                    notes.push(truncate_note("stderr", &execution.stderr));
+                }
                 state.push(SubAgentResult {
-                    status: if opts.dry_run {
+                    status: if execution.status == "ok" {
                         SubAgentStatus::Ok
                     } else {
-                        SubAgentStatus::Skipped
+                        SubAgentStatus::Failed
                     },
                     input_tokens,
+                    output_tokens,
+                    output: execution.stdout,
+                    cost_units: cost,
+                    captured_proposals: captured,
                     notes,
                     ..base_result(step)
                 });
@@ -482,6 +631,15 @@ fn failed(step: &SubAgentTask, note: String) -> SubAgentResult {
         notes: vec![note],
         ..base_result(step)
     }
+}
+
+fn truncate_note(label: &str, value: &str) -> String {
+    const MAX_CHARS: usize = 500;
+    let mut text = value.chars().take(MAX_CHARS).collect::<String>();
+    if value.chars().count() > MAX_CHARS {
+        text.push_str(" [truncated]");
+    }
+    format!("{label}: {text}")
 }
 
 async fn persist_run(run: &OrchestrationRun) -> RepoDeskResult<PathBuf> {

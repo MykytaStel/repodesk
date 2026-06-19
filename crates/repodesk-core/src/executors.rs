@@ -1,13 +1,18 @@
 //! Safe command specifications for coding-agent executors.
 //!
-//! This module deliberately does not execute agents. It defines canonical
-//! executor ids, passive PATH availability, and argv previews that future
-//! executor code can feed to `std::process::Command` directly. No `sh -c`.
+//! This module defines canonical executor ids, passive PATH availability,
+//! argv-only command specs, and the low-level process runner used after the
+//! orchestrator has explicit human approval. No `sh -c`.
 
 use std::env;
-use std::path::PathBuf;
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use wait_timeout::ChildExt;
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
@@ -51,6 +56,20 @@ pub struct CodingAgentHandoff {
     pub availability: ExecutorAvailability,
     pub command: CodingAgentCommandSpec,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CodingAgentExecution {
+    pub executor_id: String,
+    pub command_preview: String,
+    pub status: String,
+    pub exit_code: Option<i32>,
+    pub duration_ms: u128,
+    pub stdout: String,
+    pub stderr: String,
+    pub stdout_path: String,
+    pub stderr_path: String,
+    pub timed_out: bool,
 }
 
 pub fn coding_agent_specs() -> Vec<CodingAgentSpec> {
@@ -131,11 +150,39 @@ pub fn build_coding_agent_command(
     writes_allowed: bool,
 ) -> RepoDeskResult<CodingAgentCommandSpec> {
     let spec = coding_agent_spec(value)?;
+    let args = match spec.id.as_str() {
+        "codex_cli" => vec![
+            "exec".to_string(),
+            "--sandbox".to_string(),
+            if writes_allowed {
+                "workspace-write".to_string()
+            } else {
+                "read-only".to_string()
+            },
+            "--color".to_string(),
+            "never".to_string(),
+            "-".to_string(),
+        ],
+        "claude_code_cli" => vec![
+            "--print".to_string(),
+            "--input-format".to_string(),
+            "text".to_string(),
+            "--output-format".to_string(),
+            "text".to_string(),
+            "--permission-mode".to_string(),
+            if writes_allowed {
+                "acceptEdits".to_string()
+            } else {
+                "plan".to_string()
+            },
+        ],
+        _ => Vec::new(),
+    };
     let command = CodingAgentCommandSpec {
         executor_id: spec.id,
         label: spec.label,
         program: spec.binary,
-        args: Vec::new(),
+        args,
         stdin_required: true,
         cwd_required: true,
         writes_allowed: writes_allowed && spec.supports_writes,
@@ -145,6 +192,87 @@ pub fn build_coding_agent_command(
     Ok(CodingAgentCommandSpec {
         command_preview: format_command_preview(&command),
         ..command
+    })
+}
+
+pub fn run_coding_agent_command(
+    command: &CodingAgentCommandSpec,
+    prompt: &str,
+    cwd: &Path,
+    output_dir: &Path,
+    timeout_secs: u64,
+) -> RepoDeskResult<CodingAgentExecution> {
+    validate_command_spec(command)?;
+    fs::create_dir_all(output_dir)?;
+
+    let started = Instant::now();
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let safe_id = command
+        .executor_id
+        .replace(|ch: char| !ch.is_ascii_alphanumeric(), "_");
+    let stdout_path = output_dir.join(format!("{safe_id}-{stamp}.stdout.log"));
+    let stderr_path = output_dir.join(format!("{safe_id}-{stamp}.stderr.log"));
+    let stdout_file = File::create(&stdout_path)?;
+    let stderr_file = File::create(&stderr_path)?;
+
+    let mut child = Command::new(&command.program)
+        .args(&command.args)
+        .current_dir(cwd)
+        .stdin(if command.stdin_required {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .map_err(|error| RepoDeskError::ProviderUnavailable {
+            provider: command.executor_id.clone(),
+            detail: format!("failed to start {}: {error}", command.program),
+        })?;
+
+    if command.stdin_required
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        stdin.write_all(prompt.as_bytes())?;
+    }
+
+    let timeout = Duration::from_secs(timeout_secs.max(1));
+    let status = match child.wait_timeout(timeout)? {
+        Some(status) => status,
+        None => {
+            let _ = child.kill();
+            let status = child.wait()?;
+            return Ok(CodingAgentExecution {
+                executor_id: command.executor_id.clone(),
+                command_preview: command.command_preview.clone(),
+                status: "timed_out".to_string(),
+                exit_code: status.code(),
+                duration_ms: started.elapsed().as_millis(),
+                stdout: read_lossy(&stdout_path)?,
+                stderr: read_lossy(&stderr_path)?,
+                stdout_path: stdout_path.display().to_string(),
+                stderr_path: stderr_path.display().to_string(),
+                timed_out: true,
+            });
+        }
+    };
+
+    let success = status.success();
+    Ok(CodingAgentExecution {
+        executor_id: command.executor_id.clone(),
+        command_preview: command.command_preview.clone(),
+        status: if success { "ok" } else { "failed" }.to_string(),
+        exit_code: status.code(),
+        duration_ms: started.elapsed().as_millis(),
+        stdout: read_lossy(&stdout_path)?,
+        stderr: read_lossy(&stderr_path)?,
+        stdout_path: stdout_path.display().to_string(),
+        stderr_path: stderr_path.display().to_string(),
+        timed_out: false,
     })
 }
 
@@ -164,7 +292,7 @@ pub fn preview_coding_agent_handoff(
         "bounded prompt transport: stdin; prompt content is not included in the command line"
             .to_string(),
     );
-    notes.push("automatic CLI execution is not enabled in this PR".to_string());
+    notes.push("automatic CLI execution requires explicit orchestrator approval".to_string());
     notes.extend(availability.notes.clone());
 
     Ok(CodingAgentHandoff {
@@ -213,6 +341,11 @@ fn format_command_preview(command: &CodingAgentCommandSpec) -> String {
     parts.join(" ")
 }
 
+fn read_lossy(path: &Path) -> RepoDeskResult<String> {
+    let bytes = fs::read(path)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 fn find_executable(name: &str) -> Option<PathBuf> {
     let path_var = env::var_os("PATH")?;
     let extensions: Vec<String> = if cfg!(windows) {
@@ -254,10 +387,42 @@ mod tests {
     fn command_preview_uses_argv_and_stdin() {
         let command = build_coding_agent_command("codex_cli", true).unwrap();
         assert_eq!(command.program, "codex");
-        assert!(command.args.is_empty());
+        assert_eq!(
+            command.args,
+            vec![
+                "exec",
+                "--sandbox",
+                "workspace-write",
+                "--color",
+                "never",
+                "-"
+            ]
+        );
         assert!(command.stdin_required);
         assert!(command.writes_allowed);
-        assert_eq!(command.command_preview, "codex [stdin: bounded prompt]");
+        assert_eq!(
+            command.command_preview,
+            "codex exec --sandbox workspace-write --color never - [stdin: bounded prompt]"
+        );
+    }
+
+    #[test]
+    fn claude_readonly_command_uses_plan_mode() {
+        let command = build_coding_agent_command("claude", false).unwrap();
+        assert_eq!(command.program, "claude");
+        assert_eq!(
+            command.args,
+            vec![
+                "--print",
+                "--input-format",
+                "text",
+                "--output-format",
+                "text",
+                "--permission-mode",
+                "plan"
+            ]
+        );
+        assert!(!command.writes_allowed);
     }
 
     #[test]
@@ -287,7 +452,60 @@ mod tests {
             handoff
                 .notes
                 .iter()
-                .any(|note| note.contains("automatic CLI execution is not enabled"))
+                .any(|note| note.contains("explicit orchestrator approval"))
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_captures_stdout_and_stderr() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let script = dir.path().join("agent");
+        std::fs::write(&script, "#!/bin/sh\ncat\necho stderr-line >&2\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let command = CodingAgentCommandSpec {
+            executor_id: "codex_cli".to_string(),
+            label: "Test Agent".to_string(),
+            program: script.display().to_string(),
+            args: Vec::new(),
+            stdin_required: true,
+            cwd_required: true,
+            writes_allowed: true,
+            command_preview: "agent [stdin: bounded prompt]".to_string(),
+        };
+
+        let result =
+            run_coding_agent_command(&command, "hello prompt", dir.path(), dir.path(), 5).unwrap();
+        assert_eq!(result.status, "ok");
+        assert_eq!(result.stdout, "hello prompt");
+        assert!(result.stderr.contains("stderr-line"));
+        assert!(std::path::Path::new(&result.stdout_path).exists());
+        assert!(std::path::Path::new(&result.stderr_path).exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_times_out_and_kills_child() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let script = dir.path().join("agent");
+        std::fs::write(&script, "#!/bin/sh\nsleep 5\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let command = CodingAgentCommandSpec {
+            executor_id: "codex_cli".to_string(),
+            label: "Test Agent".to_string(),
+            program: script.display().to_string(),
+            args: Vec::new(),
+            stdin_required: true,
+            cwd_required: true,
+            writes_allowed: true,
+            command_preview: "agent [stdin: bounded prompt]".to_string(),
+        };
+
+        let result = run_coding_agent_command(&command, "prompt", dir.path(), dir.path(), 1)
+            .expect("timeout result");
+        assert_eq!(result.status, "timed_out");
+        assert!(result.timed_out);
     }
 }

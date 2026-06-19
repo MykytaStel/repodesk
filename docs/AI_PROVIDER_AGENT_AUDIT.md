@@ -16,8 +16,9 @@ Source brief: `/Users/mykyta/Downloads/repodesk_ai_providers_agents_prompt_and_e
 - The desktop app can enable local endpoints such as Ollama and LM Studio, but
   it does not install or launch those runtimes. The app only probes configured
   endpoints.
-- The orchestrator can call completion providers and local LLM endpoints. It
-  does not yet execute Codex CLI or Claude Code.
+- The orchestrator can call completion providers and local LLM endpoints. It can
+  also execute Codex CLI / Claude Code through the gated executor boundary when
+  explicitly approved by the caller.
 
 ## First PR Scope
 
@@ -38,20 +39,21 @@ Source brief: `/Users/mykyta/Downloads/repodesk_ai_providers_agents_prompt_and_e
   compatibility.
 - Reject ambiguous coding-agent aliases in `provider_for`; `codex` and
   `claude` no longer resolve to completion-provider clients.
-- Keep CLI coding-agent execution out of this PR. Coding-agent routes are
-  identified cleanly, but the runner does not spawn those tools yet.
 - Add a dedicated executor boundary for coding agents:
   - canonical alias normalization (`codex` → `codex_cli`, `claude` →
     `claude_code_cli`)
   - passive PATH availability
   - argv-only command preview
   - stdin prompt transport
-  - no `sh -c` and no automatic CLI launch
+  - no `sh -c`
+- Add guarded process execution for coding agents:
+  - default-deny unless `RunOptions.approve_coding_agents` is true
+  - stdout/stderr receipt files
+  - timeout and kill on overrun
+  - token/cost ledger accounting from captured output
 
 ## Remaining Gaps
 
-- Add real process execution for `codex_cli` and `claude_code_cli` behind the
-  executor boundary.
 - Add CLI auth detection beyond passive PATH availability.
 - Feed CLI availability into routing capacities instead of manual status
   toggles.

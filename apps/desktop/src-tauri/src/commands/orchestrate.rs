@@ -71,6 +71,8 @@ pub async fn orchestrate_run(
         dry_run,
         max_cost,
         settings,
+        approve_coding_agents: false,
+        coding_agent_timeout_secs: 600,
     };
     Ok(orchestrator::run_plan(&plan, &opts).await?)
 }
@@ -92,6 +94,8 @@ pub async fn orchestrate_loop(
         max_total_cost: max_cost,
         dry_run,
         approve_paid,
+        approve_coding_agents: false,
+        coding_agent_timeout_secs: 600,
         settings: orchestrator_settings(),
     };
     Ok(orchestrator::run_loop(goal, &opts).await?)

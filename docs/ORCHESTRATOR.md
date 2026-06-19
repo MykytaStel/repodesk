@@ -55,9 +55,10 @@ at zero cost).
 ### Coding-agent executors
 `executors.rs` defines the CLI-agent boundary for `codex_cli` and `claude_code_cli`.
 It normalizes legacy aliases, checks PATH passively, and builds argv-only command previews
-with the bounded prompt carried on stdin. The runner records this handoff as a skipped step
-in real runs until process execution is explicitly enabled; it never falls back from a
-coding-agent executor to an OpenAI/Anthropic completion client.
+with the bounded prompt carried on stdin. The runner launches these commands only when
+`RunOptions.approve_coding_agents` is true (CLI `--yes`); otherwise it records the handoff
+as skipped. Executions capture stdout/stderr to receipt files, enforce a timeout, and never
+fall back from a coding-agent executor to an OpenAI/Anthropic completion client.
 
 ### Gates (every step, before any spend)
 - **Safety** — `safety::scan_text` blocks if secret-like content is in the outgoing context.
