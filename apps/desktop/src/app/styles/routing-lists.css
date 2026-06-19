@@ -68,9 +68,9 @@
   line-height: 1.4;
 }
 
-.route-list.ok { border-color: rgba(115, 227, 165, 0.26); }
-.route-list.warn { border-color: rgba(246, 207, 101, 0.32); }
-.route-list.danger { border-color: rgba(255, 127, 147, 0.32); }
+.route-list.ok { border-color: var(--success-border); }
+.route-list.warn { border-color: var(--warning-border); }
+.route-list.danger { border-color: var(--danger-border); }
 
 .route-candidate-strip {
   display: grid;
@@ -91,7 +91,7 @@
 
 .route-candidate.blocked {
   opacity: .72;
-  border-color: rgba(255, 127, 147, 0.25);
+  border-color: var(--danger-border);
 }
 
 .model-list {
@@ -134,8 +134,8 @@
   text-align: left;
 }
 .file-row.active {
-  border-color: rgba(94, 224, 174, 0.46);
-  background: rgba(94, 224, 174, 0.08);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 
 .findings-list {
@@ -192,8 +192,8 @@
   margin-top: 14px;
 }
 .health-trend svg { flex-shrink: 0; }
-.health-trend .trend-line { stroke: var(--accent, #5ee0ae); stroke-width: 2; }
-.health-trend .trend-fill { fill: rgba(94, 224, 174, 0.12); stroke: none; }
+.health-trend .trend-line { stroke: var(--accent); stroke-width: 2; }
+.health-trend .trend-fill { fill: var(--accent-soft); stroke: none; }
 .trend-meta { display: flex; align-items: center; gap: 8px; }
 .trend-meta small { color: var(--muted); font-size: 11px; }
 

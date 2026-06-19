@@ -2,6 +2,8 @@ import { useState } from "react";
 import { useOrchestrate } from "./useOrchestrate";
 import {
   planHasPaidStep,
+  type LoopRun,
+  type LoopStatus,
   type OrchestrationPlan,
   type OrchestrationRun,
   type RunSummary,
@@ -132,6 +134,56 @@ function fmtTime(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
 
+const LOOP_TONE: Record<LoopStatus, "ok" | "warn" | "danger" | "accent"> = {
+  succeeded: "ok",
+  needs_approval: "warn",
+  guardrail_blocked: "danger",
+  exhausted: "warn",
+  dry_run: "accent",
+};
+
+const LOOP_HINT: Record<LoopStatus, string> = {
+  succeeded: "An attempt completed every step.",
+  needs_approval: "The plan includes paid steps — enable “Approve paid” to let it spend.",
+  guardrail_blocked: "A safety/budget guardrail stopped the loop — resolve it, then re-run.",
+  exhausted: "Out of attempts or budget before succeeding — raise the limits and re-run.",
+  dry_run: "Preview only — nothing was executed.",
+};
+
+function LoopPanel({ loop }: { loop: LoopRun }) {
+  const tone = LOOP_TONE[loop.status] ?? "neutral";
+  return (
+    <section className="panel">
+      <div className="panel-title-row compact">
+        <p className="eyebrow" style={{ margin: 0 }}>Autonomous loop</p>
+        <span className={`pill ${tone}`}>{loop.status.replace("_", " ")}</span>
+      </div>
+      <p className="muted" style={{ marginTop: 0 }}>{LOOP_HINT[loop.status]}</p>
+      <div className="table-list">
+        {loop.iterations.map((iteration) => (
+          <div className="table-row flex-col items-start gap-sm" key={iteration.index}>
+            <div className="w-full flex justify-between items-center">
+              <strong>
+                Attempt {iteration.index + 1}
+                {iteration.run_id ? ` — ${iteration.run_id}` : ""}
+              </strong>
+              <span className="pill">{iteration.run_status}</span>
+            </div>
+            <div className="row-meta">
+              <span>cost {formatCost(iteration.cost_units, "units")}</span>
+            </div>
+            <p className="muted" style={{ fontSize: 12, margin: 0 }}>{iteration.note}</p>
+          </div>
+        ))}
+      </div>
+      <p className="muted" style={{ marginTop: 12, fontSize: 12 }}>
+        Total {formatCost(loop.total_cost_units, "units")} over {loop.iterations.length} attempt
+        {loop.iterations.length === 1 ? "" : "s"}.
+      </p>
+    </section>
+  );
+}
+
 function HistoryPanel({
   runs,
   activeRunId,
@@ -206,12 +258,30 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const orchestrate = useOrchestrate();
   const [goal, setGoal] = useState("");
   const [maxCost, setMaxCost] = useState("");
+  const [maxIterations, setMaxIterations] = useState("3");
+  const [approvePaid, setApprovePaid] = useState(false);
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
 
-  const busy = orchestrate.plan.isPending || orchestrate.run.isPending;
+  const busy = orchestrate.plan.isPending || orchestrate.run.isPending || orchestrate.loop.isPending;
   // A run just executed wins; otherwise a history selection; otherwise the latest run.
   const currentRun = orchestrate.run.data ?? selectedRun ?? orchestrate.status;
-  const error = orchestrate.run.error ?? orchestrate.plan.error ?? orchestrate.showRun.error;
+  const error =
+    orchestrate.run.error ?? orchestrate.plan.error ?? orchestrate.showRun.error ?? orchestrate.loop.error;
+
+  function parsedMaxCost(): number | null {
+    const parsed = maxCost.trim() ? Number(maxCost) : null;
+    return Number.isFinite(parsed as number) ? parsed : null;
+  }
+
+  async function handleLoop(dryRun: boolean) {
+    await orchestrate.loop.mutateAsync({
+      goal,
+      maxIterations: Number(maxIterations) || 3,
+      maxCost: parsedMaxCost(),
+      dryRun,
+      approvePaid,
+    });
+  }
 
   async function selectRun(runId: string) {
     const detail = await orchestrate.showRun.mutateAsync(runId);
@@ -230,12 +300,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       );
       if (!ok) return;
     }
-    const parsedCost = maxCost.trim() ? Number(maxCost) : null;
-    await orchestrate.run.mutateAsync({
-      goal,
-      dryRun,
-      maxCost: Number.isFinite(parsedCost as number) ? parsedCost : null,
-    });
+    await orchestrate.run.mutateAsync({ goal, dryRun, maxCost: parsedMaxCost() });
   }
 
   if (!orchestrate.ready) {
@@ -296,6 +361,29 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
             />
           </label>
         </div>
+
+        <div className="loop-controls">
+          <span className="eyebrow" style={{ margin: 0 }}>Autonomous</span>
+          <button className="tiny-button" onClick={() => void handleLoop(true)} disabled={busy}>
+            Dry loop
+          </button>
+          <button className="tiny-button primary-button" onClick={() => void handleLoop(false)} disabled={busy}>
+            {orchestrate.loop.isPending ? "Looping..." : "Run loop"}
+          </button>
+          <label className="muted" style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
+            max attempts
+            <input
+              value={maxIterations}
+              onChange={(e) => setMaxIterations(e.target.value)}
+              inputMode="numeric"
+              style={{ width: 56 }}
+            />
+          </label>
+          <label className="muted" style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <input type="checkbox" checked={approvePaid} onChange={(e) => setApprovePaid(e.target.checked)} />
+            approve paid
+          </label>
+        </div>
       </section>
 
       {error && (
@@ -310,6 +398,8 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       )}
 
       {orchestrate.plan.data && <PlanPanel plan={orchestrate.plan.data} />}
+
+      {orchestrate.loop.data && <LoopPanel loop={orchestrate.loop.data} />}
 
       {currentRun && (
         <RunPanel run={currentRun} onOpenMemory={setActiveTab ? () => setActiveTab("memory") : undefined} />

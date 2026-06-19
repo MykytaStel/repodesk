@@ -63,10 +63,12 @@
   min-width: 42px;
   display: grid;
   place-items: center;
-  border-radius: 12px;
-  color: #07110d;
+  border-radius: var(--radius);
+  color: var(--accent-contrast);
   font-weight: 900;
-  background: linear-gradient(135deg, var(--accent), #d7f777);
+  letter-spacing: .02em;
+  background: linear-gradient(135deg, var(--accent), var(--brand-grad-2));
+  box-shadow: 0 4px 14px var(--accent-glow);
 }
 
 .brand strong,
@@ -110,14 +112,15 @@
 }
 
 .nav-list button:hover {
-  background: rgba(166, 180, 198, 0.08);
+  background: var(--neutral-soft);
   border-color: var(--border);
 }
 
 .nav-list button.active {
-  background: rgba(94, 224, 174, 0.12);
-  border-color: rgba(94, 224, 174, 0.40);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
 }
+.nav-list button.active strong { color: var(--accent); }
 
 .nav-list strong,
 .nav-list span {
@@ -140,7 +143,7 @@
   height: 100vh;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 24px 28px 56px;
+  padding: var(--space-5) var(--space-6) var(--space-7);
 }
 
 .topbar {
@@ -148,9 +151,9 @@
   max-width: var(--content-max);
   display: grid;
   grid-template-columns: minmax(240px, 1fr) minmax(0, 820px);
-  gap: 16px;
+  gap: var(--space-4);
   align-items: stretch;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
   /* Sit above the content panels so the project-switcher dropdown overlays them. */
   position: relative;
   z-index: 20;
@@ -162,7 +165,7 @@
 .hero-panel,
 .notice {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--glass-bg);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -185,7 +188,7 @@
   min-width: 0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .status-box {

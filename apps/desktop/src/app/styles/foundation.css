@@ -3,64 +3,114 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-  --sidebar-w: 250px;
+  --sidebar-w: 248px;
   --content-max: 1320px;
+
+  /* Spacing scale — one rhythm for the whole app (comfortable density). */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Radius scale. */
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Type scale. */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-xl: 23px;
 }
 
+/* ── Hermes (default dark): warm graphite ink + cognac/amber + cream ────────── */
 :root, [data-theme="dark"] {
-  color: #e8edf4;
-  background: #080a0f;
-  --bg: #080a0f;
-  --surface: #10151d;
-  --surface-2: #151b25;
-  --surface-3: #0c1118;
-  --border: rgba(166, 180, 198, 0.18);
-  --border-strong: rgba(166, 180, 198, 0.34);
-  --text: #e8edf4;
-  --muted: #98a3b3;
-  --muted-2: #717d8e;
-  --accent: #5ee0ae;
-  --accent-2: #6eb7ff;
-  --warning: #f6cf65;
-  --danger: #ff7f93;
-  --success: #73e3a5;
-  --glass-bg: rgba(16, 21, 29, 0.6);
-  --glass-bg-hover: rgba(22, 28, 38, 0.85);
-  --gradient-1: rgba(94, 224, 174, 0.10);
-  --gradient-2: rgba(110, 183, 255, 0.10);
-  --code-bg: rgba(5, 9, 13, 0.76);
-  --sidebar-bg: rgba(8, 10, 15, 0.90);
-  --input-bg: rgba(5, 9, 13, 0.78);
-  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: #f0e9dd;
+  background: #14110d;
+  --bg: #14110d;
+  --surface: #1d1813;
+  --surface-2: #251f17;
+  --surface-3: #181410;
+  --border: rgba(224, 206, 176, 0.13);
+  --border-strong: rgba(224, 206, 176, 0.30);
+  --text: #f0e9dd;
+  --muted: #b6a890;
+  --muted-2: #877b67;
+  --accent: #d8964e;
+  --accent-2: #e6b873;
+  --accent-soft: rgba(216, 150, 78, 0.13);
+  --accent-border: rgba(216, 150, 78, 0.42);
+  --accent-glow: rgba(216, 150, 78, 0.22);
+  --accent-contrast: #1a1208;
+  --brand-grad-2: #f0c98a;
+  --warning: #e6c14d;
+  --danger: #e57360;
+  --success: #9ec27a;
+  --success-soft: rgba(158, 194, 122, 0.12);
+  --success-border: rgba(158, 194, 122, 0.34);
+  --warning-soft: rgba(230, 193, 77, 0.12);
+  --warning-border: rgba(230, 193, 77, 0.34);
+  --danger-soft: rgba(229, 115, 96, 0.12);
+  --danger-border: rgba(229, 115, 96, 0.34);
+  --neutral-soft: rgba(182, 168, 144, 0.09);
+  --glass-bg: rgba(29, 24, 19, 0.62);
+  --glass-bg-hover: rgba(37, 31, 23, 0.86);
+  --gradient-1: rgba(216, 150, 78, 0.12);
+  --gradient-2: rgba(197, 123, 83, 0.09);
+  --code-bg: rgba(11, 9, 6, 0.78);
+  --sidebar-bg: rgba(16, 13, 9, 0.92);
+  --input-bg: rgba(11, 9, 6, 0.80);
+  --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 240, 214, 0.04);
 }
 
+/* ── Hermes light: warm cream paper ───────────────────────────────────────── */
 [data-theme="light"] {
-  color: #0f172a;
-  background: #f8fafc;
-  --bg: #f8fafc;
-  --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --surface-3: #e2e8f0;
-  --border: rgba(15, 23, 42, 0.12);
-  --border-strong: rgba(15, 23, 42, 0.25);
-  --text: #0f172a;
-  --muted: #64748b;
-  --muted-2: #94a3b8;
-  --accent: #059669;
-  --accent-2: #2563eb;
-  --warning: #d97706;
-  --danger: #e11d48;
-  --success: #059669;
-  --glass-bg: rgba(255, 255, 255, 0.65);
+  color: #2a2118;
+  background: #faf6ef;
+  --bg: #faf6ef;
+  --surface: #fffdf9;
+  --surface-2: #f3ece0;
+  --surface-3: #e9e0d1;
+  --border: rgba(60, 45, 25, 0.12);
+  --border-strong: rgba(60, 45, 25, 0.26);
+  --text: #2a2118;
+  --muted: #6b5f4e;
+  --muted-2: #9a8c77;
+  --accent: #b87333;
+  --accent-2: #c98a3f;
+  --accent-soft: rgba(184, 115, 51, 0.10);
+  --accent-border: rgba(184, 115, 51, 0.40);
+  --accent-glow: rgba(184, 115, 51, 0.18);
+  --accent-contrast: #fffdf9;
+  --brand-grad-2: #e0a96a;
+  --warning: #b8860b;
+  --danger: #c14a3a;
+  --success: #6f8f4a;
+  --success-soft: rgba(111, 143, 74, 0.10);
+  --success-border: rgba(111, 143, 74, 0.34);
+  --warning-soft: rgba(184, 134, 11, 0.10);
+  --warning-border: rgba(184, 134, 11, 0.34);
+  --danger-soft: rgba(193, 74, 58, 0.10);
+  --danger-border: rgba(193, 74, 58, 0.34);
+  --neutral-soft: rgba(60, 45, 25, 0.06);
+  --glass-bg: rgba(255, 253, 249, 0.70);
   --glass-bg-hover: rgba(255, 255, 255, 0.95);
-  --gradient-1: rgba(5, 150, 105, 0.05);
-  --gradient-2: rgba(37, 99, 235, 0.05);
-  --code-bg: #f1f5f9;
-  --sidebar-bg: rgba(248, 250, 252, 0.90);
-  --input-bg: #ffffff;
-  --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  --gradient-1: rgba(184, 115, 51, 0.06);
+  --gradient-2: rgba(201, 138, 63, 0.05);
+  --code-bg: #f3ece0;
+  --sidebar-bg: rgba(250, 246, 239, 0.92);
+  --input-bg: #fffdf9;
+  --card-shadow: 0 4px 12px rgba(60, 45, 25, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
+/* ── Midnight: cool violet (alternate) ────────────────────────────────────── */
 [data-theme="midnight"] {
   color: #dbe2f0;
   background: #070a14;
@@ -75,9 +125,21 @@
   --muted-2: #6b7695;
   --accent: #8b7bff;
   --accent-2: #56b6ff;
+  --accent-soft: rgba(139, 123, 255, 0.14);
+  --accent-border: rgba(139, 123, 255, 0.44);
+  --accent-glow: rgba(139, 123, 255, 0.24);
+  --accent-contrast: #ffffff;
+  --brand-grad-2: #56b6ff;
   --warning: #f6c453;
   --danger: #ff6b8b;
   --success: #5ee0ae;
+  --success-soft: rgba(94, 224, 174, 0.12);
+  --success-border: rgba(94, 224, 174, 0.34);
+  --warning-soft: rgba(246, 196, 83, 0.12);
+  --warning-border: rgba(246, 196, 83, 0.34);
+  --danger-soft: rgba(255, 107, 139, 0.12);
+  --danger-border: rgba(255, 107, 139, 0.34);
+  --neutral-soft: rgba(154, 166, 196, 0.09);
   --glass-bg: rgba(14, 19, 34, 0.62);
   --glass-bg-hover: rgba(20, 27, 46, 0.86);
   --gradient-1: rgba(139, 123, 255, 0.12);
@@ -88,6 +150,7 @@
   --card-shadow: 0 4px 14px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+/* ── Nord (alternate) ─────────────────────────────────────────────────────── */
 [data-theme="nord"] {
   color: #eceff4;
   background: #2e3440;
@@ -102,9 +165,21 @@
   --muted-2: #7b8494;
   --accent: #88c0d0;
   --accent-2: #81a1c1;
+  --accent-soft: rgba(136, 192, 208, 0.14);
+  --accent-border: rgba(136, 192, 208, 0.44);
+  --accent-glow: rgba(136, 192, 208, 0.22);
+  --accent-contrast: #2e3440;
+  --brand-grad-2: #81a1c1;
   --warning: #ebcb8b;
   --danger: #bf616a;
   --success: #a3be8c;
+  --success-soft: rgba(163, 190, 140, 0.14);
+  --success-border: rgba(163, 190, 140, 0.36);
+  --warning-soft: rgba(235, 203, 139, 0.14);
+  --warning-border: rgba(235, 203, 139, 0.36);
+  --danger-soft: rgba(191, 97, 106, 0.14);
+  --danger-border: rgba(191, 97, 106, 0.36);
+  --neutral-soft: rgba(216, 222, 233, 0.08);
   --glass-bg: rgba(59, 66, 82, 0.6);
   --glass-bg-hover: rgba(67, 76, 94, 0.85);
   --gradient-1: rgba(136, 192, 208, 0.10);
@@ -115,6 +190,7 @@
   --card-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
+/* ── High contrast (accessibility) ────────────────────────────────────────── */
 [data-theme="high-contrast"] {
   color: #ffffff;
   background: #000000;
@@ -127,15 +203,27 @@
   --text: #ffffff;
   --muted: #d4d4d4;
   --muted-2: #a3a3a3;
-  --accent: #00e5a0;
-  --accent-2: #4cc2ff;
+  --accent: #ffb84d;
+  --accent-2: #ffd000;
+  --accent-soft: rgba(255, 184, 77, 0.16);
+  --accent-border: rgba(255, 184, 77, 0.7);
+  --accent-glow: rgba(255, 184, 77, 0.3);
+  --accent-contrast: #000000;
+  --brand-grad-2: #ffd000;
   --warning: #ffd000;
   --danger: #ff4d6d;
   --success: #00e5a0;
+  --success-soft: rgba(0, 229, 160, 0.12);
+  --success-border: rgba(0, 229, 160, 0.6);
+  --warning-soft: rgba(255, 208, 0, 0.12);
+  --warning-border: rgba(255, 208, 0, 0.6);
+  --danger-soft: rgba(255, 77, 109, 0.12);
+  --danger-border: rgba(255, 77, 109, 0.6);
+  --neutral-soft: rgba(255, 255, 255, 0.08);
   --glass-bg: rgba(10, 10, 10, 0.9);
   --glass-bg-hover: rgba(20, 20, 20, 0.95);
-  --gradient-1: rgba(0, 229, 160, 0.06);
-  --gradient-2: rgba(76, 194, 255, 0.06);
+  --gradient-1: rgba(255, 184, 77, 0.06);
+  --gradient-2: rgba(255, 208, 0, 0.06);
   --code-bg: #0a0a0a;
   --sidebar-bg: rgba(0, 0, 0, 0.96);
   --input-bg: #000000;
@@ -147,10 +235,16 @@ html, body, #root { width: 100%; min-height: 100%; margin: 0; }
 body {
   overflow: hidden;
   background:
-    radial-gradient(circle at 14% 0%, var(--gradient-1), transparent 28%),
-    radial-gradient(circle at 100% 12%, var(--gradient-2), transparent 30%),
+    radial-gradient(circle at 14% 0%, var(--gradient-1), transparent 30%),
+    radial-gradient(circle at 100% 12%, var(--gradient-2), transparent 32%),
     var(--bg);
 }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .56; }
+
+/* Accessible focus ring for keyboard users (driven by the accent). */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

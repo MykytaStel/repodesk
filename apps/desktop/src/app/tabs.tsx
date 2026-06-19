@@ -13,6 +13,7 @@ const CodeTab = lazy(() => import("../features/code/CodeTab").then((m) => ({ def
 const GitTab = lazy(() => import("../features/git/GitTab").then((m) => ({ default: m.GitTab })));
 const MemoryTab = lazy(() => import("../features/memory/MemoryTab").then((m) => ({ default: m.MemoryTab })));
 const OrchestrateTab = lazy(() => import("../features/orchestrate/OrchestrateTab").then((m) => ({ default: m.OrchestrateTab })));
+const OutcomesTab = lazy(() => import("../features/outcomes/OutcomesTab").then((m) => ({ default: m.OutcomesTab })));
 const SettingsTab = lazy(() => import("../features/settings/SettingsTab").then((m) => ({ default: m.SettingsTab })));
 const SystemTab = lazy(() => import("../features/system/SystemTab").then((m) => ({ default: m.SystemTab })));
 const DebugTab = lazy(() => import("../features/debug/DebugTab").then((m) => ({ default: m.DebugTab })));
@@ -30,6 +31,7 @@ export const APP_TABS: Array<{ id: TabId; title: string; subtitle: string; group
   { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI" },
   { id: "memory", title: "Memory", subtitle: "Project context", group: "AI" },
   { id: "orchestrate", title: "Orchestrate", subtitle: "Sub-agents", group: "AI" },
+  { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI" },
   // System — configuration and diagnostics.
   { id: "settings", title: "Settings", subtitle: "Providers", group: "System" },
   { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System" },
@@ -66,6 +68,8 @@ export function renderAppTab({
       return <MemoryTab />;
     case "orchestrate":
       return <OrchestrateTab setActiveTab={setActiveTab} />;
+    case "outcomes":
+      return <OutcomesTab />;
     case "settings":
       return <SettingsTab />;
     case "system":

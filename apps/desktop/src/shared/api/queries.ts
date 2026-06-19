@@ -67,6 +67,10 @@ export const queryKeys = {
     runs: ["orchestration_runs"] as const,
     timeline: ["task_timeline"] as const,
   },
+  outcomes: {
+    list: ["outcomes_list"] as const,
+    stats: ["outcomes_stats"] as const,
+  },
 };
 
 /** Wrapper for Tauri invoke that throws on error. */

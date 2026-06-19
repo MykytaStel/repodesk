@@ -56,9 +56,9 @@
   color: var(--muted);
   font-size: 13px;
 }
-.toast.success { border-color: rgba(115, 227, 165, 0.36); }
-.toast.warning { border-color: rgba(246, 207, 101, 0.38); }
-.toast.error { border-color: rgba(255, 127, 147, 0.38); }
+.toast.success { border-color: var(--success-border); }
+.toast.warning { border-color: var(--warning-border); }
+.toast.error { border-color: var(--danger-border); }
 
 .skeleton-panel {
   display: grid;

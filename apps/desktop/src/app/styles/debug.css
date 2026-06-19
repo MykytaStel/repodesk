@@ -21,7 +21,7 @@
 .debug-event summary small {
   color: var(--muted);
 }
-.debug-event.error { border-color: rgba(255, 127, 147, 0.34); }
+.debug-event.error { border-color: var(--danger-border); }
 .debug-event pre {
   border: 0;
   border-top: 1px solid var(--border);

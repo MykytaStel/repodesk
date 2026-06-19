@@ -20,6 +20,7 @@ export const TAB_IDS: readonly TabId[] = [
   "git",
   "memory",
   "orchestrate",
+  "outcomes",
   "settings",
   "system",
   "debug",

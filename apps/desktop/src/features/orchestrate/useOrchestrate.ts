@@ -52,6 +52,33 @@ export function useOrchestrate() {
     mutationFn: (runId: string) => api.orchestrateShow(runId),
   });
 
+  // Autonomous loop (N8-C): plan → run → re-plan/retry under guardrails. A real
+  // loop records outcomes and may capture memory proposals, so refresh both.
+  const loop = useMutation({
+    mutationFn: (v: {
+      goal: string;
+      maxIterations?: number;
+      maxCost?: number | null;
+      dryRun: boolean;
+      approvePaid: boolean;
+    }) =>
+      api.orchestrateLoop({
+        goal: v.goal || undefined,
+        maxIterations: v.maxIterations,
+        maxCost: v.maxCost ?? null,
+        dryRun: v.dryRun,
+        approvePaid: v.approvePaid,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.runs });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.timeline });
+      queryClient.invalidateQueries({ queryKey: queryKeys.outcomes.list });
+      queryClient.invalidateQueries({ queryKey: queryKeys.outcomes.stats });
+      queryClient.invalidateQueries({ queryKey: queryKeys.memory.proposals(projectName) });
+    },
+  });
+
   return {
     projectName,
     hasProject,
@@ -64,5 +91,6 @@ export function useOrchestrate() {
     plan,
     run,
     showRun,
+    loop,
   };
 }

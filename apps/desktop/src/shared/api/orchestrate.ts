@@ -75,6 +75,60 @@ export type TaskEvent = {
   metadata: Record<string, string>;
 };
 
+export type LoopStatus = "succeeded" | "needs_approval" | "guardrail_blocked" | "exhausted" | "dry_run";
+
+export type LoopIteration = {
+  index: number;
+  run_id: string;
+  run_status: RunStatus;
+  cost_units: number;
+  note: string;
+};
+
+export type LoopRun = {
+  project: string;
+  task_id: string;
+  goal: string;
+  status: LoopStatus;
+  iterations: LoopIteration[];
+  total_cost_units: number;
+  started_at: string;
+  finished_at: string;
+};
+
+export type Verdict = "good" | "bad" | "neutral";
+
+export type OutcomeRecord = {
+  id: number;
+  created_at: string;
+  project: string;
+  task_id: string;
+  run_id: string;
+  step_id: string;
+  task_kind: string;
+  provider: string;
+  model: string;
+  status: string;
+  input_tokens: number;
+  output_tokens: number;
+  cost_units: number;
+  verdict: Verdict;
+  verdict_source: string;
+  confirmed: boolean;
+  notes: string;
+};
+
+export type ProviderStat = {
+  task_kind: string;
+  provider: string;
+  scored_runs: number;
+  good: number;
+  bad: number;
+  neutral: number;
+  success_rate: number | null;
+  avg_cost_units: number;
+};
+
 const PAID_PROVIDERS = ["chatgpt", "codex", "openai", "gpt", "gemini", "anthropic", "claude"];
 
 /** Whether a plan includes any paid-provider step (used to warn before running). */
@@ -108,4 +162,32 @@ export async function orchestrationRuns(): Promise<RunSummary[]> {
 
 export async function taskTimeline(): Promise<TaskEvent[]> {
   return invoke("task_timeline");
+}
+
+export async function orchestrateLoop(args: {
+  goal?: string;
+  maxIterations?: number;
+  maxCost?: number | null;
+  dryRun: boolean;
+  approvePaid: boolean;
+}): Promise<LoopRun> {
+  return invoke("orchestrate_loop", {
+    goal: args.goal ?? null,
+    maxIterations: args.maxIterations ?? null,
+    maxCost: args.maxCost ?? null,
+    dryRun: args.dryRun,
+    approvePaid: args.approvePaid,
+  });
+}
+
+export async function outcomesList(limit?: number): Promise<OutcomeRecord[]> {
+  return invoke("outcomes_list", { limit: limit ?? null });
+}
+
+export async function outcomesStats(): Promise<ProviderStat[]> {
+  return invoke("outcomes_stats");
+}
+
+export async function outcomesConfirm(id: number, verdict: Verdict): Promise<void> {
+  return invoke("outcomes_confirm", { id, verdict });
 }

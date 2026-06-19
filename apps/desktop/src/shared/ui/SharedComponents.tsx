@@ -126,7 +126,7 @@ export function UsageRows({ rows, empty }: { rows: any[]; empty: string }) {
           <div><strong>{row.model ? `${row.provider} / ${row.model}` : row.provider}</strong><span>{formatCost(row.estimated_cost_units, row.currency_label)}</span></div>
           <div className="row-meta"><span>in {formatNumber(row.input_tokens)}</span><span>out {formatNumber(row.output_tokens)}</span><strong>{formatNumber(row.total_tokens)}</strong></div>
         </div>
-        <div className="w-full" style={{ height: 6, backgroundColor: "rgba(166, 180, 198, 0.1)", borderRadius: 3, overflow: "hidden" }}>
+        <div className="w-full" style={{ height: 6, backgroundColor: "var(--neutral-soft)", borderRadius: 3, overflow: "hidden" }}>
           <div style={{ 
             width: `${percent}%`, 
             height: "100%", 

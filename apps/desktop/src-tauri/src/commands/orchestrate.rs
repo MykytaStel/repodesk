@@ -4,7 +4,7 @@
 
 use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::orchestrator::{
-    self, OrchestrationPlan, OrchestrationRun, RunOptions, RunSummary,
+    self, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun, RunOptions, RunSummary,
 };
 use repodesk_core::persistence::event_journal::{self, EventEntry};
 use repodesk_core::tasks::show_active_task;
@@ -15,6 +15,8 @@ const MAX_RUNS: usize = 50;
 const MAX_TIMELINE_EVENTS: usize = 100;
 
 const MAX_GOAL_LEN: usize = 2_000;
+/// Upper bound on autonomous-loop attempts, so the UI can never request a runaway.
+const MAX_LOOP_ITERATIONS: usize = 10;
 
 /// Provider settings for a run: API keys from env, Ollama url/model from the
 /// saved desktop provider settings when available.
@@ -60,6 +62,28 @@ pub async fn orchestrate_run(
         settings,
     };
     Ok(orchestrator::run_plan(&plan, &opts).await?)
+}
+
+/// Autonomously attempt the active task: plan → run → re-plan/retry under
+/// guardrails. `approve_paid` is the human-in-the-loop gate — when false, a plan
+/// with paid steps stops the loop instead of spending.
+#[tauri::command]
+pub async fn orchestrate_loop(
+    goal: Option<String>,
+    max_iterations: Option<usize>,
+    max_cost: Option<f64>,
+    dry_run: bool,
+    approve_paid: bool,
+) -> Result<LoopRun, ErrorPayload> {
+    let goal = clean_goal(goal)?;
+    let opts = LoopOptions {
+        max_iterations: max_iterations.unwrap_or(3).clamp(1, MAX_LOOP_ITERATIONS),
+        max_total_cost: max_cost,
+        dry_run,
+        approve_paid,
+        settings: orchestrator_settings(),
+    };
+    Ok(orchestrator::run_loop(goal, &opts).await?)
 }
 
 #[tauri::command]

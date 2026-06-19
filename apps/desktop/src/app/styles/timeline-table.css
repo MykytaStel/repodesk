@@ -18,8 +18,8 @@
   height: 30px;
   display: inline-grid;
   place-items: center;
-  border-radius: 8px;
-  color: #06110d;
+  border-radius: var(--radius-sm);
+  color: var(--accent-contrast);
   background: var(--accent);
   font-weight: 900;
 }

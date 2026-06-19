@@ -38,6 +38,18 @@
   transition: width 0.4s ease-in-out;
 }
 
+/* Autonomous-loop control row (Orchestrate tab), set apart from the run row. */
+.loop-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--border);
+}
+.loop-controls .eyebrow { color: var(--muted-2); }
+
 .dev-details { margin-top: 12px; }
 .dev-details > summary {
   cursor: pointer;
@@ -59,7 +71,7 @@
 .toggle-row {
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius);
   background: var(--glass-bg);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -74,9 +86,9 @@
 .table-row:hover,
 .model-row:hover,
 .metric:hover {
-  transform: translateY(-3px);
-  border-color: rgba(94, 224, 174, 0.4);
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15), 0 0 16px rgba(94, 224, 174, 0.12);
+  transform: translateY(-2px);
+  border-color: var(--accent-border);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18), 0 0 16px var(--accent-glow);
   background: var(--glass-bg-hover);
 }
 
@@ -87,12 +99,12 @@
 }
 
 .check-card.ok:hover {
-  border-color: rgba(115, 227, 165, 0.6);
-  box-shadow: 0 8px 24px rgba(115, 227, 165, 0.25);
+  border-color: var(--success-border);
+  box-shadow: 0 8px 24px var(--success-soft);
 }
 .check-card.warn:hover {
-  border-color: rgba(246, 207, 101, 0.6);
-  box-shadow: 0 8px 24px rgba(246, 207, 101, 0.25);
+  border-color: var(--warning-border);
+  box-shadow: 0 8px 24px var(--warning-soft);
 }
 .check-card span,
 .check-card strong {
@@ -111,44 +123,54 @@
 .danger { color: var(--danger); }
 .neutral { color: var(--muted); }
 
+/* Generic sparkline (shared Sparkline component), accent-driven. */
+.trend-line { stroke: var(--accent); stroke-width: 2; fill: none; }
+.trend-fill { fill: var(--accent-soft); stroke: none; }
+
 .pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   max-width: 100%;
-  min-height: 28px;
-  padding: 4px 9px;
-  border-radius: 999px;
+  min-height: 26px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   color: var(--muted);
-  background: rgba(166, 180, 198, 0.08);
-  font-size: 11px;
-  font-weight: 900;
+  background: var(--neutral-soft);
+  font-size: var(--text-xs);
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .06em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pill.ok { color: var(--success); border-color: rgba(115, 227, 165, 0.34); background: rgba(115, 227, 165, 0.08); }
-.pill.warn { color: var(--warning); border-color: rgba(246, 207, 101, 0.34); background: rgba(246, 207, 101, 0.08); }
-.pill.danger { color: var(--danger); border-color: rgba(255, 127, 147, 0.34); background: rgba(255, 127, 147, 0.08); }
+.pill.ok { color: var(--success); border-color: var(--success-border); background: var(--success-soft); }
+.pill.warn { color: var(--warning); border-color: var(--warning-border); background: var(--warning-soft); }
+.pill.danger { color: var(--danger); border-color: var(--danger-border); background: var(--danger-soft); }
+.pill.accent { color: var(--accent); border-color: var(--accent-border); background: var(--accent-soft); }
 
 .notice {
-  padding: 12px 14px;
+  padding: var(--space-3) var(--space-4);
 }
 .notice.warn {
   color: var(--warning);
-  border-color: rgba(246, 207, 101, 0.34);
-  background: rgba(246, 207, 101, 0.08);
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
 }
 .notice.ok {
   color: var(--success);
-  border-color: rgba(115, 227, 165, 0.34);
-  background: rgba(115, 227, 165, 0.08);
+  border-color: var(--success-border);
+  background: var(--success-soft);
 }
 .notice.danger {
   color: var(--danger);
-  border-color: rgba(255, 127, 147, 0.34);
-  background: rgba(255, 127, 147, 0.08);
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+.notice.accent {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }

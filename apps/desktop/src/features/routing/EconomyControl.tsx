@@ -47,7 +47,7 @@ export function EconomyControl({ mode, setMode, isBusy }: EconomyControlProps) {
             onClick={() => setMode(m.id as EconomyMode)}
             style={{
               borderColor: mode === m.id ? "var(--accent)" : undefined,
-              boxShadow: mode === m.id ? "0 0 16px rgba(94, 224, 174, 0.2)" : undefined,
+              boxShadow: mode === m.id ? "0 0 16px var(--accent-glow)" : undefined,
             }}
           >
             <span style={{ fontSize: 24, marginBottom: 8 }}>{m.icon}</span>
