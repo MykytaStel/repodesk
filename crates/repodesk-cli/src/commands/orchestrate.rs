@@ -3,7 +3,8 @@ use anyhow::{Result, anyhow};
 use crate::cli::OrchestrateCommand;
 use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::orchestrator::{
-    self, OrchestrationPlan, OrchestrationRun, RunOptions, SubAgentTask,
+    self, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun, RunOptions, SubAgentTask,
+    plan_has_paid_step,
 };
 
 pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
@@ -40,6 +41,25 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
             let run = rt.block_on(orchestrator::run_plan(&plan, &opts))?;
             print!("{}", format_run(&run));
         }
+        OrchestrateCommand::Loop {
+            goal,
+            max_iterations,
+            max_cost,
+            dry_run,
+            yes,
+        } => {
+            let settings = ProviderSettings::from_env();
+            let opts = LoopOptions {
+                max_iterations,
+                max_total_cost: max_cost,
+                dry_run,
+                approve_paid: yes,
+                settings,
+            };
+            let rt = tokio::runtime::Runtime::new()?;
+            let loop_run = rt.block_on(orchestrator::run_loop(goal, &opts))?;
+            print!("{}", format_loop(&loop_run));
+        }
         OrchestrateCommand::Status => match orchestrator::load_latest_run()? {
             Some(run) => print!("{}", format_run(&run)),
             None => println!("No orchestration runs yet for the active task."),
@@ -50,22 +70,6 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
         },
     }
     Ok(())
-}
-
-const PAID_PROVIDERS: &[&str] = &[
-    "chatgpt",
-    "codex",
-    "openai",
-    "gpt",
-    "gemini",
-    "anthropic",
-    "claude",
-];
-
-fn plan_has_paid_step(plan: &OrchestrationPlan) -> bool {
-    plan.steps
-        .iter()
-        .any(|step| PAID_PROVIDERS.contains(&step.provider.to_ascii_lowercase().as_str()))
 }
 
 fn format_plan(plan: &OrchestrationPlan) -> String {
@@ -139,6 +143,51 @@ fn format_run(run: &OrchestrationRun) -> String {
     ));
     if !run.dry_run {
         out.push_str("Review captured memory with `repodesk memory review`.\n");
+    }
+    out
+}
+
+fn format_loop(loop_run: &LoopRun) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Autonomous loop — {:?}\nProject: {}  Task: {}\nGoal: {}\n\nAttempts:\n",
+        loop_run.status, loop_run.project, loop_run.task_id, loop_run.goal,
+    ));
+    for iteration in &loop_run.iterations {
+        let run_ref = if iteration.run_id.is_empty() {
+            "(no run)".to_string()
+        } else {
+            iteration.run_id.clone()
+        };
+        out.push_str(&format!(
+            "  #{idx} [{status:?}] {run} — cost {cost:.3}\n      {note}\n",
+            idx = iteration.index + 1,
+            status = iteration.run_status,
+            run = run_ref,
+            cost = iteration.cost_units,
+            note = iteration.note,
+        ));
+    }
+    out.push_str(&format!(
+        "\nTotal cost: {:.3} units over {} attempt(s).\n",
+        loop_run.total_cost_units,
+        loop_run.iterations.len(),
+    ));
+    match loop_run.status {
+        repodesk_core::orchestrator::LoopStatus::NeedsApproval => out.push_str(
+            "Paused: the plan includes paid steps. Re-run with --yes to allow paid execution.\n",
+        ),
+        repodesk_core::orchestrator::LoopStatus::GuardrailBlocked => {
+            out.push_str("Stopped at a safety/budget guardrail — resolve it, then re-run.\n")
+        }
+        repodesk_core::orchestrator::LoopStatus::Exhausted => out
+            .push_str("Out of attempts or budget before succeeding. Raise the limits or re-run.\n"),
+        repodesk_core::orchestrator::LoopStatus::Succeeded => {
+            out.push_str("Review captured memory with `repodesk memory review`.\n")
+        }
+        repodesk_core::orchestrator::LoopStatus::DryRun => {
+            out.push_str("Preview only — nothing was executed.\n")
+        }
     }
     out
 }

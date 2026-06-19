@@ -909,3 +909,55 @@ fn routing_bias_rewards_success_punishes_failure_and_needs_enough_signal() {
     // A pair with no data at all is also absent.
     assert!(bias.lookup(TK::Patch, "ollama").is_none());
 }
+
+// --- N8-C: bounded autonomous loop -------------------------------------------
+
+#[tokio::test]
+#[serial]
+async fn loop_dry_run_is_a_single_preview_pass() {
+    use repodesk_core::orchestrator::{LoopOptions, LoopStatus, run_loop};
+    let _fx = setup();
+
+    let opts = LoopOptions {
+        max_iterations: 3,
+        dry_run: true,
+        settings: ProviderSettings::default(),
+        ..LoopOptions::default()
+    };
+    let loop_run = run_loop(Some("ship it".to_string()), &opts)
+        .await
+        .expect("run_loop");
+
+    // A dry run never loops: one preview pass, terminal DryRun, zero spend.
+    assert_eq!(loop_run.status, LoopStatus::DryRun);
+    assert_eq!(loop_run.iterations.len(), 1);
+    assert_eq!(loop_run.total_cost_units, 0.0);
+    assert_eq!(loop_run.goal, "ship it");
+}
+
+#[tokio::test]
+#[serial]
+async fn loop_pauses_before_paid_spend_without_approval() {
+    use repodesk_core::orchestrator::{LoopOptions, LoopStatus, run_loop};
+    let _fx = setup();
+
+    // A configured paid key makes the patch step route to a paid provider, so
+    // the plan has a paid step. Without approval the loop must refuse to spend.
+    let mut settings = ProviderSettings::default();
+    settings.openai.api_key = Some("sk-test".to_string());
+
+    let opts = LoopOptions {
+        max_iterations: 3,
+        dry_run: false,
+        approve_paid: false,
+        settings,
+        ..LoopOptions::default()
+    };
+    let loop_run = run_loop(None, &opts).await.expect("run_loop");
+
+    // Stopped on the first attempt, before any provider call, with no cost.
+    assert_eq!(loop_run.status, LoopStatus::NeedsApproval);
+    assert_eq!(loop_run.iterations.len(), 1);
+    assert!(loop_run.iterations[0].run_id.is_empty());
+    assert_eq!(loop_run.total_cost_units, 0.0);
+}

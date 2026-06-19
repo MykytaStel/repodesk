@@ -9,12 +9,14 @@
 //! - [`context`] — per-sub-agent context packs (reuses smart-context + brain).
 //! - [`runner`]  — sequential, gated execution + run persistence.
 
+pub mod auto_loop;
 pub mod context;
 pub mod plan;
 pub mod runner;
 pub mod types;
 
-pub use plan::{available_capacities, build_plan, route_steps};
+pub use auto_loop::{LoopIteration, LoopOptions, LoopRun, LoopStatus, run_loop};
+pub use plan::{available_capacities, build_plan, plan_has_paid_step, route_steps};
 pub use runner::{RunOptions, list_runs, load_latest_run, load_run, run_plan};
 pub use types::{
     OrchestrationPlan, OrchestrationRun, RunStatus, RunSummary, SubAgentResult, SubAgentStatus,

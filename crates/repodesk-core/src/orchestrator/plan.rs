@@ -62,6 +62,26 @@ const TEMPLATE: &[StepTemplate] = &[
     },
 ];
 
+/// Provider names that incur real (paid/cloud) spend. Used to gate a plan
+/// behind explicit human approval before any of its steps run.
+const PAID_PROVIDERS: &[&str] = &[
+    "chatgpt",
+    "codex",
+    "openai",
+    "gpt",
+    "gemini",
+    "anthropic",
+    "claude",
+];
+
+/// Whether any step in the plan routes to a paid provider — the signal for the
+/// confirm-before-paid gate (CLI `--yes`, desktop confirm, autonomous-loop pause).
+pub fn plan_has_paid_step(plan: &OrchestrationPlan) -> bool {
+    plan.steps
+        .iter()
+        .any(|step| PAID_PROVIDERS.contains(&step.provider.to_ascii_lowercase().as_str()))
+}
+
 /// Provider capacities filtered to providers we can actually call.
 pub fn available_capacities(
     settings: &ProviderSettings,

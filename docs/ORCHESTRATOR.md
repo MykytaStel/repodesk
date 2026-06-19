@@ -123,6 +123,30 @@ repodesk outcomes stats                 # success rate + avg cost per kind/provi
 repodesk outcomes confirm <id> <good|bad|neutral>
 ```
 
+## Autonomous loop (N8-C — the brain drives)
+
+`orchestrator::run_loop(goal, &LoopOptions)` turns a single attempt into
+**attempt → evaluate → re-plan → retry** until the task succeeds or a stop
+condition fires. It is bounded and explainable by construction:
+
+- **Bounded**: a `max_iterations` cap and an optional `max_total_cost` ceiling
+  (the per-attempt cost ceiling is whatever total budget remains).
+- **Human-in-the-loop**: with `approve_paid = false` the loop refuses to execute
+  a plan that has paid steps and stops with `LoopStatus::NeedsApproval` — no spend
+  without explicit approval (`--yes` on the CLI).
+- **Guardrail-aware**: a safety/budget block stops the loop with
+  `GuardrailBlocked` (a retry would hit the same wall); a plain failure retries.
+- **Learning is free**: each real attempt records outcomes to the ledger, so the
+  next attempt's `build_plan` re-reads the updated routing bias and routes around
+  a provider that just failed — no extra machinery in the loop.
+
+Terminal states: `Succeeded`, `NeedsApproval`, `GuardrailBlocked`, `Exhausted`,
+`DryRun` (a single preview pass).
+
+```bash
+repodesk orchestrate loop [--goal "..."] [--max-iterations N] [--max-cost N] [--dry-run] [--yes]
+```
+
 ## Invariants
 
 - Durable Memory Brain mutations stay human-approved (propose→accept); only in-run handoff is automatic.
@@ -131,6 +155,8 @@ repodesk outcomes confirm <id> <good|bad|neutral>
 
 ## Deferred
 
-- **N8-C autonomous loop + LLM planning**: a "run task to completion" mode (plan → run → checks
-  → re-plan/retry on failure under budget/safety guardrails) and LLM-assisted decomposition to
-  replace the static analyze→implement→review template.
+- **LLM-assisted decomposition**: a dynamic, per-attempt plan instead of the static
+  analyze→implement→review template. Left out of the bounded loop core because it is
+  non-deterministic and needs a live model to verify.
+- **Desktop UI** for the outcome ledger, the learned bias, and the autonomous loop (core +
+  CLI only so far).

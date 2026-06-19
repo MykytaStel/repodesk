@@ -566,6 +566,23 @@ pub enum OrchestrateCommand {
         #[arg(long)]
         yes: bool,
     },
+    /// Autonomously attempt the task: plan → run → re-plan/retry under guardrails.
+    Loop {
+        #[arg(long)]
+        goal: Option<String>,
+        /// Maximum attempts before giving up.
+        #[arg(long = "max-iterations", default_value_t = 3)]
+        max_iterations: usize,
+        /// Total cost ceiling across all attempts (cost units).
+        #[arg(long = "max-cost")]
+        max_cost: Option<f64>,
+        /// Preview only — a single pass, no provider calls.
+        #[arg(long)]
+        dry_run: bool,
+        /// Approve execution of plans that include paid provider steps.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Show the most recent orchestration run for the active task.
     Status,
     /// Show a specific run by id.
