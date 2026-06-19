@@ -93,6 +93,19 @@ export type DesktopSnapshot = {
   mode: string;
   workspace_root: string;
   generated_at_ms: number;
+  project?: {
+    name: string;
+    path: string;
+    project_type: string;
+    main_language?: string | null;
+  } | null;
+  task?: {
+    id: string;
+    project_name: string;
+    title: string;
+    status: string;
+    run_dir: string;
+  } | null;
   actions: DesktopAction[];
   workflow_state: ProductWorkflowState;
   dashboard: CommandResult;

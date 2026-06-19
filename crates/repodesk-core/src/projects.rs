@@ -115,7 +115,7 @@ pub fn use_project(name: &str) -> RepoDeskResult<ProjectConfig> {
 
     let config = get_project(name)?;
     let paths = RepoDeskPaths::resolve()?;
-    fs::write(&paths.active_project_file, format!("{name}\n"))?;
+    fs::write(&paths.active_project_file, format!("{}\n", config.name))?;
 
     Ok(config)
 }
@@ -126,11 +126,15 @@ pub fn get_project(name: &str) -> RepoDeskResult<ProjectConfig> {
     let paths = RepoDeskPaths::resolve()?;
     let project_file = paths.project_config_file(name);
 
-    if !project_file.exists() {
-        return Err(RepoDeskError::ProjectNotFound(name.to_string()));
+    if project_file.exists() {
+        return read_project_config(&project_file);
     }
 
-    read_project_config(&project_file)
+    if let Some(canonical_name) = canonical_project_name(&paths, name)? {
+        return read_project_config(&paths.project_config_file(&canonical_name));
+    }
+
+    Err(RepoDeskError::ProjectNotFound(name.to_string()))
 }
 
 pub fn get_active_project() -> RepoDeskResult<ProjectConfig> {
@@ -145,14 +149,14 @@ pub fn read_active_project() -> RepoDeskResult<String> {
         return Err(RepoDeskError::ActiveProjectNotSet);
     }
 
-    let name = fs::read_to_string(paths.active_project_file)?;
+    let name = fs::read_to_string(&paths.active_project_file)?;
     let name = name.trim().to_string();
 
     if name.is_empty() {
         return Err(RepoDeskError::ActiveProjectNotSet);
     }
 
-    Ok(name)
+    Ok(canonical_project_name(&paths, &name)?.unwrap_or(name))
 }
 
 pub fn update_project_ignore_rules(
@@ -201,6 +205,36 @@ fn read_project_config(path: &Path) -> RepoDeskResult<ProjectConfig> {
     let content = fs::read_to_string(path)?;
     let config = toml::from_str(&content)?;
     Ok(config)
+}
+
+fn canonical_project_name(paths: &RepoDeskPaths, name: &str) -> RepoDeskResult<Option<String>> {
+    let exact_file = paths.project_config_file(name);
+    if exact_file.exists() {
+        return read_project_config(&exact_file).map(|config| Some(config.name));
+    }
+
+    if !paths.projects_dir.exists() {
+        return Ok(None);
+    }
+
+    for entry in fs::read_dir(&paths.projects_dir)? {
+        let entry = entry?;
+        let project_file = entry.path().join("project.toml");
+        if !project_file.exists() {
+            continue;
+        }
+        let config = read_project_config(&project_file)?;
+        if config.name.eq_ignore_ascii_case(name)
+            || entry
+                .file_name()
+                .to_string_lossy()
+                .eq_ignore_ascii_case(name)
+        {
+            return Ok(Some(config.name));
+        }
+    }
+
+    Ok(None)
 }
 
 fn write_if_missing(path: &Path, content: &str) -> RepoDeskResult<()> {

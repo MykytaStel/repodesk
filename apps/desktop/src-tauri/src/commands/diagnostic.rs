@@ -119,10 +119,32 @@ pub async fn desktop_snapshot() -> serde_json::Value {
         },
     };
 
+    let project = repodesk_core::projects::get_active_project()
+        .ok()
+        .map(|config| {
+            json!({
+                "name": config.name,
+                "path": config.path,
+                "project_type": config.project_type,
+                "main_language": config.main_language,
+            })
+        });
+    let task = repodesk_core::tasks::show_active_task().ok().map(|info| {
+        json!({
+            "id": info.config.id,
+            "project_name": info.config.project_name,
+            "title": info.config.title,
+            "status": info.config.status,
+            "run_dir": info.config.run_dir,
+        })
+    });
+
     json!({
         "mode": "desktop-product-workflow-mvp",
         "workspace_root": workspace_root(),
         "generated_at_ms": now_ms(),
+        "project": project,
+        "task": task,
         "actions": action_catalog(),
         "workflow_state": build_product_workflow_state(),
         "dashboard": dashboard,

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
-import { projectAdd, taskNew } from "../../shared/api/workflow";
+import { projectAdd, projectUse, taskNew } from "../../shared/api/workflow";
 import { pickDirectory, basename } from "../../shared/api/dialog";
 import { useWorkflow } from "./useWorkflow";
 import { TaskSwitcher } from "./TaskSwitcher";
@@ -49,7 +49,17 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   async function addProject() {
     setOnboardError("");
     try {
-      await projectAdd({ name: projName.trim(), path: projPath.trim(), project_type: projType.trim() || "generic", main_language: null });
+      const input = { name: projName.trim(), path: projPath.trim(), project_type: projType.trim() || "generic", main_language: null };
+      const added = await projectAdd(input);
+      const alreadyExists = !added.ok && /already exists/i.test(added.stderr);
+      if (!added.ok && !alreadyExists) {
+        throw new Error(added.stderr || "Could not connect project.");
+      }
+
+      const activated = await projectUse(input.name);
+      if (!activated.ok) {
+        throw new Error(activated.stderr || "Project was connected, but could not be activated.");
+      }
       setProjName(""); setProjPath("");
       await queryClient.invalidateQueries();
     } catch (error: any) {

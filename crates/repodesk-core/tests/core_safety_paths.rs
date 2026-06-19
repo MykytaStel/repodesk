@@ -15,7 +15,7 @@ use repodesk_core::orchestrator::{
 };
 use repodesk_core::persistence::event_journal::{LogEventInput, log_event, read_task_events};
 use repodesk_core::persistence::{count_action_runs, recent_action_runs, record_action_run};
-use repodesk_core::projects::{AddProjectInput, add_project, use_project};
+use repodesk_core::projects::{AddProjectInput, add_project, read_active_project, use_project};
 use repodesk_core::repopilot::{load_history, parse_review_json, record_report};
 use repodesk_core::routing::types::TaskKind;
 use repodesk_core::safety::{SafetyLevel, scan_active_context};
@@ -107,6 +107,17 @@ fn repopilot_trend_appends_real_reviews_and_skips_errors() {
 }
 
 // --- task switching ----------------------------------------------------------
+
+#[test]
+#[serial]
+fn use_project_writes_canonical_active_project_name() {
+    let _fx = setup();
+
+    let active = use_project("DEMO").expect("case-insensitive project lookup");
+
+    assert_eq!(active.name, "demo");
+    assert_eq!(read_active_project().expect("active project"), "demo");
+}
 
 #[test]
 #[serial]
