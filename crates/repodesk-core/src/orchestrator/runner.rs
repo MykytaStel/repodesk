@@ -129,7 +129,9 @@ pub async fn run_plan(
             // A "manual" route means no automatic provider fits this step (e.g. an
             // unreviewed patch with no paid key configured). It is human work, not
             // an API spend: zero cost, and clearly flagged in both run modes.
-            if step.executor_kind == ExecutorKind::Manual
+            let executor_kind = step.resolved_executor_kind();
+
+            if executor_kind == ExecutorKind::Manual
                 || step.provider.eq_ignore_ascii_case("manual")
                 || step.resolved_executor_id().eq_ignore_ascii_case("manual")
             {
@@ -150,7 +152,15 @@ pub async fn run_plan(
                 continue;
             }
 
-            if step.executor_kind == ExecutorKind::CodingAgent {
+            if executor_kind == ExecutorKind::CodingAgent {
+                let handoff = crate::executors::preview_coding_agent_handoff(
+                    step.resolved_executor_id(),
+                    step.allow_write,
+                );
+                let notes = match handoff {
+                    Ok(handoff) => handoff.notes,
+                    Err(error) => vec![format!("coding-agent handoff unavailable: {error}")],
+                };
                 state.push(SubAgentResult {
                     status: if opts.dry_run {
                         SubAgentStatus::Ok
@@ -158,10 +168,7 @@ pub async fn run_plan(
                         SubAgentStatus::Skipped
                     },
                     input_tokens,
-                    notes: vec![format!(
-                        "{} is a coding-agent executor; automatic CLI execution is not implemented in this PR",
-                        step.resolved_executor_id()
-                    )],
+                    notes,
                     ..base_result(step)
                 });
                 continue;

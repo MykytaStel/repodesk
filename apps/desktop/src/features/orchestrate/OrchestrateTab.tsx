@@ -45,7 +45,10 @@ function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
       <p className="eyebrow">Plan</p>
       <h2 style={{ marginTop: 4 }}>{plan.goal}</h2>
       <div className="table-list" style={{ marginTop: 8 }}>
-        {plan.steps.map((step) => (
+        {plan.steps.map((step) => {
+          const executor = step.executor_id ?? step.agent;
+          const provider = step.provider_id ?? step.provider;
+          return (
           <div className="table-row flex-col items-start gap-sm" key={step.id} style={{ paddingBottom: 12 }}>
             <div className="w-full flex justify-between items-center">
               <strong>
@@ -61,15 +64,17 @@ function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
             </div>
             <div className="row-meta">
               <span>
-                {step.agent} / {step.model ?? "default model"}
+                {executor}{provider && provider !== executor ? ` → ${provider}` : ""} / {step.model ?? "default model"}
               </span>
+              {step.executor_kind && <span>executor: {step.executor_kind}</span>}
               <span>thinking: {step.thinking}</span>
               <span>
                 depends on: {step.depends_on.length ? step.depends_on.join(", ") : "none"}
               </span>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
@@ -99,7 +104,7 @@ function RunPanel({
           <div className="table-row flex-col items-start gap-sm" key={result.task_id} style={{ paddingBottom: 12 }}>
             <div className="w-full flex justify-between items-center">
               <strong>
-                {result.task_id} — {result.provider}
+                {result.task_id} — {result.agent !== result.provider ? `${result.agent} → ${result.provider}` : result.provider}
                 {result.model ? ` / ${result.model}` : ""}
               </strong>
               <StatusBadge status={result.status} />

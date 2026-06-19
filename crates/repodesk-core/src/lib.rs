@@ -11,6 +11,7 @@ pub mod context;
 
 pub mod desktop;
 pub mod errors;
+pub mod executors;
 pub mod guard;
 pub mod init;
 pub mod judge;

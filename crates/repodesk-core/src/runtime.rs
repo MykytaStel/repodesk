@@ -4,6 +4,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
+use crate::executors::{canonical_coding_agent_id, coding_agent_availability};
 use std::future::Future;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -129,6 +130,28 @@ pub fn runtime_providers() -> Vec<RuntimeProvider> {
             },
         },
         RuntimeProvider {
+            name: "claude_code_cli".to_string(),
+            kind: "coding_agent_executor".to_string(),
+            access_model: "bounded repository access via CLI executor (planned)".to_string(),
+            cost_profile: "paid/limited tokens".to_string(),
+            trust_level: "powerful but must be guarded".to_string(),
+            strengths: vec![
+                "file edits".to_string(),
+                "focused patches".to_string(),
+                "test-driven implementation".to_string(),
+            ],
+            limits: vec![
+                "must not receive unrestricted shell".to_string(),
+                "must not patch without preflight".to_string(),
+            ],
+            recommended_for: vec!["patch".to_string(), "refactor".to_string()],
+            health_check: RuntimeHealthCheck {
+                mode: "passive_path".to_string(),
+                command: Some("claude".to_string()),
+                notes: "Coding-agent executor. CLI execution is planned behind guard/judge/access checks.".to_string(),
+            },
+        },
+        RuntimeProvider {
             name: "gemini".to_string(),
             kind: "manual_ai_handoff".to_string(),
             access_model: "manual/web handoff or gemini_api completion provider".to_string(),
@@ -157,7 +180,16 @@ pub fn provider_status(provider: &str) -> RepoDeskResult<RuntimeProviderStatus> 
 
     match provider.as_str() {
         "ollama" => Ok(check_ollama()),
-        "chatgpt" | "codex" | "codex_cli" | "gemini" => Ok(RuntimeProviderStatus {
+        id if canonical_coding_agent_id(id).is_some() => {
+            let availability = coding_agent_availability(id)?;
+            Ok(RuntimeProviderStatus {
+                provider: availability.executor_id,
+                available: availability.available,
+                status: availability.status,
+                details: availability.notes.join(" "),
+            })
+        }
+        "chatgpt" | "gemini" => Ok(RuntimeProviderStatus {
             provider,
             available: true,
             status: "manual".to_string(),

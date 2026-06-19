@@ -45,6 +45,19 @@ pub struct SubAgentTask {
 }
 
 impl SubAgentTask {
+    pub fn resolved_executor_kind(&self) -> ExecutorKind {
+        let id = self.resolved_executor_id().to_ascii_lowercase();
+        match id.as_str() {
+            "manual" => ExecutorKind::Manual,
+            "local_checks" => ExecutorKind::CheckRunner,
+            "codex" | "codex_cli" | "claude" | "claude_code" | "claude_code_cli" => {
+                ExecutorKind::CodingAgent
+            }
+            "ollama" | "lm_studio" | "llamafile" | "localai" => ExecutorKind::LocalRuntime,
+            _ => self.executor_kind,
+        }
+    }
+
     pub fn resolved_executor_id(&self) -> &str {
         let executor_id = self.executor_id.trim();
         if executor_id.is_empty() {

@@ -40,12 +40,21 @@ Source brief: `/Users/mykyta/Downloads/repodesk_ai_providers_agents_prompt_and_e
   `claude` no longer resolve to completion-provider clients.
 - Keep CLI coding-agent execution out of this PR. Coding-agent routes are
   identified cleanly, but the runner does not spawn those tools yet.
+- Add a dedicated executor boundary for coding agents:
+  - canonical alias normalization (`codex` → `codex_cli`, `claude` →
+    `claude_code_cli`)
+  - passive PATH availability
+  - argv-only command preview
+  - stdin prompt transport
+  - no `sh -c` and no automatic CLI launch
 
 ## Remaining Gaps
 
-- Add a dedicated executor layer for `codex_cli` and `claude_code_cli`.
-- Add CLI auth/availability detection to routing capacities instead of manual
-  status toggles.
+- Add real process execution for `codex_cli` and `claude_code_cli` behind the
+  executor boundary.
+- Add CLI auth detection beyond passive PATH availability.
+- Feed CLI availability into routing capacities instead of manual status
+  toggles.
 - Add an in-app terminal or terminal panel only after the executor boundary and
   command sandbox rules are designed.
 - Decide whether RepoDesk should start local runtimes itself or only guide the

@@ -552,6 +552,30 @@ fn diamond_plan(project: &str, task_id: &str, provider: &str) -> OrchestrationPl
     }
 }
 
+fn coding_agent_plan(project: &str, task_id: &str) -> OrchestrationPlan {
+    OrchestrationPlan {
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "coding agent handoff".to_string(),
+        steps: vec![SubAgentTask {
+            id: "implement".to_string(),
+            title: "Implement the change".to_string(),
+            kind: TaskKind::Patch,
+            agent: "codex_cli".to_string(),
+            provider: "codex_cli".to_string(),
+            executor_kind: ExecutorKind::CodingAgent,
+            executor_id: "codex_cli".to_string(),
+            provider_id: None,
+            model: None,
+            thinking: ThinkingLevel::None,
+            instruction: "Prepare a bounded patch.".to_string(),
+            depends_on: Vec::new(),
+            budget_tokens: 500,
+            allow_write: true,
+        }],
+    }
+}
+
 #[tokio::test]
 #[serial]
 async fn dry_run_executes_waves_in_deterministic_index_order() {
@@ -621,6 +645,44 @@ async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
             .skip(1)
             .all(|r| r.status == SubAgentStatus::Blocked || r.status == SubAgentStatus::Skipped),
         "downstream steps must be blocked/skipped once the ceiling trips"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn real_run_previews_coding_agent_without_provider_call() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+    let plan = coding_agent_plan("demo", &active_id);
+
+    let run = run_plan(
+        &plan,
+        &RunOptions {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+        },
+    )
+    .await
+    .expect("run_plan");
+
+    assert_eq!(run.results.len(), 1);
+    let result = &run.results[0];
+    assert_eq!(result.status, SubAgentStatus::Skipped);
+    assert_eq!(result.agent, "codex_cli");
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|note| note.contains("command preview: codex [stdin: bounded prompt]")),
+        "handoff notes should include the safe argv preview: {:?}",
+        result.notes
+    );
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|note| note.contains("automatic CLI execution is not enabled"))
     );
 }
 

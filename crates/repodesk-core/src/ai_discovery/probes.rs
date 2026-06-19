@@ -8,6 +8,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
     let specs = [
         (
             "ollama",
+            "ollama",
             "Ollama",
             AiProbeCategory::LocalRuntime,
             true,
@@ -16,6 +17,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
             vec!["Best default for local compression, summaries, and private context reduction."],
         ),
         (
+            "codex_cli",
             "codex",
             "Codex CLI",
             AiProbeCategory::PaidAgent,
@@ -26,6 +28,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
         ),
         (
             "gemini",
+            "gemini",
             "Gemini CLI",
             AiProbeCategory::PaidAgent,
             false,
@@ -34,8 +37,9 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
             vec!["Useful as secondary review/runtime, but still requires bounded context."],
         ),
         (
+            "claude_code_cli",
             "claude",
-            "Claude CLI",
+            "Claude Code CLI",
             AiProbeCategory::PaidAgent,
             false,
             true,
@@ -43,6 +47,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
             vec!["Treat as paid/external unless explicitly configured as local gateway."],
         ),
         (
+            "aider",
             "aider",
             "Aider",
             AiProbeCategory::CliAgent,
@@ -53,6 +58,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
         ),
         (
             "opencode",
+            "opencode",
             "OpenCode",
             AiProbeCategory::CliAgent,
             false,
@@ -61,6 +67,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
             vec!["Patch-capable agent. Run only behind RepoDesk guardrails."],
         ),
         (
+            "llamafile",
             "llamafile",
             "Llamafile",
             AiProbeCategory::LocalRuntime,
@@ -71,6 +78,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
         ),
         (
             "docker",
+            "docker",
             "Docker",
             AiProbeCategory::RuntimeDependency,
             true,
@@ -80,6 +88,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
         ),
         (
             "node",
+            "node",
             "Node.js",
             AiProbeCategory::RuntimeDependency,
             true,
@@ -88,6 +97,7 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
             vec!["Needed for the desktop frontend and some agent tooling."],
         ),
         (
+            "python3",
             "python3",
             "Python 3",
             AiProbeCategory::RuntimeDependency,
@@ -100,26 +110,28 @@ pub fn discover_cli_tools() -> Vec<AiToolProbe> {
 
     specs
         .into_iter()
-        .map(|(id, name, category, local_only, paid, risk, notes)| {
-            let path = find_executable(id);
-            AiToolProbe {
-                id: id.to_string(),
-                name: name.to_string(),
-                category,
-                status: if path.is_some() {
-                    AiProbeStatus::Available
-                } else {
-                    AiProbeStatus::Missing
-                },
-                detection: "passive PATH lookup; no arbitrary shell execution".to_string(),
-                executable_path: path.map(|p| p.display().to_string()),
-                app_path: None,
-                local_only,
-                requires_paid_account: paid,
-                risk_level: risk.to_string(),
-                notes: notes.into_iter().map(str::to_string).collect(),
-            }
-        })
+        .map(
+            |(id, binary, name, category, local_only, paid, risk, notes)| {
+                let path = find_executable(binary);
+                AiToolProbe {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    category,
+                    status: if path.is_some() {
+                        AiProbeStatus::Available
+                    } else {
+                        AiProbeStatus::Missing
+                    },
+                    detection: "passive PATH lookup; no arbitrary shell execution".to_string(),
+                    executable_path: path.map(|p| p.display().to_string()),
+                    app_path: None,
+                    local_only,
+                    requires_paid_account: paid,
+                    risk_level: risk.to_string(),
+                    notes: notes.into_iter().map(str::to_string).collect(),
+                }
+            },
+        )
         .collect()
 }
 
@@ -272,7 +284,7 @@ pub fn build_recommendations(tools: &[AiToolProbe], endpoints: &[AiEndpointProbe
         is_tool_available(tools, "ollama") || is_endpoint_available(endpoints, "ollama_api");
     let lm_studio_available =
         is_tool_available(tools, "lm_studio") || is_endpoint_available(endpoints, "lm_studio_api");
-    let codex_available = is_tool_available(tools, "codex");
+    let codex_available = is_tool_available(tools, "codex_cli");
     let aider_available = is_tool_available(tools, "aider");
     let opencode_available = is_tool_available(tools, "opencode");
 
