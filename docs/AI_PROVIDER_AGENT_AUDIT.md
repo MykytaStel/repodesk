@@ -51,12 +51,15 @@ Source brief: `/Users/mykyta/Downloads/repodesk_ai_providers_agents_prompt_and_e
   - stdout/stderr receipt files
   - timeout and kill on overrun
   - token/cost ledger accounting from captured output
+- Feed coding-agent PATH availability into orchestrator routing capacities:
+  - missing CLI binaries are not routable
+  - PATH-available CLI executors can be selected for patch steps
+  - desktop exposes executor availability and keeps CLI launch behind a separate
+    approval switch
 
 ## Remaining Gaps
 
 - Add CLI auth detection beyond passive PATH availability.
-- Feed CLI availability into routing capacities instead of manual status
-  toggles.
 - Add an in-app terminal or terminal panel only after the executor boundary and
   command sandbox rules are designed.
 - Decide whether RepoDesk should start local runtimes itself or only guide the
@@ -67,12 +70,9 @@ Source brief: `/Users/mykyta/Downloads/repodesk_ai_providers_agents_prompt_and_e
 
 ## Follow-Up PRs
 
-1. Implement the coding-agent executor interface without shell metacharacters or
-   `sh -c`, starting with a dry-run/logging mode.
-2. Add Codex CLI execution behind guard, budget, safety, and explicit
-   confirmation gates.
-3. Add Claude Code CLI execution with the same gates.
-4. Add a bounded in-app terminal surface if it is needed for user-visible
+1. Add CLI auth detection beyond passive PATH checks for Codex CLI and Claude
+   Code.
+2. Add a bounded in-app terminal surface if it is needed for user-visible
    executor sessions.
-5. Add local-runtime management only if RepoDesk should own process lifecycle
+3. Add local-runtime management only if RepoDesk should own process lifecycle
    for Ollama/LM Studio; otherwise keep local model setup as probe + docs.

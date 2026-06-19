@@ -62,18 +62,16 @@ const TEMPLATE: &[StepTemplate] = &[
     },
 ];
 
-/// Whether any step in the plan routes to a paid provider — the signal for the
-/// confirm-before-paid gate (CLI `--yes`, desktop confirm, autonomous-loop pause).
-pub fn plan_has_paid_step(plan: &OrchestrationPlan) -> bool {
+/// Whether any step in the plan routes to a paid completion/manual provider.
+pub fn plan_has_paid_provider_step(plan: &OrchestrationPlan) -> bool {
     plan.steps.iter().any(|step| {
-        let executor_id = step.resolved_executor_id().to_ascii_lowercase();
         let provider_id = step
             .resolved_provider_id()
             .unwrap_or_default()
             .to_ascii_lowercase();
         matches!(
-            executor_id.as_str(),
-            "codex_cli" | "claude_code_cli" | "chatgpt" | "gemini"
+            step.provider.to_ascii_lowercase().as_str(),
+            "chatgpt" | "gemini"
         ) || matches!(
             provider_id.as_str(),
             "openai_api"
@@ -88,10 +86,38 @@ pub fn plan_has_paid_step(plan: &OrchestrationPlan) -> bool {
     })
 }
 
+/// Whether any step in the plan routes to a coding-agent CLI executor.
+pub fn plan_has_coding_agent_step(plan: &OrchestrationPlan) -> bool {
+    plan.steps.iter().any(|step| {
+        matches!(
+            step.resolved_executor_id().to_ascii_lowercase().as_str(),
+            "codex_cli" | "claude_code_cli"
+        )
+    })
+}
+
+/// Back-compat approval predicate: callers that only have one approval switch
+/// should treat paid provider and coding-agent executor steps as gated.
+pub fn plan_has_paid_step(plan: &OrchestrationPlan) -> bool {
+    plan_has_paid_provider_step(plan) || plan_has_coding_agent_step(plan)
+}
+
 /// Provider capacities filtered to providers we can actually call.
 pub fn available_capacities(
     settings: &ProviderSettings,
     budget: &BudgetConfig,
+) -> Vec<ProviderCapacity> {
+    available_capacities_with(settings, budget, |executor| {
+        crate::executors::coding_agent_availability(executor)
+            .map(|availability| availability.available)
+            .unwrap_or(false)
+    })
+}
+
+fn available_capacities_with(
+    settings: &ProviderSettings,
+    budget: &BudgetConfig,
+    coding_agent_available: impl Fn(&str) -> bool,
 ) -> Vec<ProviderCapacity> {
     let avail = settings.available_providers();
     let has_openai = avail.contains(&"openai_api");
@@ -100,15 +126,20 @@ pub fn available_capacities(
 
     default_capacities(budget)
         .into_iter()
-        .filter(|capacity| match capacity.provider.as_str() {
-            "ollama" | "local" | "lm_studio" | "llamafile" | "localai" | "local_checks" => true,
-            "openai_api" => has_openai,
-            "gemini_api" => has_gemini,
-            "anthropic_api" => has_anthropic,
-            // First PR only separates identities. CLI coding-agent execution is
-            // introduced later, so the orchestrator does not auto-route to it.
-            "codex_cli" | "claude_code_cli" => false,
-            _ => true,
+        .filter_map(|mut capacity| match capacity.provider.as_str() {
+            "ollama" | "local" | "lm_studio" | "llamafile" | "localai" | "local_checks" => {
+                Some(capacity)
+            }
+            "openai_api" if has_openai => Some(capacity),
+            "gemini_api" if has_gemini => Some(capacity),
+            "anthropic_api" if has_anthropic => Some(capacity),
+            "codex_cli" | "claude_code_cli" if coding_agent_available(&capacity.provider) => {
+                capacity.auth_status = "cli_on_path".to_string();
+                capacity.reachability = "unknown".to_string();
+                Some(capacity)
+            }
+            "manual" => Some(capacity),
+            _ => None,
         })
         .collect()
 }
@@ -224,7 +255,7 @@ mod tests {
     fn available_capacities_drops_unkeyed_paid_providers() {
         let budget = BudgetConfig::default();
         let settings = ProviderSettings::default();
-        let caps = available_capacities(&settings, &budget);
+        let caps = available_capacities_with(&settings, &budget, |_| false);
         // With no keys, no paid provider survives (ollama / local_checks / manual stay).
         let paid = ["openai_api", "gemini_api", "anthropic_api"];
         assert!(caps.iter().all(|c| !paid.contains(&c.provider.as_str())));
@@ -236,7 +267,7 @@ mod tests {
     fn lm_studio_is_offered_as_a_local_capacity_without_a_key() {
         let budget = BudgetConfig::default();
         let settings = ProviderSettings::default();
-        let caps = available_capacities(&settings, &budget);
+        let caps = available_capacities_with(&settings, &budget, |_| false);
         // LM Studio is local: present even with no provider keys configured.
         assert!(
             caps.iter().any(|c| c.provider == "lm_studio"),
@@ -249,14 +280,51 @@ mod tests {
         let budget = BudgetConfig::default();
         let mut settings = ProviderSettings::default();
         settings.openai.api_key = Some("sk-test".to_string());
-        let caps = available_capacities(&settings, &budget);
+        let caps = available_capacities_with(&settings, &budget, |_| false);
         assert!(
             caps.iter().any(|c| c.provider == "openai_api"),
             "openai_api should be present when an OpenAI API key is configured"
         );
         assert!(
             caps.iter().all(|c| c.provider != "codex_cli"),
-            "codex_cli is not auto-routable until a CLI executor exists"
+            "codex_cli is not auto-routable while its CLI executor is missing"
         );
+    }
+
+    #[test]
+    fn available_capacities_keeps_path_available_coding_agents() {
+        let budget = BudgetConfig::default();
+        let settings = ProviderSettings::default();
+        let caps = available_capacities_with(&settings, &budget, |executor| {
+            matches!(executor, "codex_cli")
+        });
+        let codex = caps
+            .iter()
+            .find(|capacity| capacity.provider == "codex_cli")
+            .expect("codex capacity");
+        assert_eq!(
+            codex.executor_kind,
+            crate::routing::types::ExecutorKind::CodingAgent
+        );
+        assert_eq!(codex.auth_status, "cli_on_path");
+        assert!(caps.iter().all(|c| c.provider != "claude_code_cli"));
+    }
+
+    #[test]
+    fn plan_predicates_split_paid_provider_and_coding_agent_steps() {
+        let budget = BudgetConfig::default();
+        let settings = ProviderSettings::default();
+        let caps =
+            available_capacities_with(&settings, &budget, |executor| executor == "codex_cli");
+        let plan = OrchestrationPlan {
+            project: "demo".to_string(),
+            task_id: "task".to_string(),
+            goal: "ship it".to_string(),
+            steps: route_steps(&caps, &budget, &RouteBias::default()),
+        };
+
+        assert!(plan_has_coding_agent_step(&plan));
+        assert!(!plan_has_paid_provider_step(&plan));
+        assert!(plan_has_paid_step(&plan));
     }
 }

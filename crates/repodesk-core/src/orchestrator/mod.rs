@@ -16,7 +16,10 @@ pub mod runner;
 pub mod types;
 
 pub use auto_loop::{LoopIteration, LoopOptions, LoopRun, LoopStatus, run_loop};
-pub use plan::{available_capacities, build_plan, plan_has_paid_step, route_steps};
+pub use plan::{
+    available_capacities, build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step,
+    plan_has_paid_step, route_steps,
+};
 pub use runner::{RunOptions, list_runs, load_latest_run, load_run, run_plan};
 pub use types::{
     OrchestrationPlan, OrchestrationRun, RunStatus, RunSummary, SubAgentResult, SubAgentStatus,

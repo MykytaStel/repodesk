@@ -78,6 +78,16 @@ export type TaskEvent = {
   metadata: Record<string, string>;
 };
 
+export type ExecutorAvailability = {
+  executor_id: string;
+  label: string;
+  binary: string;
+  available: boolean;
+  executable_path?: string | null;
+  status: string;
+  notes: string[];
+};
+
 export type LoopStatus = "succeeded" | "needs_approval" | "guardrail_blocked" | "exhausted" | "dry_run";
 
 export type LoopIteration = {
@@ -141,15 +151,23 @@ const PAID_IDS = [
   "gpt",
   "anthropic",
   "gemini",
-  "codex_cli",
-  "claude_code_cli",
 ];
 
-/** Whether a plan includes any paid-provider step (used to warn before running). */
+const CODING_AGENT_IDS = ["codex_cli", "claude_code_cli", "codex", "claude", "claude_code"];
+
+/** Whether a plan includes any paid completion/manual-provider step. */
 export function planHasPaidStep(plan: OrchestrationPlan): boolean {
   return plan.steps.some((step) => {
     const ids = [step.provider, step.provider_id ?? "", step.agent, step.executor_id ?? ""].map((id) => id.toLowerCase());
     return ids.some((id) => PAID_IDS.includes(id));
+  });
+}
+
+/** Whether a plan includes any coding-agent CLI step. */
+export function planHasCodingAgentStep(plan: OrchestrationPlan): boolean {
+  return plan.steps.some((step) => {
+    const ids = [step.provider, step.provider_id ?? "", step.agent, step.executor_id ?? ""].map((id) => id.toLowerCase());
+    return ids.some((id) => CODING_AGENT_IDS.includes(id)) || step.executor_kind === "coding_agent";
   });
 }
 
@@ -161,8 +179,14 @@ export async function orchestrateRun(
   goal: string | undefined,
   dryRun: boolean,
   maxCost?: number | null,
+  approveCodingAgents = false,
 ): Promise<OrchestrationRun> {
-  return invoke("orchestrate_run", { goal: goal ?? null, dryRun, maxCost: maxCost ?? null });
+  return invoke("orchestrate_run", {
+    goal: goal ?? null,
+    dryRun,
+    maxCost: maxCost ?? null,
+    approveCodingAgents,
+  });
 }
 
 export async function orchestrateStatus(): Promise<OrchestrationRun | null> {
@@ -181,12 +205,17 @@ export async function taskTimeline(): Promise<TaskEvent[]> {
   return invoke("task_timeline");
 }
 
+export async function codingAgentExecutors(): Promise<ExecutorAvailability[]> {
+  return invoke("coding_agent_executors");
+}
+
 export async function orchestrateLoop(args: {
   goal?: string;
   maxIterations?: number;
   maxCost?: number | null;
   dryRun: boolean;
   approvePaid: boolean;
+  approveCodingAgents: boolean;
 }): Promise<LoopRun> {
   return invoke("orchestrate_loop", {
     goal: args.goal ?? null,
@@ -194,6 +223,7 @@ export async function orchestrateLoop(args: {
     maxCost: args.maxCost ?? null,
     dryRun: args.dryRun,
     approvePaid: args.approvePaid,
+    approveCodingAgents: args.approveCodingAgents,
   });
 }
 

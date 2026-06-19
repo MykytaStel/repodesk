@@ -3,6 +3,7 @@
 //! environment; the Ollama endpoint/model come from saved desktop settings.
 
 use repodesk_core::api_clients::ProviderSettings;
+use repodesk_core::executors::{self, ExecutorAvailability};
 use repodesk_core::orchestrator::{
     self, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun, RunOptions, RunSummary,
 };
@@ -63,6 +64,7 @@ pub async fn orchestrate_run(
     goal: Option<String>,
     dry_run: bool,
     max_cost: Option<f64>,
+    approve_coding_agents: bool,
 ) -> Result<OrchestrationRun, ErrorPayload> {
     let goal = clean_goal(goal)?;
     let settings = orchestrator_settings();
@@ -71,15 +73,15 @@ pub async fn orchestrate_run(
         dry_run,
         max_cost,
         settings,
-        approve_coding_agents: false,
+        approve_coding_agents,
         coding_agent_timeout_secs: 600,
     };
     Ok(orchestrator::run_plan(&plan, &opts).await?)
 }
 
 /// Autonomously attempt the active task: plan → run → re-plan/retry under
-/// guardrails. `approve_paid` is the human-in-the-loop gate — when false, a plan
-/// with paid steps stops the loop instead of spending.
+/// guardrails. `approve_paid` and `approve_coding_agents` are separate
+/// human-in-the-loop gates; the loop pauses before either gated route type.
 #[tauri::command]
 pub async fn orchestrate_loop(
     goal: Option<String>,
@@ -87,6 +89,7 @@ pub async fn orchestrate_loop(
     max_cost: Option<f64>,
     dry_run: bool,
     approve_paid: bool,
+    approve_coding_agents: bool,
 ) -> Result<LoopRun, ErrorPayload> {
     let goal = clean_goal(goal)?;
     let opts = LoopOptions {
@@ -94,11 +97,19 @@ pub async fn orchestrate_loop(
         max_total_cost: max_cost,
         dry_run,
         approve_paid,
-        approve_coding_agents: false,
+        approve_coding_agents,
         coding_agent_timeout_secs: 600,
         settings: orchestrator_settings(),
     };
     Ok(orchestrator::run_loop(goal, &opts).await?)
+}
+
+#[tauri::command]
+pub fn coding_agent_executors() -> Result<Vec<ExecutorAvailability>, ErrorPayload> {
+    executors::coding_agent_specs()
+        .iter()
+        .map(|spec| executors::coding_agent_availability(&spec.id).map_err(ErrorPayload::from))
+        .collect()
 }
 
 #[tauri::command]

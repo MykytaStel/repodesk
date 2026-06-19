@@ -47,24 +47,26 @@ not completion-provider ids; they belong to the coding-agent executor layer. Key
 
 ### Routing & availability
 Planning only routes to providers it can actually call: `available_capacities` drops paid
-completion providers without a configured key, and does not auto-route to CLI coding agents
-until their executor exists. With no keys everything routes to local Ollama where allowed
-(write/patch steps that local models may not do fall back to a clearly-flagged **manual** step
-at zero cost).
+completion providers without a configured key, and only keeps CLI coding agents when their
+binary is found on PATH by passive lookup. With no keys everything routes to local Ollama where
+allowed; write/patch steps can route to a PATH-available coding-agent executor, otherwise they
+fall back to a clearly-flagged **manual** step at zero cost.
 
 ### Coding-agent executors
 `executors.rs` defines the CLI-agent boundary for `codex_cli` and `claude_code_cli`.
 It normalizes legacy aliases, checks PATH passively, and builds argv-only command previews
 with the bounded prompt carried on stdin. The runner launches these commands only when
-`RunOptions.approve_coding_agents` is true (CLI `--yes`); otherwise it records the handoff
-as skipped. Executions capture stdout/stderr to receipt files, enforce a timeout, and never
-fall back from a coding-agent executor to an OpenAI/Anthropic completion client.
+`RunOptions.approve_coding_agents` is true (CLI `--yes`, or the desktop's explicit CLI-agent
+approval); otherwise it records the handoff as skipped. Executions capture stdout/stderr to
+receipt files, enforce a timeout, and never fall back from a coding-agent executor to an
+OpenAI/Anthropic completion client.
 
 ### Gates (every step, before any spend)
 - **Safety** — `safety::scan_text` blocks if secret-like content is in the outgoing context.
 - **Budget** — `evaluate_context` blocks contexts above the configured token block limit.
 - **Cost ceiling** — `--max-cost` halts before a step that would exceed the budget.
-- Paid runs require explicit confirmation (`--yes` in the CLI; a confirm dialog in the UI).
+- Paid providers and coding-agent CLIs require explicit confirmation (`--yes` in the CLI; separate
+  approvals in the UI).
 
 ## CLI
 
@@ -143,9 +145,9 @@ condition fires. It is bounded and explainable by construction:
 
 - **Bounded**: a `max_iterations` cap and an optional `max_total_cost` ceiling
   (the per-attempt cost ceiling is whatever total budget remains).
-- **Human-in-the-loop**: with `approve_paid = false` the loop refuses to execute
-  a plan that has paid steps and stops with `LoopStatus::NeedsApproval` — no spend
-  without explicit approval (`--yes` on the CLI).
+- **Human-in-the-loop**: with `approve_paid = false` or `approve_coding_agents = false`
+  the loop refuses to execute matching gated steps and stops with
+  `LoopStatus::NeedsApproval` — no spend or CLI launch without explicit approval.
 - **Guardrail-aware**: a safety/budget block stops the loop with
   `GuardrailBlocked` (a retry would hit the same wall); a plain failure retries.
 - **Learning is free**: each real attempt records outcomes to the ledger, so the

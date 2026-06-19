@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useOrchestrate } from "./useOrchestrate";
 import {
+  planHasCodingAgentStep,
   planHasPaidStep,
+  type ExecutorAvailability,
   type LoopRun,
   type LoopStatus,
   type OrchestrationPlan,
@@ -80,6 +82,50 @@ function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
   );
 }
 
+function ExecutorStatusPanel({
+  executors,
+  loading,
+}: {
+  executors: ExecutorAvailability[];
+  loading: boolean;
+}) {
+  return (
+    <section className="panel">
+      <div className="panel-title-row compact">
+        <div>
+          <p className="eyebrow">CLI agents</p>
+          <h2>Executor availability</h2>
+        </div>
+      </div>
+      {loading ? (
+        <p className="muted">Checking PATH...</p>
+      ) : executors.length === 0 ? (
+        <EmptyState message="No coding-agent executors are registered." />
+      ) : (
+        <div className="table-list" style={{ marginTop: 8 }}>
+          {executors.map((executor) => (
+            <div className="table-row flex-col items-start gap-sm" key={executor.executor_id}>
+              <div className="w-full flex justify-between items-center">
+                <strong>{executor.label}</strong>
+                <span className={`pill ${executor.available ? "ok" : "warn"}`}>
+                  {executor.available ? "available" : "missing"}
+                </span>
+              </div>
+              <div className="row-meta">
+                <span>{executor.binary}</span>
+                <span>{executor.executable_path ?? executor.status}</span>
+              </div>
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                Launch still requires explicit approval for this run.
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RunPanel({
   run,
   onOpenMemory,
@@ -149,7 +195,7 @@ const LOOP_TONE: Record<LoopStatus, "ok" | "warn" | "danger" | "accent"> = {
 
 const LOOP_HINT: Record<LoopStatus, string> = {
   succeeded: "An attempt completed every step.",
-  needs_approval: "The plan includes paid steps — enable “Approve paid” to let it spend.",
+  needs_approval: "The plan includes gated steps — enable the matching approvals to run it.",
   guardrail_blocked: "A safety/budget guardrail stopped the loop — resolve it, then re-run.",
   exhausted: "Out of attempts or budget before succeeding — raise the limits and re-run.",
   dry_run: "Preview only — nothing was executed.",
@@ -265,6 +311,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const [maxCost, setMaxCost] = useState("");
   const [maxIterations, setMaxIterations] = useState("3");
   const [approvePaid, setApprovePaid] = useState(false);
+  const [approveCodingAgents, setApproveCodingAgents] = useState(false);
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
 
   const busy = orchestrate.plan.isPending || orchestrate.run.isPending || orchestrate.loop.isPending;
@@ -285,6 +332,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       maxCost: parsedMaxCost(),
       dryRun,
       approvePaid,
+      approveCodingAgents,
     });
   }
 
@@ -299,13 +347,26 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
 
   async function handleRun(dryRun: boolean) {
     const built = await orchestrate.plan.mutateAsync(goal);
-    if (!dryRun && planHasPaidStep(built)) {
-      const ok = window.confirm(
-        "This plan includes paid provider steps that will spend tokens. Run for real?",
-      );
+    const hasPaid = planHasPaidStep(built);
+    const hasCodingAgent = planHasCodingAgentStep(built);
+    if (!dryRun && hasCodingAgent && !approveCodingAgents) {
+      window.alert("This plan includes coding-agent CLI steps. Enable approve CLI agents to launch them.");
+      return;
+    }
+    if (!dryRun && (hasPaid || hasCodingAgent)) {
+      const approvals = [
+        hasPaid ? "paid provider steps that may spend tokens" : "",
+        hasCodingAgent ? "local coding-agent CLI processes" : "",
+      ].filter(Boolean);
+      const ok = window.confirm(`This plan includes ${approvals.join(" and ")}. Run for real?`);
       if (!ok) return;
     }
-    await orchestrate.run.mutateAsync({ goal, dryRun, maxCost: parsedMaxCost() });
+    await orchestrate.run.mutateAsync({
+      goal,
+      dryRun,
+      maxCost: parsedMaxCost(),
+      approveCodingAgents,
+    });
   }
 
   if (!orchestrate.ready) {
@@ -388,6 +449,14 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
             <input type="checkbox" checked={approvePaid} onChange={(e) => setApprovePaid(e.target.checked)} />
             approve paid
           </label>
+          <label className="muted" style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={approveCodingAgents}
+              onChange={(e) => setApproveCodingAgents(e.target.checked)}
+            />
+            approve CLI agents
+          </label>
         </div>
       </section>
 
@@ -401,6 +470,8 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           </p>
         </section>
       )}
+
+      <ExecutorStatusPanel executors={orchestrate.executors} loading={orchestrate.executorsLoading} />
 
       {orchestrate.plan.data && <PlanPanel plan={orchestrate.plan.data} />}
 

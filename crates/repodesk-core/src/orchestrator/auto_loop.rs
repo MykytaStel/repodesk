@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use crate::api_clients::ProviderSettings;
 use crate::errors::RepoDeskResult;
 
-use super::plan::{build_plan, plan_has_paid_step};
+use super::plan::{build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step};
 use super::runner::{RunOptions, run_plan};
 use super::types::{RunStatus, SubAgentStatus};
 
@@ -71,7 +71,7 @@ impl Default for LoopOptions {
 pub enum LoopStatus {
     /// An attempt completed every step successfully.
     Succeeded,
-    /// A paid plan needs human approval before any spend (approve_paid = false).
+    /// A gated plan needs human approval before spend or CLI launch.
     NeedsApproval,
     /// A safety/budget guardrail blocked a step — needs human intervention, not
     /// a retry (retrying would hit the same wall).
@@ -139,16 +139,31 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
         task_id = plan.task_id.clone();
         resolved_goal = plan.goal.clone();
 
-        // Human-in-the-loop: never spend on a paid plan without approval.
-        if !opts.dry_run && !opts.approve_paid && plan_has_paid_step(&plan) {
+        // Human-in-the-loop: never spend or launch a CLI agent without the
+        // matching approval.
+        let needs_paid_approval = plan_has_paid_provider_step(&plan) && !opts.approve_paid;
+        let needs_coding_agent_approval =
+            plan_has_coding_agent_step(&plan) && !opts.approve_coding_agents;
+        if !opts.dry_run && (needs_paid_approval || needs_coding_agent_approval) {
             status = LoopStatus::NeedsApproval;
+            let note = match (needs_paid_approval, needs_coding_agent_approval) {
+                (true, true) => {
+                    "plan includes paid provider and coding-agent steps; re-run with approvals to execute"
+                }
+                (true, false) => {
+                    "plan includes paid provider steps; re-run with approval to execute"
+                }
+                (false, true) => {
+                    "plan includes coding-agent CLI steps; re-run with approval to execute"
+                }
+                (false, false) => unreachable!(),
+            };
             iterations.push(LoopIteration {
                 index,
                 run_id: String::new(),
                 run_status: RunStatus::Failed,
                 cost_units: 0.0,
-                note: "plan includes paid provider steps; re-run with approval to execute"
-                    .to_string(),
+                note: note.to_string(),
             });
             break;
         }

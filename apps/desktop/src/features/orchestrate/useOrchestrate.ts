@@ -31,13 +31,29 @@ export function useOrchestrate() {
     enabled: ready,
   });
 
+  const executors = useQuery({
+    queryKey: queryKeys.orchestrate.executors,
+    queryFn: () => (ready ? api.codingAgentExecutors() : Promise.resolve([])),
+    enabled: ready,
+  });
+
   const plan = useMutation({
     mutationFn: (goal: string) => api.orchestratePlan(goal || undefined),
   });
 
   const run = useMutation({
-    mutationFn: (v: { goal: string; dryRun: boolean; maxCost?: number | null }) =>
-      api.orchestrateRun(v.goal || undefined, v.dryRun, v.maxCost ?? null),
+    mutationFn: (v: {
+      goal: string;
+      dryRun: boolean;
+      maxCost?: number | null;
+      approveCodingAgents: boolean;
+    }) =>
+      api.orchestrateRun(
+        v.goal || undefined,
+        v.dryRun,
+        v.maxCost ?? null,
+        v.approveCodingAgents,
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.status });
       queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.runs });
@@ -61,6 +77,7 @@ export function useOrchestrate() {
       maxCost?: number | null;
       dryRun: boolean;
       approvePaid: boolean;
+      approveCodingAgents: boolean;
     }) =>
       api.orchestrateLoop({
         goal: v.goal || undefined,
@@ -68,6 +85,7 @@ export function useOrchestrate() {
         maxCost: v.maxCost ?? null,
         dryRun: v.dryRun,
         approvePaid: v.approvePaid,
+        approveCodingAgents: v.approveCodingAgents,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.status });
@@ -88,6 +106,8 @@ export function useOrchestrate() {
     statusLoading: status.isLoading,
     runs: runs.data ?? [],
     timeline: timeline.data ?? [],
+    executors: executors.data ?? [],
+    executorsLoading: executors.isLoading,
     plan,
     run,
     showRun,
