@@ -152,10 +152,37 @@ pub fn route_steps(
     caps: &[ProviderCapacity],
     budget: &BudgetConfig,
     bias: &RouteBias,
+    override_provider: Option<String>,
+    override_model: Option<String>,
 ) -> Vec<SubAgentTask> {
     TEMPLATE
         .iter()
         .map(|template| {
+            if let Some(provider) = &override_provider {
+                let executor_kind = caps
+                    .iter()
+                    .find(|c| c.provider == *provider || c.executor_id == *provider)
+                    .map(|c| c.executor_kind.clone())
+                    .unwrap_or(crate::routing::types::ExecutorKind::CompletionProvider);
+                
+                return SubAgentTask {
+                    id: template.id.to_string(),
+                    title: template.title.to_string(),
+                    kind: template.kind,
+                    agent: provider.clone(),
+                    provider: provider.clone(),
+                    executor_kind,
+                    executor_id: provider.clone(),
+                    provider_id: Some(provider.clone()),
+                    model: override_model.clone().filter(|m| !m.trim().is_empty()),
+                    thinking: template.thinking,
+                    instruction: template.instruction.to_string(),
+                    depends_on: template.depends_on.iter().map(|d| d.to_string()).collect(),
+                    budget_tokens: DEFAULT_STEP_BUDGET,
+                    allow_write: template.allow_write,
+                };
+            }
+
             let request = RouteRequest {
                 task_kind: template.kind,
                 estimated_input_tokens: NOMINAL_INPUT_TOKENS,
@@ -203,6 +230,8 @@ pub fn route_steps(
 pub fn build_plan(
     goal: Option<String>,
     settings: &ProviderSettings,
+    override_provider: Option<String>,
+    override_model: Option<String>,
 ) -> RepoDeskResult<OrchestrationPlan> {
     let project = get_active_project()?;
     let task = show_active_task()?;
@@ -219,7 +248,7 @@ pub fn build_plan(
         project: project.name,
         task_id: task.config.id,
         goal,
-        steps: route_steps(&caps, &budget, &bias),
+        steps: route_steps(&caps, &budget, &bias, override_provider, override_model),
     })
 }
 
@@ -231,7 +260,7 @@ mod tests {
     fn routes_all_template_steps_with_a_provider() {
         let budget = BudgetConfig::default();
         let caps = default_capacities(&budget);
-        let steps = route_steps(&caps, &budget, &RouteBias::default());
+        let steps = route_steps(&caps, &budget, &RouteBias::default(), None, None);
 
         assert_eq!(steps.len(), 3);
         assert_eq!(steps[0].id, "analyze");
@@ -320,7 +349,7 @@ mod tests {
             project: "demo".to_string(),
             task_id: "task".to_string(),
             goal: "ship it".to_string(),
-            steps: route_steps(&caps, &budget, &RouteBias::default()),
+            steps: route_steps(&caps, &budget, &RouteBias::default(), None, None),
         };
 
         assert!(plan_has_coding_agent_step(&plan));

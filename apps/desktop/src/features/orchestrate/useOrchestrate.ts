@@ -38,7 +38,8 @@ export function useOrchestrate() {
   });
 
   const plan = useMutation({
-    mutationFn: (goal: string) => api.orchestratePlan(goal || undefined),
+    mutationFn: (v: { goal: string; overrideProvider?: string; overrideModel?: string }) =>
+      api.orchestratePlan(v.goal || undefined, v.overrideProvider, v.overrideModel),
   });
 
   const run = useMutation({
@@ -47,12 +48,16 @@ export function useOrchestrate() {
       dryRun: boolean;
       maxCost?: number | null;
       approveCodingAgents: boolean;
+      overrideProvider?: string;
+      overrideModel?: string;
     }) =>
       api.orchestrateRun(
         v.goal || undefined,
         v.dryRun,
         v.maxCost ?? null,
         v.approveCodingAgents,
+        v.overrideProvider,
+        v.overrideModel,
       ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.status });
@@ -78,6 +83,8 @@ export function useOrchestrate() {
       dryRun: boolean;
       approvePaid: boolean;
       approveCodingAgents: boolean;
+      overrideProvider?: string;
+      overrideModel?: string;
     }) =>
       api.orchestrateLoop({
         goal: v.goal || undefined,
@@ -86,6 +93,8 @@ export function useOrchestrate() {
         dryRun: v.dryRun,
         approvePaid: v.approvePaid,
         approveCodingAgents: v.approveCodingAgents,
+        overrideProvider: v.overrideProvider,
+        overrideModel: v.overrideModel,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.status });

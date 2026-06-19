@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useOrchestrate } from "./useOrchestrate";
+import { useModels } from "../models/useModels";
 import {
   planHasCodingAgentStep,
   planHasPaidStep,
@@ -43,38 +44,25 @@ function StatusBadge({ status }: { status: SubAgentStatus }) {
 
 function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
   return (
-    <section className="panel">
+    <section className="panel wide-panel">
       <p className="eyebrow">Plan</p>
       <h2 style={{ marginTop: 4 }}>{plan.goal}</h2>
-      <div className="table-list" style={{ marginTop: 8 }}>
-        {plan.steps.map((step) => {
+      <div className="timeline" style={{ marginTop: 16 }}>
+        {plan.steps.map((step, index) => {
           const executor = step.executor_id ?? step.agent;
           const provider = step.provider_id ?? step.provider;
           return (
-          <div className="table-row flex-col items-start gap-sm" key={step.id} style={{ paddingBottom: 12 }}>
-            <div className="w-full flex justify-between items-center">
+            <div key={step.id} className="timeline-step neutral">
+              <span>{index + 1}</span>
               <strong>
                 {step.id} — {step.title}
               </strong>
-              {step.allow_write ? (
-                <span style={{ color: "#d29922", fontSize: 12 }}>writes</span>
-              ) : (
-                <span className="muted" style={{ fontSize: 12 }}>
-                  read-only
-                </span>
-              )}
+              <small>{executor}{provider && provider !== executor ? ` → ${provider}` : ""} / {step.model ?? "default model"}</small>
+              <p>
+                {step.allow_write ? <strong style={{ color: "#d29922" }}>Writes permitted</strong> : "Read-only"}. 
+                {step.depends_on.length > 0 && ` Depends on: ${step.depends_on.join(", ")}.`}
+              </p>
             </div>
-            <div className="row-meta">
-              <span>
-                {executor}{provider && provider !== executor ? ` → ${provider}` : ""} / {step.model ?? "default model"}
-              </span>
-              {step.executor_kind && <span>executor: {step.executor_kind}</span>}
-              <span>thinking: {step.thinking}</span>
-              <span>
-                depends on: {step.depends_on.length ? step.depends_on.join(", ") : "none"}
-              </span>
-            </div>
-          </div>
           );
         })}
       </div>
@@ -95,6 +83,7 @@ function ExecutorStatusPanel({
         <div>
           <p className="eyebrow">CLI agents</p>
           <h2>Executor availability</h2>
+          <p className="muted" style={{ marginTop: 4, fontSize: 13 }}>Status of local binary coding agents (like Claude Code) on your PATH.</p>
         </div>
       </div>
       {loading ? (
@@ -284,7 +273,12 @@ function TimelinePanel({ events }: { events: TaskEvent[] }) {
   if (events.length === 0) return null;
   return (
     <section className="panel wide-panel">
-      <p className="eyebrow">Task activity</p>
+      <div className="panel-title-row compact">
+        <div>
+          <p className="eyebrow">Task activity</p>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>Real-time event log of internal backend operations</p>
+        </div>
+      </div>
       <div className="table-list" style={{ marginTop: 8 }}>
         {events.slice(0, 20).map((event, i) => (
           <div className="table-row flex-col items-start gap-sm" key={`${event.timestamp}-${i}`}>
@@ -307,11 +301,13 @@ function TimelinePanel({ events }: { events: TaskEvent[] }) {
 
 export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) => void }) {
   const orchestrate = useOrchestrate();
+  const { models } = useModels();
   const [goal, setGoal] = useState("");
   const [maxCost, setMaxCost] = useState("");
   const [maxIterations, setMaxIterations] = useState("3");
   const [approvePaid, setApprovePaid] = useState(false);
   const [approveCodingAgents, setApproveCodingAgents] = useState(false);
+  const [targetModelCombo, setTargetModelCombo] = useState<string>("auto");
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
 
   const busy = orchestrate.plan.isPending || orchestrate.run.isPending || orchestrate.loop.isPending;
@@ -326,6 +322,8 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   }
 
   async function handleLoop(dryRun: boolean) {
+    const overrideProvider = targetModelCombo === "auto" ? undefined : targetModelCombo.split("::")[0];
+    const overrideModel = targetModelCombo === "auto" ? undefined : targetModelCombo.split("::").slice(1).join("::");
     await orchestrate.loop.mutateAsync({
       goal,
       maxIterations: Number(maxIterations) || 3,
@@ -333,6 +331,8 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       dryRun,
       approvePaid,
       approveCodingAgents,
+      overrideProvider,
+      overrideModel,
     });
   }
 
@@ -342,11 +342,15 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   }
 
   async function handlePreview() {
-    await orchestrate.plan.mutateAsync(goal);
+    const overrideProvider = targetModelCombo === "auto" ? undefined : targetModelCombo.split("::")[0];
+    const overrideModel = targetModelCombo === "auto" ? undefined : targetModelCombo.split("::").slice(1).join("::");
+    await orchestrate.plan.mutateAsync({ goal, overrideProvider, overrideModel });
   }
 
   async function handleRun(dryRun: boolean) {
-    const built = await orchestrate.plan.mutateAsync(goal);
+    const overrideProvider = targetModelCombo === "auto" ? undefined : targetModelCombo.split("::")[0];
+    const overrideModel = targetModelCombo === "auto" ? undefined : targetModelCombo.split("::").slice(1).join("::");
+    const built = await orchestrate.plan.mutateAsync({ goal, overrideProvider, overrideModel });
     const hasPaid = planHasPaidStep(built);
     const hasCodingAgent = planHasCodingAgentStep(built);
     if (!dryRun && hasCodingAgent && !approveCodingAgents) {
@@ -366,6 +370,8 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       dryRun,
       maxCost: parsedMaxCost(),
       approveCodingAgents,
+      overrideProvider,
+      overrideModel,
     });
   }
 
@@ -398,65 +404,97 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           human-reviewable memory proposals. Preview the plan and cost before running.
         </p>
 
-        <textarea
-          value={goal}
-          onChange={(e) => setGoal(e.target.value)}
-          placeholder="Optional goal override (defaults to the active task title)"
-          rows={2}
-          style={{ width: "100%", marginTop: 12 }}
-        />
-
-        <div className="button-row compact-buttons" style={{ marginTop: 12, alignItems: "center" }}>
-          <button className="tiny-button" onClick={() => void handlePreview()} disabled={busy}>
-            {orchestrate.plan.isPending ? "Building..." : "Preview plan"}
-          </button>
-          <button className="tiny-button" onClick={() => void handleRun(true)} disabled={busy}>
-            Dry run
-          </button>
-          <button className="tiny-button" onClick={() => void handleRun(false)} disabled={busy}>
-            {orchestrate.run.isPending ? "Running..." : "Run"}
-          </button>
-          <label className="muted" style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
-            max cost
-            <input
-              value={maxCost}
-              onChange={(e) => setMaxCost(e.target.value)}
-              placeholder="units"
-              inputMode="decimal"
-              style={{ width: 80 }}
+        <div className="settings-grid" style={{ marginTop: 16, background: "var(--neutral-soft)", padding: 16, borderRadius: 8 }}>
+          <label style={{ marginBottom: 16, display: "block" }}>
+            Goal override
+            <textarea
+              value={goal}
+              onChange={(e) => setGoal(e.target.value)}
+              placeholder="Leave empty to default to the active task title"
+              rows={2}
+              style={{ width: "100%", marginTop: 8 }}
             />
           </label>
+          
+          <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16, display: "grid" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              Target Model
+              <select
+                value={targetModelCombo}
+                onChange={(e) => setTargetModelCombo(e.target.value)}
+                style={{ width: "100%" }}
+              >
+                <option value="auto">Adaptive Router (Auto)</option>
+                {models?.providers.map((provider) => {
+                  // Fallback for CLI/local providers with no models
+                  if (provider.models.length === 0) {
+                     return <option key={provider.id} value={`${provider.id}::`}>{provider.label}</option>;
+                  }
+                  return (
+                    <optgroup key={provider.id} label={provider.label}>
+                      {provider.models.map((m) => (
+                        <option key={`${provider.id}::${m.id}`} value={`${provider.id}::${m.id}`}>
+                          {m.id}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+              </select>
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                Max Cost (Units)
+                <input
+                  value={maxCost}
+                  onChange={(e) => setMaxCost(e.target.value)}
+                  placeholder="No limit"
+                  inputMode="decimal"
+                  style={{ width: "100%" }}
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                Max Loop Attempts
+                <input
+                  value={maxIterations}
+                  onChange={(e) => setMaxIterations(e.target.value)}
+                  inputMode="numeric"
+                  style={{ width: "100%" }}
+                />
+              </label>
+            </div>
+          </div>
+          
+          <div style={{ display: "flex", gap: 24, marginTop: 16 }}>
+            <label className="toggle-row" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={approvePaid} onChange={(e) => setApprovePaid(e.target.checked)} style={{ margin: 0, width: "auto" }} />
+              <span style={{ fontSize: 14 }}>Auto-approve paid steps</span>
+            </label>
+            <label className="toggle-row" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={approveCodingAgents}
+                onChange={(e) => setApproveCodingAgents(e.target.checked)}
+                style={{ margin: 0, width: "auto" }}
+              />
+              <span style={{ fontSize: 14 }}>Auto-approve CLI agents</span>
+            </label>
+          </div>
         </div>
 
-        <div className="loop-controls">
-          <span className="eyebrow" style={{ margin: 0 }}>Autonomous</span>
-          <button className="tiny-button" onClick={() => void handleLoop(true)} disabled={busy}>
-            Dry loop
+        <div className="button-row" style={{ marginTop: 16, gap: 12 }}>
+          <button className="ghost-button" onClick={() => void handlePreview()} disabled={busy}>
+            {orchestrate.plan.isPending ? "Building..." : "Preview plan"}
           </button>
-          <button className="tiny-button primary-button" onClick={() => void handleLoop(false)} disabled={busy}>
-            {orchestrate.loop.isPending ? "Looping..." : "Run loop"}
+          <button className="ghost-button" onClick={() => void handleRun(true)} disabled={busy} title="Preview single run without executing">
+            Dry run
           </button>
-          <label className="muted" style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
-            max attempts
-            <input
-              value={maxIterations}
-              onChange={(e) => setMaxIterations(e.target.value)}
-              inputMode="numeric"
-              style={{ width: 56 }}
-            />
-          </label>
-          <label className="muted" style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
-            <input type="checkbox" checked={approvePaid} onChange={(e) => setApprovePaid(e.target.checked)} />
-            approve paid
-          </label>
-          <label className="muted" style={{ fontSize: 12, display: "inline-flex", gap: 6, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={approveCodingAgents}
-              onChange={(e) => setApproveCodingAgents(e.target.checked)}
-            />
-            approve CLI agents
-          </label>
+          <button className="primary-button" onClick={() => void handleRun(false)} disabled={busy}>
+            {orchestrate.run.isPending ? "Running..." : "Run single step"}
+          </button>
+          <button className="primary-button" style={{ background: "var(--accent)" }} onClick={() => void handleLoop(false)} disabled={busy}>
+            {orchestrate.loop.isPending ? "Looping..." : "Run autonomous loop"}
+          </button>
         </div>
       </section>
 

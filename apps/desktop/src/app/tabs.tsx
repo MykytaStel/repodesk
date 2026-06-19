@@ -17,6 +17,8 @@ const OutcomesTab = lazy(() => import("../features/outcomes/OutcomesTab").then((
 const SettingsTab = lazy(() => import("../features/settings/SettingsTab").then((m) => ({ default: m.SettingsTab })));
 const SystemTab = lazy(() => import("../features/system/SystemTab").then((m) => ({ default: m.SystemTab })));
 const DebugTab = lazy(() => import("../features/debug/DebugTab").then((m) => ({ default: m.DebugTab })));
+const AuditTab = lazy(() => import("../features/audit/AuditTab").then((m) => ({ default: m.AuditTab })));
+const PlaybooksTab = lazy(() => import("../features/playbooks/PlaybooksTab").then((m) => ({ default: m.PlaybooksTab })));
 
 export type TabGroup = "Work" | "AI" | "System";
 
@@ -32,7 +34,9 @@ export const APP_TABS: Array<{ id: TabId; title: string; subtitle: string; group
   { id: "memory", title: "Memory", subtitle: "Project context", group: "AI" },
   { id: "orchestrate", title: "Orchestrate", subtitle: "Sub-agents", group: "AI" },
   { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI" },
+  { id: "playbooks", title: "Playbooks", subtitle: "Team recipes", group: "AI" },
   // System — configuration and diagnostics.
+  { id: "audit", title: "Audit", subtitle: "Enterprise trail", group: "System" },
   { id: "settings", title: "Settings", subtitle: "Providers", group: "System" },
   { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System" },
   { id: "debug", title: "Debug", subtitle: "Traces", group: "System" },
@@ -76,6 +80,10 @@ export function renderAppTab({
       return <SystemTab />;
     case "debug":
       return <DebugTab />;
+    case "audit":
+      return <AuditTab />;
+    case "playbooks":
+      return <PlaybooksTab />;
     default:
       return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
   }

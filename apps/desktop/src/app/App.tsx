@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { callCommand } from "../shared/api/queries";
 import "./App.css";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import { CommandPalette, type Command } from "../shared/ui/CommandPalette";
@@ -96,6 +97,9 @@ export default function App() {
     }));
     const actions: Command[] = [
       { id: "action:refresh", label: "Refresh workspace", hint: "reload all data", run: () => void queryClient.invalidateQueries() },
+      { id: "action:generate-prompts", label: "Generate Prompts", hint: "trigger prompt-all agent", run: () => void callCommand("run_desktop_action", { actionId: "prompt-all" }).then(() => queryClient.invalidateQueries()) },
+      { id: "action:build-context", label: "Build Context", hint: "run context-build agent", run: () => void callCommand("run_desktop_action", { actionId: "context-build" }).then(() => queryClient.invalidateQueries()) },
+      { id: "action:run-checks", label: "Run Checks", hint: "run pre-commit checks", run: () => void callCommand("run_desktop_action", { actionId: "checks-run" }).then(() => queryClient.invalidateQueries()) },
       { id: "action:theme-dark", label: "Theme: Dark", run: () => setTheme("dark") },
       { id: "action:theme-light", label: "Theme: Light", run: () => setTheme("light") },
       { id: "action:theme-system", label: "Theme: Auto", run: () => setTheme("system") },

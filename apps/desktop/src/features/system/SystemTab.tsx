@@ -20,9 +20,29 @@ export function SystemTab() {
         <div className="panel-title-row"><div><p className="eyebrow">Available</p><h2>Agents</h2></div></div>
         <div className="table-list">
           {(systemAgents?.agents ?? []).map((agent: any) => (
-            <div className="table-row multi-line" key={agent.name}>
-              <div><strong>{agent.name}</strong><span>{agent.role}</span></div>
-              <div className="row-meta"><span className="pill neutral">{agent.kind}</span></div>
+            <div className="table-row flex-col items-start gap-sm" key={agent.name} style={{ paddingBottom: 16 }}>
+              <div className="w-full flex justify-between items-center">
+                <strong>{agent.name} <span className="muted" style={{ fontWeight: "normal", fontSize: "0.9em" }}>— {agent.role}</span></strong>
+                <span className="pill neutral">{agent.kind}</span>
+              </div>
+              <div className="route-summary-grid" style={{ width: "100%", marginTop: 8 }}>
+                <div><span>Budget</span><strong>{agent.default_budget_tokens.toLocaleString()} tokens</strong></div>
+                <div><span>Preferred for</span><strong>{agent.preferred_for.join(", ")}</strong></div>
+              </div>
+              <div className="route-detail-grid" style={{ width: "100%", marginTop: 8 }}>
+                {agent.allowed_actions?.length > 0 && (
+                  <div className={`route-list ok`}>
+                    <strong>Allowed actions</strong>
+                    {agent.allowed_actions.map((act: string) => <span key={act}>{act}</span>)}
+                  </div>
+                )}
+                {agent.forbidden_actions?.length > 0 && (
+                  <div className={`route-list danger`}>
+                    <strong>Forbidden actions</strong>
+                    {agent.forbidden_actions.map((act: string) => <span key={act}>{act}</span>)}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>

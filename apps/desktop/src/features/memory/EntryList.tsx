@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { MemoryEntry } from "../../shared/api/memory";
 import { CATEGORIES, CATEGORY_TONE, type Category, type EntryStatusFilter } from "./constants";
 import { parseTags } from "./utils";
+import { EmptyState } from "../../shared/ui/SharedComponents";
 
 export function EntryList({
   entries,
@@ -60,7 +61,7 @@ export function EntryList({
       {loading ? (
         <p className="muted">Loading...</p>
       ) : entries.length === 0 ? (
-        <p className="muted">No entries match.</p>
+        <EmptyState message="No entries match." hint="Adjust your filters or add a new memory." />
       ) : (
         <div className="table-list">
           {entries.map((entry) => (

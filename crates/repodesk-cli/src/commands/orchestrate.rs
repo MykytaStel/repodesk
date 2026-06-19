@@ -11,7 +11,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
     match command {
         OrchestrateCommand::Plan { goal } => {
             let settings = ProviderSettings::from_env();
-            let plan = orchestrator::build_plan(goal, &settings)?;
+            let plan = orchestrator::build_plan(goal, &settings, None, None)?;
             print!("{}", format_plan(&plan));
         }
         OrchestrateCommand::Run {
@@ -21,7 +21,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
             yes,
         } => {
             let settings = ProviderSettings::from_env();
-            let plan = orchestrator::build_plan(goal, &settings)?;
+            let plan = orchestrator::build_plan(goal, &settings, None, None)?;
 
             // The human stays the operator: paid/API and coding-agent runs need confirmation.
             if !dry_run && !yes && plan_has_paid_step(&plan) {
@@ -58,6 +58,8 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 approve_paid: yes,
                 approve_coding_agents: yes,
                 coding_agent_timeout_secs: 600,
+                override_provider: None,
+                override_model: None,
                 settings,
             };
             let rt = tokio::runtime::Runtime::new()?;

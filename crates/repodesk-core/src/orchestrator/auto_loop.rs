@@ -47,6 +47,10 @@ pub struct LoopOptions {
     pub approve_coding_agents: bool,
     /// Timeout for one coding-agent process.
     pub coding_agent_timeout_secs: u64,
+    /// Target provider bypass for the adaptive router.
+    pub override_provider: Option<String>,
+    /// Target model bypass for the adaptive router.
+    pub override_model: Option<String>,
     /// Provider credentials/endpoints.
     pub settings: ProviderSettings,
 }
@@ -60,6 +64,8 @@ impl Default for LoopOptions {
             approve_paid: false,
             approve_coding_agents: false,
             coding_agent_timeout_secs: 600,
+            override_provider: None,
+            override_model: None,
             settings: ProviderSettings::default(),
         }
     }
@@ -134,7 +140,12 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
     for index in 0..max_iterations {
         // Re-plan each attempt: build_plan re-reads the learned bias updated by
         // the previous attempt's recorded outcomes, so routing adapts to failure.
-        let plan = build_plan(goal.clone(), &opts.settings)?;
+        let plan = build_plan(
+            goal.clone(),
+            &opts.settings,
+            opts.override_provider.clone(),
+            opts.override_model.clone(),
+        )?;
         project = plan.project.clone();
         task_id = plan.task_id.clone();
         resolved_goal = plan.goal.clone();

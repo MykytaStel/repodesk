@@ -3,6 +3,7 @@ pub mod agents;
 pub mod ai_adapters;
 pub mod ai_discovery;
 pub mod api_clients;
+pub mod audit;
 pub mod brain;
 
 pub mod capabilities;
@@ -22,6 +23,7 @@ pub mod outcomes;
 pub mod paths;
 pub mod peripherals;
 pub mod persistence;
+pub mod playbooks;
 pub mod projects;
 pub mod prompts;
 pub mod safety;

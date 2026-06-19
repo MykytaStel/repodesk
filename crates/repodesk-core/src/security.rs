@@ -20,6 +20,11 @@ pub struct SecurityPolicy {
     pub blocked_path_patterns: Vec<String>,
     pub paid_agents: Vec<String>,
     pub patch_agents: Vec<String>,
+    
+    // Enterprise Policy Additions
+    pub allowed_models: Option<Vec<String>>,
+    pub budget_limit_tokens: Option<u64>,
+    pub policy_source_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -168,7 +173,7 @@ pub fn explain_agent_security(agent: &str) -> RepoDeskResult<String> {
 }
 
 pub fn format_security_policy(policy: &SecurityPolicy) -> String {
-    format!(
+    let base_format = format!(
         r#"Security policy:
 
 Shell:
@@ -205,7 +210,16 @@ Blocked path patterns:
         format_list(&policy.paid_agents),
         format_list(&policy.patch_agents),
         format_list(&policy.blocked_path_patterns),
-    )
+    );
+    
+    let enterprise_section = format!(
+        "\nEnterprise Policy:\n  allowed models: {}\n  budget limit tokens: {}\n  policy source url: {}\n",
+        policy.allowed_models.as_ref().map(|l| l.join(", ")).unwrap_or_else(|| "Any".to_string()),
+        policy.budget_limit_tokens.map(|l| l.to_string()).unwrap_or_else(|| "Unlimited".to_string()),
+        policy.policy_source_url.as_deref().unwrap_or("Local")
+    );
+    
+    base_format + &enterprise_section
 }
 
 pub fn format_security_audit(audit: &SecurityAudit) -> String {
@@ -249,6 +263,9 @@ impl Default for SecurityPolicy {
                 "gemini".to_string(),
             ],
             patch_agents: vec!["codex".to_string()],
+            allowed_models: None,
+            budget_limit_tokens: None,
+            policy_source_url: None,
         }
     }
 }

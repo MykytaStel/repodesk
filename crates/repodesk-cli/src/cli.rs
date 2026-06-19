@@ -152,6 +152,10 @@ pub enum Command {
         #[command(subcommand)]
         command: OutcomesCommand,
     },
+    Ci {
+        #[command(subcommand)]
+        command: CiCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -605,5 +609,14 @@ pub enum OutcomesCommand {
         id: i64,
         /// The verdict: good, bad, or neutral.
         verdict: String,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CiCommand {
+    /// Run the orchestrator in headless mode for CI/CD environments.
+    RunOrchestrator {
+        #[arg(long)]
+        task: String,
     },
 }

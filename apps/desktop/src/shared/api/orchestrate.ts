@@ -171,8 +171,16 @@ export function planHasCodingAgentStep(plan: OrchestrationPlan): boolean {
   });
 }
 
-export async function orchestratePlan(goal?: string): Promise<OrchestrationPlan> {
-  return invoke("orchestrate_plan", { goal: goal ?? null });
+export async function orchestratePlan(
+  goal?: string,
+  overrideProvider?: string,
+  overrideModel?: string
+): Promise<OrchestrationPlan> {
+  return invoke("orchestrate_plan", {
+    goal: goal ?? null,
+    overrideProvider: overrideProvider ?? null,
+    overrideModel: overrideModel ?? null,
+  });
 }
 
 export async function orchestrateRun(
@@ -180,12 +188,16 @@ export async function orchestrateRun(
   dryRun: boolean,
   maxCost?: number | null,
   approveCodingAgents = false,
+  overrideProvider?: string,
+  overrideModel?: string
 ): Promise<OrchestrationRun> {
   return invoke("orchestrate_run", {
     goal: goal ?? null,
     dryRun,
     maxCost: maxCost ?? null,
     approveCodingAgents,
+    overrideProvider: overrideProvider ?? null,
+    overrideModel: overrideModel ?? null,
   });
 }
 
@@ -216,6 +228,8 @@ export async function orchestrateLoop(args: {
   dryRun: boolean;
   approvePaid: boolean;
   approveCodingAgents: boolean;
+  overrideProvider?: string;
+  overrideModel?: string;
 }): Promise<LoopRun> {
   return invoke("orchestrate_loop", {
     goal: args.goal ?? null,
@@ -224,6 +238,8 @@ export async function orchestrateLoop(args: {
     dryRun: args.dryRun,
     approvePaid: args.approvePaid,
     approveCodingAgents: args.approveCodingAgents,
+    overrideProvider: args.overrideProvider ?? null,
+    overrideModel: args.overrideModel ?? null,
   });
 }
 

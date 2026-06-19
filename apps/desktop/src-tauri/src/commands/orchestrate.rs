@@ -54,9 +54,18 @@ fn clean_goal(goal: Option<String>) -> Result<Option<String>, ErrorPayload> {
 }
 
 #[tauri::command]
-pub async fn orchestrate_plan(goal: Option<String>) -> Result<OrchestrationPlan, ErrorPayload> {
+pub async fn orchestrate_plan(
+    goal: Option<String>,
+    override_provider: Option<String>,
+    override_model: Option<String>,
+) -> Result<OrchestrationPlan, ErrorPayload> {
     let goal = clean_goal(goal)?;
-    Ok(orchestrator::build_plan(goal, &orchestrator_settings())?)
+    Ok(orchestrator::build_plan(
+        goal,
+        &orchestrator_settings(),
+        override_provider,
+        override_model,
+    )?)
 }
 
 #[tauri::command]
@@ -65,10 +74,17 @@ pub async fn orchestrate_run(
     dry_run: bool,
     max_cost: Option<f64>,
     approve_coding_agents: bool,
+    override_provider: Option<String>,
+    override_model: Option<String>,
 ) -> Result<OrchestrationRun, ErrorPayload> {
     let goal = clean_goal(goal)?;
     let settings = orchestrator_settings();
-    let plan = orchestrator::build_plan(goal, &settings)?;
+    let plan = orchestrator::build_plan(
+        goal,
+        &settings,
+        override_provider,
+        override_model,
+    )?;
     let opts = RunOptions {
         dry_run,
         max_cost,
@@ -90,6 +106,8 @@ pub async fn orchestrate_loop(
     dry_run: bool,
     approve_paid: bool,
     approve_coding_agents: bool,
+    override_provider: Option<String>,
+    override_model: Option<String>,
 ) -> Result<LoopRun, ErrorPayload> {
     let goal = clean_goal(goal)?;
     let opts = LoopOptions {
@@ -99,6 +117,8 @@ pub async fn orchestrate_loop(
         approve_paid,
         approve_coding_agents,
         coding_agent_timeout_secs: 600,
+        override_provider,
+        override_model,
         settings: orchestrator_settings(),
     };
     Ok(orchestrator::run_loop(goal, &opts).await?)

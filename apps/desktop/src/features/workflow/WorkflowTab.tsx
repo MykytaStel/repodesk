@@ -8,6 +8,8 @@ import { TaskSwitcher } from "./TaskSwitcher";
 import { useRouting } from "../routing/useRouting";
 import { useTokens } from "../tokens/useTokens";
 import { useGit } from "../git/useGit";
+import { PromptsPanel } from "./PromptsPanel";
+import { DiffViewerModal } from "../git/DiffViewerModal";
 
 interface WorkflowTabProps {
   economyMode: string;
@@ -25,6 +27,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
 
   const projectOk = Boolean(getValue(workflow, "project_ok"));
   const taskOk = Boolean(getValue(workflow, "task_ok"));
+  const promptsOk = Boolean(getValue(workflow, "prompts_ok"));
   const needsOnboarding = !projectOk || !taskOk;
 
   const [commitMessage, setCommitMessage] = useState("");
@@ -34,6 +37,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   const [projPath, setProjPath] = useState("");
   const [projType, setProjType] = useState("rust");
   const [taskTitle, setTaskTitle] = useState("");
+  const [diffFile, setDiffFile] = useState<{ path: string; cached: boolean } | null>(null);
 
   function getValue(source: unknown, key: string): unknown {
     return asRecord(source)[key];
@@ -195,13 +199,22 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
           <ul className="changed-files">
             {files.slice(0, 12).map((file, index) => {
               const record = asRecord(file);
+              const path = getString(record, "path", "");
+              const isStaged = Boolean(record.staged);
               return (
                 <li key={getString(record, "path", String(index))}>
-                  <code>{getString(record, "status_code", "")}</code> {getString(record, "path", "")}
+                  <button 
+                    className="ghost-button" 
+                    style={{ textAlign: "left", padding: "0.25rem 0.5rem", width: "100%", justifyContent: "flex-start", fontFamily: "monospace" }}
+                    onClick={() => setDiffFile({ path, cached: isStaged })}
+                    title={`View diff for ${path}`}
+                  >
+                    <code>{getString(record, "status_code", "")}</code> {path}
+                  </button>
                 </li>
               );
             })}
-            {files.length > 12 && <li className="muted">+{files.length - 12} more</li>}
+            {files.length > 12 && <li className="muted" style={{ padding: "0.5rem" }}>+{files.length - 12} more</li>}
           </ul>
         )}
       </section>
@@ -276,8 +289,10 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
 
       {needsOnboarding ? renderOnboarding() : (
         <>
+          {diffFile && <DiffViewerModal filePath={diffFile.path} cached={diffFile.cached} onClose={() => setDiffFile(null)} />}
           <TaskSwitcher />
           {renderCommitReadiness()}
+          {promptsOk && <PromptsPanel />}
           {renderBestRoutePanel()}
 
           <section className="panel wide-panel">

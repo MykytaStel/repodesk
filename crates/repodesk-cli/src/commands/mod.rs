@@ -37,6 +37,7 @@ pub mod task;
 pub mod tokens;
 pub mod ui;
 pub mod workflow;
+pub mod ci;
 
 pub fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {
@@ -76,5 +77,6 @@ pub fn dispatch(cli: Cli) -> Result<()> {
         Command::Memory { command } => memory::handle_memory_command(command),
         Command::Orchestrate { command } => orchestrate::handle_orchestrate_command(command),
         Command::Outcomes { command } => outcomes::handle_outcomes_command(command),
+        Command::Ci { command } => ci::handle_ci_command(command),
     }
 }

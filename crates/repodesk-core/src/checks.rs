@@ -89,6 +89,10 @@ pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
         "mypy",
         "black",
         "repopilot",
+        "snyk",
+        "sonar-scanner",
+        "trivy",
+        "checkmarx",
     ];
 
     if !allowed_binaries.contains(&binary) {
