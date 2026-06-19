@@ -10,6 +10,9 @@ export type SubAgentTask = {
   kind: string;
   agent: string;
   provider: string;
+  executor_kind?: string;
+  executor_id?: string;
+  provider_id?: string | null;
   model?: string | null;
   thinking: ThinkingLevel;
   instruction: string;
@@ -129,11 +132,25 @@ export type ProviderStat = {
   avg_cost_units: number;
 };
 
-const PAID_PROVIDERS = ["chatgpt", "codex", "openai", "gpt", "gemini", "anthropic", "claude"];
+const PAID_IDS = [
+  "openai_api",
+  "anthropic_api",
+  "gemini_api",
+  "openai",
+  "chatgpt",
+  "gpt",
+  "anthropic",
+  "gemini",
+  "codex_cli",
+  "claude_code_cli",
+];
 
 /** Whether a plan includes any paid-provider step (used to warn before running). */
 export function planHasPaidStep(plan: OrchestrationPlan): boolean {
-  return plan.steps.some((step) => PAID_PROVIDERS.includes(step.provider.toLowerCase()));
+  return plan.steps.some((step) => {
+    const ids = [step.provider, step.provider_id ?? "", step.agent, step.executor_id ?? ""].map((id) => id.toLowerCase());
+    return ids.some((id) => PAID_IDS.includes(id));
+  });
 }
 
 export async function orchestratePlan(goal?: string): Promise<OrchestrationPlan> {

@@ -17,7 +17,7 @@ use repodesk_core::persistence::event_journal::{LogEventInput, log_event, read_t
 use repodesk_core::persistence::{count_action_runs, recent_action_runs, record_action_run};
 use repodesk_core::projects::{AddProjectInput, add_project, read_active_project, use_project};
 use repodesk_core::repopilot::{load_history, parse_review_json, record_report};
-use repodesk_core::routing::types::TaskKind;
+use repodesk_core::routing::types::{ExecutorKind, TaskKind};
 use repodesk_core::safety::{SafetyLevel, scan_active_context};
 use repodesk_core::security::{SecurityLevel, audit_security_policy};
 use repodesk_core::tasks::{NewTaskInput, create_task, show_active_task};
@@ -529,6 +529,9 @@ fn diamond_plan(project: &str, task_id: &str, provider: &str) -> OrchestrationPl
         kind: TaskKind::Plan,
         agent: provider.to_string(),
         provider: provider.to_string(),
+        executor_kind: ExecutorKind::LocalRuntime,
+        executor_id: provider.to_string(),
+        provider_id: Some(provider.to_string()),
         model: None,
         thinking: ThinkingLevel::None,
         instruction: format!("do {id}"),
@@ -670,6 +673,9 @@ fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationR
         kind,
         agent: "ollama".to_string(),
         provider: "ollama".to_string(),
+        executor_kind: ExecutorKind::LocalRuntime,
+        executor_id: "ollama".to_string(),
+        provider_id: Some("ollama".to_string()),
         model: Some("llama3".to_string()),
         thinking: ThinkingLevel::None,
         instruction: format!("do {id}"),
@@ -834,6 +840,9 @@ fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize,
             kind: TaskKind::Plan,
             agent: provider.to_string(),
             provider: provider.to_string(),
+            executor_kind: ExecutorKind::LocalRuntime,
+            executor_id: provider.to_string(),
+            provider_id: Some(provider.to_string()),
             model: Some("m".to_string()),
             thinking: ThinkingLevel::None,
             instruction: String::new(),

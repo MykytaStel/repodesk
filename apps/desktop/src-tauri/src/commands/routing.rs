@@ -94,9 +94,10 @@ pub(crate) fn build_default_route_request(
 
 fn cost_agent_for_provider(provider: &str) -> &str {
     match provider {
-        "openai" | "chatgpt" => "chatgpt",
-        "codex" => "codex",
-        "gemini" => "gemini",
+        "openai_api" | "openai" | "chatgpt" => "openai_api",
+        "anthropic_api" | "anthropic" => "anthropic_api",
+        "codex_cli" | "codex" => "codex_cli",
+        "gemini_api" | "gemini" => "gemini_api",
         _ => "ollama",
     }
 }
@@ -136,19 +137,47 @@ fn route_capacity_from_health(
     request: &repodesk_core::routing::RouteRequest,
     paid_agents_allowed: bool,
 ) -> repodesk_core::routing::ProviderCapacity {
+    let (route_id, executor_kind, executor_id, provider_id) = match provider.id.as_str() {
+        "openai_api" | "openai" => (
+            "openai_api".to_string(),
+            repodesk_core::routing::ExecutorKind::CompletionProvider,
+            "openai_api".to_string(),
+            Some("openai_api".to_string()),
+        ),
+        "anthropic_api" | "anthropic" => (
+            "anthropic_api".to_string(),
+            repodesk_core::routing::ExecutorKind::CompletionProvider,
+            "anthropic_api".to_string(),
+            Some("anthropic_api".to_string()),
+        ),
+        "gemini_api" | "gemini" => (
+            "gemini_api".to_string(),
+            repodesk_core::routing::ExecutorKind::CompletionProvider,
+            "gemini_api".to_string(),
+            Some("gemini_api".to_string()),
+        ),
+        _ => (
+            provider.id.clone(),
+            kind.default_executor_kind(),
+            provider.id.clone(),
+            Some(provider.id.clone()),
+        ),
+    };
     let models = provider
         .models
         .iter()
         .filter(|model| model.available)
         .map(|model| model.id.clone())
         .collect::<Vec<_>>();
-    let estimated_cost_units =
-        estimated_route_cost_units(cost_config, &provider.id, &kind, request);
+    let estimated_cost_units = estimated_route_cost_units(cost_config, &route_id, &kind, request);
 
     repodesk_core::routing::ProviderCapacity {
-        provider: provider.id.clone(),
+        provider: route_id,
         label: provider.label.clone(),
         kind,
+        executor_kind,
+        executor_id,
+        provider_id,
         enabled: provider.enabled,
         auth_status: provider.auth_status.clone(),
         reachability: provider.reachability.clone(),
@@ -186,6 +215,34 @@ fn manual_route_capacity(
         provider: provider.to_string(),
         label: label.to_string(),
         kind,
+        executor_kind: match kind {
+            repodesk_core::routing::ProviderKind::PatchAgent => {
+                repodesk_core::routing::ExecutorKind::CodingAgent
+            }
+            repodesk_core::routing::ProviderKind::CheckRunner => {
+                repodesk_core::routing::ExecutorKind::CheckRunner
+            }
+            repodesk_core::routing::ProviderKind::Manual => {
+                repodesk_core::routing::ExecutorKind::Manual
+            }
+            repodesk_core::routing::ProviderKind::Paid => {
+                repodesk_core::routing::ExecutorKind::Manual
+            }
+            repodesk_core::routing::ProviderKind::Local => {
+                repodesk_core::routing::ExecutorKind::LocalRuntime
+            }
+        },
+        executor_id: provider.to_string(),
+        provider_id: if matches!(
+            kind,
+            repodesk_core::routing::ProviderKind::Local
+                | repodesk_core::routing::ProviderKind::Paid
+        ) && !matches!(provider, "chatgpt" | "gemini")
+        {
+            Some(provider.to_string())
+        } else {
+            None
+        },
         enabled,
         auth_status: if enabled { "manual" } else { "disabled" }.into(),
         reachability: if enabled { reachability } else { "disabled" }.into(),
@@ -232,7 +289,7 @@ fn build_routing_capacities(
                 request,
                 settings.allow_paid_agents,
             )),
-            "openai" => Some(route_capacity_from_health(
+            "openai_api" | "openai" => Some(route_capacity_from_health(
                 provider,
                 repodesk_core::routing::ProviderKind::Paid,
                 None,
@@ -242,16 +299,30 @@ fn build_routing_capacities(
                 request,
                 settings.allow_paid_agents,
             )),
-            "gemini" if settings.gemini_api_enabled => Some(route_capacity_from_health(
-                provider,
-                repodesk_core::routing::ProviderKind::Paid,
-                None,
-                daily_remaining_tokens,
-                cost_config,
-                budget_config,
-                request,
-                settings.allow_paid_agents,
-            )),
+            "anthropic_api" | "anthropic" if settings.anthropic_api_enabled => {
+                Some(route_capacity_from_health(
+                    provider,
+                    repodesk_core::routing::ProviderKind::Paid,
+                    None,
+                    daily_remaining_tokens,
+                    cost_config,
+                    budget_config,
+                    request,
+                    settings.allow_paid_agents,
+                ))
+            }
+            "gemini_api" | "gemini" if settings.gemini_api_enabled => {
+                Some(route_capacity_from_health(
+                    provider,
+                    repodesk_core::routing::ProviderKind::Paid,
+                    None,
+                    daily_remaining_tokens,
+                    cost_config,
+                    budget_config,
+                    request,
+                    settings.allow_paid_agents,
+                ))
+            }
             _ => None,
         };
 
@@ -293,8 +364,8 @@ fn build_routing_capacities(
     }
 
     capacities.push(manual_route_capacity(
-        "codex",
-        "Codex",
+        "codex_cli",
+        "Codex CLI",
         repodesk_core::routing::ProviderKind::PatchAgent,
         settings.codex_enabled,
         "unknown",

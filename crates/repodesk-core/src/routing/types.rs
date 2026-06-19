@@ -41,6 +41,34 @@ pub enum ProviderKind {
     Manual,
 }
 
+/// What RepoDesk would execute for a route. This is intentionally separate
+/// from completion-provider identity so `codex_cli` can never be mistaken for
+/// an OpenAI API client.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutorKind {
+    /// Back-compat default for older serialized plans that only carried a
+    /// provider name and expected the LLM client registry to resolve it.
+    #[default]
+    CompletionProvider,
+    LocalRuntime,
+    CodingAgent,
+    CheckRunner,
+    Manual,
+}
+
+impl ProviderKind {
+    pub fn default_executor_kind(&self) -> ExecutorKind {
+        match self {
+            ProviderKind::Local => ExecutorKind::LocalRuntime,
+            ProviderKind::Paid => ExecutorKind::CompletionProvider,
+            ProviderKind::PatchAgent => ExecutorKind::CodingAgent,
+            ProviderKind::CheckRunner => ExecutorKind::CheckRunner,
+            ProviderKind::Manual => ExecutorKind::Manual,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum QuotaStatus {
@@ -103,9 +131,19 @@ pub struct RouteRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderCapacity {
+    /// Legacy route id kept for existing UI/API consumers. New code should read
+    /// `executor_id` and `provider_id`.
     pub provider: String,
     pub label: String,
     pub kind: ProviderKind,
+    #[serde(default)]
+    pub executor_kind: ExecutorKind,
+    #[serde(default)]
+    pub executor_id: String,
+    /// Canonical completion-provider id, when the executor is an LLM API/local
+    /// runtime. Coding-agent and manual routes leave this as `None`.
+    #[serde(default)]
+    pub provider_id: Option<String>,
     pub enabled: bool,
     pub auth_status: String,
     pub reachability: String,
@@ -118,11 +156,38 @@ pub struct ProviderCapacity {
     pub max_patch_files: usize,
 }
 
+impl ProviderCapacity {
+    pub fn resolved_executor_kind(&self) -> ExecutorKind {
+        if self.executor_id.trim().is_empty() {
+            self.kind.default_executor_kind()
+        } else {
+            self.executor_kind
+        }
+    }
+
+    pub fn resolved_executor_id(&self) -> &str {
+        let executor_id = self.executor_id.trim();
+        if executor_id.is_empty() {
+            self.provider.as_str()
+        } else {
+            self.executor_id.as_str()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteCandidate {
+    /// Legacy route id kept for existing UI/API consumers. New code should read
+    /// `executor_id` and `provider_id`.
     pub provider: String,
     pub label: String,
     pub kind: ProviderKind,
+    #[serde(default)]
+    pub executor_kind: ExecutorKind,
+    #[serde(default)]
+    pub executor_id: String,
+    #[serde(default)]
+    pub provider_id: Option<String>,
     pub model: Option<String>,
     pub score: i32,
     pub blocked: bool,
@@ -174,8 +239,19 @@ impl RouteBias {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteDecision {
     pub task_kind: TaskKind,
+    /// Legacy route id kept for existing UI/API consumers.
     pub recommended_provider: String,
+    #[serde(default)]
+    pub recommended_executor_kind: ExecutorKind,
+    #[serde(default)]
+    pub recommended_executor_id: String,
+    #[serde(default)]
+    pub recommended_provider_id: Option<String>,
     pub recommended_model: Option<String>,
+    #[serde(default)]
+    pub fallback_executor_id: Option<String>,
+    #[serde(default)]
+    pub fallback_provider_id: Option<String>,
     pub fallback_provider: Option<String>,
     pub fallback_model: Option<String>,
     pub score: i32,

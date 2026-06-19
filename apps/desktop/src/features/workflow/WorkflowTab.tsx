@@ -211,7 +211,10 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   function renderBestRoutePanel() {
     const decision = routing?.decision;
     const request = routing?.request;
-    const recommended = decision?.candidates?.find((candidate: any) => candidate.provider === decision.recommended_provider);
+    const recommendedId = decision?.recommended_executor_id ?? decision?.recommended_provider;
+    const recommended = decision?.candidates?.find((candidate: any) =>
+      candidate.executor_id === recommendedId || candidate.provider === decision.recommended_provider
+    );
     const candidateRows = decision?.candidates?.slice(0, 5) ?? [];
 
     return (
@@ -219,7 +222,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
         <div className="panel-title-row">
           <div>
             <p className="eyebrow">Best route</p>
-            <h2>{decision ? `${decision.recommended_provider}${decision.recommended_model ? ` / ${decision.recommended_model}` : ""}` : "No route loaded"}</h2>
+            <h2>{decision ? `${recommendedId}${decision.recommended_model ? ` / ${decision.recommended_model}` : ""}` : "No route loaded"}</h2>
           </div>
           <span className={`pill ${statusTone(decision?.decision_level)}`}>{decision?.decision_level ?? "unknown"}</span>
         </div>
@@ -233,7 +236,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
               <div><span>Score</span><strong>{decision.score}</strong></div>
               <div><span>Tokens</span><strong>{formatNumber(decision.estimated_total_tokens)}</strong></div>
               <div><span>Cost</span><strong>{formatCost(recommended?.estimated_cost_units, tokens?.cost_estimate.currency_label)}</strong></div>
-              <div><span>Fallback</span><strong>{decision.fallback_provider ?? "manual"}</strong></div>
+              <div><span>Fallback</span><strong>{decision.fallback_executor_id ?? decision.fallback_provider ?? "manual"}</strong></div>
               <div><span>Files</span><strong>{formatNumber(request?.changed_file_count)}</strong></div>
             </div>
 

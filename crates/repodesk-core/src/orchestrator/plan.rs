@@ -1,9 +1,9 @@
 //! Build a sub-agent plan for the active task. Each step is routed through the
-//! existing [`crate::routing`] engine, so `recommended_provider`/
-//! `recommended_model` drive per-task model selection — the cost lever. Provider
-//! capacities are filtered to those we can actually call (Ollama always; paid
-//! providers only when their key is configured), so routing never picks a
-//! provider we'd fail to invoke.
+//! existing [`crate::routing`] engine, so the route's executor/provider identity
+//! drives per-task model selection — the cost lever. Provider capacities are
+//! filtered to those we can actually call (local runtimes always; paid
+//! completion providers only when their key is configured), so routing never
+//! mistakes a coding-agent executor for an LLM API client.
 
 use crate::api_clients::{ProviderSettings, ThinkingLevel};
 use crate::errors::RepoDeskResult;
@@ -62,24 +62,30 @@ const TEMPLATE: &[StepTemplate] = &[
     },
 ];
 
-/// Provider names that incur real (paid/cloud) spend. Used to gate a plan
-/// behind explicit human approval before any of its steps run.
-const PAID_PROVIDERS: &[&str] = &[
-    "chatgpt",
-    "codex",
-    "openai",
-    "gpt",
-    "gemini",
-    "anthropic",
-    "claude",
-];
-
 /// Whether any step in the plan routes to a paid provider — the signal for the
 /// confirm-before-paid gate (CLI `--yes`, desktop confirm, autonomous-loop pause).
 pub fn plan_has_paid_step(plan: &OrchestrationPlan) -> bool {
-    plan.steps
-        .iter()
-        .any(|step| PAID_PROVIDERS.contains(&step.provider.to_ascii_lowercase().as_str()))
+    plan.steps.iter().any(|step| {
+        let executor_id = step.resolved_executor_id().to_ascii_lowercase();
+        let provider_id = step
+            .resolved_provider_id()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        matches!(
+            executor_id.as_str(),
+            "codex_cli" | "claude_code_cli" | "chatgpt" | "gemini"
+        ) || matches!(
+            provider_id.as_str(),
+            "openai_api"
+                | "anthropic_api"
+                | "gemini_api"
+                | "openai"
+                | "chatgpt"
+                | "gpt"
+                | "anthropic"
+                | "gemini"
+        )
+    })
 }
 
 /// Provider capacities filtered to providers we can actually call.
@@ -88,17 +94,20 @@ pub fn available_capacities(
     budget: &BudgetConfig,
 ) -> Vec<ProviderCapacity> {
     let avail = settings.available_providers();
-    let has_openai = avail.contains(&"openai");
-    let has_gemini = avail.contains(&"gemini");
-    let has_anthropic = avail.contains(&"anthropic");
+    let has_openai = avail.contains(&"openai_api");
+    let has_gemini = avail.contains(&"gemini_api");
+    let has_anthropic = avail.contains(&"anthropic_api");
 
     default_capacities(budget)
         .into_iter()
         .filter(|capacity| match capacity.provider.as_str() {
             "ollama" | "local" | "lm_studio" | "llamafile" | "localai" | "local_checks" => true,
-            "chatgpt" | "codex" | "openai" | "gpt" => has_openai,
-            "gemini" => has_gemini,
-            "anthropic" | "claude" => has_anthropic,
+            "openai_api" => has_openai,
+            "gemini_api" => has_gemini,
+            "anthropic_api" => has_anthropic,
+            // First PR only separates identities. CLI coding-agent execution is
+            // introduced later, so the orchestrator does not auto-route to it.
+            "codex_cli" | "claude_code_cli" => false,
             _ => true,
         })
         .collect()
@@ -135,12 +144,19 @@ pub fn route_steps(
                 economy_mode: None,
             };
             let decision = route_request_with_bias(&request, caps, budget, bias);
+            let executor_id = decision.recommended_executor_id.clone();
+            let provider_id = decision.recommended_provider_id.clone();
             SubAgentTask {
                 id: template.id.to_string(),
                 title: template.title.to_string(),
                 kind: template.kind,
-                agent: decision.recommended_provider.clone(),
-                provider: decision.recommended_provider,
+                agent: executor_id.clone(),
+                provider: provider_id
+                    .clone()
+                    .unwrap_or_else(|| decision.recommended_provider.clone()),
+                executor_kind: decision.recommended_executor_kind,
+                executor_id,
+                provider_id,
                 model: decision.recommended_model,
                 thinking: template.thinking,
                 instruction: template.instruction.to_string(),
@@ -210,16 +226,9 @@ mod tests {
         let settings = ProviderSettings::default();
         let caps = available_capacities(&settings, &budget);
         // With no keys, no paid provider survives (ollama / local_checks / manual stay).
-        let paid = [
-            "chatgpt",
-            "codex",
-            "openai",
-            "gpt",
-            "gemini",
-            "anthropic",
-            "claude",
-        ];
+        let paid = ["openai_api", "gemini_api", "anthropic_api"];
         assert!(caps.iter().all(|c| !paid.contains(&c.provider.as_str())));
+        assert!(caps.iter().all(|c| c.provider != "codex_cli"));
         assert!(caps.iter().any(|c| c.provider == "ollama"));
     }
 
@@ -242,8 +251,12 @@ mod tests {
         settings.openai.api_key = Some("sk-test".to_string());
         let caps = available_capacities(&settings, &budget);
         assert!(
-            caps.iter()
-                .any(|c| c.provider == "chatgpt" || c.provider == "codex")
+            caps.iter().any(|c| c.provider == "openai_api"),
+            "openai_api should be present when an OpenAI API key is configured"
+        );
+        assert!(
+            caps.iter().all(|c| c.provider != "codex_cli"),
+            "codex_cli is not auto-routable until a CLI executor exists"
         );
     }
 }

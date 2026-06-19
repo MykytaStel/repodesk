@@ -5,7 +5,8 @@
 //! the Memory Brain) untouched, and adds [`LlmProvider::complete`] — a richer
 //! call with per-request model selection, an optional system prompt, an output
 //! token cap, an extended-thinking hint, and token usage returned for the
-//! ledger. Use [`provider_for`] to build the right client for a provider name.
+//! ledger. Use [`provider_for`] to build the right client for a completion
+//! provider id.
 
 use serde::{Deserialize, Serialize};
 
@@ -185,21 +186,22 @@ impl ProviderSettings {
         // Both local providers need no key; they're always offered for routing.
         let mut out = vec!["ollama", "lm_studio"];
         if self.anthropic.has_key() {
-            out.push("anthropic");
+            out.push("anthropic_api");
         }
         if self.openai.has_key() {
-            out.push("openai");
+            out.push("openai_api");
         }
         if self.gemini.has_key() {
-            out.push("gemini");
+            out.push("gemini_api");
         }
         out
     }
 }
 
 /// Build a boxed [`LlmProvider`] for a provider name, using `settings` for
-/// credentials/endpoints. Provider names are normalized: `chatgpt`/`codex`/`gpt`
-/// map to the OpenAI client; `claude` to Anthropic; local engines to Ollama.
+/// credentials/endpoints. Compatibility aliases are accepted only for
+/// completion providers; coding-agent names like `codex`/`codex_cli` are not
+/// LLM API clients and must be handled by the executor layer.
 pub fn provider_for(
     name: &str,
     settings: &ProviderSettings,
@@ -229,18 +231,28 @@ pub fn provider_for(
             );
             Ok(Box::new(OpenAiClient::new(key, base_url)))
         }
-        "anthropic" | "claude" => Ok(Box::new(AnthropicClient::new(
+        "anthropic_api" | "anthropic" => Ok(Box::new(AnthropicClient::new(
             require_key("anthropic", "ANTHROPIC_API_KEY", &settings.anthropic)?,
             settings.anthropic.base_url.clone(),
         ))),
-        "openai" | "chatgpt" | "codex" | "gpt" => Ok(Box::new(OpenAiClient::new(
+        "openai_api" | "openai" | "chatgpt" | "gpt" => Ok(Box::new(OpenAiClient::new(
             require_key("openai", "OPENAI_API_KEY", &settings.openai)?,
             settings.openai.base_url.clone(),
         ))),
-        "gemini" | "google" => Ok(Box::new(GeminiClient::new(
+        "gemini_api" | "gemini" | "google" => Ok(Box::new(GeminiClient::new(
             require_key("gemini", "GEMINI_API_KEY", &settings.gemini)?,
             settings.gemini.base_url.clone(),
         ))),
+        "codex" | "codex_cli" => Err(RepoDeskError::RoutingFailed {
+            detail:
+                "codex is a coding-agent executor, not an OpenAI API completion provider; use openai_api for completions or codex_cli in the executor layer"
+                    .to_string(),
+        }),
+        "claude" | "claude_code" | "claude_code_cli" => Err(RepoDeskError::RoutingFailed {
+            detail:
+                "claude is ambiguous here; use anthropic_api for completions or claude_code_cli in the executor layer"
+                    .to_string(),
+        }),
         other => Err(RepoDeskError::RoutingFailed {
             detail: format!("no LLM client is implemented for provider '{other}'"),
         }),
@@ -295,21 +307,38 @@ mod tests {
         let settings = ProviderSettings::default();
         // `Box<dyn LlmProvider>` isn't `Debug`, so match on the Result directly.
         assert!(matches!(
-            provider_for("anthropic", &settings),
+            provider_for("anthropic_api", &settings),
             Err(RepoDeskError::ProviderUnavailable { .. })
         ));
 
         let mut with_key = ProviderSettings::default();
         with_key.anthropic.api_key = Some("sk-test".to_string());
-        assert!(provider_for("claude", &with_key).is_ok());
+        assert!(provider_for("anthropic_api", &with_key).is_ok());
     }
 
     #[test]
     fn provider_for_aliases_map_to_clients() {
         let mut settings = ProviderSettings::default();
         settings.openai.api_key = Some("sk-test".to_string());
-        for alias in ["openai", "chatgpt", "codex", "gpt"] {
+        for alias in ["openai_api", "openai", "chatgpt", "gpt"] {
             assert!(provider_for(alias, &settings).is_ok(), "alias {alias}");
+        }
+    }
+
+    #[test]
+    fn provider_for_rejects_coding_agent_aliases() {
+        let mut settings = ProviderSettings::default();
+        settings.openai.api_key = Some("sk-test".to_string());
+        settings.anthropic.api_key = Some("sk-ant-test".to_string());
+
+        for alias in ["codex", "codex_cli", "claude", "claude_code_cli"] {
+            assert!(
+                matches!(
+                    provider_for(alias, &settings),
+                    Err(RepoDeskError::RoutingFailed { .. })
+                ),
+                "alias {alias} must not resolve to a completion client"
+            );
         }
     }
 
@@ -330,9 +359,9 @@ mod tests {
         settings.gemini.api_key = Some("g".to_string());
         let avail = settings.available_providers();
         assert!(avail.contains(&"lm_studio"));
-        assert!(avail.contains(&"openai"));
-        assert!(avail.contains(&"gemini"));
-        assert!(!avail.contains(&"anthropic"));
+        assert!(avail.contains(&"openai_api"));
+        assert!(avail.contains(&"gemini_api"));
+        assert!(!avail.contains(&"anthropic_api"));
     }
 
     #[test]

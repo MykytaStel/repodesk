@@ -112,7 +112,12 @@ pub fn route_request_with_bias(
     RouteDecision {
         task_kind: request.task_kind,
         recommended_provider: recommended.provider.clone(),
+        recommended_executor_kind: recommended.executor_kind,
+        recommended_executor_id: recommended.executor_id.clone(),
+        recommended_provider_id: recommended.provider_id.clone(),
         recommended_model: recommended.model.clone(),
+        fallback_executor_id: fallback.map(|candidate| candidate.executor_id.clone()),
+        fallback_provider_id: fallback.and_then(|candidate| candidate.provider_id.clone()),
         fallback_provider: fallback.map(|candidate| candidate.provider.clone()),
         fallback_model: fallback.and_then(|candidate| candidate.model.clone()),
         score: recommended.score,
@@ -162,6 +167,9 @@ pub fn manual_capacity(budget: &BudgetConfig) -> ProviderCapacity {
         provider: "manual".to_string(),
         label: "Manual".to_string(),
         kind: ProviderKind::Manual,
+        executor_kind: ExecutorKind::Manual,
+        executor_id: "manual".to_string(),
+        provider_id: None,
         enabled: true,
         auth_status: "not_required".to_string(),
         reachability: "manual".to_string(),
@@ -182,10 +190,14 @@ fn provider_rank(provider: &str) -> usize {
         "lm_studio" => 11,
         "llamafile" => 12,
         "localai" => 13,
-        "codex" => 20,
-        "chatgpt" => 30,
-        "openai" => 31,
-        "gemini" => 40,
+        "codex_cli" => 20,
+        "claude_code_cli" => 21,
+        "openai_api" => 30,
+        "anthropic_api" => 31,
+        "gemini_api" => 40,
+        "chatgpt" => 50,
+        "openai" => 51,
+        "gemini" => 60,
         "manual" => 90,
         _ => 80,
     }
@@ -204,6 +216,9 @@ pub fn default_capacities(budget: &BudgetConfig) -> Vec<ProviderCapacity> {
             provider: "ollama".to_string(),
             label: "Ollama".to_string(),
             kind: ProviderKind::Local,
+            executor_kind: ExecutorKind::LocalRuntime,
+            executor_id: "ollama".to_string(),
+            provider_id: Some("ollama".to_string()),
             enabled: true,
             auth_status: "configured".to_string(),
             reachability: "working".to_string(),
@@ -219,6 +234,9 @@ pub fn default_capacities(budget: &BudgetConfig) -> Vec<ProviderCapacity> {
             provider: "lm_studio".to_string(),
             label: "LM Studio".to_string(),
             kind: ProviderKind::Local,
+            executor_kind: ExecutorKind::LocalRuntime,
+            executor_id: "lm_studio".to_string(),
+            provider_id: Some("lm_studio".to_string()),
             enabled: true,
             auth_status: "configured".to_string(),
             reachability: "working".to_string(),
@@ -231,14 +249,17 @@ pub fn default_capacities(budget: &BudgetConfig) -> Vec<ProviderCapacity> {
             max_patch_files: budget.max_files_for_patch_agent,
         },
         ProviderCapacity {
-            provider: "chatgpt".to_string(),
-            label: "ChatGPT".to_string(),
+            provider: "openai_api".to_string(),
+            label: "OpenAI API".to_string(),
             kind: ProviderKind::Paid,
+            executor_kind: ExecutorKind::CompletionProvider,
+            executor_id: "openai_api".to_string(),
+            provider_id: Some("openai_api".to_string()),
             enabled: true,
-            auth_status: "manual".to_string(),
-            reachability: "unknown".to_string(),
-            models: vec!["gpt-5.5".to_string()],
-            preferred_model: Some("gpt-5.5".to_string()),
+            auth_status: "configured".to_string(),
+            reachability: "working".to_string(),
+            models: vec!["gpt-4o-mini".to_string()],
+            preferred_model: Some("gpt-4o-mini".to_string()),
             daily_remaining_tokens: budget.daily_hard_limit,
             estimated_cost_units: 1.0,
             quota_status: QuotaStatus::Available,
@@ -246,14 +267,35 @@ pub fn default_capacities(budget: &BudgetConfig) -> Vec<ProviderCapacity> {
             max_patch_files: budget.max_files_for_patch_agent,
         },
         ProviderCapacity {
-            provider: "codex".to_string(),
-            label: "Codex".to_string(),
+            provider: "anthropic_api".to_string(),
+            label: "Anthropic API".to_string(),
+            kind: ProviderKind::Paid,
+            executor_kind: ExecutorKind::CompletionProvider,
+            executor_id: "anthropic_api".to_string(),
+            provider_id: Some("anthropic_api".to_string()),
+            enabled: true,
+            auth_status: "configured".to_string(),
+            reachability: "working".to_string(),
+            models: vec!["claude-sonnet-4-6".to_string()],
+            preferred_model: Some("claude-sonnet-4-6".to_string()),
+            daily_remaining_tokens: budget.daily_hard_limit,
+            estimated_cost_units: 1.0,
+            quota_status: QuotaStatus::Available,
+            paid_agents_allowed: true,
+            max_patch_files: budget.max_files_for_patch_agent,
+        },
+        ProviderCapacity {
+            provider: "codex_cli".to_string(),
+            label: "Codex CLI".to_string(),
             kind: ProviderKind::PatchAgent,
+            executor_kind: ExecutorKind::CodingAgent,
+            executor_id: "codex_cli".to_string(),
+            provider_id: None,
             enabled: true,
-            auth_status: "manual".to_string(),
+            auth_status: "cli_auth".to_string(),
             reachability: "unknown".to_string(),
-            models: vec!["deepseek-v4".to_string()],
-            preferred_model: Some("deepseek-v4".to_string()),
+            models: vec!["codex-cli".to_string()],
+            preferred_model: Some("codex-cli".to_string()),
             daily_remaining_tokens: budget.daily_hard_limit,
             estimated_cost_units: 1.0,
             quota_status: QuotaStatus::Available,
@@ -261,14 +303,17 @@ pub fn default_capacities(budget: &BudgetConfig) -> Vec<ProviderCapacity> {
             max_patch_files: budget.max_files_for_patch_agent,
         },
         ProviderCapacity {
-            provider: "gemini".to_string(),
-            label: "Gemini".to_string(),
+            provider: "gemini_api".to_string(),
+            label: "Gemini API".to_string(),
             kind: ProviderKind::Paid,
+            executor_kind: ExecutorKind::CompletionProvider,
+            executor_id: "gemini_api".to_string(),
+            provider_id: Some("gemini_api".to_string()),
             enabled: true,
-            auth_status: "manual".to_string(),
-            reachability: "unknown".to_string(),
-            models: vec!["gemini-3.1-pro".to_string()],
-            preferred_model: Some("gemini-3.1-pro".to_string()),
+            auth_status: "configured".to_string(),
+            reachability: "working".to_string(),
+            models: vec!["gemini-2.5-pro".to_string()],
+            preferred_model: Some("gemini-2.5-pro".to_string()),
             daily_remaining_tokens: budget.daily_hard_limit,
             estimated_cost_units: 1.0,
             quota_status: QuotaStatus::Available,
@@ -279,6 +324,9 @@ pub fn default_capacities(budget: &BudgetConfig) -> Vec<ProviderCapacity> {
             provider: "local_checks".to_string(),
             label: "Local checks".to_string(),
             kind: ProviderKind::CheckRunner,
+            executor_kind: ExecutorKind::CheckRunner,
+            executor_id: "local_checks".to_string(),
+            provider_id: None,
             enabled: true,
             auth_status: "configured".to_string(),
             reachability: "working".to_string(),
@@ -358,6 +406,13 @@ pub fn format_route_decision(decision: &RouteDecision) -> String {
         "recommended provider: {}\n",
         decision.recommended_provider
     ));
+    output.push_str(&format!(
+        "recommended executor: {} ({:?})\n",
+        decision.recommended_executor_id, decision.recommended_executor_kind
+    ));
+    if let Some(ref provider_id) = decision.recommended_provider_id {
+        output.push_str(&format!("completion provider: {}\n", provider_id));
+    }
     if let Some(ref model) = decision.recommended_model {
         output.push_str(&format!("recommended model: {}\n", model));
     }
@@ -421,6 +476,12 @@ mod tests {
             provider: provider.to_string(),
             label: provider.to_string(),
             kind,
+            executor_kind: kind.default_executor_kind(),
+            executor_id: provider.to_string(),
+            provider_id: match kind {
+                ProviderKind::Local | ProviderKind::Paid => Some(provider.to_string()),
+                ProviderKind::PatchAgent | ProviderKind::CheckRunner | ProviderKind::Manual => None,
+            },
             enabled: true,
             auth_status: "configured".to_string(),
             reachability: "working".to_string(),
@@ -460,7 +521,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_patch_allowed_after_guard_passes() {
+    fn coding_agent_patch_allowed_after_guard_passes() {
         let budget = BudgetConfig::default();
         let mut route_request_obj = request(TaskKind::Patch);
         route_request_obj.requires_write = true;
@@ -468,22 +529,27 @@ mod tests {
             &route_request_obj,
             &[
                 capacity("ollama", ProviderKind::Local),
-                capacity("codex", ProviderKind::PatchAgent),
+                capacity("codex_cli", ProviderKind::PatchAgent),
                 manual(),
             ],
             &budget,
         );
 
-        assert_eq!(decision.recommended_provider, "codex");
+        assert_eq!(decision.recommended_provider, "codex_cli");
+        assert_eq!(decision.recommended_executor_id, "codex_cli");
+        assert_eq!(
+            decision.recommended_executor_kind,
+            ExecutorKind::CodingAgent
+        );
         assert_eq!(decision.decision_level, DecisionLevel::Allow);
     }
 
     #[test]
-    fn codex_quota_empty_routes_to_manual_with_blocker() {
+    fn coding_agent_quota_empty_routes_to_manual_with_blocker() {
         let budget = BudgetConfig::default();
         let mut route_request_obj = request(TaskKind::Patch);
         route_request_obj.requires_write = true;
-        let mut codex = capacity("codex", ProviderKind::PatchAgent);
+        let mut codex = capacity("codex_cli", ProviderKind::PatchAgent);
         codex.quota_status = QuotaStatus::Empty;
         let decision = route_request(&route_request_obj, &[codex, manual()], &budget);
 
@@ -493,7 +559,7 @@ mod tests {
             decision
                 .blockers
                 .iter()
-                .any(|blocker| blocker.contains("Codex quota status is empty"))
+                .any(|blocker| blocker.contains("codex_cli quota status is empty"))
         );
     }
 
@@ -551,18 +617,18 @@ mod tests {
     }
 
     #[test]
-    fn dirty_workspace_adds_codex_warning() {
+    fn dirty_workspace_adds_coding_agent_warning() {
         let budget = BudgetConfig::default();
         let mut route_request_obj = request(TaskKind::Patch);
         route_request_obj.requires_write = true;
         route_request_obj.git_dirty = Some(true);
         let decision = route_request(
             &route_request_obj,
-            &[capacity("codex", ProviderKind::PatchAgent), manual()],
+            &[capacity("codex_cli", ProviderKind::PatchAgent), manual()],
             &budget,
         );
 
-        assert_eq!(decision.recommended_provider, "codex");
+        assert_eq!(decision.recommended_provider, "codex_cli");
         assert_eq!(decision.decision_level, DecisionLevel::Warn);
         assert!(
             decision

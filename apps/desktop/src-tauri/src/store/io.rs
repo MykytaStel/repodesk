@@ -123,6 +123,22 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
     let connection = open_db()?;
     let defaults = ProviderSettings::default();
 
+    let preferred_patch_provider = canonical_provider_setting(&get_string(
+        &connection,
+        "provider.preferred_patch_provider",
+        &defaults.preferred_patch_provider,
+    )?);
+    let preferred_compression_provider = canonical_provider_setting(&get_string(
+        &connection,
+        "provider.preferred_compression_provider",
+        &defaults.preferred_compression_provider,
+    )?);
+    let preferred_review_provider = canonical_provider_setting(&get_string(
+        &connection,
+        "provider.preferred_review_provider",
+        &defaults.preferred_review_provider,
+    )?);
+
     Ok(ProviderSettings {
         ollama_enabled: get_bool(
             &connection,
@@ -222,26 +238,27 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
             "provider.codex_quota_status",
             &defaults.codex_quota_status,
         )?,
-        preferred_patch_provider: get_string(
-            &connection,
-            "provider.preferred_patch_provider",
-            &defaults.preferred_patch_provider,
-        )?,
-        preferred_compression_provider: get_string(
-            &connection,
-            "provider.preferred_compression_provider",
-            &defaults.preferred_compression_provider,
-        )?,
-        preferred_review_provider: get_string(
-            &connection,
-            "provider.preferred_review_provider",
-            &defaults.preferred_review_provider,
-        )?,
+        preferred_patch_provider,
+        preferred_compression_provider,
+        preferred_review_provider,
         notes: get_string(&connection, "provider.notes", &defaults.notes)?,
     })
 }
 
-pub fn save_provider_settings(settings: ProviderSettings) -> Result<ProviderSettings, String> {
+fn canonical_provider_setting(value: &str) -> String {
+    match value.trim() {
+        "codex" => "codex_cli".to_string(),
+        other => other.to_string(),
+    }
+}
+
+pub fn save_provider_settings(mut settings: ProviderSettings) -> Result<ProviderSettings, String> {
+    settings.preferred_patch_provider =
+        canonical_provider_setting(&settings.preferred_patch_provider);
+    settings.preferred_compression_provider =
+        canonical_provider_setting(&settings.preferred_compression_provider);
+    settings.preferred_review_provider =
+        canonical_provider_setting(&settings.preferred_review_provider);
     validate_provider_settings(&settings)?;
     let connection = open_db()?;
 
@@ -400,7 +417,11 @@ pub fn validate_provider_settings(settings: &ProviderSettings) -> Result<(), Str
         .any(|provider| {
             provider.as_str() == "chatgpt"
                 || provider.as_str() == "codex"
+                || provider.as_str() == "codex_cli"
                 || provider.as_str() == "gemini"
+                || provider.as_str() == "openai_api"
+                || provider.as_str() == "anthropic_api"
+                || provider.as_str() == "gemini_api"
         })
     {
         return Err(
@@ -421,9 +442,10 @@ fn validate_codex_quota_status(value: &str) -> Result<(), String> {
 
 fn validate_provider(label: &str, value: &str) -> Result<(), String> {
     match value {
-        "ollama" | "chatgpt" | "codex" | "gemini" | "manual" | "llamafile" | "localai" => Ok(()),
+        "ollama" | "lm_studio" | "chatgpt" | "codex" | "codex_cli" | "gemini" | "manual"
+        | "llamafile" | "localai" | "openai_api" | "anthropic_api" | "gemini_api" => Ok(()),
         _ => Err(format!(
-            "{label} must be one of: ollama, chatgpt, codex, gemini, manual, llamafile, localai"
+            "{label} must be one of: ollama, lm_studio, chatgpt, codex_cli, gemini, manual, llamafile, localai, openai_api, anthropic_api, gemini_api"
         )),
     }
 }
@@ -525,6 +547,12 @@ mod tests {
     #[test]
     fn accepts_local_first_defaults() {
         assert!(validate_provider_settings(&ProviderSettings::default()).is_ok());
+    }
+
+    #[test]
+    fn canonicalizes_legacy_codex_provider_setting() {
+        assert_eq!(canonical_provider_setting("codex"), "codex_cli");
+        assert_eq!(canonical_provider_setting("ollama"), "ollama");
     }
 
     #[test]

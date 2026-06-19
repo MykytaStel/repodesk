@@ -36,16 +36,20 @@ active task ──▶ plan (analyze → implement → review)        crates/repo
 ### Provider clients
 `LlmProvider::complete(LlmRequest) -> LlmResponse` ([api_clients/mod.rs](../crates/repodesk-core/src/api_clients/mod.rs))
 adds model selection, an optional system prompt, an output token cap, a `ThinkingLevel`, and
-real token usage. `provider_for(name, &ProviderSettings)` builds the right client:
-`ollama`/local → Ollama; `anthropic`/`claude` → Anthropic; `chatgpt`/`codex`/`gpt`/`openai` →
-OpenAI; `gemini` → Gemini. Keys come from the environment:
+real token usage. `provider_for(name, &ProviderSettings)` builds completion-provider clients
+only:
+`ollama`/local → Ollama; `lm_studio` → local OpenAI-compatible endpoint;
+`anthropic_api`/`anthropic` → Anthropic; `openai_api`/`openai`/`chatgpt`/`gpt` → OpenAI;
+`gemini_api`/`gemini` → Gemini. `codex`, `codex_cli`, `claude`, and `claude_code_cli` are
+not completion-provider ids; they belong to the coding-agent executor layer. Keys come from the environment:
 `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`); optional
 `*_BASE_URL` / `*_MODEL` overrides. Ollama needs no key.
 
 ### Routing & availability
 Planning only routes to providers it can actually call: `available_capacities` drops paid
-providers without a configured key, so with no keys everything routes to local Ollama (and
-write/patch steps that local models may not do fall back to a clearly-flagged **manual** step
+completion providers without a configured key, and does not auto-route to CLI coding agents
+until their executor exists. With no keys everything routes to local Ollama where allowed
+(write/patch steps that local models may not do fall back to a clearly-flagged **manual** step
 at zero cost).
 
 ### Gates (every step, before any spend)

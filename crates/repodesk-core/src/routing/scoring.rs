@@ -88,7 +88,10 @@ pub fn score_capacity(
                 blockers.push("Checks must run locally and never through paid models.".to_string());
             }
             if request.task_kind == TaskKind::Patch {
-                blockers.push("Patch tasks require Codex or a manual patch route.".to_string());
+                blockers.push(
+                    "Patch tasks require a coding-agent executor or a manual patch route."
+                        .to_string(),
+                );
             }
             if !capacity.paid_agents_allowed {
                 blockers.push("Paid agents are disabled in provider settings.".to_string());
@@ -155,10 +158,10 @@ pub fn score_capacity(
                 blockers.push("Paid agents are disabled in provider settings.".to_string());
             }
             if risk_contains_block(&risk) || request.context_safe == Some(false) {
-                blockers.push("Context is not safe for Codex.".to_string());
+                blockers.push("Context is not safe for a coding-agent executor.".to_string());
             }
             if capacity.quota_status == QuotaStatus::Empty {
-                blockers.push("Codex quota status is empty.".to_string());
+                blockers.push(format!("{} quota status is empty.", capacity.label));
             }
             if request.guard_allowed == Some(false) {
                 blockers.push("Guard preflight does not allow the patch route.".to_string());
@@ -170,7 +173,8 @@ pub fn score_capacity(
             }
             if request.changed_file_count > capacity.max_patch_files.saturating_mul(2) {
                 blockers.push(format!(
-                    "Too many changed files for Codex: {} > {}.",
+                    "Too many changed files for {}: {} > {}.",
+                    capacity.label,
                     request.changed_file_count,
                     capacity.max_patch_files.saturating_mul(2)
                 ));
@@ -200,12 +204,12 @@ pub fn score_capacity(
             }
             if capacity.quota_status == QuotaStatus::Limited {
                 score -= 50;
-                warnings.push("Codex quota status is limited.".to_string());
+                warnings.push(format!("{} quota status is limited.", capacity.label));
             } else if capacity.quota_status == QuotaStatus::Unknown {
-                warnings.push(
-                    "Codex quota status is unknown; route is allowed with manual confirmation."
-                        .to_string(),
-                );
+                warnings.push(format!(
+                    "{} quota status is unknown; route is allowed with manual confirmation.",
+                    capacity.label
+                ));
             }
             if request.task_kind == TaskKind::Patch || request.requires_write {
                 score += 25;
@@ -277,6 +281,9 @@ pub fn score_capacity(
         provider: capacity.provider.clone(),
         label: capacity.label.clone(),
         kind: capacity.kind,
+        executor_kind: capacity.resolved_executor_kind(),
+        executor_id: capacity.resolved_executor_id().to_string(),
+        provider_id: capacity.provider_id.clone(),
         model: preferred_model(capacity),
         score,
         blocked: !blockers.is_empty(),
@@ -328,6 +335,9 @@ mod tests {
             provider: "provider".to_string(),
             label: "Provider".to_string(),
             kind,
+            executor_kind: kind.default_executor_kind(),
+            executor_id: "provider".to_string(),
+            provider_id: Some("provider".to_string()),
             enabled: true,
             auth_status: "configured".to_string(),
             reachability: "working".to_string(),

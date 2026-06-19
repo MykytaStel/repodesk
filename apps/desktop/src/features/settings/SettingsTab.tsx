@@ -101,7 +101,7 @@ export function SettingsTab() {
       <section className="hero-panel wide-panel">
         <p className="eyebrow">Settings</p>
         <h1>API keys, providers, and workspace.</h1>
-        <p className="lead">Paste your own Anthropic and OpenAI (Codex) keys below — they're stored locally in <code>~/.repodesk</code>, never committed, never sent to repos or context packs. Local engines (Ollama, LM Studio) need no key.</p>
+        <p className="lead">Paste your own Anthropic, OpenAI, and Gemini API keys below — they're stored locally in <code>~/.repodesk</code>, never committed, never sent to repos or context packs. Local engines (Ollama, LM Studio) need no key.</p>
       </section>
 
       {/* API keys — the thing most people come here for, so it's first. */}
@@ -115,8 +115,8 @@ export function SettingsTab() {
         </div>
         <div className="form-stack">
           <KeyField
-            label="Anthropic (Claude)"
-            hint="Powers Claude routing. Starts with sk-ant-…"
+            label="Anthropic API"
+            hint="Powers Anthropic completion routing. Starts with sk-ant-…"
             placeholder="sk-ant-…"
             stored={Boolean(providerSettings.anthropic_api_key)}
             fromEnv={Boolean(apiEnvDiagnostic?.anthropic_api_key_set) && !providerSettings.anthropic_api_key}
@@ -125,8 +125,8 @@ export function SettingsTab() {
             onRemove={() => void removeKey("anthropic_api_key")}
           />
           <KeyField
-            label="OpenAI (Codex / ChatGPT)"
-            hint="Powers Codex/GPT routing. Starts with sk-…"
+            label="OpenAI API"
+            hint="Powers OpenAI completion routing. Starts with sk-…"
             placeholder="sk-…"
             stored={Boolean(providerSettings.openai_api_key)}
             fromEnv={Boolean(apiEnvDiagnostic?.openai_api_key_set) && !providerSettings.openai_api_key}
@@ -200,12 +200,13 @@ export function SettingsTab() {
           <Toggle label="Llamafile enabled" checked={providerSettings.llamafile_enabled} onChange={(value) => saveSettings({ ...providerSettings, llamafile_enabled: value })} />
           <Toggle label="LocalAI enabled" checked={providerSettings.localai_enabled} onChange={(value) => saveSettings({ ...providerSettings, localai_enabled: value })} />
           <Toggle label="ChatGPT manual enabled" checked={providerSettings.chatgpt_enabled} onChange={(value) => saveSettings({ ...providerSettings, chatgpt_enabled: value })} />
-          <Toggle label="Codex enabled" checked={providerSettings.codex_enabled} onChange={(value) => saveSettings({ ...providerSettings, codex_enabled: value })} />
+          <Toggle label="Codex CLI route enabled" checked={providerSettings.codex_enabled} onChange={(value) => saveSettings({ ...providerSettings, codex_enabled: value })} />
           <Toggle label="Gemini manual enabled" checked={providerSettings.gemini_enabled} onChange={(value) => saveSettings({ ...providerSettings, gemini_enabled: value })} />
+          <Toggle label="Anthropic API enabled" checked={providerSettings.anthropic_api_enabled} onChange={(value) => saveSettings({ ...providerSettings, anthropic_api_enabled: value })} />
           <Toggle label="OpenAI API enabled" checked={providerSettings.openai_api_enabled} onChange={(value) => saveSettings({ ...providerSettings, openai_api_enabled: value })} />
           <Toggle label="Gemini API enabled" checked={providerSettings.gemini_api_enabled} onChange={(value) => saveSettings({ ...providerSettings, gemini_api_enabled: value })} />
           <Toggle label="Allow paid agents" checked={providerSettings.allow_paid_agents} onChange={(value) => saveSettings({ ...providerSettings, allow_paid_agents: value })} />
-          <label>Codex quota proxy<select value={providerSettings.codex_quota_status} onChange={(event) => saveSettings({ ...providerSettings, codex_quota_status: event.target.value })}>
+          <label>Codex CLI quota proxy<select value={providerSettings.codex_quota_status} onChange={(event) => saveSettings({ ...providerSettings, codex_quota_status: event.target.value })}>
             <option value="unknown">unknown</option>
             <option value="available">available</option>
             <option value="limited">limited</option>

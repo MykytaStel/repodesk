@@ -17,6 +17,10 @@ export type ProviderSettings = {
   openai_api_key_env_var: string;
   gemini_api_enabled: boolean;
   gemini_api_key_env_var: string;
+  anthropic_api_enabled: boolean;
+  anthropic_api_key: string;
+  openai_api_key: string;
+  gemini_api_key: string;
   allow_paid_agents: boolean;
   codex_quota_status: string;
   preferred_patch_provider: string;
@@ -45,6 +49,9 @@ export type RouteCandidate = {
   provider: string;
   label: string;
   kind: string;
+  executor_kind?: string;
+  executor_id?: string;
+  provider_id?: string | null;
   model?: string | null;
   score: number;
   blocked: boolean;
@@ -57,7 +64,12 @@ export type RouteCandidate = {
 export type RouteDecision = {
   task_kind: TaskKind;
   recommended_provider: string;
+  recommended_executor_kind?: string;
+  recommended_executor_id?: string;
+  recommended_provider_id?: string | null;
   recommended_model?: string | null;
+  fallback_executor_id?: string | null;
+  fallback_provider_id?: string | null;
   fallback_provider?: string | null;
   fallback_model?: string | null;
   score: number;
@@ -77,6 +89,9 @@ export type RoutingSnapshot = {
     provider: string;
     label: string;
     kind: string;
+    executor_kind?: string;
+    executor_id?: string;
+    provider_id?: string | null;
     enabled: boolean;
     auth_status: string;
     reachability: string;

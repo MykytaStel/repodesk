@@ -79,7 +79,7 @@ mod tests {
     use super::*;
     use crate::api_clients::ThinkingLevel;
     use crate::orchestrator::types::SubAgentStatus;
-    use crate::routing::types::TaskKind;
+    use crate::routing::types::{ExecutorKind, TaskKind};
 
     fn sample_step(allow_write: bool) -> SubAgentTask {
         SubAgentTask {
@@ -88,6 +88,9 @@ mod tests {
             kind: TaskKind::Patch,
             agent: "ollama".to_string(),
             provider: "ollama".to_string(),
+            executor_kind: ExecutorKind::LocalRuntime,
+            executor_id: "ollama".to_string(),
+            provider_id: Some("ollama".to_string()),
             model: None,
             thinking: ThinkingLevel::None,
             instruction: "Do the thing.".to_string(),

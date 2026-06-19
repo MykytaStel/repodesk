@@ -287,7 +287,7 @@ fn localai_health(settings: &store::ProviderSettings) -> ProviderHealth {
 
 fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
     if !settings.openai_api_enabled {
-        return disabled_provider("openai", "OpenAI API");
+        return disabled_provider("openai_api", "OpenAI API");
     }
 
     let (key, source) = resolve_key(
@@ -296,7 +296,7 @@ fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
     );
     let Some(api_key) = key else {
         return provider_error(
-            "openai",
+            "openai_api",
             "OpenAI API",
             "auth_missing",
             "auth_missing",
@@ -321,7 +321,7 @@ fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
                         .filter_map(|item| {
                             item.get("id").and_then(|value| value.as_str()).map(|id| {
                                 model_status(
-                                    "openai",
+                                    "openai_api",
                                     id.to_string(),
                                     item.get("owned_by")
                                         .and_then(|value| value.as_str())
@@ -332,7 +332,7 @@ fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            provider_working("openai", "OpenAI API", "configured", models)
+            provider_working("openai_api", "OpenAI API", "configured", models)
         }
         Err(error) => {
             let reachability = match error.status {
@@ -346,7 +346,7 @@ fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
                 "configured"
             };
             provider_error(
-                "openai",
+                "openai_api",
                 "OpenAI API",
                 auth_status,
                 reachability,
@@ -358,7 +358,7 @@ fn openai_health(settings: &store::ProviderSettings) -> ProviderHealth {
 
 fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
     if !settings.gemini_api_enabled {
-        return disabled_provider("gemini", "Gemini API");
+        return disabled_provider("gemini_api", "Gemini API");
     }
 
     let (key, source) = resolve_key(
@@ -367,7 +367,7 @@ fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
     );
     let Some(api_key) = key else {
         return provider_error(
-            "gemini",
+            "gemini_api",
             "Gemini API",
             "auth_missing",
             "auth_missing",
@@ -392,7 +392,7 @@ fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
                                 .map(|name| {
                                     let id = name.strip_prefix("models/").unwrap_or(name);
                                     model_status(
-                                        "gemini",
+                                        "gemini_api",
                                         id.to_string(),
                                         item.get("displayName")
                                             .and_then(|value| value.as_str())
@@ -403,7 +403,7 @@ fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            provider_working("gemini", "Gemini API", "configured", models)
+            provider_working("gemini_api", "Gemini API", "configured", models)
         }
         Err(error) => {
             let reachability = match error.status {
@@ -417,7 +417,7 @@ fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
                 "configured"
             };
             provider_error(
-                "gemini",
+                "gemini_api",
                 "Gemini API",
                 auth_status,
                 reachability,
@@ -429,13 +429,13 @@ fn gemini_health(settings: &store::ProviderSettings) -> ProviderHealth {
 
 fn anthropic_health(settings: &store::ProviderSettings) -> ProviderHealth {
     if !settings.anthropic_api_enabled {
-        return disabled_provider("anthropic", "Anthropic API");
+        return disabled_provider("anthropic_api", "Anthropic API");
     }
 
     let (key, source) = resolve_key(&settings.anthropic_api_key, "ANTHROPIC_API_KEY");
     let Some(api_key) = key else {
         return provider_error(
-            "anthropic",
+            "anthropic_api",
             "Anthropic API",
             "auth_missing",
             "auth_missing",
@@ -462,7 +462,7 @@ fn anthropic_health(settings: &store::ProviderSettings) -> ProviderHealth {
                         .filter_map(|item| {
                             item.get("id").and_then(|value| value.as_str()).map(|id| {
                                 model_status(
-                                    "anthropic",
+                                    "anthropic_api",
                                     id.to_string(),
                                     item.get("display_name")
                                         .and_then(|value| value.as_str())
@@ -473,7 +473,7 @@ fn anthropic_health(settings: &store::ProviderSettings) -> ProviderHealth {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            provider_working("anthropic", "Anthropic API", "configured", models)
+            provider_working("anthropic_api", "Anthropic API", "configured", models)
         }
         Err(error) => {
             let reachability = match error.status {
@@ -487,7 +487,7 @@ fn anthropic_health(settings: &store::ProviderSettings) -> ProviderHealth {
                 "configured"
             };
             provider_error(
-                "anthropic",
+                "anthropic_api",
                 "Anthropic API",
                 auth_status,
                 reachability,
@@ -547,13 +547,13 @@ pub(crate) fn model_health_from_settings(
             .unwrap_or_else(|_| disabled_provider("localai", "LocalAI")),
         t_openai
             .join()
-            .unwrap_or_else(|_| disabled_provider("openai", "OpenAI API")),
+            .unwrap_or_else(|_| disabled_provider("openai_api", "OpenAI API")),
         t_gemini
             .join()
-            .unwrap_or_else(|_| disabled_provider("gemini", "Gemini API")),
+            .unwrap_or_else(|_| disabled_provider("gemini_api", "Gemini API")),
         t_anthropic
             .join()
-            .unwrap_or_else(|_| disabled_provider("anthropic", "Anthropic API")),
+            .unwrap_or_else(|_| disabled_provider("anthropic_api", "Anthropic API")),
     ];
     let mut warnings = Vec::new();
 

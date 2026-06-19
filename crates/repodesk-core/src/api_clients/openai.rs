@@ -1,5 +1,6 @@
 //! OpenAI client implementing [`super::LlmProvider`] via the Chat Completions
-//! API. Used for `openai`/`chatgpt`/`codex`/`gpt` provider names. The
+//! API. Used for `openai_api` plus legacy `openai`/`chatgpt`/`gpt` completion
+//! provider names. The
 //! [`super::ThinkingLevel`] hint is not honored by classic chat completions and
 //! is intentionally ignored here.
 

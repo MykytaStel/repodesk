@@ -22,6 +22,7 @@ use tokio::task::JoinSet;
 use crate::api_clients::{LlmRequest, LlmResponse, ProviderSettings, provider_for};
 use crate::errors::RepoDeskResult;
 use crate::persistence::event_journal::{LogEventInput, log_event};
+use crate::routing::types::ExecutorKind;
 use crate::safety::{self, SafetyLevel};
 use crate::tasks::show_active_task;
 use crate::tokens::estimate_text;
@@ -128,7 +129,10 @@ pub async fn run_plan(
             // A "manual" route means no automatic provider fits this step (e.g. an
             // unreviewed patch with no paid key configured). It is human work, not
             // an API spend: zero cost, and clearly flagged in both run modes.
-            if step.provider.eq_ignore_ascii_case("manual") {
+            if step.executor_kind == ExecutorKind::Manual
+                || step.provider.eq_ignore_ascii_case("manual")
+                || step.resolved_executor_id().eq_ignore_ascii_case("manual")
+            {
                 state.push(SubAgentResult {
                     status: if opts.dry_run {
                         SubAgentStatus::Ok
@@ -146,9 +150,30 @@ pub async fn run_plan(
                 continue;
             }
 
-            let projected_cost =
-                estimate_agent_cost(&cost_config, &step.agent, input_tokens, step.budget_tokens)
-                    .estimated_cost_units;
+            if step.executor_kind == ExecutorKind::CodingAgent {
+                state.push(SubAgentResult {
+                    status: if opts.dry_run {
+                        SubAgentStatus::Ok
+                    } else {
+                        SubAgentStatus::Skipped
+                    },
+                    input_tokens,
+                    notes: vec![format!(
+                        "{} is a coding-agent executor; automatic CLI execution is not implemented in this PR",
+                        step.resolved_executor_id()
+                    )],
+                    ..base_result(step)
+                });
+                continue;
+            }
+
+            let projected_cost = estimate_agent_cost(
+                &cost_config,
+                step.resolved_executor_id(),
+                input_tokens,
+                step.budget_tokens,
+            )
+            .estimated_cost_units;
 
             // Cost ceiling — check before any spend.
             if let Some(max) = opts.max_cost
@@ -172,8 +197,9 @@ pub async fn run_plan(
                     input_tokens,
                     cost_units: projected_cost,
                     notes: vec![format!(
-                        "[dry-run] would call {}{} (projected only)",
-                        step.provider,
+                        "[dry-run] would call {} via {}{} (projected only)",
+                        step.resolved_executor_id(),
+                        step.resolved_provider_id().unwrap_or(&step.provider),
                         step.model
                             .as_deref()
                             .map(|m| format!("/{m}"))
@@ -185,7 +211,18 @@ pub async fn run_plan(
             }
 
             // Real execution — schedule the provider call to run concurrently.
-            let provider = match provider_for(&step.provider, &opts.settings) {
+            let Some(provider_id) = step.resolved_provider_id() else {
+                state.running_cost -= projected_cost; // refund: nothing spent
+                state.push(failed(
+                    step,
+                    format!(
+                        "provider unavailable: {} has no completion provider id",
+                        step.resolved_executor_id()
+                    ),
+                ));
+                continue;
+            };
+            let provider = match provider_for(provider_id, &opts.settings) {
                 Ok(provider) => provider,
                 Err(error) => {
                     state.running_cost -= projected_cost; // refund: nothing spent
@@ -223,7 +260,7 @@ pub async fn run_plan(
             match responses.remove(&meta.idx) {
                 Some(Ok(response)) => {
                     let _ = log_token_event(LogTokenInput {
-                        agent: step.agent.clone(),
+                        agent: step.resolved_executor_id().to_string(),
                         model: Some(response.model.clone()),
                         input_tokens: response.input_tokens,
                         output_tokens: response.output_tokens,
@@ -232,7 +269,7 @@ pub async fn run_plan(
                     });
                     let cost = estimate_agent_cost(
                         &cost_config,
-                        &step.agent,
+                        step.resolved_executor_id(),
                         response.input_tokens,
                         response.output_tokens,
                     )
@@ -244,7 +281,7 @@ pub async fn run_plan(
                     let captured = crate::memory::capture_from_text(
                         &plan.project,
                         &plan.task_id,
-                        &step.agent,
+                        step.resolved_executor_id(),
                         &response.text,
                     )
                     .map(|proposals| proposals.len())
@@ -400,8 +437,11 @@ impl RunState {
 fn base_result(step: &SubAgentTask) -> SubAgentResult {
     SubAgentResult {
         task_id: step.id.clone(),
-        agent: step.agent.clone(),
-        provider: step.provider.clone(),
+        agent: step.resolved_executor_id().to_string(),
+        provider: step
+            .resolved_provider_id()
+            .unwrap_or(&step.provider)
+            .to_string(),
         model: step.model.clone().unwrap_or_default(),
         status: SubAgentStatus::Ok,
         output: String::new(),

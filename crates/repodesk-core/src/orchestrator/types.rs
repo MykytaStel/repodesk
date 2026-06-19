@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::api_clients::ThinkingLevel;
 use crate::errors::{RepoDeskError, RepoDeskResult};
-use crate::routing::types::TaskKind;
+use crate::routing::types::{ExecutorKind, TaskKind};
 
 /// One unit of delegated work: an agent + resolved provider/model + the context
 /// it needs, plus the dependencies that must finish before it runs.
@@ -18,10 +18,17 @@ pub struct SubAgentTask {
     pub id: String,
     pub title: String,
     pub kind: TaskKind,
-    /// Agent name from the registry (ollama, chatgpt, codex, gemini, …).
+    /// Legacy agent/accounting id. New code should prefer `executor_id`.
     pub agent: String,
-    /// Provider name the runner builds a client for (resolved by planning).
+    /// Legacy provider/display id. New code should prefer `provider_id` for
+    /// completion calls and `executor_id` for coding-agent routes.
     pub provider: String,
+    #[serde(default)]
+    pub executor_kind: ExecutorKind,
+    #[serde(default)]
+    pub executor_id: String,
+    #[serde(default)]
+    pub provider_id: Option<String>,
     /// Concrete model id; `None` lets the provider client pick its default.
     pub model: Option<String>,
     #[serde(default)]
@@ -35,6 +42,30 @@ pub struct SubAgentTask {
     /// Whether the sub-agent is allowed to propose file writes/patches.
     #[serde(default)]
     pub allow_write: bool,
+}
+
+impl SubAgentTask {
+    pub fn resolved_executor_id(&self) -> &str {
+        let executor_id = self.executor_id.trim();
+        if executor_id.is_empty() {
+            self.agent.as_str()
+        } else {
+            self.executor_id.as_str()
+        }
+    }
+
+    pub fn resolved_provider_id(&self) -> Option<&str> {
+        self.provider_id
+            .as_deref()
+            .filter(|provider| !provider.trim().is_empty())
+            .or_else(|| {
+                if self.provider.trim().is_empty() {
+                    None
+                } else {
+                    Some(self.provider.as_str())
+                }
+            })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -277,6 +308,9 @@ mod tests {
             kind: TaskKind::Plan,
             agent: "ollama".to_string(),
             provider: "ollama".to_string(),
+            executor_kind: ExecutorKind::LocalRuntime,
+            executor_id: "ollama".to_string(),
+            provider_id: Some("ollama".to_string()),
             model: None,
             thinking: ThinkingLevel::None,
             instruction: String::new(),

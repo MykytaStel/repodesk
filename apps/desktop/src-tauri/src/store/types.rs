@@ -72,7 +72,7 @@ impl Default for ProviderSettings {
             gemini_api_key: String::new(),
             allow_paid_agents: true,
             codex_quota_status: "unknown".to_string(),
-            preferred_patch_provider: "codex".to_string(),
+            preferred_patch_provider: "codex_cli".to_string(),
             preferred_compression_provider: "ollama".to_string(),
             preferred_review_provider: "chatgpt".to_string(),
             notes: "Local-first by default. Paid agents should receive bounded smart context only."
