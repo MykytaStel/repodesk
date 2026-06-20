@@ -9,6 +9,8 @@ import {
   type LoopStatus,
   type OrchestrationPlan,
   type OrchestrationRun,
+  type ReviewAction,
+  type RunReview,
   type RunSummary,
   type SubAgentResult,
   type SubAgentStatus,
@@ -119,11 +121,18 @@ function ExecutorStatusPanel({
 function RunPanel({
   run,
   onOpenMemory,
+  onReview,
+  reviewing,
+  reviewResult,
 }: {
   run: OrchestrationRun;
   onOpenMemory?: () => void;
+  onReview?: (action: ReviewAction) => void;
+  reviewing?: boolean;
+  reviewResult?: RunReview | null;
 }) {
   const captured = run.results.reduce((sum, r) => sum + r.captured_proposals, 0);
+  const changedCount = run.results.reduce((sum, r) => sum + (r.changed_files?.length ?? 0), 0);
   return (
     <section className="panel">
       <p className="eyebrow">
@@ -167,12 +176,41 @@ function RunPanel({
           </div>
         ))}
       </div>
-      {!run.dry_run && captured > 0 && (
+      {!run.dry_run && (captured > 0 || changedCount > 0) && (
         <div className="button-row compact-buttons" style={{ marginTop: 12 }}>
-          <button className="tiny-button" onClick={onOpenMemory} disabled={!onOpenMemory}>
-            Review {captured} captured memory proposal{captured === 1 ? "" : "s"}
-          </button>
+          {captured > 0 && (
+            <button className="tiny-button" onClick={onOpenMemory} disabled={!onOpenMemory}>
+              Review {captured} captured memory proposal{captured === 1 ? "" : "s"}
+            </button>
+          )}
+          {changedCount > 0 && onReview && (
+            <>
+              <button
+                className="tiny-button"
+                onClick={() => onReview("accept")}
+                disabled={reviewing}
+                title="Stage the changed files so you can commit them"
+              >
+                Accept {changedCount} change{changedCount === 1 ? "" : "s"}
+              </button>
+              <button
+                className="tiny-button"
+                onClick={() => onReview("reject")}
+                disabled={reviewing}
+                title="Discard the agent's changes (restore tracked, remove new files)"
+              >
+                Reject changes
+              </button>
+            </>
+          )}
         </div>
+      )}
+      {reviewResult && (
+        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+          {reviewResult.action === "accept" ? "Staged" : "Discarded"}:{" "}
+          {reviewResult.processed.map((f) => `${f.path} (${f.outcome})`).join(", ") || "nothing"}
+          {reviewResult.warnings.length > 0 ? ` — ${reviewResult.warnings.join("; ")}` : ""}
+        </p>
       )}
     </section>
   );
@@ -318,12 +356,23 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const [approveCodingAgents, setApproveCodingAgents] = useState(false);
   const [targetModelCombo, setTargetModelCombo] = useState<string>("auto");
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
+  const [reviewResult, setReviewResult] = useState<RunReview | null>(null);
 
   const busy = orchestrate.plan.isPending || orchestrate.run.isPending || orchestrate.loop.isPending;
   // A run just executed wins; otherwise a history selection; otherwise the latest run.
   const currentRun = orchestrate.run.data ?? selectedRun ?? orchestrate.status;
   const error =
     orchestrate.run.error ?? orchestrate.plan.error ?? orchestrate.showRun.error ?? orchestrate.loop.error;
+
+  async function handleReview(action: ReviewAction) {
+    if (!currentRun) return;
+    try {
+      const result = await orchestrate.review.mutateAsync({ runId: currentRun.run_id, action });
+      setReviewResult(result);
+    } catch {
+      // surfaced via orchestrate.review.error / the Error panel
+    }
+  }
 
   function parsedMaxCost(): number | null {
     const parsed = maxCost.trim() ? Number(maxCost) : null;
@@ -525,7 +574,13 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       {orchestrate.loop.data && <LoopPanel loop={orchestrate.loop.data} />}
 
       {currentRun && (
-        <RunPanel run={currentRun} onOpenMemory={setActiveTab ? () => setActiveTab("memory") : undefined} />
+        <RunPanel
+          run={currentRun}
+          onOpenMemory={setActiveTab ? () => setActiveTab("memory") : undefined}
+          onReview={(action) => void handleReview(action)}
+          reviewing={orchestrate.review.isPending}
+          reviewResult={reviewResult?.run_id === currentRun.run_id ? reviewResult : null}
+        />
       )}
 
       <HistoryPanel

@@ -77,8 +77,16 @@ and after, so a write-capable run produces a reviewable changeset, not just stdo
 `diff` of the tracked changes (staged + unstaged; new untracked files are listed but not
 inlined), and a `diff_path` receipt file. The runner surfaces the changed-file list + diff path
 on the step result (`SubAgentResult.changed_files` / `diff_path`), and the desktop run panel
-shows the count and file list. This is the foundation for the planned accept/reject review flow
-— RepoDesk still never commits, pushes, or merges on its own.
+shows the count and file list.
+
+**Accept / reject review.** [`orchestrator::review`](../crates/repodesk-core/src/orchestrator/review.rs)
+makes that changeset actionable. Given a persisted run, the human can **accept** (stage the
+agent-changed files via `git add`, ready for a commit they make) or **reject** (discard them —
+`git restore --source=HEAD` for tracked files, `git clean` for untracked ones). It is bounded by
+construction: it only ever touches the paths the run recorded, validates each is a repo-relative
+path (no `..`, no absolute), and **never commits, pushes, or merges**. Surfaced as
+`repodesk orchestrate review <run_id> <accept|reject>` (CLI), the `orchestrate_review` Tauri
+command, and Accept/Reject buttons on the desktop run panel.
 
 ### Gates (every step, before any spend)
 - **Safety** — `safety::scan_text` blocks if secret-like content is in the outgoing context.
@@ -95,6 +103,7 @@ repodesk orchestrate run --dry-run [--max-cost N]        # gate + project cost, 
 repodesk orchestrate run [--goal "..."] [--max-cost N] --yes
 repodesk orchestrate status                              # most recent run for the active task
 repodesk orchestrate show <run_id>
+repodesk orchestrate review <run_id> accept|reject       # stage or discard a coding-agent changeset
 ```
 
 Offline preview (no network, no keys):

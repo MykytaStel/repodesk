@@ -73,6 +73,16 @@ export function useOrchestrate() {
     mutationFn: (runId: string) => api.orchestrateShow(runId),
   });
 
+  // Accept (stage) or reject (discard) a coding-agent run's changeset. Either
+  // way the working tree changed, so refresh the git snapshot.
+  const review = useMutation({
+    mutationFn: (v: { runId: string; action: api.ReviewAction }) =>
+      api.orchestrateReview(v.runId, v.action),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
+    },
+  });
+
   // Autonomous loop (N8-C): plan → run → re-plan/retry under guardrails. A real
   // loop records outcomes and may capture memory proposals, so refresh both.
   const loop = useMutation({
@@ -120,6 +130,7 @@ export function useOrchestrate() {
     plan,
     run,
     showRun,
+    review,
     loop,
   };
 }

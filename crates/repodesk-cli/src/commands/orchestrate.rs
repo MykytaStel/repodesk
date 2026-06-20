@@ -74,8 +74,34 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
             Some(run) => print!("{}", format_run(&run)),
             None => println!("No run '{run_id}' found for the active task."),
         },
+        OrchestrateCommand::Review { run_id, action } => {
+            let action = orchestrator::ReviewAction::from_label(&action)?;
+            let review = orchestrator::review_run(&run_id, action)?;
+            print!("{}", format_review(&review));
+        }
     }
     Ok(())
+}
+
+fn format_review(review: &repodesk_core::orchestrator::RunReview) -> String {
+    let verb = match review.action {
+        repodesk_core::orchestrator::ReviewAction::Accept => "Accepted (staged)",
+        repodesk_core::orchestrator::ReviewAction::Reject => "Rejected (discarded)",
+    };
+    let mut out = format!(
+        "{verb} changeset for run {} (project {})\n",
+        review.run_id, review.project
+    );
+    if review.processed.is_empty() {
+        out.push_str("  (no files processed)\n");
+    }
+    for file in &review.processed {
+        out.push_str(&format!("  • {} — {}\n", file.path, file.outcome));
+    }
+    for warning in &review.warnings {
+        out.push_str(&format!("  ! {warning}\n"));
+    }
+    out
 }
 
 fn format_plan(plan: &OrchestrationPlan) -> String {

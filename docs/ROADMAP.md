@@ -91,8 +91,10 @@ Scope:
 - CLI availability: passive PATH lookup + opt-in `--version` probe. ✅
 - Agent-run diff capture: pre/post `git status` delta + unified diff + receipt on each run,
   surfaced on the step result and run panel. ✅
+- Accept/reject review: stage (accept) or discard (reject) a run's changeset via CLI, Tauri,
+  and run-panel buttons; bounded to recorded paths, never commits/pushes. ✅
 - Next (ordered): CLI auth detection, git worktree lifecycle, OS keychain credential store,
-  OpenAI Responses API migration, accept/reject review flow.
+  OpenAI Responses API migration, inline diff viewer + cross-model changeset review.
 
 ## Development priorities
 

@@ -591,6 +591,12 @@ pub enum OrchestrateCommand {
     Status,
     /// Show a specific run by id.
     Show { run_id: String },
+    /// Accept (stage) or reject (discard) a coding-agent run's changed files.
+    Review {
+        run_id: String,
+        /// `accept` to stage the changes, `reject` to discard them.
+        action: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]

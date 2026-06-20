@@ -12,10 +12,12 @@
 pub mod auto_loop;
 pub mod context;
 pub mod plan;
+pub mod review;
 pub mod runner;
 pub mod types;
 
 pub use auto_loop::{LoopIteration, LoopOptions, LoopRun, LoopStatus, run_loop};
+pub use review::{ReviewAction, ReviewedFile, RunReview, review_run};
 pub use plan::{
     available_capacities, build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step,
     plan_has_paid_step, route_steps,

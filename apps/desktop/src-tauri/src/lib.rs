@@ -295,6 +295,7 @@ pub fn run() {
             commands::orchestrate_loop,
             commands::orchestrate_status,
             commands::orchestrate_show,
+            commands::orchestrate_review,
             commands::orchestration_runs,
             commands::task_timeline,
             commands::coding_agent_executors,

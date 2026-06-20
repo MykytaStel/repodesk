@@ -43,7 +43,7 @@ RepoDesk
 | Worktree lifecycle | `git_workspace.rs` is read-only snapshot/diff; no *isolated* worktree per run (diff is captured in-place against the project tree) | ❌ absent |
 | Secure credential store | env vars only (`OPENAI_API_KEY` etc.); no OS keychain | ❌ absent |
 | OpenAI Responses API | client still uses Chat Completions transport | ❌ not migrated |
-| Review / accept-reject flow | diff viewer + checks exist separately; no agent-run accept/reject loop | ⚠️ partial |
+| Review / accept-reject flow | `orchestrator::review` stages (accept) or discards (reject) a run's changeset; CLI + Tauri + run-panel buttons | ✅ implemented |
 
 ## What landed (PRs 1–8 equivalent)
 
@@ -74,6 +74,12 @@ RepoDesk
    panel shows the changed-file count + list. Diff is captured **in-place** against
    the project tree (no isolated worktree yet); untracked new files are listed but
    their content is not inlined.
+9. **Accept / reject review** — `orchestrator::review` turns a captured changeset
+   into an action: **accept** stages the agent-changed files (`git add`), **reject**
+   discards them (`git restore --source=HEAD` for tracked, `git clean` for
+   untracked). Bounded to the run's recorded paths, path-validated, never commits
+   or pushes. Exposed via `repodesk orchestrate review`, the `orchestrate_review`
+   Tauri command, and run-panel buttons.
 
 ## Remaining gaps (ordered)
 
@@ -91,9 +97,9 @@ RepoDesk
    Never return a full key to the frontend.
 5. **OpenAI Responses API migration** — move `openai.rs` off Chat Completions,
    preserving usage extraction, rate-limit handling, model selection, and tests.
-6. **Review / accept-reject flow** — after an agent run: show the diff, run
-   checks, optionally cross-model review, then human accept/reject. No automatic
-   commit, push, merge, or PR.
+6. **Review depth** — the accept/reject core exists; remaining polish is an
+   inline diff viewer for the captured `diff_path` and an optional cross-model
+   review of the changeset before the accept/reject decision.
 7. **Local-runtime ownership decision** — keep Ollama/LM Studio as probe-only, or
    let RepoDesk manage their process lifecycle. Current behavior is probe-only.
 8. **Deprecation warnings** — user-visible warnings for legacy route aliases

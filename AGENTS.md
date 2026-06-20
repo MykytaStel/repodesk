@@ -108,7 +108,8 @@ checked explicitly (never on launch).
   the separate `approve_coding_agents` gate. **Done:** separation, canonical ids, safe runner,
   read-only + workspace-write commands, routing + orchestrator integration, CLI version probe,
   agent-run diff capture (pre/post git porcelain delta + unified diff + receipt on each run,
-  surfaced on `SubAgentResult.changed_files`/`diff_path`). **Open (ordered):** CLI auth tri-state,
-  git worktree lifecycle, OS keychain credential store, OpenAI Responses API migration,
-  accept/reject review flow.
+  surfaced on `SubAgentResult.changed_files`/`diff_path`), accept/reject review
+  (`orchestrator::review`: stage or discard a run's changeset; CLI + Tauri + run-panel buttons).
+  **Open (ordered):** CLI auth tri-state, git worktree lifecycle, OS keychain credential store,
+  OpenAI Responses API migration, inline diff viewer + cross-model changeset review.
 </content>

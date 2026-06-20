@@ -92,6 +92,21 @@ export type ExecutorAvailability = {
   notes: string[];
 };
 
+export type ReviewAction = "accept" | "reject";
+
+export type ReviewedFile = {
+  path: string;
+  outcome: string;
+};
+
+export type RunReview = {
+  run_id: string;
+  action: ReviewAction;
+  project: string;
+  processed: ReviewedFile[];
+  warnings: string[];
+};
+
 export type LoopStatus = "succeeded" | "needs_approval" | "guardrail_blocked" | "exhausted" | "dry_run";
 
 export type LoopIteration = {
@@ -215,6 +230,10 @@ export async function orchestrateShow(runId: string): Promise<OrchestrationRun |
 
 export async function orchestrationRuns(): Promise<RunSummary[]> {
   return invoke("orchestration_runs");
+}
+
+export async function orchestrateReview(runId: string, action: ReviewAction): Promise<RunReview> {
+  return invoke("orchestrate_review", { runId, action });
 }
 
 export async function taskTimeline(): Promise<TaskEvent[]> {

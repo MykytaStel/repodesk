@@ -5,7 +5,8 @@
 use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::executors::{self, ExecutorAvailability};
 use repodesk_core::orchestrator::{
-    self, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun, RunOptions, RunSummary,
+    self, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun, ReviewAction, RunOptions,
+    RunReview, RunSummary, review_run,
 };
 use repodesk_core::persistence::event_journal::{self, EventEntry};
 use repodesk_core::tasks::show_active_task;
@@ -127,6 +128,15 @@ pub fn coding_agent_executors() -> Result<Vec<ExecutorAvailability>, ErrorPayloa
             executors::coding_agent_availability_probed(&spec.id).map_err(ErrorPayload::from)
         })
         .collect()
+}
+
+/// Accept (stage) or reject (discard) the files a coding-agent run changed.
+/// `action` is `accept` or `reject`. Bounded to the run's recorded changeset;
+/// never commits or pushes.
+#[tauri::command]
+pub fn orchestrate_review(run_id: String, action: String) -> Result<RunReview, ErrorPayload> {
+    let action = ReviewAction::from_label(&action)?;
+    Ok(review_run(&run_id, action)?)
 }
 
 #[tauri::command]
