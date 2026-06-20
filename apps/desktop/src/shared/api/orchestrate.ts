@@ -124,6 +124,9 @@ export type ExecutorAvailability = {
   status: string;
   version?: string | null;
   authenticated?: boolean | null;
+  auth_status?: "authenticated" | "unauthenticated" | "unknown";
+  auth_source?: string | null;
+  auth_detail?: string | null;
   notes: string[];
 };
 

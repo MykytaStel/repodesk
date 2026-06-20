@@ -33,7 +33,7 @@ RepoDesk
 | Read-only vs workspace-write | `build_coding_agent_command(.., writes_allowed)` → codex `--sandbox`, claude `--permission-mode` | ✅ implemented |
 | CLI availability (passive) | PATH lookup, no spawn (`coding_agent_availability`) | ✅ implemented |
 | CLI version detection | bounded `<binary> --version` probe (`coding_agent_availability_probed`) | ✅ implemented |
-| CLI auth detection | `authenticated: Option<bool>` set `Some(true)` from a known auth-artifact *existence* check (never `Some(false)`, never reads contents) | ✅ implemented (conservative) |
+| CLI auth detection | Bounded status-command probe (`codex login status`, `claude auth status --json`) with artifact-existence fallback; never reads credential contents | ✅ implemented |
 | Routing → executor selection | patch steps route to PATH-available agent, else manual; paid floor enforced | ✅ implemented |
 | Orchestrator execution | `ExecutorKind::CodingAgent` arm runs the CLI behind `approve_coding_agents` | ✅ implemented |
 | Cost/token ledger for agents | output captured → `estimate_agent_cost` + `log_token_event` | ✅ implemented |
@@ -64,9 +64,7 @@ RepoDesk
    into Memory Brain proposals like any other step.
 7. **CLI version probe** — `coding_agent_availability_probed` runs
    `<binary> --version` (bounded, argv-only) so the desktop shows a real version
-   and "present but not runnable" is distinguishable from "available". The
-   `authenticated` field exists and is reported as `None` until a safe status
-   command is identified per CLI.
+   and "present but not runnable" is distinguishable from "available".
 8. **Agent-run diff capture** — the executor snapshots `git status --porcelain`
    before/after a run and records `changed_files` (the delta), a size-limited
    unified `diff`, and a `diff_path` receipt on `CodingAgentExecution`. The runner
@@ -82,11 +80,15 @@ RepoDesk
    **reject** leaves the active checkout untouched and keeps the worktree for
    manual inspection/cleanup. Bounded to the run's recorded paths, path-validated,
    never commits or pushes.
-10. **CLI auth tri-state** — `coding_agent_availability_probed` sets
-    `authenticated = Some(true)` when a known local auth artifact (e.g.
-    `~/.codex/auth.json`, `~/.claude/.credentials.json`) *exists*; never reads its
-    contents, never treats an API-key env var as CLI auth, and never reports
-    `Some(false)` (absence ≠ unauthenticated — keychain/env may hold it).
+10. **CLI auth depth** — `coding_agent_availability_probed` first runs a bounded,
+    non-interactive auth-status command (`codex login status` or
+    `claude auth status --json`) and maps it to `auth_status`,
+    `authenticated`, `auth_source`, and sanitized `auth_detail`. Claude JSON is
+    parsed while dropping account identifiers such as email/org id. If the
+    status command is missing or inconclusive, RepoDesk falls back to known local
+    auth-artifact existence (e.g. `~/.codex/auth.json`,
+    `~/.claude/.credentials.json`). It never reads credential-file contents and
+    never treats an API-key env var as CLI auth.
 11. **Git worktree lifecycle** — `worktree.rs` creates/lists/removes isolated
     per-step worktrees checked out at HEAD. Approved coding-agent runs require an
     isolated workspace by default; creation failure blocks the step and no CLI is
@@ -113,15 +115,13 @@ RepoDesk
 
 ## Remaining gaps (ordered)
 
-1. **CLI auth depth** — upgrade the existence-based `authenticated` signal to a real
-   tri-state once a documented, side-effect-free status command exists per CLI.
-2. **Credential-store migration** — move the legacy plaintext provider-settings keys
+1. **Credential-store migration** — move the legacy plaintext provider-settings keys
    into the keychain and stop persisting them in app files.
-3. **Review depth** — inline diff viewer for the captured `diff_path` and an optional
+2. **Review depth** — inline diff viewer for the captured `diff_path` and an optional
    cross-model review of the changeset before the accept/reject decision.
-4. **Local-runtime ownership decision** — keep Ollama/LM Studio as probe-only, or let
+3. **Local-runtime ownership decision** — keep Ollama/LM Studio as probe-only, or let
    RepoDesk manage their process lifecycle. Current behavior is probe-only.
-5. **Deprecation warnings** — user-visible warnings for legacy route aliases
+4. **Deprecation warnings** — user-visible warnings for legacy route aliases
    (`preferred_patch_provider = "codex"` is normalized to `codex_cli` on read).
 
 ## Verification

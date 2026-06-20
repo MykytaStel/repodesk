@@ -63,10 +63,13 @@ on stdin, and reports availability at two levels:
   routing/planning and the runtime status, where listing must stay cheap and side-effect-free.
 - **Probed** (`coding_agent_availability_probed`) — passive lookup *plus* a bounded
   `<binary> --version` probe (argv-only, 5s timeout, no `sh -c`). Running the CLI's own version
-  command confirms the binary is actually runnable and surfaces its `version`. `authenticated`
-  stays `None` (unknown) on purpose: neither CLI exposes a documented, side-effect-free
-  auth-status command, and RepoDesk never parses credential files. The desktop "Executor
-  availability" panel uses this variant.
+  command confirms the binary is actually runnable and surfaces its `version`. It also runs a
+  bounded non-interactive auth-status command when available (`codex login status`,
+  `claude auth status --json`) and reports `auth_status`, `auth_source`, sanitized `auth_detail`,
+  and the legacy `authenticated` boolean. If the status command is missing or inconclusive,
+  RepoDesk falls back to known auth-artifact existence only. It never reads credential-file
+  contents and never exposes account email/org/token data. The desktop "Executor availability"
+  panel uses this variant.
 
 The runner launches these commands only when `RunOptions.approve_coding_agents` is true (CLI
 `--yes`, or the desktop's explicit CLI-agent approval); otherwise it records the handoff as

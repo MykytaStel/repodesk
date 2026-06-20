@@ -110,12 +110,13 @@ checked explicitly (never on launch).
   agent-run diff capture (pre/post git porcelain delta + unified diff + receipt on each run,
   surfaced on `SubAgentResult.changed_files`/`diff_path`), accept/reject review
   (`orchestrator::review`: stage/discard in-place changesets and safely apply isolated worktree
-  changes back on accept), CLI auth tri-state (artifact-existence check, never reads contents),
+  changes back on accept), CLI auth depth (bounded `codex login status` /
+  `claude auth status --json` probes with sanitized detail plus artifact-existence fallback,
+  never reads credential contents),
   required isolated git worktrees for coding-agent runs (`worktree.rs`),
   worktree recovery/cleanup UI + CLI list/remove for managed isolated worktrees,
   OS keychain credential store
   (`credentials.rs`: `CredentialResolver` + `keyring`; `credential_*` Tauri cmds return only
-  masked hints), and the OpenAI Responses API (`/v1/responses`). **Open (ordered):** CLI auth
-  depth, migrate legacy plaintext keys to the keychain, inline diff viewer + cross-model changeset
-  review.
+  masked hints), and the OpenAI Responses API (`/v1/responses`). **Open (ordered):** migrate
+  legacy plaintext keys to the keychain, inline diff viewer + cross-model changeset review.
 </content>

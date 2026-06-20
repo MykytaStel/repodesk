@@ -93,13 +93,14 @@ Scope:
   surfaced on the step result and run panel. ✅
 - Accept/reject review: stage/discard in-place changesets and safely apply isolated-worktree
   changes back on accept, with same-path conflict checks. ✅
-- CLI auth tri-state (artifact-existence check), required isolated git worktrees for coding-agent
-  runs, OS keychain credential store (`credentials.rs` + `keyring`, masked-only to UI), OpenAI
-  Responses API (`/v1/responses`). ✅
+- CLI auth depth: bounded `codex login status` / `claude auth status --json` probes with
+  sanitized status details and artifact-existence fallback. ✅
+- Required isolated git worktrees for coding-agent runs, OS keychain credential store
+  (`credentials.rs` + `keyring`, masked-only to UI), OpenAI Responses API (`/v1/responses`). ✅
 - Worktree recovery/cleanup: desktop Recovery panel + CLI list/remove for managed isolated
   worktrees, with dirty status, metadata, and explicit cleanup only. ✅
-- Next (ordered): CLI auth depth, migrate legacy plaintext keys to the keychain, inline diff
-  viewer + cross-model changeset review.
+- Next (ordered): migrate legacy plaintext keys to the keychain, inline diff viewer +
+  cross-model changeset review.
 
 ## Development priorities
 

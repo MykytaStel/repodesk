@@ -80,6 +80,12 @@ function ExecutorStatusPanel({
   executors: ExecutorAvailability[];
   loading: boolean;
 }) {
+  function authLabel(executor: ExecutorAvailability): string {
+    if (executor.auth_status === "authenticated" || executor.authenticated === true) return "authenticated";
+    if (executor.auth_status === "unauthenticated" || executor.authenticated === false) return "not authenticated";
+    return "auth unknown";
+  }
+
   return (
     <section className="panel">
       <div className="panel-title-row compact">
@@ -107,7 +113,9 @@ function ExecutorStatusPanel({
                 <span>{executor.binary}</span>
                 <span>{executor.executable_path ?? executor.status}</span>
                 {executor.version ? <span>{executor.version}</span> : null}
-                <span>{executor.authenticated === true ? "authenticated" : "auth unknown"}</span>
+                <span>{authLabel(executor)}</span>
+                {executor.auth_source ? <span>{executor.auth_source}</span> : null}
+                {executor.auth_detail ? <span>{executor.auth_detail}</span> : null}
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
                 Launch still requires explicit approval for this run.

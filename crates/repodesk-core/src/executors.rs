@@ -82,7 +82,27 @@ pub struct ExecutorAvailability {
     /// honest default — RepoDesk never parses undocumented credential files.
     #[serde(default)]
     pub authenticated: Option<bool>,
+    /// Human-facing auth state derived from a documented CLI status command when
+    /// available, or from conservative local artifact existence as a fallback.
+    #[serde(default)]
+    pub auth_status: ExecutorAuthStatus,
+    /// The probe used to derive [`auth_status`](Self::auth_status).
+    #[serde(default)]
+    pub auth_source: Option<String>,
+    /// Sanitized non-secret status detail. Never includes account email, org id,
+    /// tokens, or credential-file contents.
+    #[serde(default)]
+    pub auth_detail: Option<String>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecutorAuthStatus {
+    Authenticated,
+    Unauthenticated,
+    #[default]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -220,23 +240,25 @@ pub fn coding_agent_availability(value: &str) -> RepoDeskResult<ExecutorAvailabi
         status: if available { "available" } else { "missing" }.to_string(),
         version: None,
         authenticated: None,
+        auth_status: ExecutorAuthStatus::Unknown,
+        auth_source: None,
+        auth_detail: None,
         notes,
     })
 }
 
-/// Active availability: passive PATH lookup *plus* a bounded `<binary> --version`
-/// probe and a conservative local-auth check. Running the CLI's own version
-/// command confirms the executable is actually runnable (not just present) and
-/// surfaces its version for the desktop "Coding agents" panel. The probe is
-/// argv-only with a short timeout and never uses `sh -c`.
+/// Active availability: passive PATH lookup *plus* bounded CLI status probes.
+/// Running the CLI's own version command confirms the executable is actually
+/// runnable (not just present) and surfaces its version for the desktop "Coding
+/// agents" panel. Auth probing uses documented non-interactive status commands
+/// where available (`codex login status`, `claude auth status --json`), then
+/// falls back to local auth-artifact existence if the command is inconclusive.
+/// Probes are argv-only with a short timeout and never use `sh -c`.
 ///
-/// `authenticated` is a tri-state: `Some(true)` when a known local auth artifact
-/// *exists* (existence only — its contents are never read), otherwise `None`
-/// (unknown). It is deliberately never `Some(false)`: a credential may live in
-/// the OS keychain (macOS Claude Code) or an env var we don't inspect, so absence
-/// of a file does not prove "not authenticated". Per the security model RepoDesk
-/// never parses credential files and never treats an API key env var as proof a
-/// CLI is authenticated.
+/// `authenticated` remains a compatibility tri-state: `Some(true)`/`Some(false)`
+/// only when a status command or artifact fallback supports that conclusion,
+/// otherwise `None` (unknown). RepoDesk never parses credential files and never
+/// treats API-key env vars as proof a CLI is authenticated.
 pub fn coding_agent_availability_probed(value: &str) -> RepoDeskResult<ExecutorAvailability> {
     let mut availability = coding_agent_availability(value)?;
     if !availability.available {
@@ -261,14 +283,58 @@ pub fn coding_agent_availability_probed(value: &str) -> RepoDeskResult<ExecutorA
         }
     }
 
-    availability.authenticated = detect_authentication(&availability.executor_id, home_dir());
-    if availability.authenticated == Some(true) {
-        availability
-            .notes
-            .push("Local auth artifact found (existence only; contents not read).".to_string());
-    }
+    let auth = detect_authentication(&availability.executor_id, &availability.binary, home_dir());
+    availability.authenticated = auth.authenticated;
+    availability.auth_status = auth.status;
+    availability.auth_source = auth.source;
+    availability.auth_detail = auth.detail;
+    availability.notes.extend(auth.notes);
 
     Ok(availability)
+}
+
+struct AuthProbeResult {
+    authenticated: Option<bool>,
+    status: ExecutorAuthStatus,
+    source: Option<String>,
+    detail: Option<String>,
+    notes: Vec<String>,
+}
+
+impl AuthProbeResult {
+    fn authenticated(source: &str, detail: Option<String>, note: String) -> Self {
+        Self {
+            authenticated: Some(true),
+            status: ExecutorAuthStatus::Authenticated,
+            source: Some(source.to_string()),
+            detail,
+            notes: vec![note],
+        }
+    }
+
+    fn unauthenticated(source: &str, detail: Option<String>, note: String) -> Self {
+        Self {
+            authenticated: Some(false),
+            status: ExecutorAuthStatus::Unauthenticated,
+            source: Some(source.to_string()),
+            detail,
+            notes: vec![note],
+        }
+    }
+
+    fn unknown(note: String) -> Self {
+        Self {
+            authenticated: None,
+            status: ExecutorAuthStatus::Unknown,
+            source: None,
+            detail: None,
+            notes: vec![note],
+        }
+    }
+
+    fn is_unknown(&self) -> bool {
+        self.status == ExecutorAuthStatus::Unknown
+    }
 }
 
 /// Known local authentication artifacts for a coding-agent CLI, relative to the
@@ -284,14 +350,254 @@ fn auth_artifacts(executor_id: &str) -> &'static [&'static str] {
     }
 }
 
-/// `Some(true)` when a known auth artifact exists under `home`; never
-/// `Some(false)` (see [`coding_agent_availability_probed`]).
-fn detect_authentication(executor_id: &str, home: Option<PathBuf>) -> Option<bool> {
-    let home = home?;
+/// Prefer documented, side-effect-free CLI auth status commands. Fall back to a
+/// local artifact existence check only when the status command is unavailable or
+/// inconclusive. Credential files are never opened or parsed.
+fn detect_authentication(
+    executor_id: &str,
+    binary: &str,
+    home: Option<PathBuf>,
+) -> AuthProbeResult {
+    let cli_probe = match executor_id {
+        "codex_cli" => probe_codex_auth(binary),
+        "claude_code_cli" => probe_claude_auth(binary),
+        _ => AuthProbeResult::unknown(format!(
+            "No auth probe is registered for executor {executor_id}."
+        )),
+    };
+    if !cli_probe.is_unknown() {
+        return cli_probe;
+    }
+
+    let mut artifact_probe = detect_auth_artifact(executor_id, home);
+    if artifact_probe.is_unknown() {
+        artifact_probe.notes.extend(cli_probe.notes);
+    }
+    artifact_probe
+}
+
+fn detect_auth_artifact(executor_id: &str, home: Option<PathBuf>) -> AuthProbeResult {
+    let Some(home) = home else {
+        return AuthProbeResult::unknown(
+            "No documented CLI auth status or known local auth artifact found.".to_string(),
+        );
+    };
     let found = auth_artifacts(executor_id)
         .iter()
         .any(|relative| home.join(relative).exists());
-    if found { Some(true) } else { None }
+    if found {
+        AuthProbeResult::authenticated(
+            "local auth artifact",
+            Some("known local auth artifact exists; contents not read".to_string()),
+            "Local auth artifact found (existence only; contents not read).".to_string(),
+        )
+    } else {
+        AuthProbeResult::unknown(
+            "No documented CLI auth status or known local auth artifact found.".to_string(),
+        )
+    }
+}
+
+fn probe_codex_auth(binary: &str) -> AuthProbeResult {
+    const SOURCE: &str = "codex login status";
+    match run_probe_command(binary, &["login", "status"]) {
+        Some(output) => parse_codex_auth_output(SOURCE, output.status_success, &output.combined()),
+        None => {
+            AuthProbeResult::unknown("Codex auth status probe could not be started.".to_string())
+        }
+    }
+}
+
+fn parse_codex_auth_output(source: &str, status_success: bool, output: &str) -> AuthProbeResult {
+    let detail = safe_status_detail(output);
+    let lower = output.to_ascii_lowercase();
+    if lower.contains("not logged in")
+        || lower.contains("not authenticated")
+        || lower.contains("logged out")
+    {
+        return AuthProbeResult::unauthenticated(
+            source,
+            detail,
+            "Codex auth status reports not logged in.".to_string(),
+        );
+    }
+    if status_success && lower.contains("logged in") {
+        return AuthProbeResult::authenticated(
+            source,
+            detail,
+            "Codex auth status reports logged in.".to_string(),
+        );
+    }
+    AuthProbeResult::unknown("Codex auth status output was inconclusive.".to_string())
+}
+
+fn probe_claude_auth(binary: &str) -> AuthProbeResult {
+    const SOURCE: &str = "claude auth status --json";
+    match run_probe_command(binary, &["auth", "status", "--json"]) {
+        Some(output) => {
+            let text = if output.stdout.trim_start().starts_with('{') {
+                output.stdout.clone()
+            } else {
+                output.combined()
+            };
+            parse_claude_auth_output(SOURCE, output.status_success, &text)
+        }
+        None => {
+            AuthProbeResult::unknown("Claude auth status probe could not be started.".to_string())
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeAuthStatusOutput {
+    #[serde(rename = "loggedIn")]
+    logged_in: Option<bool>,
+    #[serde(rename = "authMethod")]
+    auth_method: Option<String>,
+    #[serde(rename = "apiProvider")]
+    api_provider: Option<String>,
+    #[serde(rename = "subscriptionType")]
+    subscription_type: Option<String>,
+}
+
+fn parse_claude_auth_output(source: &str, status_success: bool, output: &str) -> AuthProbeResult {
+    if let Ok(parsed) = serde_json::from_str::<ClaudeAuthStatusOutput>(output) {
+        let detail = claude_auth_detail(&parsed);
+        return match parsed.logged_in {
+            Some(true) => AuthProbeResult::authenticated(
+                source,
+                detail,
+                "Claude auth status reports logged in.".to_string(),
+            ),
+            Some(false) => AuthProbeResult::unauthenticated(
+                source,
+                detail,
+                "Claude auth status reports not logged in.".to_string(),
+            ),
+            None => AuthProbeResult::unknown(
+                "Claude auth status JSON did not include loggedIn.".to_string(),
+            ),
+        };
+    }
+
+    let lower = output.to_ascii_lowercase();
+    if lower.contains("not logged in")
+        || lower.contains("not authenticated")
+        || lower.contains("logged out")
+    {
+        return AuthProbeResult::unauthenticated(
+            source,
+            safe_status_detail(output),
+            "Claude auth status reports not logged in.".to_string(),
+        );
+    }
+    if status_success && (lower.contains("logged in") || lower.contains("authenticated")) {
+        return AuthProbeResult::authenticated(
+            source,
+            safe_status_detail(output),
+            "Claude auth status reports logged in.".to_string(),
+        );
+    }
+    AuthProbeResult::unknown("Claude auth status output was inconclusive.".to_string())
+}
+
+fn claude_auth_detail(parsed: &ClaudeAuthStatusOutput) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(method) = non_secret_label(parsed.auth_method.as_deref()) {
+        parts.push(format!("method {method}"));
+    }
+    if let Some(provider) = non_secret_label(parsed.api_provider.as_deref()) {
+        parts.push(format!("provider {provider}"));
+    }
+    if let Some(subscription) = non_secret_label(parsed.subscription_type.as_deref()) {
+        parts.push(format!("subscription {subscription}"));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("; "))
+    }
+}
+
+fn non_secret_label(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+    let safe = !value.is_empty()
+        && value.len() <= 80
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '/'));
+    safe.then(|| value.to_string())
+}
+
+struct ProbeCommandOutput {
+    status_success: bool,
+    stdout: String,
+    stderr: String,
+}
+
+impl ProbeCommandOutput {
+    fn combined(&self) -> String {
+        if self.stderr.trim().is_empty() {
+            self.stdout.clone()
+        } else if self.stdout.trim().is_empty() {
+            self.stderr.clone()
+        } else {
+            format!("{}\n{}", self.stdout, self.stderr)
+        }
+    }
+}
+
+fn run_probe_command(binary: &str, args: &[&str]) -> Option<ProbeCommandOutput> {
+    if validate_token("program", binary).is_err()
+        || args
+            .iter()
+            .any(|arg| validate_token("argument", arg).is_err())
+    {
+        return None;
+    }
+    let mut command = Command::new(binary);
+    command
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    apply_sanitized_env(&mut command);
+    let mut child = command.spawn().ok()?;
+    let status_success = match child.wait_timeout(Duration::from_secs(5)).ok()? {
+        Some(status) => status.success(),
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+    };
+    let output = child.wait_with_output().ok()?;
+    let (stdout, _) = truncate_to_bytes(&String::from_utf8_lossy(&output.stdout), 8_000);
+    let (stderr, _) = truncate_to_bytes(&String::from_utf8_lossy(&output.stderr), 8_000);
+    let (stdout, _) = crate::security::redact_secrets(&stdout);
+    let (stderr, _) = crate::security::redact_secrets(&stderr);
+    Some(ProbeCommandOutput {
+        status_success,
+        stdout,
+        stderr,
+    })
+}
+
+fn safe_status_detail(output: &str) -> Option<String> {
+    first_meaningful_line(output).and_then(|line| {
+        let (redacted, _) = crate::security::redact_secrets(&line);
+        if looks_like_personal_identifier(&redacted) {
+            None
+        } else {
+            Some(redacted.chars().take(160).collect())
+        }
+    })
+}
+
+fn looks_like_personal_identifier(value: &str) -> bool {
+    value.contains('@')
+        || value.to_ascii_lowercase().contains("email")
+        || value.to_ascii_lowercase().contains("orgid")
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -801,6 +1107,16 @@ mod tests {
         ));
     }
 
+    #[cfg(unix)]
+    fn fake_binary(body: &str) -> (tempfile::TempDir, String) {
+        let dir = tempfile::TempDir::new().unwrap();
+        let script = dir.path().join("fake-agent");
+        std::fs::write(&script, body).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (dir, script.display().to_string())
+    }
+
     #[test]
     fn handoff_does_not_require_executable_to_build_preview() {
         let handoff = preview_coding_agent_handoff("claude_code_cli", false).unwrap();
@@ -872,27 +1188,104 @@ mod tests {
     }
 
     #[test]
-    fn detect_authentication_checks_artifact_existence_only() {
+    fn detect_authentication_falls_back_to_artifact_existence() {
         let home = tempfile::TempDir::new().unwrap();
         // No artifact yet → unknown.
         assert_eq!(
-            detect_authentication("codex_cli", Some(home.path().to_path_buf())),
+            detect_authentication(
+                "codex_cli",
+                "missing-codex-binary",
+                Some(home.path().to_path_buf())
+            )
+            .authenticated,
             None
         );
         // Create the known artifact → Some(true), without reading contents.
         std::fs::create_dir_all(home.path().join(".codex")).unwrap();
         std::fs::write(home.path().join(".codex/auth.json"), "{}").unwrap();
-        assert_eq!(
-            detect_authentication("codex_cli", Some(home.path().to_path_buf())),
-            Some(true)
+        let probe = detect_authentication(
+            "codex_cli",
+            "missing-codex-binary",
+            Some(home.path().to_path_buf()),
         );
+        assert_eq!(probe.authenticated, Some(true));
+        assert_eq!(probe.status, ExecutorAuthStatus::Authenticated);
+        assert_eq!(probe.source.as_deref(), Some("local auth artifact"));
         // Never proves absence for the other executor.
         assert_eq!(
-            detect_authentication("claude_code_cli", Some(home.path().to_path_buf())),
+            detect_authentication(
+                "claude_code_cli",
+                "missing-claude-binary",
+                Some(home.path().to_path_buf())
+            )
+            .authenticated,
             None
         );
         // No home → unknown.
-        assert_eq!(detect_authentication("codex_cli", None), None);
+        assert_eq!(
+            detect_authentication("codex_cli", "missing-codex-binary", None).authenticated,
+            None
+        );
+    }
+
+    #[test]
+    fn codex_auth_parser_reports_true_and_false() {
+        let logged_in =
+            parse_codex_auth_output("codex login status", true, "Logged in using ChatGPT");
+        assert_eq!(logged_in.authenticated, Some(true));
+        assert_eq!(logged_in.status, ExecutorAuthStatus::Authenticated);
+        assert_eq!(logged_in.detail.as_deref(), Some("Logged in using ChatGPT"));
+
+        let logged_out = parse_codex_auth_output("codex login status", false, "Not logged in");
+        assert_eq!(logged_out.authenticated, Some(false));
+        assert_eq!(logged_out.status, ExecutorAuthStatus::Unauthenticated);
+    }
+
+    #[test]
+    fn claude_auth_parser_redacts_account_identifiers() {
+        let raw = r#"{
+          "loggedIn": true,
+          "authMethod": "claude.ai",
+          "apiProvider": "firstParty",
+          "email": "person@example.com",
+          "orgId": "abc-123",
+          "subscriptionType": "pro"
+        }"#;
+        let probe = parse_claude_auth_output("claude auth status --json", true, raw);
+        assert_eq!(probe.authenticated, Some(true));
+        assert_eq!(probe.status, ExecutorAuthStatus::Authenticated);
+        let detail = probe.detail.unwrap();
+        assert!(detail.contains("method claude.ai"));
+        assert!(detail.contains("provider firstParty"));
+        assert!(detail.contains("subscription pro"));
+        assert!(!detail.contains("person@example.com"));
+        assert!(!detail.contains("abc-123"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detect_authentication_uses_codex_status_command() {
+        let (_dir, binary) = fake_binary(
+            "#!/bin/sh\nif [ \"$1\" = \"login\" ] && [ \"$2\" = \"status\" ]; then echo 'Logged in using ChatGPT'; exit 0; fi\nexit 2\n",
+        );
+
+        let probe = detect_authentication("codex_cli", &binary, None);
+        assert_eq!(probe.authenticated, Some(true));
+        assert_eq!(probe.status, ExecutorAuthStatus::Authenticated);
+        assert_eq!(probe.source.as_deref(), Some("codex login status"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detect_authentication_uses_claude_status_command() {
+        let (_dir, binary) = fake_binary(
+            "#!/bin/sh\nif [ \"$1\" = \"auth\" ] && [ \"$2\" = \"status\" ] && [ \"$3\" = \"--json\" ]; then printf '{\"loggedIn\":false}\\n'; exit 0; fi\nexit 2\n",
+        );
+
+        let probe = detect_authentication("claude_code_cli", &binary, None);
+        assert_eq!(probe.authenticated, Some(false));
+        assert_eq!(probe.status, ExecutorAuthStatus::Unauthenticated);
+        assert_eq!(probe.source.as_deref(), Some("claude auth status --json"));
     }
 
     #[test]
@@ -907,7 +1300,10 @@ mod tests {
             assert_eq!(availability.authenticated, None);
             assert_eq!(availability.status, "missing");
         } else {
-            assert!(matches!(availability.authenticated, None | Some(true)));
+            assert!(matches!(
+                availability.authenticated,
+                None | Some(true) | Some(false)
+            ));
         }
     }
 
