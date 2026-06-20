@@ -109,7 +109,11 @@ checked explicitly (never on launch).
   read-only + workspace-write commands, routing + orchestrator integration, CLI version probe,
   agent-run diff capture (pre/post git porcelain delta + unified diff + receipt on each run,
   surfaced on `SubAgentResult.changed_files`/`diff_path`), accept/reject review
-  (`orchestrator::review`: stage or discard a run's changeset; CLI + Tauri + run-panel buttons).
-  **Open (ordered):** CLI auth tri-state, git worktree lifecycle, OS keychain credential store,
-  OpenAI Responses API migration, inline diff viewer + cross-model changeset review.
+  (`orchestrator::review`: stage or discard a run's changeset; CLI + Tauri + run-panel buttons),
+  CLI auth tri-state (artifact-existence check, never reads contents), isolated git worktrees
+  (`worktree.rs`, runner `use_isolated_worktree` / `--worktree`), OS keychain credential store
+  (`credentials.rs`: `CredentialResolver` + `keyring`; `credential_*` Tauri cmds return only
+  masked hints), and the OpenAI Responses API (`/v1/responses`). **Open (ordered):** CLI auth
+  depth, worktree apply-back into review, migrate legacy plaintext keys to the keychain, inline
+  diff viewer + cross-model changeset review.
 </content>

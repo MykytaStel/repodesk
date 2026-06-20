@@ -730,6 +730,7 @@ async fn approved_coding_agent_runs_through_argv_executor() {
             settings: ProviderSettings::default(),
             approve_coding_agents: true,
             coding_agent_timeout_secs: 5,
+            ..RunOptions::default()
         },
     )
     .await;

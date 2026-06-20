@@ -1,9 +1,9 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::errors::{RepoDeskError, RepoDeskResult};
+use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

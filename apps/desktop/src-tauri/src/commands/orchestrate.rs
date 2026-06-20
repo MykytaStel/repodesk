@@ -39,6 +39,18 @@ fn orchestrator_settings() -> ProviderSettings {
             settings.gemini.api_key = Some(saved.gemini_api_key);
         }
     }
+    // Securely stored keychain secrets fill any key still unset (preferred over
+    // plaintext settings; never logged or returned to the frontend).
+    use repodesk_core::credentials::{self, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY};
+    if settings.openai.api_key.is_none() {
+        settings.openai.api_key = credentials::resolve_secret(OPENAI_API_KEY);
+    }
+    if settings.anthropic.api_key.is_none() {
+        settings.anthropic.api_key = credentials::resolve_secret(ANTHROPIC_API_KEY);
+    }
+    if settings.gemini.api_key.is_none() {
+        settings.gemini.api_key = credentials::resolve_secret(GEMINI_API_KEY);
+    }
     settings
 }
 
@@ -75,6 +87,7 @@ pub async fn orchestrate_run(
     dry_run: bool,
     max_cost: Option<f64>,
     approve_coding_agents: bool,
+    use_isolated_worktree: Option<bool>,
     override_provider: Option<String>,
     override_model: Option<String>,
 ) -> Result<OrchestrationRun, ErrorPayload> {
@@ -87,6 +100,7 @@ pub async fn orchestrate_run(
         settings,
         approve_coding_agents,
         coding_agent_timeout_secs: 600,
+        use_isolated_worktree: use_isolated_worktree.unwrap_or(false),
     };
     Ok(orchestrator::run_plan(&plan, &opts).await?)
 }
@@ -94,6 +108,9 @@ pub async fn orchestrate_run(
 /// Autonomously attempt the active task: plan → run → re-plan/retry under
 /// guardrails. `approve_paid` and `approve_coding_agents` are separate
 /// human-in-the-loop gates; the loop pauses before either gated route type.
+// A Tauri command's parameters map 1:1 to named JS args, so the flat signature
+// is intentional rather than a config struct.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn orchestrate_loop(
     goal: Option<String>,

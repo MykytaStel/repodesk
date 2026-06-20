@@ -33,16 +33,16 @@ RepoDesk
 | Read-only vs workspace-write | `build_coding_agent_command(.., writes_allowed)` → codex `--sandbox`, claude `--permission-mode` | ✅ implemented |
 | CLI availability (passive) | PATH lookup, no spawn (`coding_agent_availability`) | ✅ implemented |
 | CLI version detection | bounded `<binary> --version` probe (`coding_agent_availability_probed`) | ✅ implemented |
-| CLI auth detection | `authenticated: Option<bool>` carried but left `None` (no documented status command) | ⚠️ partial (honest unknown) |
+| CLI auth detection | `authenticated: Option<bool>` set `Some(true)` from a known auth-artifact *existence* check (never `Some(false)`, never reads contents) | ✅ implemented (conservative) |
 | Routing → executor selection | patch steps route to PATH-available agent, else manual; paid floor enforced | ✅ implemented |
 | Orchestrator execution | `ExecutorKind::CodingAgent` arm runs the CLI behind `approve_coding_agents` | ✅ implemented |
 | Cost/token ledger for agents | output captured → `estimate_agent_cost` + `log_token_event` | ✅ implemented |
 | Paid/agent confirmation | `approve_paid` + `approve_coding_agents` are separate gates (CLI `--yes`, desktop switches) | ✅ implemented |
 | Desktop agent status panel | "Executor availability" panel lists binary/path/status/version | ✅ implemented |
 | Changed-file/diff in agent result | `CodingAgentExecution` captures pre/post porcelain delta + unified diff + receipt path; surfaced on `SubAgentResult` and the run panel | ✅ implemented |
-| Worktree lifecycle | `git_workspace.rs` is read-only snapshot/diff; no *isolated* worktree per run (diff is captured in-place against the project tree) | ❌ absent |
-| Secure credential store | env vars only (`OPENAI_API_KEY` etc.); no OS keychain | ❌ absent |
-| OpenAI Responses API | client still uses Chat Completions transport | ❌ not migrated |
+| Worktree lifecycle | `worktree.rs`: create/list/remove isolated per-run worktrees; runner `use_isolated_worktree` opt-in (CLI `--worktree`, desktop toggle) | ✅ implemented |
+| Secure credential store | `credentials.rs`: `CredentialResolver` + OS keychain (`keyring`) + env fallback; Tauri set/delete/status; never returns the full key | ✅ implemented |
+| OpenAI Responses API | `openai.rs` migrated to `/v1/responses` (input/instructions/max_output_tokens/reasoning.effort) | ✅ implemented |
 | Review / accept-reject flow | `orchestrator::review` stages (accept) or discards (reject) a run's changeset; CLI + Tauri + run-panel buttons | ✅ implemented |
 
 ## What landed (PRs 1–8 equivalent)
@@ -71,8 +71,7 @@ RepoDesk
    before/after a run and records `changed_files` (the delta), a size-limited
    unified `diff`, and a `diff_path` receipt on `CodingAgentExecution`. The runner
    propagates `changed_files`/`diff_path` to `SubAgentResult`, and the desktop run
-   panel shows the changed-file count + list. Diff is captured **in-place** against
-   the project tree (no isolated worktree yet); untracked new files are listed but
+   panel shows the changed-file count + list. Untracked new files are listed but
    their content is not inlined.
 9. **Accept / reject review** — `orchestrator::review` turns a captured changeset
    into an action: **accept** stages the agent-changed files (`git add`), **reject**
@@ -80,29 +79,40 @@ RepoDesk
    untracked). Bounded to the run's recorded paths, path-validated, never commits
    or pushes. Exposed via `repodesk orchestrate review`, the `orchestrate_review`
    Tauri command, and run-panel buttons.
+10. **CLI auth tri-state** — `coding_agent_availability_probed` sets
+    `authenticated = Some(true)` when a known local auth artifact (e.g.
+    `~/.codex/auth.json`, `~/.claude/.credentials.json`) *exists*; never reads its
+    contents, never treats an API-key env var as CLI auth, and never reports
+    `Some(false)` (absence ≠ unauthenticated — keychain/env may hold it).
+11. **Git worktree lifecycle** — `worktree.rs` creates/lists/removes isolated
+    per-run worktrees checked out at HEAD; the runner's `use_isolated_worktree`
+    opt-in (CLI `--worktree`, desktop toggle) runs write-capable steps there so the
+    diff is attributable on a dirty tree. Non-destructive: the worktree is left for
+    review and cleanup is explicit. Lifecycle code stays out of executor clients.
+12. **OS keychain credential store** — `credentials.rs` defines `CredentialResolver`
+    with `KeyringResolver` (macOS Keychain / Windows Credential Manager / Linux
+    Secret Service via `keyring`) and a read-only `EnvResolver` fallback. Tauri
+    `credential_set`/`credential_delete`/`credential_status` store/clear/inspect
+    keys; only masked metadata (`••••1234`) ever crosses to the frontend, never the
+    secret. Runs consult the keychain when env/settings are unset.
+13. **OpenAI Responses API** — `openai.rs` now calls `/v1/responses`
+    (`input`/`instructions`/`max_output_tokens`, `reasoning.effort` when thinking is
+    set), preserving usage extraction, rate-limit handling, and model selection.
 
 ## Remaining gaps (ordered)
 
-1. **CLI auth detection** — turn `authenticated: None` into a real tri-state once
-   a documented, side-effect-free status command exists per CLI (e.g. a `whoami`
-   / `status` subcommand). Do **not** parse credential files.
-2. **Git worktree lifecycle** — run write-capable agents inside an isolated
-   worktree (instead of the in-place diff capture done today), so the diff is
-   attributable even on a dirty tree; then accept (apply) or reject (discard) —
-   with enough metadata to recover an interrupted run. Keep lifecycle code out of
-   the provider clients.
-4. **Secure credential store** — OS keychain abstraction (macOS Keychain, Windows
-   Credential Manager, Linux Secret Service) behind a `CredentialResolver`; SQLite
-   keeps only non-secret metadata (configured flag, default model, masked hint).
-   Never return a full key to the frontend.
-5. **OpenAI Responses API migration** — move `openai.rs` off Chat Completions,
-   preserving usage extraction, rate-limit handling, model selection, and tests.
-6. **Review depth** — the accept/reject core exists; remaining polish is an
-   inline diff viewer for the captured `diff_path` and an optional cross-model
-   review of the changeset before the accept/reject decision.
-7. **Local-runtime ownership decision** — keep Ollama/LM Studio as probe-only, or
-   let RepoDesk manage their process lifecycle. Current behavior is probe-only.
-8. **Deprecation warnings** — user-visible warnings for legacy route aliases
+1. **CLI auth depth** — upgrade the existence-based `authenticated` signal to a real
+   tri-state once a documented, side-effect-free status command exists per CLI.
+2. **Worktree apply-back** — wire the isolated-worktree diff into the accept/reject
+   flow (apply the worktree changeset to the main tree on accept), plus interrupted
+   -run recovery/cleanup UI.
+3. **Credential-store migration** — move the legacy plaintext provider-settings keys
+   into the keychain and stop persisting them in app files.
+4. **Review depth** — inline diff viewer for the captured `diff_path` and an optional
+   cross-model review of the changeset before the accept/reject decision.
+5. **Local-runtime ownership decision** — keep Ollama/LM Studio as probe-only, or let
+   RepoDesk manage their process lifecycle. Current behavior is probe-only.
+6. **Deprecation warnings** — user-visible warnings for legacy route aliases
    (`preferred_patch_provider = "codex"` is normalized to `codex_cli` on read).
 
 ## Verification

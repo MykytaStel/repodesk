@@ -50,6 +50,11 @@ pub struct RunOptions {
     pub approve_coding_agents: bool,
     /// Timeout for one coding-agent process.
     pub coding_agent_timeout_secs: u64,
+    /// Run write-capable coding-agent steps inside an isolated git worktree
+    /// (checked out at the project's HEAD) instead of the live working tree, so
+    /// the agent's diff is attributable even when the main tree is dirty. The
+    /// worktree is left in place for review; cleanup is an explicit human action.
+    pub use_isolated_worktree: bool,
 }
 
 impl Default for RunOptions {
@@ -60,6 +65,7 @@ impl Default for RunOptions {
             settings: ProviderSettings::default(),
             approve_coding_agents: false,
             coding_agent_timeout_secs: 600,
+            use_isolated_worktree: false,
         }
     }
 }
@@ -237,7 +243,30 @@ pub async fn run_plan(
                 state.running_cost += projected_cost;
                 let command = handoff.command.clone();
                 let prompt = format!("{}\n\n{}", step_system_prompt(step), prompt);
-                let cwd = project.path.clone();
+
+                // For write-capable steps, optionally run inside an isolated
+                // worktree so the diff is attributable even on a dirty main tree.
+                let mut worktree_note = None;
+                let cwd = if opts.use_isolated_worktree && step.allow_write {
+                    let parent = crate::worktree::worktrees_parent(&task.config.run_dir);
+                    match crate::worktree::create_run_worktree(&project.path, &parent, &run_id) {
+                        Ok(worktree) => {
+                            worktree_note = Some(format!(
+                                "isolated worktree: {} (base {}); remove it after applying/discarding",
+                                worktree.path, worktree.base_commit
+                            ));
+                            PathBuf::from(worktree.path)
+                        }
+                        Err(error) => {
+                            worktree_note = Some(format!(
+                                "isolated worktree unavailable, ran in place: {error}"
+                            ));
+                            project.path.clone()
+                        }
+                    }
+                } else {
+                    project.path.clone()
+                };
                 let output_dir = executor_output_dir.clone();
                 let timeout_secs = opts.coding_agent_timeout_secs;
                 let execution = tokio::task::spawn_blocking(move || {
@@ -300,6 +329,9 @@ pub async fn run_plan(
                     format!("stderr: {}", execution.stderr_path),
                     format!("duration_ms: {}", execution.duration_ms),
                 ];
+                if let Some(note) = worktree_note {
+                    notes.push(note);
+                }
                 let changed_files: Vec<String> = execution
                     .changed_files
                     .iter()

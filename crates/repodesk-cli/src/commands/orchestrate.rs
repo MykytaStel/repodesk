@@ -19,6 +19,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
             dry_run,
             max_cost,
             yes,
+            worktree,
         } => {
             let settings = ProviderSettings::from_env();
             let plan = orchestrator::build_plan(goal, &settings, None, None)?;
@@ -38,6 +39,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 settings,
                 approve_coding_agents: yes,
                 coding_agent_timeout_secs: 600,
+                use_isolated_worktree: worktree,
             };
             let rt = tokio::runtime::Runtime::new()?;
             let run = rt.block_on(orchestrator::run_plan(&plan, &opts))?;

@@ -106,6 +106,7 @@ function ExecutorStatusPanel({
                 <span>{executor.binary}</span>
                 <span>{executor.executable_path ?? executor.status}</span>
                 {executor.version ? <span>{executor.version}</span> : null}
+                <span>{executor.authenticated === true ? "authenticated" : "auth unknown"}</span>
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
                 Launch still requires explicit approval for this run.
@@ -354,6 +355,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const [maxIterations, setMaxIterations] = useState("3");
   const [approvePaid, setApprovePaid] = useState(false);
   const [approveCodingAgents, setApproveCodingAgents] = useState(false);
+  const [useIsolatedWorktree, setUseIsolatedWorktree] = useState(false);
   const [targetModelCombo, setTargetModelCombo] = useState<string>("auto");
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
   const [reviewResult, setReviewResult] = useState<RunReview | null>(null);
@@ -428,6 +430,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       dryRun,
       maxCost: parsedMaxCost(),
       approveCodingAgents,
+      useIsolatedWorktree,
       overrideProvider,
       overrideModel,
     });
@@ -536,6 +539,15 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
                 style={{ margin: 0, width: "auto" }}
               />
               <span style={{ fontSize: 14 }}>Auto-approve CLI agents</span>
+            </label>
+            <label className="toggle-row" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={useIsolatedWorktree}
+                onChange={(e) => setUseIsolatedWorktree(e.target.checked)}
+                style={{ margin: 0, width: "auto" }}
+              />
+              <span style={{ fontSize: 14 }}>Isolated worktree</span>
             </label>
           </div>
         </div>

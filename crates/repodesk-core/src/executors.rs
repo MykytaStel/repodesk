@@ -182,12 +182,18 @@ pub fn coding_agent_availability(value: &str) -> RepoDeskResult<ExecutorAvailabi
 }
 
 /// Active availability: passive PATH lookup *plus* a bounded `<binary> --version`
-/// probe. Running the CLI's own version command confirms the executable is
-/// actually runnable (not just present) and surfaces its version for the
-/// desktop "Coding agents" panel. The probe is argv-only with a short timeout;
-/// it never uses `sh -c` and never inspects credential files. `authenticated`
-/// stays `None` (unknown) because neither CLI exposes a documented,
-/// side-effect-free auth-status command we can rely on.
+/// probe and a conservative local-auth check. Running the CLI's own version
+/// command confirms the executable is actually runnable (not just present) and
+/// surfaces its version for the desktop "Coding agents" panel. The probe is
+/// argv-only with a short timeout and never uses `sh -c`.
+///
+/// `authenticated` is a tri-state: `Some(true)` when a known local auth artifact
+/// *exists* (existence only — its contents are never read), otherwise `None`
+/// (unknown). It is deliberately never `Some(false)`: a credential may live in
+/// the OS keychain (macOS Claude Code) or an env var we don't inspect, so absence
+/// of a file does not prove "not authenticated". Per the security model RepoDesk
+/// never parses credential files and never treats an API key env var as proof a
+/// CLI is authenticated.
 pub fn coding_agent_availability_probed(value: &str) -> RepoDeskResult<ExecutorAvailability> {
     let mut availability = coding_agent_availability(value)?;
     if !availability.available {
@@ -212,7 +218,43 @@ pub fn coding_agent_availability_probed(value: &str) -> RepoDeskResult<ExecutorA
         }
     }
 
+    availability.authenticated = detect_authentication(&availability.executor_id, home_dir());
+    if availability.authenticated == Some(true) {
+        availability
+            .notes
+            .push("Local auth artifact found (existence only; contents not read).".to_string());
+    }
+
     Ok(availability)
+}
+
+/// Known local authentication artifacts for a coding-agent CLI, relative to the
+/// user's home directory. Existence is checked, never contents.
+fn auth_artifacts(executor_id: &str) -> &'static [&'static str] {
+    match executor_id {
+        "codex_cli" => &[".codex/auth.json"],
+        "claude_code_cli" => &[
+            ".claude/.credentials.json",
+            ".config/claude/.credentials.json",
+        ],
+        _ => &[],
+    }
+}
+
+/// `Some(true)` when a known auth artifact exists under `home`; never
+/// `Some(false)` (see [`coding_agent_availability_probed`]).
+fn detect_authentication(executor_id: &str, home: Option<PathBuf>) -> Option<bool> {
+    let home = home?;
+    let found = auth_artifacts(executor_id)
+        .iter()
+        .any(|relative| home.join(relative).exists());
+    if found { Some(true) } else { None }
+}
+
+fn home_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
 }
 
 /// Run `<binary> --version` argv-only with a short timeout and return the first
@@ -721,6 +763,30 @@ mod tests {
         std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
 
         assert_eq!(probe_version(&script.display().to_string()), None);
+    }
+
+    #[test]
+    fn detect_authentication_checks_artifact_existence_only() {
+        let home = tempfile::TempDir::new().unwrap();
+        // No artifact yet → unknown.
+        assert_eq!(
+            detect_authentication("codex_cli", Some(home.path().to_path_buf())),
+            None
+        );
+        // Create the known artifact → Some(true), without reading contents.
+        std::fs::create_dir_all(home.path().join(".codex")).unwrap();
+        std::fs::write(home.path().join(".codex/auth.json"), "{}").unwrap();
+        assert_eq!(
+            detect_authentication("codex_cli", Some(home.path().to_path_buf())),
+            Some(true)
+        );
+        // Never proves absence for the other executor.
+        assert_eq!(
+            detect_authentication("claude_code_cli", Some(home.path().to_path_buf())),
+            None
+        );
+        // No home → unknown.
+        assert_eq!(detect_authentication("codex_cli", None), None);
     }
 
     #[test]

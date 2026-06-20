@@ -207,6 +207,7 @@ export async function orchestrateRun(
   dryRun: boolean,
   maxCost?: number | null,
   approveCodingAgents = false,
+  useIsolatedWorktree = false,
   overrideProvider?: string,
   overrideModel?: string
 ): Promise<OrchestrationRun> {
@@ -215,6 +216,7 @@ export async function orchestrateRun(
     dryRun,
     maxCost: maxCost ?? null,
     approveCodingAgents,
+    useIsolatedWorktree,
     overrideProvider: overrideProvider ?? null,
     overrideModel: overrideModel ?? null,
   });

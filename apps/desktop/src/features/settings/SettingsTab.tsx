@@ -1,5 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { statusTone, getString, Toggle } from "../../shared/ui/SharedComponents";
+import {
+  credentialDelete,
+  credentialSet,
+  credentialStatus,
+  CREDENTIAL_KEYS,
+  type CredentialMetadata,
+} from "../../shared/api/credentials";
 
 import { useQueryClient } from "@tanstack/react-query";
 import { pickDirectory, basename } from "../../shared/api/dialog";
@@ -161,6 +168,8 @@ export function SettingsTab() {
         </details>
       </section>
 
+      <SecureKeychainSection />
+
       {/* Connect project — collapsed by default; usually a one-time action. */}
       <section className="panel wide-panel">
         <div className="panel-title-row">
@@ -268,6 +277,107 @@ export function SettingsTab() {
       </section>
 
     </div>
+  );
+}
+
+/** Manage provider API keys in the OS keychain (macOS Keychain / Windows
+ * Credential Manager / Linux Secret Service). Secrets are write-only from the UI:
+ * we send a value to store, but only ever read back a masked hint. */
+function SecureKeychainSection() {
+  const toast = useToast();
+  const [status, setStatus] = useState<CredentialMetadata[]>([]);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+
+  const labels: Record<string, string> = {
+    [CREDENTIAL_KEYS.openai]: "OpenAI API key",
+    [CREDENTIAL_KEYS.anthropic]: "Anthropic API key",
+    [CREDENTIAL_KEYS.gemini]: "Gemini API key",
+  };
+
+  const refresh = async () => {
+    try {
+      setStatus(await credentialStatus());
+    } catch (error) {
+      toast.error((error as { message?: string })?.message || "Could not read keychain status");
+    }
+  };
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const save = async (key: string) => {
+    const value = drafts[key] ?? "";
+    if (!value.trim()) return;
+    setBusy(true);
+    try {
+      await credentialSet(key, value);
+      setDrafts((d) => ({ ...d, [key]: "" }));
+      await refresh();
+      toast.success("Stored securely in the OS keychain");
+    } catch (error) {
+      toast.error((error as { message?: string })?.message || "Could not store key");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (key: string) => {
+    setBusy(true);
+    try {
+      await credentialDelete(key);
+      await refresh();
+      toast.success("Removed from the OS keychain");
+    } catch (error) {
+      toast.error((error as { message?: string })?.message || "Could not remove key");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="panel wide-panel flex-col gap-lg">
+      <div className="panel-title-row">
+        <div>
+          <p className="eyebrow">Secure keys</p>
+          <h2>OS keychain (recommended)</h2>
+          <p className="lead">Stored in your operating system's secure store — never in app files, logs, or repos. The app only ever reads back a masked hint, never the full key.</p>
+        </div>
+      </div>
+      <div className="flex-col gap-md">
+        {Object.values(CREDENTIAL_KEYS).map((key) => {
+          const meta = status.find((m) => m.key === key);
+          return (
+            <label key={key}>
+              <span className="flex items-center gap-sm" style={{ marginBottom: 4 }}>
+                <strong>{labels[key]}</strong>
+                <span className={`pill ${meta?.configured ? "ok" : "warn"}`}>
+                  {meta?.configured ? `Stored ${meta.hint}` : "Not configured"}
+                </span>
+              </span>
+              <div className="input-with-action">
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={drafts[key] ?? ""}
+                  placeholder={meta?.configured ? "•••••••• stored — enter to replace" : "Paste key to store securely"}
+                  onChange={(event) => setDrafts((d) => ({ ...d, [key]: event.target.value }))}
+                />
+                <button type="button" className="ghost-button" disabled={busy || !(drafts[key] ?? "").trim()} onClick={() => void save(key)}>
+                  Store
+                </button>
+                {meta?.configured && (
+                  <button type="button" className="ghost-button" disabled={busy} onClick={() => void remove(key)}>Remove</button>
+                )}
+              </div>
+            </label>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

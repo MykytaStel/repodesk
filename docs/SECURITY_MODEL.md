@@ -121,6 +121,14 @@ about the limits. Updated during P2 (security hardening).
 6. **Pre-commit secret scan** — `scripts/secret-scan-basic.sh` detects literal secret
    *values* (quoted long literals assigned to secret-named fields, `AKIA…`,
    private-key blocks, `ghp_`/`sk_live_`/`xox…` prefixes), not identifiers.
+8. **Secret storage** — `repodesk_core::credentials` is the secure path for provider
+   API keys: a `CredentialResolver` backed by the OS keychain (`KeyringResolver` —
+   macOS Keychain, Windows Credential Manager, Linux Secret Service) with a
+   read-only env-var fallback for development. The desktop `credential_*` commands
+   store/clear/inspect keys but return **only masked metadata** (configured flag +
+   `••••1234` hint) — the full secret never crosses back to the webview, and keys
+   are never written to app files, logs, or run artifacts. (Legacy plaintext keys in
+   provider-settings persistence are being migrated to this store.)
 7. **Coding-agent executor boundary** — `repodesk_core::executors` is the only path
    that launches an external coding-agent CLI (`codex_cli`, `claude_code_cli`).
    Commands are **argv-only** (no `sh -c`, no string interpolation); every program

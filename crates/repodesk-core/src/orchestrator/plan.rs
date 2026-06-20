@@ -162,9 +162,9 @@ pub fn route_steps(
                 let executor_kind = caps
                     .iter()
                     .find(|c| c.provider == *provider || c.executor_id == *provider)
-                    .map(|c| c.executor_kind.clone())
+                    .map(|c| c.executor_kind)
                     .unwrap_or(crate::routing::types::ExecutorKind::CompletionProvider);
-                
+
                 return SubAgentTask {
                     id: template.id.to_string(),
                     title: template.title.to_string(),

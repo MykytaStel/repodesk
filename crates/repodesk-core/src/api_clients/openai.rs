@@ -1,8 +1,13 @@
-//! OpenAI client implementing [`super::LlmProvider`] via the Chat Completions
-//! API. Used for `openai_api` plus legacy `openai`/`chatgpt`/`gpt` completion
-//! provider names. The
-//! [`super::ThinkingLevel`] hint is not honored by classic chat completions and
-//! is intentionally ignored here.
+//! OpenAI client implementing [`super::LlmProvider`] via the **Responses API**
+//! (`/v1/responses`). Used for `openai_api` plus legacy `openai`/`chatgpt`/`gpt`
+//! completion provider names.
+//!
+//! The Responses API replaces Chat Completions for new work: the prompt is the
+//! `input`, the system prompt is `instructions`, the output cap is
+//! `max_output_tokens`, and the [`super::ThinkingLevel`] maps to `reasoning.effort`
+//! (sent only when non-`None`, since plain chat models reject the field). A direct
+//! Responses API call is **not** the same as running Codex CLI — it is a bounded
+//! request/response, not a repository-editing agent.
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -31,77 +36,94 @@ impl OpenAiClient {
 }
 
 #[derive(Serialize)]
-struct ChatRequest {
+struct ResponsesRequest {
     model: String,
-    max_tokens: u32,
-    messages: Vec<ChatMessage>,
+    input: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    instructions: Option<String>,
+    max_output_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<Reasoning>,
 }
 
 #[derive(Serialize)]
-struct ChatMessage {
-    role: String,
-    content: String,
+struct Reasoning {
+    effort: String,
 }
 
 #[derive(Deserialize)]
-struct ChatResponse {
+struct ResponsesResponse {
     #[serde(default)]
     model: String,
+    /// Convenience aggregate some responses include; preferred when present.
     #[serde(default)]
-    choices: Vec<Choice>,
+    output_text: Option<String>,
+    #[serde(default)]
+    output: Vec<OutputItem>,
     #[serde(default)]
     usage: Usage,
 }
 
-#[derive(Deserialize)]
-struct Choice {
+#[derive(Deserialize, Default)]
+struct OutputItem {
     #[serde(default)]
-    message: ChoiceMessage,
+    content: Vec<ContentPart>,
 }
 
 #[derive(Deserialize, Default)]
-struct ChoiceMessage {
+struct ContentPart {
+    #[serde(default, rename = "type")]
+    kind: String,
     #[serde(default)]
-    content: String,
+    text: String,
 }
 
 #[derive(Deserialize, Default)]
 struct Usage {
     #[serde(default)]
-    prompt_tokens: usize,
+    input_tokens: usize,
     #[serde(default)]
-    completion_tokens: usize,
+    output_tokens: usize,
 }
 
-fn build_request(request: &LlmRequest) -> ChatRequest {
+fn build_request(request: &LlmRequest) -> ResponsesRequest {
     let model = if request.model.trim().is_empty() {
         DEFAULT_MODEL.to_string()
     } else {
         request.model.clone()
     };
-    let mut messages = Vec::new();
-    if let Some(system) = request.system.as_ref().filter(|s| !s.trim().is_empty()) {
-        messages.push(ChatMessage {
-            role: "system".to_string(),
-            content: system.clone(),
-        });
-    }
-    messages.push(ChatMessage {
-        role: "user".to_string(),
-        content: request.prompt.clone(),
+    let instructions = request
+        .system
+        .as_ref()
+        .filter(|system| !system.trim().is_empty())
+        .cloned();
+    let reasoning = request.thinking.reasoning_effort().map(|effort| Reasoning {
+        effort: effort.to_string(),
     });
-    ChatRequest {
+    ResponsesRequest {
         model,
-        max_tokens: request.max_tokens,
-        messages,
+        input: request.prompt.clone(),
+        instructions,
+        max_output_tokens: request.max_tokens,
+        reasoning,
     }
 }
 
-fn first_text(choices: &[Choice]) -> String {
-    choices
-        .first()
-        .map(|c| c.message.content.clone())
-        .unwrap_or_default()
+/// Concatenate every `output_text` content part across the response's output
+/// items, preferring the convenience `output_text` aggregate when present.
+fn extract_text(response: &ResponsesResponse) -> String {
+    if let Some(text) = response.output_text.as_ref().filter(|t| !t.is_empty()) {
+        return text.clone();
+    }
+    let mut out = String::new();
+    for item in &response.output {
+        for part in &item.content {
+            if part.kind == "output_text" {
+                out.push_str(&part.text);
+            }
+        }
+    }
+    out
 }
 
 impl super::LlmProvider for OpenAiClient {
@@ -119,7 +141,7 @@ impl super::LlmProvider for OpenAiClient {
     }
 
     fn complete(&self, request: LlmRequest) -> ProviderFuture<RepoDeskResult<LlmResponse>> {
-        let url = format!("{}/v1/chat/completions", self.base_url);
+        let url = format!("{}/v1/responses", self.base_url);
         let api_key = self.api_key.clone();
         let client = self.client.clone();
         let body = build_request(&request);
@@ -157,20 +179,20 @@ impl super::LlmProvider for OpenAiClient {
                 )));
             }
 
-            let parsed: ChatResponse = resp
+            let parsed: ResponsesResponse = resp
                 .json()
                 .await
                 .map_err(|e| RepoDeskError::Api(format!("failed to parse OpenAI response: {e}")))?;
 
             Ok(LlmResponse {
-                text: first_text(&parsed.choices),
+                text: extract_text(&parsed),
                 model: if parsed.model.is_empty() {
                     model
                 } else {
                     parsed.model
                 },
-                input_tokens: parsed.usage.prompt_tokens,
-                output_tokens: parsed.usage.completion_tokens,
+                input_tokens: parsed.usage.input_tokens,
+                output_tokens: parsed.usage.output_tokens,
             })
         })
     }
@@ -179,35 +201,62 @@ impl super::LlmProvider for OpenAiClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api_clients::ThinkingLevel;
 
     #[test]
-    fn parses_chat_response() {
+    fn parses_responses_output_array() {
         let json = r#"{
             "model": "gpt-4o-mini",
-            "choices": [
-                {"index": 0, "message": {"role": "assistant", "content": "Hi there"}}
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {"type": "output_text", "text": "Hi there"}
+                    ]
+                }
             ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 3, "total_tokens": 13}
+            "usage": {"input_tokens": 10, "output_tokens": 3, "total_tokens": 13}
         }"#;
-        let parsed: ChatResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(first_text(&parsed.choices), "Hi there");
-        assert_eq!(parsed.usage.prompt_tokens, 10);
-        assert_eq!(parsed.usage.completion_tokens, 3);
+        let parsed: ResponsesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(extract_text(&parsed), "Hi there");
+        assert_eq!(parsed.usage.input_tokens, 10);
+        assert_eq!(parsed.usage.output_tokens, 3);
     }
 
     #[test]
-    fn build_request_prepends_system_message() {
+    fn prefers_output_text_aggregate() {
+        let json = r#"{
+            "model": "gpt-4o-mini",
+            "output_text": "aggregate wins",
+            "output": [
+                {"type": "message", "content": [{"type": "output_text", "text": "ignored"}]}
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 2}
+        }"#;
+        let parsed: ResponsesResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(extract_text(&parsed), "aggregate wins");
+    }
+
+    #[test]
+    fn build_request_maps_system_to_instructions() {
         let req = LlmRequest::new("gpt-x", "question").with_system("you are a bot");
         let body = build_request(&req);
-        assert_eq!(body.messages.len(), 2);
-        assert_eq!(body.messages[0].role, "system");
-        assert_eq!(body.messages[1].role, "user");
+        assert_eq!(body.input, "question");
+        assert_eq!(body.instructions.as_deref(), Some("you are a bot"));
+        assert!(body.reasoning.is_none());
     }
 
     #[test]
-    fn build_request_omits_empty_system() {
+    fn build_request_omits_empty_instructions() {
         let body = build_request(&LlmRequest::new("gpt-x", "q"));
-        assert_eq!(body.messages.len(), 1);
-        assert_eq!(body.messages[0].role, "user");
+        assert!(body.instructions.is_none());
+    }
+
+    #[test]
+    fn build_request_sets_reasoning_effort_when_thinking() {
+        let req = LlmRequest::new("o4-mini", "q").with_thinking(ThinkingLevel::High);
+        let body = build_request(&req);
+        assert_eq!(body.reasoning.map(|r| r.effort).as_deref(), Some("high"));
     }
 }

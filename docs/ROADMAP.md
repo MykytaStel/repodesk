@@ -93,8 +93,11 @@ Scope:
   surfaced on the step result and run panel. ✅
 - Accept/reject review: stage (accept) or discard (reject) a run's changeset via CLI, Tauri,
   and run-panel buttons; bounded to recorded paths, never commits/pushes. ✅
-- Next (ordered): CLI auth detection, git worktree lifecycle, OS keychain credential store,
-  OpenAI Responses API migration, inline diff viewer + cross-model changeset review.
+- CLI auth tri-state (artifact-existence check), isolated git worktrees (opt-in `--worktree`),
+  OS keychain credential store (`credentials.rs` + `keyring`, masked-only to UI), OpenAI
+  Responses API (`/v1/responses`). ✅
+- Next (ordered): CLI auth depth, worktree apply-back into review, migrate legacy plaintext keys
+  to the keychain, inline diff viewer + cross-model changeset review.
 
 ## Development priorities
 

@@ -5,6 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod action_service;
 pub mod backup;
+pub mod credentials;
 pub mod diagnostic;
 pub mod journal;
 pub mod memory;
@@ -28,6 +29,7 @@ pub use tokens::*;
 pub use workflow::*;
 
 pub use backup::*;
+pub use credentials::*;
 pub use diagnostic::*;
 pub use journal::*;
 pub use memory::*;

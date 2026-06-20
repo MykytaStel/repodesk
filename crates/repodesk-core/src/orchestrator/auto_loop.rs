@@ -189,6 +189,9 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
                 settings: opts.settings.clone(),
                 approve_coding_agents: opts.approve_coding_agents,
                 coding_agent_timeout_secs: opts.coding_agent_timeout_secs,
+                // The loop retries; isolated worktrees would accumulate per
+                // attempt, so keep write steps in-place here.
+                use_isolated_worktree: false,
             },
         )
         .await?;

@@ -9,6 +9,7 @@ pub mod brain;
 pub mod capabilities;
 pub mod checks;
 pub mod context;
+pub mod credentials;
 
 pub mod desktop;
 pub mod errors;
@@ -49,3 +50,4 @@ pub use errors::{RepoDeskError, RepoDeskResult};
 pub mod git_workspace;
 pub mod project_token_check;
 pub mod utils;
+pub mod worktree;

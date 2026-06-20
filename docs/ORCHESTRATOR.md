@@ -40,10 +40,12 @@ real token usage. `provider_for(name, &ProviderSettings)` builds completion-prov
 only:
 `ollama`/local → Ollama; `lm_studio` → local OpenAI-compatible endpoint;
 `anthropic_api`/`anthropic` → Anthropic; `openai_api`/`openai`/`chatgpt`/`gpt` → OpenAI;
-`gemini_api`/`gemini` → Gemini. `codex`, `codex_cli`, `claude`, and `claude_code_cli` are
-not completion-provider ids; they belong to the coding-agent executor layer. Keys come from the environment:
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`); optional
-`*_BASE_URL` / `*_MODEL` overrides. Ollama needs no key.
+`gemini_api`/`gemini` → Gemini. The OpenAI client uses the **Responses API**
+(`/v1/responses`), not Chat Completions. `codex`, `codex_cli`, `claude`, and
+`claude_code_cli` are not completion-provider ids; they belong to the coding-agent executor
+layer. Keys come from the OS keychain (`repodesk_core::credentials`) or, as a fallback, the
+environment: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` (or `GOOGLE_API_KEY`);
+optional `*_BASE_URL` / `*_MODEL` overrides. Ollama needs no key.
 
 ### Routing & availability
 Planning only routes to providers it can actually call: `available_capacities` drops paid
@@ -70,6 +72,12 @@ The runner launches these commands only when `RunOptions.approve_coding_agents` 
 `--yes`, or the desktop's explicit CLI-agent approval); otherwise it records the handoff as
 skipped. Executions capture stdout/stderr to receipt files, enforce a timeout, and never fall
 back from a coding-agent executor to an OpenAI/Anthropic completion client.
+
+**Isolated worktree (opt-in).** With `RunOptions.use_isolated_worktree` (CLI `--worktree`, the
+desktop "Isolated worktree" toggle), a write-capable step runs inside a fresh git worktree
+checked out at the project's HEAD (`crate::worktree`), so its diff is attributable even when the
+main tree is dirty. The worktree is left in place for review; cleanup
+(`worktree::remove_run_worktree`) is an explicit human action — nothing is auto-discarded.
 
 **Changeset capture.** Around each run the executor snapshots `git status --porcelain` before
 and after, so a write-capable run produces a reviewable changeset, not just stdout:
@@ -100,7 +108,7 @@ command, and Accept/Reject buttons on the desktop run panel.
 ```bash
 repodesk orchestrate plan [--goal "..."]                 # route every step; no execution
 repodesk orchestrate run --dry-run [--max-cost N]        # gate + project cost, no provider calls
-repodesk orchestrate run [--goal "..."] [--max-cost N] --yes
+repodesk orchestrate run [--goal "..."] [--max-cost N] [--worktree] --yes
 repodesk orchestrate status                              # most recent run for the active task
 repodesk orchestrate show <run_id>
 repodesk orchestrate review <run_id> accept|reject       # stage or discard a coding-agent changeset

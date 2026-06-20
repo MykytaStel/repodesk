@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::errors::{RepoDeskError, RepoDeskResult};
+use crate::errors::RepoDeskResult;
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
 
@@ -41,10 +41,10 @@ impl AuditLogger {
         }
 
         let content = fs::read_to_string(&self.log_path)?;
-        if let Some(last_line) = content.lines().last() {
-            if let Ok(event) = serde_json::from_str::<AuditEvent>(last_line) {
-                return Ok(event.hash);
-            }
+        if let Some(last_line) = content.lines().last()
+            && let Ok(event) = serde_json::from_str::<AuditEvent>(last_line)
+        {
+            return Ok(event.hash);
         }
         Ok(String::from("0000000000000000000000000000000000000000000000000000000000000000"))
     }

@@ -48,6 +48,18 @@ impl ThinkingLevel {
             Self::High => Some(12_000),
         }
     }
+
+    /// Reasoning effort label for the OpenAI Responses API (`reasoning.effort`).
+    /// `None` disables reasoning configuration — sent only for reasoning-capable
+    /// models, since a plain chat model rejects the field.
+    pub fn reasoning_effort(&self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Low => Some("low"),
+            Self::Medium => Some("medium"),
+            Self::High => Some("high"),
+        }
+    }
 }
 
 /// A single, provider-agnostic completion request.
