@@ -220,8 +220,8 @@ mod code_workbench_commands {
     }
 }
 
-use tauri::Manager;
 use tauri::Emitter;
+use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri_plugin_global_shortcut::ShortcutState;
@@ -242,13 +242,13 @@ pub fn run() {
                     eprintln!("Failed to register global shortcuts: {}", err);
                     tauri_plugin_global_shortcut::Builder::new()
                 })
-                .with_handler(|app: &tauri::AppHandle, shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                            let _ = window.emit("open-command-palette", ());
-                        }
+                .with_handler(|app: &tauri::AppHandle, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed
+                        && let Some(window) = app.get_webview_window("main")
+                    {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.emit("open-command-palette", ());
                     }
                 })
                 .build(),
@@ -267,23 +267,22 @@ pub fn run() {
                     }
                 })
                 .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
-                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event
+                        && let Some(window) = tray.app_handle().get_webview_window("main")
+                    {
+                        let _ = window.show();
+                        let _ = window.set_focus();
                     }
                 })
                 .build(app)?;
 
             Ok(())
         })
-        .on_window_event(|window, event| match event {
-            tauri::WindowEvent::CloseRequested { api, .. } => {
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
             }
-            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             code_workbench_commands::read_code_file,
@@ -294,6 +293,7 @@ pub fn run() {
             commands::desktop_snapshot,
             commands::product_workflow_state,
             commands::read_artifact,
+            commands::agent_context_pack,
             commands::desktop_actions,
             commands::explain_action,
             commands::run_desktop_action,
@@ -354,6 +354,8 @@ pub fn run() {
             commands::orchestrate_status,
             commands::orchestrate_show,
             commands::orchestrate_review,
+            commands::orchestrate_run_diffs,
+            commands::orchestrate_check_proof,
             commands::orchestrate_worktrees,
             commands::orchestrate_cleanup_worktree,
             commands::orchestration_runs,

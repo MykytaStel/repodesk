@@ -6,7 +6,10 @@ use super::{
 use std::fs;
 
 #[tauri::command]
-pub fn task_new(title: String, verify_command: Option<String>) -> Result<CommandResult, ErrorPayload> {
+pub fn task_new(
+    title: String,
+    verify_command: Option<String>,
+) -> Result<CommandResult, ErrorPayload> {
     validate_text("Task title", &title, 180)?;
     match repodesk_core::tasks::create_task(repodesk_core::tasks::NewTaskInput {
         title: title.clone(),
@@ -165,6 +168,19 @@ pub fn read_artifact(kind: String) -> Result<ArtifactContent, ErrorPayload> {
         exists,
         content: truncate_text(&content, 70_000),
         size_bytes,
+    })
+}
+
+#[tauri::command]
+pub async fn agent_context_pack() -> Result<ArtifactContent, ErrorPayload> {
+    let pack = repodesk_core::agent_context_pack::build_agent_context_pack().await?;
+    Ok(ArtifactContent {
+        kind: "agent_context_pack".to_string(),
+        title: "Agent Context Pack".to_string(),
+        path: pack.path.display().to_string(),
+        exists: true,
+        content: truncate_text(&pack.content, 70_000),
+        size_bytes: pack.size_bytes,
     })
 }
 

@@ -90,6 +90,15 @@ export function useOrchestrate() {
     },
   });
 
+  const runDiffs = useMutation({
+    mutationFn: (runId: string) => api.orchestrateRunDiffs(runId),
+  });
+
+  const checkProof = useMutation({
+    mutationFn: (v: { runId: string; runChecks: boolean }) =>
+      api.orchestrateCheckProof(v.runId, v.runChecks),
+  });
+
   const cleanupWorktree = useMutation({
     mutationFn: (workspaceId: string) => api.orchestrateCleanupWorktree(workspaceId),
     onSuccess: () => {
@@ -150,6 +159,8 @@ export function useOrchestrate() {
     run,
     showRun,
     review,
+    runDiffs,
+    checkProof,
     cleanupWorktree,
     loop,
   };

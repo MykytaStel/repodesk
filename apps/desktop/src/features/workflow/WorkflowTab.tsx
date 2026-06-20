@@ -13,12 +13,14 @@ import { useGit } from "../git/useGit";
 import { PromptsPanel } from "./PromptsPanel";
 import { DiffViewerModal } from "../git/DiffViewerModal";
 import { useToast } from "../../shared/ui/Toast";
+import type { TabId } from "../../shared/types/api";
 
 interface WorkflowTabProps {
   economyMode: string;
+  setActiveTab?: (tab: TabId) => void;
 }
 
-export function WorkflowTab({ economyMode }: WorkflowTabProps) {
+export function WorkflowTab({ economyMode, setActiveTab }: WorkflowTabProps) {
   const { workflow, nextAction, doNextSafeStep, runAction, isRunning, history, commitChanges, isCommitting, commitError } = useWorkflow();
   const { routing } = useRouting(economyMode);
   const { tokens } = useTokens();
@@ -252,6 +254,45 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
     );
   }
 
+  function scrollToPrompts() {
+    document.getElementById("generated-prompts")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // The end of the loop is where "what next / where do I put things" bites
+  // hardest: prep is done, but the hand-off + finish is manual. Spell it out,
+  // and make clear the prompt was built locally (so people trust it).
+  function renderFinishGuide() {
+    return (
+      <section className="panel wide-panel finish-guide">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Finish line</p>
+            <h2>Hand off &amp; complete the task</h2>
+          </div>
+          <ActorBadge mode="manual" />
+        </div>
+        <p className="lead">
+          RepoDesk assembled your prompt <strong>on this machine</strong> from your task and its bounded
+          context — plain text, no AI, no tokens, nothing sent anywhere. From here you drive the hand-off:
+        </p>
+        <ol className="finish-steps">
+          <li>
+            <strong>Copy the prompt</strong> from the <em>Generated Prompts</em> panel just below, then paste it
+            into the agent you choose — a local CLI (Codex, Claude) or a paid chat (ChatGPT, Gemini; those stay gated).
+            <button className="ghost-button" style={{ marginLeft: 8 }} onClick={scrollToPrompts}>Show the prompt ↓</button>
+          </li>
+          <li>
+            <strong>Paste the agent's reply</strong> into Memory so RepoDesk keeps what was decided for next time.
+            {setActiveTab && (
+              <button className="ghost-button" style={{ marginLeft: 8 }} onClick={() => setActiveTab("memory")}>Open Memory →</button>
+            )}
+          </li>
+          <li><strong>Commit</strong> once the <em>Commit readiness</em> panel below clears it as safe.</li>
+        </ol>
+      </section>
+    );
+  }
+
   function renderChangedFiles() {
     const files = asArray(getValue(git, "changed_files"));
     return (
@@ -368,8 +409,9 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
             runResult={stepResult}
           />
           <TaskSwitcher />
-          {renderCommitReadiness()}
+          {promptsOk && renderFinishGuide()}
           {promptsOk && <PromptsPanel />}
+          {renderCommitReadiness()}
           {renderBestRoutePanel()}
 
           {dirty && (

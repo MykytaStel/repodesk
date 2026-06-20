@@ -72,7 +72,7 @@ export function renderAppTab({
     case "dashboard":
       return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
     case "workflow":
-      return <WorkflowTab economyMode={economyMode} />;
+      return <WorkflowTab economyMode={economyMode} setActiveTab={setActiveTab} />;
     case "tokens":
       return <TokensTab />;
     case "models":

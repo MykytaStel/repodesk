@@ -29,12 +29,15 @@ export function usePrompts() {
     setArtifactKind(kind);
     setIsLoading(true);
     try {
-      const result = await callCommand<any>("read_artifact", { kind });
+      const result =
+        kind === "agent_context_pack"
+          ? await callCommand<any>("agent_context_pack")
+          : await callCommand<any>("read_artifact", { kind });
       const content = result?.content || (typeof result === "string" ? result : JSON.stringify(result, null, 2));
       setArtifactContent(content);
       if (autoCopy && content) {
         await copyToClipboard(content);
-        success(`Copied ${kind.replace("prompt_", "")} prompt to clipboard!`);
+        success(kind === "agent_context_pack" ? "Copied context pack to clipboard!" : `Copied ${kind.replace("prompt_", "")} prompt to clipboard!`);
       }
     } catch (error: any) {
       setArtifactContent(error?.message || String(error));

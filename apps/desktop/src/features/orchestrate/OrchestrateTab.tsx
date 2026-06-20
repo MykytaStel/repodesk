@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useOrchestrate } from "./useOrchestrate";
 import { useModels } from "../models/useModels";
 import {
@@ -6,11 +6,13 @@ import {
   planHasPaidStep,
   stepIsApprovalGated,
   type ExecutorAvailability,
+  type CheckProof,
   type LoopRun,
   type LoopStatus,
   type OrchestrationPlan,
   type OrchestrationRun,
   type ReviewAction,
+  type RunDiff,
   type RunReview,
   type RunSummary,
   type RunWorktreeStatus,
@@ -18,7 +20,7 @@ import {
   type SubAgentStatus,
   type TaskEvent,
 } from "../../shared/api/orchestrate";
-import { MetricCard, errorToMessage, formatCost, formatNumber, EmptyState, ActorBadge } from "../../shared/ui/SharedComponents";
+import { MetricCard, errorToMessage, formatCost, formatNumber, EmptyState, ActorBadge, DiffView } from "../../shared/ui/SharedComponents";
 import type { TabId } from "../../shared/types/api";
 
 const STATUS_COLOR: Record<SubAgentStatus, string> = {
@@ -225,14 +227,10 @@ function WorktreeRecoveryPanel({
 function RunPanel({
   run,
   onOpenMemory,
-  onReview,
-  reviewing,
   reviewResult,
 }: {
   run: OrchestrationRun;
   onOpenMemory?: () => void;
-  onReview?: (action: ReviewAction) => void;
-  reviewing?: boolean;
   reviewResult?: RunReview | null;
 }) {
   const captured = run.results.reduce((sum, r) => sum + r.captured_proposals, 0);
@@ -296,35 +294,7 @@ function RunPanel({
               Review {captured} captured memory proposal{captured === 1 ? "" : "s"}
             </button>
           )}
-          {changedCount > 0 && onReview && (
-            <>
-              <ActorBadge mode="manual" />
-              <button
-                className="tiny-button"
-                onClick={() => onReview("accept")}
-                disabled={reviewing}
-                title={
-                  isolatedChanged
-                    ? "Apply the isolated worktree changes into the active checkout and stage them"
-                    : "Stage the changed files so you can commit them"
-                }
-              >
-                Accept {changedCount} change{changedCount === 1 ? "" : "s"}
-              </button>
-              <button
-                className="tiny-button"
-                onClick={() => onReview("reject")}
-                disabled={reviewing}
-                title={
-                  isolatedChanged
-                    ? "Leave the isolated worktree unchanged and keep the active checkout untouched"
-                    : "Discard the agent's changes (restore tracked, remove new files)"
-                }
-              >
-                Reject changes
-              </button>
-            </>
-          )}
+          {changedCount > 0 && <span className="pill warn">Review changes above</span>}
         </div>
       )}
       {changedCount > 0 && isolatedChanged && (
@@ -341,6 +311,160 @@ function RunPanel({
           {reviewResult.warnings.length > 0 ? ` — ${reviewResult.warnings.join("; ")}` : ""}
         </p>
       )}
+    </section>
+  );
+}
+
+function ReviewCenter({
+  run,
+  diffs,
+  diffsLoading,
+  proof,
+  proofLoading,
+  onRefreshProof,
+  onRunChecks,
+  onReview,
+  reviewing,
+  reviewResult,
+}: {
+  run: OrchestrationRun;
+  diffs: RunDiff[];
+  diffsLoading: boolean;
+  proof?: CheckProof | null;
+  proofLoading: boolean;
+  onRefreshProof: () => void;
+  onRunChecks: () => void;
+  onReview: (action: ReviewAction) => void;
+  reviewing?: boolean;
+  reviewResult?: RunReview | null;
+}) {
+  const changedCount = run.results.reduce((sum, result) => sum + (result.changed_files?.length ?? 0), 0);
+  if (changedCount === 0 && diffs.length === 0) return null;
+
+  const isolated = run.results.some((result) => result.workspace && (result.changed_files?.length ?? 0) > 0);
+  const proofTone =
+    proof?.success === true ? "ok"
+    : proof?.success === false ? "danger"
+    : "warn";
+  const proofLabel =
+    proof?.success === true ? "Checks passed"
+    : proof?.success === false ? "Checks failed"
+    : proofLoading ? "Checking proof"
+    : "Proof pending";
+  const stepProofs = proof?.step_proofs?.filter((step) => step.changed_files.length > 0 || step.verification_notes.length > 0) ?? [];
+
+  return (
+    <section className="panel wide-panel changeset-review">
+      <div className="panel-title-row">
+        <div>
+          <p className="eyebrow">Changeset review</p>
+          <h2>{changedCount} agent-changed file{changedCount === 1 ? "" : "s"}</h2>
+          <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+            Review the captured diff and verification evidence before accepting anything into the active checkout.
+          </p>
+        </div>
+        <div className="button-row compact-buttons">
+          <ActorBadge mode="manual" />
+          <span className={`pill ${proofTone}`}>{proofLabel}</span>
+        </div>
+      </div>
+
+      {isolated && (
+        <div className="notice warn" style={{ marginTop: 12 }}>
+          Changes are still in isolated worktrees. Active-checkout checks do not include them until you accept;
+          rely on step verification notes first, then run full checks after applying.
+        </div>
+      )}
+
+      <div className="button-row compact-buttons" style={{ marginTop: 12 }}>
+        <button className="tiny-button" onClick={onRefreshProof} disabled={proofLoading}>
+          {proofLoading ? "Loading proof..." : "Load latest proof"}
+        </button>
+        <button className="tiny-button" onClick={onRunChecks} disabled={proofLoading}>
+          {proofLoading ? "Running..." : "Run active-checkout checks"}
+        </button>
+        <button className="primary-button" onClick={() => onReview("accept")} disabled={reviewing}>
+          {reviewing ? "Reviewing..." : `Accept ${changedCount} change${changedCount === 1 ? "" : "s"}`}
+        </button>
+        <button className="ghost-button" onClick={() => onReview("reject")} disabled={reviewing}>
+          Reject changes
+        </button>
+      </div>
+
+      {reviewResult && (
+        <div className={`notice ${reviewResult.action === "accept" ? "ok" : "warn"}`} style={{ marginTop: 12 }}>
+          {reviewResult.action === "accept" ? "Accepted" : "Reviewed"}{" "}
+          {reviewResult.processed.map((file) => `${file.path} (${file.outcome})`).join(", ") || "nothing"}
+          {reviewResult.warnings.length > 0 ? ` — ${reviewResult.warnings.join("; ")}` : ""}
+        </div>
+      )}
+
+      {proof?.warnings?.map((warning) => (
+        <div className="notice warn" key={warning} style={{ marginTop: 12 }}>{warning}</div>
+      ))}
+
+      {stepProofs.length > 0 && (
+        <div className="table-list" style={{ marginTop: 12 }}>
+          {stepProofs.map((step) => (
+            <div className="table-row flex-col items-start gap-sm" key={step.task_id}>
+              <div className="w-full flex justify-between items-center">
+                <strong>{step.task_id}</strong>
+                <span className="pill neutral">{step.status}</span>
+              </div>
+              {step.changed_files.length > 0 && (
+                <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                  Changed: {step.changed_files.join(", ")}
+                </p>
+              )}
+              {step.verification_notes.map((note) => (
+                <p className="muted" style={{ margin: 0, fontSize: 12 }} key={note}>{note}</p>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {proof?.summary && (
+        <details style={{ marginTop: 12 }}>
+          <summary className="muted" style={{ cursor: "pointer" }}>Checks summary</summary>
+          <pre className="code-panel compact" style={{ whiteSpace: "pre-wrap" }}>{proof.summary}</pre>
+        </details>
+      )}
+
+      <div style={{ marginTop: 16 }}>
+        {diffsLoading ? (
+          <p className="muted">Loading captured diffs...</p>
+        ) : diffs.length === 0 ? (
+          <EmptyState message="No diff receipts were captured for this run." hint="The agent may only have produced text output or untracked/binary files." />
+        ) : (
+          diffs.map((diff) => (
+            <div className="panel" key={`${run.run_id}-${diff.task_id}`} style={{ marginTop: 12 }}>
+              <div className="panel-title-row compact">
+                <div>
+                  <p className="eyebrow">{diff.task_id}</p>
+                  <h2>{diff.changed_files.length} file{diff.changed_files.length === 1 ? "" : "s"}</h2>
+                  <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                    {diff.provider}{diff.model ? ` / ${diff.model}` : ""}
+                  </p>
+                </div>
+                <span className={`pill ${diff.exists ? "ok" : "warn"}`}>
+                  {diff.exists ? "diff captured" : "no diff"}
+                </span>
+              </div>
+              {diff.changed_files.length > 0 && (
+                <p className="muted" style={{ fontSize: 12 }}>
+                  {diff.changed_files.join(", ")}
+                </p>
+              )}
+              {diff.warnings.map((warning) => (
+                <div className="notice warn" key={warning}>{warning}</div>
+              ))}
+              {diff.diff.trim() ? <DiffView diff={diff.diff} /> : null}
+              {diff.truncated && <p className="muted" style={{ fontSize: 12 }}>Diff was truncated for UI safety.</p>}
+            </div>
+          ))
+        )}
+      </div>
     </section>
   );
 }
@@ -496,8 +620,18 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
     orchestrate.plan.error ??
     orchestrate.showRun.error ??
     orchestrate.loop.error ??
+    orchestrate.runDiffs.error ??
+    orchestrate.checkProof.error ??
     orchestrate.review.error ??
     orchestrate.cleanupWorktree.error;
+
+  useEffect(() => {
+    if (!currentRun || currentRun.dry_run) return;
+    const hasChanges = currentRun.results.some((result) => (result.changed_files?.length ?? 0) > 0 || result.diff_path);
+    if (!hasChanges) return;
+    orchestrate.runDiffs.mutate(currentRun.run_id);
+    orchestrate.checkProof.mutate({ runId: currentRun.run_id, runChecks: false });
+  }, [currentRun?.run_id]);
 
   async function handleReview(action: ReviewAction) {
     if (!currentRun) return;
@@ -507,6 +641,11 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
     } catch {
       // surfaced via orchestrate.review.error / the Error panel
     }
+  }
+
+  async function handleRunChecksForCurrentRun() {
+    if (!currentRun) return;
+    await orchestrate.checkProof.mutateAsync({ runId: currentRun.run_id, runChecks: true });
   }
 
   async function handleCleanupWorktree(worktree: RunWorktreeStatus) {
@@ -764,11 +903,24 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       {orchestrate.loop.data && <LoopPanel loop={orchestrate.loop.data} />}
 
       {currentRun && (
+        <ReviewCenter
+          run={currentRun}
+          diffs={orchestrate.runDiffs.data ?? []}
+          diffsLoading={orchestrate.runDiffs.isPending}
+          proof={orchestrate.checkProof.data ?? null}
+          proofLoading={orchestrate.checkProof.isPending}
+          onRefreshProof={() => orchestrate.checkProof.mutate({ runId: currentRun.run_id, runChecks: false })}
+          onRunChecks={() => void handleRunChecksForCurrentRun()}
+          onReview={(action) => void handleReview(action)}
+          reviewing={orchestrate.review.isPending}
+          reviewResult={reviewResult?.run_id === currentRun.run_id ? reviewResult : null}
+        />
+      )}
+
+      {currentRun && (
         <RunPanel
           run={currentRun}
           onOpenMemory={setActiveTab ? () => setActiveTab("memory") : undefined}
-          onReview={(action) => void handleReview(action)}
-          reviewing={orchestrate.review.isPending}
           reviewResult={reviewResult?.run_id === currentRun.run_id ? reviewResult : null}
         />
       )}

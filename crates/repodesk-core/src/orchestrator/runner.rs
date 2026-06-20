@@ -106,17 +106,17 @@ pub async fn run_plan(
 
     let mut state = RunState::default();
 
-enum StepExecutionResult {
-    Llm(RepoDeskResult<LlmResponse>),
-    CodingAgent {
-        execution: RepoDeskResult<crate::executors::CodingAgentExecution>,
-        workspace: Option<crate::worktree::RunWorktree>,
-        verify_cmd_notes: Vec<String>,
-        verify_failed: bool,
-        combined_stdout: String,
-        combined_stderr: String,
-    },
-}
+    enum StepExecutionResult {
+        Llm(RepoDeskResult<LlmResponse>),
+        CodingAgent {
+            execution: Box<RepoDeskResult<crate::executors::CodingAgentExecution>>,
+            workspace: Option<crate::worktree::RunWorktree>,
+            verify_cmd_notes: Vec<String>,
+            verify_failed: bool,
+            combined_stdout: String,
+            combined_stderr: String,
+        },
+    }
 
     for wave in &waves {
         // ── Decision pass: gate every step in ascending index order. Each step
@@ -296,9 +296,15 @@ enum StepExecutionResult {
                 let output_dir = executor_output_dir.clone();
                 let timeout_secs = opts.coding_agent_timeout_secs;
                 let verify_cmd_opt = step.verify_command.clone();
-                
+
                 set.spawn(async move {
-                    let (execution_res, verify_cmd_notes, verify_failed, combined_stdout, combined_stderr) = tokio::task::spawn_blocking(move || {
+                    let (
+                        execution_res,
+                        verify_cmd_notes,
+                        verify_failed,
+                        combined_stdout,
+                        combined_stderr,
+                    ) = tokio::task::spawn_blocking(move || {
                         let res = crate::executors::run_coding_agent_command(
                             &command,
                             &prompt,
@@ -316,57 +322,79 @@ enum StepExecutionResult {
                             c_stdout = exec.stdout.clone();
                             c_stderr = exec.stderr.clone();
 
-                            if exec.status == "ok" {
-                                if let Some(cmd) = &verify_cmd_opt {
-                                    v_notes.push(format!("verify command: {}", cmd));
-                                    let child = std::process::Command::new("sh")
-                                        .arg("-c")
-                                        .arg(cmd)
-                                        .current_dir(&cwd)
-                                        .stdout(std::process::Stdio::piped())
-                                        .stderr(std::process::Stdio::piped())
-                                        .spawn();
-                                        
-                                    match child {
-                                        Ok(mut child) => {
-                                            match child.wait_timeout(std::time::Duration::from_secs(120)) {
-                                                Ok(Some(status)) => {
-                                                    let output = child.wait_with_output().unwrap_or_else(|_| std::process::Output { status, stdout: Vec::new(), stderr: Vec::new() });
-                                                    let verify_stdout = String::from_utf8_lossy(&output.stdout);
-                                                    let verify_stderr = String::from_utf8_lossy(&output.stderr);
-                                                    
-                                                    if !status.success() {
-                                                        v_failed = true;
-                                                        v_notes.push(truncate_note("verify failed", &verify_stderr));
-                                                        
-                                                        c_stderr.push_str("\n\n--- Verification Failed ---\n");
-                                                        if !verify_stdout.is_empty() {
-                                                            c_stderr.push_str(&verify_stdout);
-                                                            c_stderr.push('\n');
-                                                        }
-                                                        c_stderr.push_str(&verify_stderr);
-                                                    } else {
-                                                        v_notes.push("verify passed".to_string());
+                            if exec.status == "ok"
+                                && let Some(cmd) = &verify_cmd_opt
+                            {
+                                v_notes.push(format!("verify command: {}", cmd));
+                                let child = std::process::Command::new("sh")
+                                    .arg("-c")
+                                    .arg(cmd)
+                                    .current_dir(&cwd)
+                                    .stdout(std::process::Stdio::piped())
+                                    .stderr(std::process::Stdio::piped())
+                                    .spawn();
+
+                                match child {
+                                    Ok(mut child) => {
+                                        match child
+                                            .wait_timeout(std::time::Duration::from_secs(120))
+                                        {
+                                            Ok(Some(status)) => {
+                                                let output = child
+                                                    .wait_with_output()
+                                                    .unwrap_or_else(|_| std::process::Output {
+                                                        status,
+                                                        stdout: Vec::new(),
+                                                        stderr: Vec::new(),
+                                                    });
+                                                let verify_stdout =
+                                                    String::from_utf8_lossy(&output.stdout);
+                                                let verify_stderr =
+                                                    String::from_utf8_lossy(&output.stderr);
+
+                                                if !status.success() {
+                                                    v_failed = true;
+                                                    v_notes.push(truncate_note(
+                                                        "verify failed",
+                                                        &verify_stderr,
+                                                    ));
+
+                                                    c_stderr.push_str(
+                                                        "\n\n--- Verification Failed ---\n",
+                                                    );
+                                                    if !verify_stdout.is_empty() {
+                                                        c_stderr.push_str(&verify_stdout);
+                                                        c_stderr.push('\n');
                                                     }
-                                                }
-                                                Ok(None) => {
-                                                    let _ = child.kill();
-                                                    let _ = child.wait();
-                                                    v_failed = true;
-                                                    v_notes.push("verify command timed out after 120s".to_string());
-                                                }
-                                                Err(e) => {
-                                                    let _ = child.kill();
-                                                    let _ = child.wait();
-                                                    v_failed = true;
-                                                    v_notes.push(format!("verify command wait failed: {}", e));
+                                                    c_stderr.push_str(&verify_stderr);
+                                                } else {
+                                                    v_notes.push("verify passed".to_string());
                                                 }
                                             }
+                                            Ok(None) => {
+                                                let _ = child.kill();
+                                                let _ = child.wait();
+                                                v_failed = true;
+                                                v_notes.push(
+                                                    "verify command timed out after 120s"
+                                                        .to_string(),
+                                                );
+                                            }
+                                            Err(e) => {
+                                                let _ = child.kill();
+                                                let _ = child.wait();
+                                                v_failed = true;
+                                                v_notes.push(format!(
+                                                    "verify command wait failed: {}",
+                                                    e
+                                                ));
+                                            }
                                         }
-                                        Err(e) => {
-                                            v_failed = true;
-                                            v_notes.push(format!("verify command failed to start: {}", e));
-                                        }
+                                    }
+                                    Err(e) => {
+                                        v_failed = true;
+                                        v_notes
+                                            .push(format!("verify command failed to start: {}", e));
                                     }
                                 }
                             }
@@ -375,20 +403,25 @@ enum StepExecutionResult {
                     })
                     .await
                     .map_err(|error| {
-                        crate::errors::RepoDeskError::Api(format!("coding-agent task failed: {error}"))
+                        crate::errors::RepoDeskError::Api(format!(
+                            "coding-agent task failed: {error}"
+                        ))
                     })
                     .unwrap_or_else(|e| (Err(e), Vec::new(), false, String::new(), String::new()));
 
-                    (idx, StepExecutionResult::CodingAgent {
-                        execution: execution_res,
-                        workspace: workspace.worktree.clone(),
-                        verify_cmd_notes,
-                        verify_failed,
-                        combined_stdout,
-                        combined_stderr,
-                    })
+                    (
+                        idx,
+                        StepExecutionResult::CodingAgent {
+                            execution: Box::new(execution_res),
+                            workspace: workspace.worktree.clone(),
+                            verify_cmd_notes,
+                            verify_failed,
+                            combined_stdout,
+                            combined_stderr,
+                        },
+                    )
                 });
-                
+
                 scheduled.push(ExecMeta {
                     idx,
                     input_tokens,
@@ -535,117 +568,120 @@ enum StepExecutionResult {
                         ..failed(step, format!("provider call failed: {error}"))
                     });
                 }
-                Some(StepExecutionResult::CodingAgent { 
-                    execution, workspace, verify_cmd_notes, verify_failed, combined_stdout, combined_stderr 
-                }) => {
-                    match execution {
-                        Ok(execution) => {
-                            let output_tokens = estimate_text(&execution.stdout).estimated_tokens;
-                            let cost = estimate_agent_cost(
-                                &cost_config,
-                                step.resolved_executor_id(),
-                                meta.input_tokens,
-                                output_tokens,
-                            )
-                            .estimated_cost_units;
-                            state.running_cost += cost - meta.projected_cost;
-                            let _ = log_token_event(LogTokenInput {
-                                agent: step.resolved_executor_id().to_string(),
-                                model: Some(execution.executor_id.clone()),
-                                input_tokens: meta.input_tokens,
-                                output_tokens,
-                                category: "orchestrate".to_string(),
-                                notes: Some(step.id.clone()),
-                            });
-                            
-                            let final_status = if execution.status == "ok" && !verify_failed {
-                                SubAgentStatus::Ok
-                            } else {
-                                SubAgentStatus::Failed
-                            };
-                            
-                            let mut notes = vec![
-                                format!("command: {}", execution.command_preview),
-                                format!("stdout: {}", execution.stdout_path),
-                                format!("stderr: {}", execution.stderr_path),
-                                format!("duration_ms: {}", execution.duration_ms),
-                            ];
-                            notes.extend(verify_cmd_notes);
+                Some(StepExecutionResult::CodingAgent {
+                    execution,
+                    workspace,
+                    verify_cmd_notes,
+                    verify_failed,
+                    combined_stdout,
+                    combined_stderr,
+                }) => match *execution {
+                    Ok(execution) => {
+                        let output_tokens = estimate_text(&execution.stdout).estimated_tokens;
+                        let cost = estimate_agent_cost(
+                            &cost_config,
+                            step.resolved_executor_id(),
+                            meta.input_tokens,
+                            output_tokens,
+                        )
+                        .estimated_cost_units;
+                        state.running_cost += cost - meta.projected_cost;
+                        let _ = log_token_event(LogTokenInput {
+                            agent: step.resolved_executor_id().to_string(),
+                            model: Some(execution.executor_id.clone()),
+                            input_tokens: meta.input_tokens,
+                            output_tokens,
+                            category: "orchestrate".to_string(),
+                            notes: Some(step.id.clone()),
+                        });
 
-                            let captured = if final_status == SubAgentStatus::Ok {
-                                crate::memory::capture_from_text(
-                                    &plan.project,
-                                    &plan.task_id,
-                                    step.resolved_executor_id(),
-                                    &combined_stdout,
-                                )
-                                .map(|proposals| proposals.len())
-                                .unwrap_or(0)
-                            } else {
-                                0
-                            };
-                            if let Some(worktree) = &workspace {
-                                notes.push(format!(
+                        let final_status = if execution.status == "ok" && !verify_failed {
+                            SubAgentStatus::Ok
+                        } else {
+                            SubAgentStatus::Failed
+                        };
+
+                        let mut notes = vec![
+                            format!("command: {}", execution.command_preview),
+                            format!("stdout: {}", execution.stdout_path),
+                            format!("stderr: {}", execution.stderr_path),
+                            format!("duration_ms: {}", execution.duration_ms),
+                        ];
+                        notes.extend(verify_cmd_notes);
+
+                        let captured = if final_status == SubAgentStatus::Ok {
+                            crate::memory::capture_from_text(
+                                &plan.project,
+                                &plan.task_id,
+                                step.resolved_executor_id(),
+                                &combined_stdout,
+                            )
+                            .map(|proposals| proposals.len())
+                            .unwrap_or(0)
+                        } else {
+                            0
+                        };
+                        if let Some(worktree) = &workspace {
+                            notes.push(format!(
                                     "isolated workspace: {} (id {}, base {}, metadata {}); review accept can apply it back",
                                     worktree.path,
                                     worktree.workspace_id,
                                     worktree.base_commit,
                                     worktree.metadata_path.as_deref().unwrap_or("(not recorded)")
                                 ));
-                            }
-                            let changed_files: Vec<String> = execution
-                                .changed_files
-                                .iter()
-                                .map(|change| change.path.clone())
-                                .collect();
-                            if changed_files.is_empty() {
-                                notes.push("changed files: none (no writes detected)".to_string());
-                            } else {
+                        }
+                        let changed_files: Vec<String> = execution
+                            .changed_files
+                            .iter()
+                            .map(|change| change.path.clone())
+                            .collect();
+                        if changed_files.is_empty() {
+                            notes.push("changed files: none (no writes detected)".to_string());
+                        } else {
+                            notes.push(format!(
+                                "changed files ({}): {}",
+                                changed_files.len(),
+                                changed_files.join(", ")
+                            ));
+                            if let Some(diff_path) = &execution.diff_path {
                                 notes.push(format!(
-                                    "changed files ({}): {}",
-                                    changed_files.len(),
-                                    changed_files.join(", ")
+                                    "diff: {diff_path}{}",
+                                    if execution.diff_truncated {
+                                        " (truncated)"
+                                    } else {
+                                        ""
+                                    }
                                 ));
-                                if let Some(diff_path) = &execution.diff_path {
-                                    notes.push(format!(
-                                        "diff: {diff_path}{}",
-                                        if execution.diff_truncated {
-                                            " (truncated)"
-                                        } else {
-                                            ""
-                                        }
-                                    ));
-                                }
                             }
-                            if execution.timed_out {
-                                notes.push("coding-agent process timed out and was killed".to_string());
-                            }
-                            if !combined_stderr.trim().is_empty() {
-                                notes.push(truncate_note("stderr", &combined_stderr));
-                            }
-                            state.push(SubAgentResult {
-                                status: final_status,
-                                input_tokens: meta.input_tokens,
-                                output_tokens,
-                                output: combined_stdout,
-                                cost_units: cost,
-                                captured_proposals: captured,
-                                changed_files,
-                                diff_path: execution.diff_path.clone(),
-                                workspace: workspace.clone(),
-                                notes,
-                                ..base_result(step)
-                            });
                         }
-                        Err(error) => {
-                            state.running_cost -= meta.projected_cost;
-                            state.push(SubAgentResult {
-                                input_tokens: meta.input_tokens,
-                                ..failed(step, format!("coding-agent execution failed: {error}"))
-                            });
+                        if execution.timed_out {
+                            notes.push("coding-agent process timed out and was killed".to_string());
                         }
+                        if !combined_stderr.trim().is_empty() {
+                            notes.push(truncate_note("stderr", &combined_stderr));
+                        }
+                        state.push(SubAgentResult {
+                            status: final_status,
+                            input_tokens: meta.input_tokens,
+                            output_tokens,
+                            output: combined_stdout,
+                            cost_units: cost,
+                            captured_proposals: captured,
+                            changed_files,
+                            diff_path: execution.diff_path.clone(),
+                            workspace: workspace.clone(),
+                            notes,
+                            ..base_result(step)
+                        });
                     }
-                }
+                    Err(error) => {
+                        state.running_cost -= meta.projected_cost;
+                        state.push(SubAgentResult {
+                            input_tokens: meta.input_tokens,
+                            ..failed(step, format!("coding-agent execution failed: {error}"))
+                        });
+                    }
+                },
                 None => {
                     state.running_cost -= meta.projected_cost;
                     state.push(failed(step, "provider call produced no result".to_string()));

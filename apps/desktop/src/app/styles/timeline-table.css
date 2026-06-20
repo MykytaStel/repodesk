@@ -142,6 +142,23 @@
 .journey-why { margin: 8px 0 0; }
 .journey-next { margin: 8px 0 0; font-size: 13px; }
 .actor-badge { white-space: nowrap; }
+
+/* Finish-line guide — the manual hand-off + commit at the end of the loop. */
+.finish-guide { border-color: var(--accent-border); }
+.finish-steps {
+  margin: 8px 0 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 10px;
+}
+.finish-steps li {
+  padding-left: 4px;
+  line-height: 1.4;
+}
+.finish-steps li::marker {
+  color: var(--accent);
+  font-weight: 800;
+}
 .journey-preview { opacity: .72; }
 .journey-preview .journey-node { background: var(--surface-3); }
 

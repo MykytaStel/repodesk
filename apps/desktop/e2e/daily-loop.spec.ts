@@ -138,4 +138,41 @@ test.describe("daily loop (onboarded)", () => {
     expect(commands).toContain("git_workspace_snapshot");
     expect(commands).toContain("model_health_snapshot");
   });
+
+  test("orchestrate shows reviewable agent changes with proof", async ({ page }) => {
+    const nav = page.locator(".nav-list");
+    await nav.getByRole("button", { name: /^Orchestrate/ }).click();
+    await expect(page.getByRole("heading", { name: /Conduct sub-agents/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /agent-changed file/ })).toBeVisible();
+    await expect(page.getByText("Checks passed")).toBeVisible();
+    await expect(page.getByText("verify passed").first()).toBeVisible();
+    await expect(page.getByText("src/app.ts").first()).toBeVisible();
+    await expect(page.locator(".diff-add").getByText("+new line")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Accept 1 change/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reject changes" })).toBeVisible();
+  });
+});
+
+// Once prompts are generated, the home must spell out the manual finish loop:
+// copy the prompt → hand to your agent → capture into Memory → commit.
+test.describe("finish line (prompts ready)", () => {
+  test("guides the hand-off and commit", async ({ page }) => {
+    await installMockIpc(page, {
+      ...onboardedFixtures,
+      product_workflow_state: { ...(onboardedFixtures.product_workflow_state as object), prompts_ok: true },
+    });
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "Hand off & complete the task" })).toBeVisible();
+    // Explains the prompt is built locally (trust), and points concretely at the panel.
+    await expect(page.getByText(/assembled your prompt/)).toBeVisible();
+    await expect(page.getByText(/Copy the prompt/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Show the prompt/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Open Memory/ })).toBeVisible();
+    // The Generated Prompts panel is right below, with the local-build note.
+    await expect(page.locator("#generated-prompts")).toBeVisible();
+    await expect(page.getByText(/Built locally from your bounded context/)).toBeVisible();
+    await page.getByRole("button", { name: "Context Pack" }).click();
+    await expect(page.getByText("RepoDesk Agent Context Pack")).toBeVisible();
+    await expect(page.getByText("Operating Rules For The Agent")).toBeVisible();
+  });
 });

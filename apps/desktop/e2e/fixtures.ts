@@ -28,6 +28,15 @@ export const onboardedFixtures: CommandFixtures = {
   ],
   git_file_diff:
     "diff --git a/src/app.ts b/src/app.ts\n@@ -1,3 +1,4 @@\n context\n-old line\n+new line\n+added line\n",
+  agent_context_pack: {
+    kind: "agent_context_pack",
+    title: "Agent Context Pack",
+    path: "/tmp/repodesk-dev/RepoDesk/task-n2-e2e/agent-context-pack.md",
+    exists: true,
+    size_bytes: 640,
+    content:
+      "# RepoDesk Agent Context Pack\n\n## Task\n\n- Task id: `task-n2-e2e`\n- Title: Wire N2 E2E smoke\n\n## Operating Rules For The Agent\n\n- Stay within the task title and RepoDesk bounded context.\n",
+  },
 
   task_list: [
     {
@@ -130,6 +139,75 @@ export const onboardedFixtures: CommandFixtures = {
       total_cost_units: 0,
     },
   ],
+  orchestrate_status: {
+    run_id: "run-20260616-101500",
+    project: "RepoDesk",
+    task_id: "task-n2-e2e",
+    goal: "Wire N2 E2E smoke",
+    status: "completed",
+    dry_run: false,
+    started_at: "2026-06-16T10:15:00Z",
+    finished_at: "2026-06-16T10:16:30Z",
+    total_input_tokens: 1200,
+    total_output_tokens: 260,
+    total_cost_units: 0,
+    results: [
+      {
+        task_id: "implement",
+        agent: "codex_cli",
+        provider: "codex_cli",
+        model: "codex",
+        status: "ok",
+        output: "Updated the daily-loop smoke.",
+        input_tokens: 1200,
+        output_tokens: 260,
+        cost_units: 0,
+        captured_proposals: 0,
+        changed_files: ["src/app.ts"],
+        diff_path: "/tmp/repodesk-dev/RepoDesk/task-n2-e2e/executors/run-20260616-101500/implement.diff",
+        workspace: {
+          workspace_id: "wt-run-20260616-101500-implement",
+          run_id: "run-20260616-101500",
+          step_id: "implement",
+          path: "/tmp/repodesk-dev/RepoDesk/task-n2-e2e/worktrees/wt-run-20260616-101500-implement",
+          base_commit: "abc123",
+          created_at: "2026-06-16T10:15:00Z",
+        },
+        notes: ["verify command: pnpm test", "verify passed", "changed files (1): src/app.ts"],
+      },
+    ],
+  },
+  orchestrate_run_diffs: [
+    {
+      task_id: "implement",
+      provider: "codex_cli",
+      model: "codex",
+      changed_files: ["src/app.ts"],
+      diff_path: "/tmp/repodesk-dev/RepoDesk/task-n2-e2e/executors/run-20260616-101500/implement.diff",
+      diff:
+        "diff --git a/src/app.ts b/src/app.ts\n@@ -1,3 +1,4 @@\n context\n-old line\n+new line\n+added line\n",
+      exists: true,
+      truncated: false,
+      warnings: [],
+    },
+  ],
+  orchestrate_check_proof: {
+    run_id: "run-20260616-101500",
+    ran_checks: false,
+    success: true,
+    summary_path: "/tmp/repodesk-dev/RepoDesk/task-n2-e2e/checks-summary.md",
+    log_path: "/tmp/repodesk-dev/RepoDesk/task-n2-e2e/checks.log",
+    summary: "# Checks Summary\n\nOverall status: `passed`\n",
+    step_proofs: [
+      {
+        task_id: "implement",
+        status: "Ok",
+        changed_files: ["src/app.ts"],
+        verification_notes: ["verify command: pnpm test", "verify passed", "changed files (1): src/app.ts"],
+      },
+    ],
+    warnings: [],
+  },
   task_timeline: [
     {
       timestamp: "2026-06-16T10:16:30Z",

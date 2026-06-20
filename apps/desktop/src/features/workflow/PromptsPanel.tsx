@@ -45,11 +45,14 @@ export function PromptsPanel() {
   if (isDismissed) return null;
 
   return (
-    <section className="panel wide-panel prompts-panel">
+    <section id="generated-prompts" className="panel wide-panel prompts-panel">
       <div className="panel-title-row">
         <div>
           <p className="eyebrow">Generated Prompts</p>
           <h2>Agent hand-off</h2>
+          <p className="muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
+            Built locally from your bounded context — no AI, no tokens, nothing sent. Copy one and paste it into the agent you trust.
+          </p>
         </div>
         <div className="button-row compact-buttons">
           <ActorBadge mode="manual" />
@@ -72,8 +75,12 @@ export function PromptsPanel() {
       </div>
 
       <div className="button-row compact-buttons">
-        {["prompt_codex", "prompt_chatgpt", "prompt_review"].map((kind) => {
-          const label = kind === "prompt_codex" ? "Codex" : kind === "prompt_chatgpt" ? "ChatGPT" : "Review / Gemini";
+        {["agent_context_pack", "prompt_codex", "prompt_chatgpt", "prompt_review"].map((kind) => {
+          const label =
+            kind === "agent_context_pack" ? "Context Pack"
+            : kind === "prompt_codex" ? "Codex"
+            : kind === "prompt_chatgpt" ? "ChatGPT"
+            : "Review / Gemini";
           return (
             <button
               key={kind}

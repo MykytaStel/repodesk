@@ -80,26 +80,28 @@ pub async fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
 
     // RAG Semantic Context (Optional)
     let mut semantic_context = String::new();
-    let ollama_api = std::env::var("OLLAMA_API_BASE").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let ollama_api =
+        std::env::var("OLLAMA_API_BASE").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let provider = OllamaEmbeddingProvider {
         api_base: ollama_api,
         model: "nomic-embed-text".to_string(),
     };
-    
+
     // We try to get an embedding for the task text. If Ollama is not running, this quietly fails
     // and semantic context remains empty. We do not want to hard-crash context building.
-    if let Ok(query_emb) = provider.get_embedding(&format!("{} {}", task.config.title, task_markdown)) {
-        if let Ok(results) = vector_db::search_similar(&project.name, &query_emb, 5) {
-            if !results.is_empty() {
-                semantic_context.push_str("\n## Relevant Semantic Context (RAG)\n\n");
-                semantic_context.push_str("These snippets were semantically matched from the repository:\n\n");
-                for res in results {
-                    semantic_context.push_str(&format!(
-                        "### From `{}` (chunk {})\n```txt\n{}\n```\n\n",
-                        res.file_path, res.chunk_index, res.content
-                    ));
-                }
-            }
+    if let Ok(query_emb) =
+        provider.get_embedding(&format!("{} {}", task.config.title, task_markdown))
+        && let Ok(results) = vector_db::search_similar(&project.name, &query_emb, 5)
+        && !results.is_empty()
+    {
+        semantic_context.push_str("\n## Relevant Semantic Context (RAG)\n\n");
+        semantic_context
+            .push_str("These snippets were semantically matched from the repository:\n\n");
+        for res in results {
+            semantic_context.push_str(&format!(
+                "### From `{}` (chunk {})\n```txt\n{}\n```\n\n",
+                res.file_path, res.chunk_index, res.content
+            ));
         }
     }
 
@@ -184,14 +186,15 @@ It prefers active task data, repository map, git status, and changed file snippe
 
 pub async fn index_repository() -> RepoDeskResult<()> {
     let project = get_active_project()?;
-    let ollama_api = std::env::var("OLLAMA_API_BASE").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let ollama_api =
+        std::env::var("OLLAMA_API_BASE").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let provider = OllamaEmbeddingProvider {
         api_base: ollama_api,
         model: "nomic-embed-text".to_string(),
     };
 
     let files = crate::git_workspace::git_lines(&project.path, &["ls-files"]);
-    
+
     for relative in files {
         if !is_safe_text_path(&relative) {
             continue;
@@ -201,22 +204,25 @@ pub async fn index_repository() -> RepoDeskResult<()> {
             Ok(content) => content,
             Err(_) => continue,
         };
-        
+
         let chars: Vec<char> = content.chars().collect();
         let chunk_size = 1000;
-        let mut index = 0;
-        
         let _ = vector_db::delete_embeddings_for_file(&project.name, &relative);
 
-        for chunk in chars.chunks(chunk_size) {
+        for (index, chunk) in chars.chunks(chunk_size).enumerate() {
             let chunk_str: String = chunk.iter().collect();
             if let Ok(emb) = provider.get_embedding(&chunk_str) {
-                let _ = vector_db::insert_embedding(&project.name, &relative, index as i64, &chunk_str, &emb);
+                let _ = vector_db::insert_embedding(
+                    &project.name,
+                    &relative,
+                    index as i64,
+                    &chunk_str,
+                    &emb,
+                );
             }
-            index += 1;
         }
     }
-    
+
     Ok(())
 }
 

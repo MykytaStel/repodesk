@@ -1,4 +1,5 @@
 pub mod access;
+pub mod agent_context_pack;
 pub mod agents;
 pub mod ai_adapters;
 pub mod ai_discovery;

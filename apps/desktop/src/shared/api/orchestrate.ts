@@ -145,6 +145,36 @@ export type RunReview = {
   warnings: string[];
 };
 
+export type RunDiff = {
+  task_id: string;
+  provider: string;
+  model: string;
+  changed_files: string[];
+  diff_path?: string | null;
+  diff: string;
+  exists: boolean;
+  truncated: boolean;
+  warnings: string[];
+};
+
+export type StepProof = {
+  task_id: string;
+  status: string;
+  changed_files: string[];
+  verification_notes: string[];
+};
+
+export type CheckProof = {
+  run_id: string;
+  ran_checks: boolean;
+  success?: boolean | null;
+  summary_path?: string | null;
+  log_path?: string | null;
+  summary: string;
+  step_proofs: StepProof[];
+  warnings: string[];
+};
+
 export type LoopStatus = "succeeded" | "needs_approval" | "guardrail_blocked" | "exhausted" | "dry_run";
 
 export type LoopIteration = {
@@ -285,6 +315,14 @@ export async function orchestrationRuns(): Promise<RunSummary[]> {
 
 export async function orchestrateReview(runId: string, action: ReviewAction): Promise<RunReview> {
   return invoke("orchestrate_review", { runId, action });
+}
+
+export async function orchestrateRunDiffs(runId: string): Promise<RunDiff[]> {
+  return invoke("orchestrate_run_diffs", { runId });
+}
+
+export async function orchestrateCheckProof(runId: string, runChecks: boolean): Promise<CheckProof> {
+  return invoke("orchestrate_check_proof", { runId, runChecks });
 }
 
 export async function orchestrateWorktrees(): Promise<RunWorktreeStatus[]> {
