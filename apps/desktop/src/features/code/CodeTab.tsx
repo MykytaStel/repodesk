@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { formatNumber, stringifyPreview } from "../../shared/ui/SharedComponents";
+import { formatNumber, stringifyPreview, ActorBadge } from "../../shared/ui/SharedComponents";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { useCode } from "./useCode";
 import { callCommand } from "../../shared/api/queries";
@@ -117,6 +117,7 @@ export function CodeTab() {
             <button className="primary-button" onClick={() => runReview()} disabled={reviewing}>
               {reviewing ? "Reviewing…" : report ? "Re-run RepoPilot" : "Run RepoPilot"}
             </button>
+            <ActorBadge mode="auto" />
           </div>
           {report?.error ? (
             <div className="notice danger" style={{ marginTop: 12 }}>{report.error}</div>

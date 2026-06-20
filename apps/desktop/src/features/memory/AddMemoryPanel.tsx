@@ -1,3 +1,4 @@
+import { ActorBadge } from "../../shared/ui/SharedComponents";
 import { CATEGORIES, type Category } from "./constants";
 
 export function AddMemoryPanel({
@@ -26,6 +27,7 @@ export function AddMemoryPanel({
           <p className="eyebrow">New entry</p>
           <h2>Add memory by hand</h2>
         </div>
+        <ActorBadge mode="manual" />
       </div>
       <div className="form-stack">
         <label>

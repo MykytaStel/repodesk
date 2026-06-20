@@ -1,4 +1,5 @@
 import { ErrorState } from "../../shared/ui/ErrorState";
+import { ActorBadge } from "../../shared/ui/SharedComponents";
 import type { MemoryEntry, MemoryProposal } from "../../shared/api/memory";
 import { KIND_TONE } from "./constants";
 
@@ -28,6 +29,7 @@ export function ReviewQueue({
           <p className="eyebrow">Review queue</p>
           <h2>Pending proposals ({pendingCount})</h2>
         </div>
+        <ActorBadge mode="manual" />
       </div>
       {pendingCount === 0 ? (
         <p className="muted">Nothing to review. Capture a response or run a scan.</p>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { statusTone, getString, Toggle } from "../../shared/ui/SharedComponents";
+import { statusTone, getString, Toggle, ActorBadge } from "../../shared/ui/SharedComponents";
 import {
   credentialDelete,
   credentialSet,
@@ -138,7 +138,10 @@ export function SettingsTab() {
             <p className="eyebrow">API keys</p>
             <h2>Bring your own keys</h2>
           </div>
-          <span className={`pill ${statusTone(Boolean(dbState))}`}>DB {getString(dbState, "ok", "-")}</span>
+          <div className="button-row">
+            <ActorBadge mode="manual" />
+            <span className={`pill ${statusTone(Boolean(dbState))}`}>DB {getString(dbState, "ok", "-")}</span>
+          </div>
         </div>
         <div className="form-stack">
           <KeyField

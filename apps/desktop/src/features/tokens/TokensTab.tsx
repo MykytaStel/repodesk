@@ -1,6 +1,6 @@
 import React from "react";
 import { useState } from "react";
-import { formatNumber, formatCost, statusTone, MetricCard, UsageRows, Sparkline, EmptyState } from "../../shared/ui/SharedComponents";
+import { formatNumber, formatCost, statusTone, MetricCard, UsageRows, Sparkline, EmptyState, ActorBadge } from "../../shared/ui/SharedComponents";
 import { useTokens } from "./useTokens";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 
@@ -117,7 +117,7 @@ export function TokensTab({}: TokensTabProps) {
       )}
 
       <section className="panel wide-panel">
-        <div className="panel-title-row"><div><p className="eyebrow">Active artifacts</p><h2>Context token estimates</h2></div></div>
+        <div className="panel-title-row"><div><p className="eyebrow">Active artifacts</p><h2>Context token estimates</h2></div><ActorBadge mode="auto" /></div>
         <div className="table-list">
           {(tokens?.active_artifacts ?? []).map((artifact: any) => (
             <div className="table-row" key={artifact.kind}>
@@ -209,7 +209,7 @@ export function TokensTab({}: TokensTabProps) {
       </section>
 
       <section className="panel wide-panel">
-        <div className="panel-title-row"><div><p className="eyebrow">Manual log</p><h2>Add token usage</h2></div><button className="primary-button" onClick={() => void logTokenUsage(tokenLogForm)} disabled={isBusy}>Log usage</button></div>
+        <div className="panel-title-row"><div><p className="eyebrow">Manual log</p><h2>Add token usage</h2></div><div className="button-row"><ActorBadge mode="manual" /><button className="primary-button" onClick={() => void logTokenUsage(tokenLogForm)} disabled={isBusy}>Log usage</button></div></div>
         <div className="form-grid">
           <label>Provider<input value={tokenLogForm.provider} onChange={(event) => setTokenLogForm({ ...tokenLogForm, provider: event.target.value })} /></label>
           <label>Model<input value={tokenLogForm.model} onChange={(event) => setTokenLogForm({ ...tokenLogForm, model: event.target.value })} placeholder="optional" /></label>

@@ -1,4 +1,5 @@
 import { ErrorState } from "../../shared/ui/ErrorState";
+import { ActorBadge } from "../../shared/ui/SharedComponents";
 import type { MemoryProposal } from "../../shared/api/memory";
 import { AGENTS } from "./constants";
 
@@ -28,6 +29,7 @@ export function CapturePanel({
           <p className="eyebrow">Merge between AI</p>
           <h2>Capture from a response</h2>
         </div>
+        <ActorBadge mode="auto" />
       </div>
       <div className="form-stack">
         <label>
