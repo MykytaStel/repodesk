@@ -12,6 +12,7 @@ import { useTokens } from "../tokens/useTokens";
 import { useGit } from "../git/useGit";
 import { PromptsPanel } from "./PromptsPanel";
 import { DiffViewerModal } from "../git/DiffViewerModal";
+import { useToast } from "../../shared/ui/Toast";
 
 interface WorkflowTabProps {
   economyMode: string;
@@ -23,6 +24,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   const { tokens } = useTokens();
   const { git, dirty } = useGit();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const isBusy = isRunning;
   const lastResult = ((history[0] as any)?.result as unknown) ?? null;
   const steps = asArray(getValue(workflow, "steps"));
@@ -43,21 +45,50 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   const [selectedStep, setSelectedStep] = useState<string | undefined>(undefined);
   const [stepResult, setStepResult] = useState<StepRunResult | null>(null);
 
-  // Run a single journey step from its card and surface a human result. Keep
-  // the card focused on the step you ran so its ✓/✗ result stays visible while
-  // the stepper advances "Now" to the next step.
+  // Turn a raw command result into one human line + tone, and surface it both
+  // inline (on the step card) and as a toast — so every run, from the hero CTA
+  // or a step card, reports the same clear "what happened".
+  function reportRun(stepId: string | undefined, title: string, raw: unknown) {
+    const res = asRecord(raw);
+    const ok = res.ok === undefined ? true : Boolean(res.ok);
+    const stderr = getString(res, "stderr", "");
+    const message = (ok ? `${title} done.` : stderr || `${title} failed.`).split("\n")[0].slice(0, 180);
+    if (stepId) setStepResult({ stepId, ok, message });
+    ok ? toast.success(message) : toast.error(message);
+  }
+
+  function reportFailure(stepId: string | undefined, title: string, error: any) {
+    const message = error?.message || `${title} failed.`;
+    if (stepId) setStepResult({ stepId, ok: false, message });
+    toast.error(message);
+  }
+
+  // Run a single journey step from its card. Keep the card focused on the step
+  // you ran so its ✓/✗ result stays visible while the stepper advances "Now".
   async function runStep(actionId: string, stepId: string) {
     setSelectedStep(stepId);
     setStepResult(null);
     const title = STEP_META[stepId]?.title ?? "Step";
     try {
-      const res = asRecord(await runAction(actionId));
-      const ok = res.ok === undefined ? true : Boolean(res.ok);
-      const stderr = getString(res, "stderr", "");
-      const message = ok ? `${title} done.` : (stderr || `${title} failed.`);
-      setStepResult({ stepId, ok, message: message.split("\n")[0].slice(0, 180) });
+      reportRun(stepId, title, await runAction(actionId));
     } catch (error: any) {
-      setStepResult({ stepId, ok: false, message: error?.message || `${title} failed.` });
+      reportFailure(stepId, title, error);
+    }
+  }
+
+  // The hero "Do next safe step" — runs the brain's recommended step and reports
+  // its result on the matching step card (when one maps), like a card run.
+  async function runNextSafe() {
+    const stepId = ctaStepId;
+    const title = ctaMeta?.title ?? "Next step";
+    if (stepId) {
+      setSelectedStep(stepId);
+      setStepResult(null);
+    }
+    try {
+      reportRun(stepId, title, await doNextSafeStep());
+    } catch (error: any) {
+      reportFailure(stepId, title, error);
     }
   }
 
@@ -115,8 +146,9 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
       await commitChanges(commitMessage.trim());
       setCommitMessage("");
       setConfirmCommit(false);
+      toast.success("Committed your changes.");
     } catch {
-      // commitError is surfaced from the hook below.
+      // commitError is surfaced inline from the hook below.
     }
   }
 
@@ -314,7 +346,7 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
         <h1>{getString(workflow, "primary_cta", nextAction?.label ?? "One safe next step")}</h1>
         <p className="lead">{nextAction?.description ?? "Connect a project and task, then build bounded context before model usage."}</p>
         <div className="button-row">
-          <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy || needsOnboarding}>{nextAction?.label ?? "Do next safe step"}</button>
+          <button className="primary-button" onClick={() => void runNextSafe()} disabled={isBusy || needsOnboarding}>{nextAction?.label ?? "Do next safe step"}</button>
           <button className="ghost-button" onClick={() => void queryClient.invalidateQueries()} disabled={isBusy}>Refresh workflow</button>
         </div>
         {!needsOnboarding && ctaMeta && (

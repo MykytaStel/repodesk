@@ -77,6 +77,13 @@ test.describe("daily loop (onboarded)", () => {
     }
   });
 
+  test("the hero next-step CTA reports its result too", async ({ page }) => {
+    // Clicking the big "do next safe step" CTA surfaces the same human result
+    // on the matching step card as running it from the card would.
+    await page.getByRole("button", { name: "Build bounded context" }).click();
+    await expect(page.locator(".journey-detail").getByText(/Smart Context done\./)).toBeVisible();
+  });
+
   test("a journey step can be run from its card with a result", async ({ page }) => {
     // The focused (current) step card offers a run action…
     const detail = page.locator(".journey-detail");
