@@ -112,9 +112,10 @@ checked explicitly (never on launch).
   (`orchestrator::review`: stage/discard in-place changesets and safely apply isolated worktree
   changes back on accept), CLI auth tri-state (artifact-existence check, never reads contents),
   required isolated git worktrees for coding-agent runs (`worktree.rs`),
+  worktree recovery/cleanup UI + CLI list/remove for managed isolated worktrees,
   OS keychain credential store
   (`credentials.rs`: `CredentialResolver` + `keyring`; `credential_*` Tauri cmds return only
   masked hints), and the OpenAI Responses API (`/v1/responses`). **Open (ordered):** CLI auth
-  depth, worktree recovery/cleanup UI, migrate legacy plaintext keys to the keychain, inline diff
-  viewer + cross-model changeset review.
+  depth, migrate legacy plaintext keys to the keychain, inline diff viewer + cross-model changeset
+  review.
 </content>

@@ -9,7 +9,9 @@ use repodesk_core::orchestrator::{
     ReviewAction, RunOptions, RunReview, RunSummary, review_run,
 };
 use repodesk_core::persistence::event_journal::{self, EventEntry};
+use repodesk_core::projects::get_active_project;
 use repodesk_core::tasks::show_active_task;
+use repodesk_core::worktree::{RunWorktreeCleanup, RunWorktreeStatus};
 
 use super::ErrorPayload;
 
@@ -144,6 +146,31 @@ pub fn coding_agent_executors() -> Result<Vec<ExecutorAvailability>, ErrorPayloa
 pub fn orchestrate_review(run_id: String, action: String) -> Result<RunReview, ErrorPayload> {
     let action = ReviewAction::from_label(&action)?;
     Ok(review_run(&run_id, action)?)
+}
+
+#[tauri::command]
+pub fn orchestrate_worktrees() -> Result<Vec<RunWorktreeStatus>, ErrorPayload> {
+    let project = get_active_project()?;
+    let task = show_active_task()?;
+    let parent = repodesk_core::worktree::worktrees_parent(&task.config.run_dir);
+    Ok(repodesk_core::worktree::list_run_worktree_statuses(
+        project.path.as_path(),
+        &parent,
+    )?)
+}
+
+#[tauri::command]
+pub fn orchestrate_cleanup_worktree(
+    workspace_id: String,
+) -> Result<RunWorktreeCleanup, ErrorPayload> {
+    let project = get_active_project()?;
+    let task = show_active_task()?;
+    let parent = repodesk_core::worktree::worktrees_parent(&task.config.run_dir);
+    Ok(repodesk_core::worktree::cleanup_run_worktree(
+        project.path.as_path(),
+        &parent,
+        &workspace_id,
+    )?)
 }
 
 #[tauri::command]

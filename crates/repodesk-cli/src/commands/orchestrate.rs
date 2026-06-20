@@ -6,6 +6,7 @@ use repodesk_core::orchestrator::{
     self, AgentWorkspacePolicy, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun,
     RunOptions, SubAgentTask, plan_has_paid_step,
 };
+use repodesk_core::worktree::{RunWorktreeCleanup, RunWorktreeStatus};
 
 pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
     match command {
@@ -83,8 +84,32 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
             let review = orchestrator::review_run(&run_id, action)?;
             print!("{}", format_review(&review));
         }
+        OrchestrateCommand::Worktrees => {
+            let (project_path, parent) = active_worktree_context()?;
+            let worktrees = repodesk_core::worktree::list_run_worktree_statuses(
+                project_path.as_path(),
+                parent.as_path(),
+            )?;
+            print!("{}", format_worktrees(&worktrees));
+        }
+        OrchestrateCommand::CleanupWorktree { workspace_id } => {
+            let (project_path, parent) = active_worktree_context()?;
+            let cleanup = repodesk_core::worktree::cleanup_run_worktree(
+                project_path.as_path(),
+                parent.as_path(),
+                &workspace_id,
+            )?;
+            print!("{}", format_worktree_cleanup(&cleanup));
+        }
     }
     Ok(())
+}
+
+fn active_worktree_context() -> Result<(std::path::PathBuf, std::path::PathBuf)> {
+    let project = repodesk_core::projects::get_active_project()?;
+    let task = repodesk_core::tasks::show_active_task()?;
+    let parent = repodesk_core::worktree::worktrees_parent(&task.config.run_dir);
+    Ok((project.path, parent))
 }
 
 fn format_review(review: &repodesk_core::orchestrator::RunReview) -> String {
@@ -104,6 +129,49 @@ fn format_review(review: &repodesk_core::orchestrator::RunReview) -> String {
     }
     for warning in &review.warnings {
         out.push_str(&format!("  ! {warning}\n"));
+    }
+    out
+}
+
+fn format_worktrees(worktrees: &[RunWorktreeStatus]) -> String {
+    if worktrees.is_empty() {
+        return "No RepoDesk-managed isolated worktrees for the active task.\n".to_string();
+    }
+
+    let mut out = String::from("RepoDesk-managed isolated worktrees:\n");
+    for worktree in worktrees {
+        let run = worktree.run_id.as_deref().unwrap_or("unknown run");
+        let step = worktree.step_id.as_deref().unwrap_or("unknown step");
+        let state = if worktree.dirty { "dirty" } else { "clean" };
+        out.push_str(&format!(
+            "  - {} ({run}/{step}, {state}, {} changed)\n",
+            worktree.workspace_id,
+            worktree.changed_files.len()
+        ));
+        out.push_str(&format!("    path: {}\n", worktree.path));
+        if !worktree.changed_files.is_empty() {
+            out.push_str(&format!(
+                "    changed: {}\n",
+                worktree.changed_files.join(", ")
+            ));
+        }
+        for warning in &worktree.warnings {
+            out.push_str(&format!("    ! {warning}\n"));
+        }
+    }
+    out
+}
+
+fn format_worktree_cleanup(cleanup: &RunWorktreeCleanup) -> String {
+    let mut out = format!(
+        "Removed worktree {} at {}\n",
+        cleanup.workspace_id, cleanup.path
+    );
+    if cleanup.metadata_removed {
+        out.push_str("Removed recovery metadata.\n");
+    }
+    for warning in &cleanup.warnings {
+        out.push_str(&format!("! {warning}\n"));
     }
     out
 }

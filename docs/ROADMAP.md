@@ -96,8 +96,10 @@ Scope:
 - CLI auth tri-state (artifact-existence check), required isolated git worktrees for coding-agent
   runs, OS keychain credential store (`credentials.rs` + `keyring`, masked-only to UI), OpenAI
   Responses API (`/v1/responses`). ✅
-- Next (ordered): CLI auth depth, worktree recovery/cleanup UI, migrate legacy plaintext keys
-  to the keychain, inline diff viewer + cross-model changeset review.
+- Worktree recovery/cleanup: desktop Recovery panel + CLI list/remove for managed isolated
+  worktrees, with dirty status, metadata, and explicit cleanup only. ✅
+- Next (ordered): CLI auth depth, migrate legacy plaintext keys to the keychain, inline diff
+  viewer + cross-model changeset review.
 
 ## Development priorities
 

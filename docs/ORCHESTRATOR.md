@@ -79,7 +79,9 @@ the main tree is dirty. Worktree creation is fail-closed: if RepoDesk cannot cre
 workspace, the step is blocked and no agent process is launched. Workspaces use a per-run/per-step
 collision-resistant id, are never automatically force-removed or reused, and write recovery
 metadata before launch. The worktree is left in place for review; cleanup
-(`worktree::remove_run_worktree`) is an explicit human action.
+(`worktree::cleanup_run_worktree` / `remove_run_worktree`) is an explicit human action.
+RepoDesk surfaces managed worktrees in the desktop Recovery panel and via CLI so interrupted or
+rejected workspaces can be inspected and removed deliberately.
 
 **Changeset capture.** Around each run the executor snapshots `git status --porcelain` before
 and after, so a write-capable run produces a reviewable changeset, not just stdout:
@@ -102,6 +104,12 @@ absolute), and **never commits, pushes, or merges**. Surfaced as
 `repodesk orchestrate review <run_id> <accept|reject>` (CLI), the `orchestrate_review` Tauri
 command, and the desktop run panel.
 
+**Worktree recovery / cleanup.** `worktree::list_run_worktree_statuses` lists only
+RepoDesk-managed worktrees rooted under the active task's run directory. Each row includes run/step
+metadata, path, dirty state, and changed-file names. Cleanup is by `workspace_id`, verifies the path
+is still a git-tracked worktree under RepoDesk's managed parent, then runs `git worktree remove
+--force` and removes the recovery metadata sidecar. It never accepts an arbitrary filesystem path.
+
 ### Gates (every step, before any spend)
 - **Safety** — `safety::scan_text` blocks if secret-like content is in the outgoing context.
 - **Budget** — `evaluate_context` blocks contexts above the configured token block limit.
@@ -118,6 +126,8 @@ repodesk orchestrate run [--goal "..."] [--max-cost N] --yes
 repodesk orchestrate status                              # most recent run for the active task
 repodesk orchestrate show <run_id>
 repodesk orchestrate review <run_id> accept|reject       # stage/apply or reject a changeset
+repodesk orchestrate worktrees                           # list managed isolated worktrees
+repodesk orchestrate cleanup-worktree <workspace_id>     # remove a managed worktree
 ```
 
 Offline preview (no network, no keys):

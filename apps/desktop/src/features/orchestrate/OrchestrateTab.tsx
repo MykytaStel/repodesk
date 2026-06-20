@@ -12,6 +12,7 @@ import {
   type ReviewAction,
   type RunReview,
   type RunSummary,
+  type RunWorktreeStatus,
   type SubAgentResult,
   type SubAgentStatus,
   type TaskEvent,
@@ -113,6 +114,90 @@ function ExecutorStatusPanel({
               </p>
             </div>
           ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WorktreeRecoveryPanel({
+  worktrees,
+  loading,
+  cleaningWorkspace,
+  onCleanup,
+}: {
+  worktrees: RunWorktreeStatus[];
+  loading: boolean;
+  cleaningWorkspace?: string | null;
+  onCleanup: (worktree: RunWorktreeStatus) => void;
+}) {
+  if (!loading && worktrees.length === 0) return null;
+
+  return (
+    <section className="panel wide-panel">
+      <div className="panel-title-row compact">
+        <div>
+          <p className="eyebrow">Recovery</p>
+          <h2>Isolated worktrees</h2>
+        </div>
+        {loading ? <span className="pill neutral">loading</span> : <span className="pill">{worktrees.length}</span>}
+      </div>
+      {worktrees.length === 0 ? (
+        <p className="muted">Checking managed worktrees...</p>
+      ) : (
+        <div className="table-list" style={{ marginTop: 8 }}>
+          {worktrees.map((worktree) => {
+            const changedPreview = worktree.changed_files.slice(0, 6).join(", ");
+            const extraChanged = worktree.changed_files.length - 6;
+            const cleanupBusy = cleaningWorkspace === worktree.workspace_id;
+            return (
+              <div className="table-row flex-col items-start gap-sm" key={worktree.workspace_id}>
+                <div className="w-full flex justify-between items-center">
+                  <strong>
+                    {worktree.run_id ?? "unknown run"}
+                    {worktree.step_id ? ` / ${worktree.step_id}` : ""}
+                  </strong>
+                  <span className={`pill ${worktree.dirty ? "warn" : "ok"}`}>
+                    {worktree.dirty ? "dirty" : "clean"}
+                  </span>
+                </div>
+                <div className="row-meta">
+                  <span>{worktree.workspace_id}</span>
+                  <span>{worktree.git_tracked ? "git tracked" : "not tracked"}</span>
+                  <span>{worktree.changed_files.length} changed</span>
+                  {worktree.created_at ? <span>{fmtTime(worktree.created_at)}</span> : null}
+                </div>
+                <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                  {worktree.path}
+                </p>
+                {worktree.changed_files.length > 0 ? (
+                  <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                    Changed files: {changedPreview}
+                    {extraChanged > 0 ? `, +${extraChanged} more` : ""}
+                  </p>
+                ) : null}
+                {worktree.warnings.map((warning) => (
+                  <p className="muted" key={warning} style={{ fontSize: 12, margin: 0, color: "#d29922" }}>
+                    {warning}
+                  </p>
+                ))}
+                <div className="button-row compact-buttons">
+                  <button
+                    className="tiny-button"
+                    onClick={() => onCleanup(worktree)}
+                    disabled={!worktree.removable || cleanupBusy}
+                    title={
+                      worktree.removable
+                        ? "Remove this managed worktree with git worktree remove --force"
+                        : "This worktree is not removable from RepoDesk"
+                    }
+                  >
+                    {cleanupBusy ? "Cleaning..." : "Cleanup worktree"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
@@ -382,12 +467,18 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const [targetModelCombo, setTargetModelCombo] = useState<string>("auto");
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
   const [reviewResult, setReviewResult] = useState<RunReview | null>(null);
+  const [cleaningWorkspace, setCleaningWorkspace] = useState<string | null>(null);
 
   const busy = orchestrate.plan.isPending || orchestrate.run.isPending || orchestrate.loop.isPending;
   // A run just executed wins; otherwise a history selection; otherwise the latest run.
   const currentRun = orchestrate.run.data ?? selectedRun ?? orchestrate.status;
   const error =
-    orchestrate.run.error ?? orchestrate.plan.error ?? orchestrate.showRun.error ?? orchestrate.loop.error;
+    orchestrate.run.error ??
+    orchestrate.plan.error ??
+    orchestrate.showRun.error ??
+    orchestrate.loop.error ??
+    orchestrate.review.error ??
+    orchestrate.cleanupWorktree.error;
 
   async function handleReview(action: ReviewAction) {
     if (!currentRun) return;
@@ -396,6 +487,19 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       setReviewResult(result);
     } catch {
       // surfaced via orchestrate.review.error / the Error panel
+    }
+  }
+
+  async function handleCleanupWorktree(worktree: RunWorktreeStatus) {
+    const changed = worktree.changed_files.length;
+    const suffix = changed > 0 ? ` It has ${changed} changed file${changed === 1 ? "" : "s"}.` : "";
+    const ok = window.confirm(`Remove worktree ${worktree.workspace_id}?${suffix}`);
+    if (!ok) return;
+    setCleaningWorkspace(worktree.workspace_id);
+    try {
+      await orchestrate.cleanupWorktree.mutateAsync(worktree.workspace_id);
+    } finally {
+      setCleaningWorkspace(null);
     }
   }
 
@@ -593,6 +697,13 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       )}
 
       <ExecutorStatusPanel executors={orchestrate.executors} loading={orchestrate.executorsLoading} />
+
+      <WorktreeRecoveryPanel
+        worktrees={orchestrate.worktrees}
+        loading={orchestrate.worktreesLoading}
+        cleaningWorkspace={cleaningWorkspace}
+        onCleanup={(worktree) => void handleCleanupWorktree(worktree)}
+      />
 
       {orchestrate.plan.data && <PlanPanel plan={orchestrate.plan.data} />}
 

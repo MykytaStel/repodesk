@@ -48,6 +48,30 @@ export type RunWorkspace = {
   metadata_path?: string | null;
 };
 
+export type RunWorktreeStatus = {
+  workspace_id: string;
+  run_id?: string | null;
+  step_id?: string | null;
+  path: string;
+  base_commit?: string | null;
+  created_at?: string | null;
+  metadata_path?: string | null;
+  git_tracked: boolean;
+  exists: boolean;
+  dirty: boolean;
+  changed_files: string[];
+  removable: boolean;
+  warnings: string[];
+};
+
+export type RunWorktreeCleanup = {
+  workspace_id: string;
+  path: string;
+  removed: boolean;
+  metadata_removed: boolean;
+  warnings: string[];
+};
+
 export type OrchestrationPlan = {
   project: string;
   task_id: string;
@@ -245,6 +269,14 @@ export async function orchestrationRuns(): Promise<RunSummary[]> {
 
 export async function orchestrateReview(runId: string, action: ReviewAction): Promise<RunReview> {
   return invoke("orchestrate_review", { runId, action });
+}
+
+export async function orchestrateWorktrees(): Promise<RunWorktreeStatus[]> {
+  return invoke("orchestrate_worktrees");
+}
+
+export async function orchestrateCleanupWorktree(workspaceId: string): Promise<RunWorktreeCleanup> {
+  return invoke("orchestrate_cleanup_worktree", { workspaceId });
 }
 
 export async function taskTimeline(): Promise<TaskEvent[]> {

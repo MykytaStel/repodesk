@@ -67,6 +67,7 @@ export const queryKeys = {
     runs: ["orchestration_runs"] as const,
     timeline: ["task_timeline"] as const,
     executors: ["coding_agent_executors"] as const,
+    worktrees: ["orchestrate_worktrees"] as const,
   },
   outcomes: {
     list: ["outcomes_list"] as const,

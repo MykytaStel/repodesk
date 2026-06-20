@@ -40,7 +40,7 @@ RepoDesk
 | Paid/agent confirmation | `approve_paid` + `approve_coding_agents` are separate gates (CLI `--yes`, desktop switches) | ✅ implemented |
 | Desktop agent status panel | "Executor availability" panel lists binary/path/status/version | ✅ implemented |
 | Changed-file/diff in agent result | `CodingAgentExecution` captures pre/post porcelain delta + unified diff + receipt path; surfaced on `SubAgentResult` and the run panel | ✅ implemented |
-| Worktree lifecycle | `worktree.rs`: create/list/remove isolated per-step worktrees; runner requires isolation for approved coding-agent runs | ✅ implemented |
+| Worktree lifecycle | `worktree.rs`: create/list/status/remove isolated per-step worktrees; runner requires isolation for approved coding-agent runs | ✅ implemented |
 | Secure credential store | `credentials.rs`: `CredentialResolver` + OS keychain (`keyring`) + env fallback; Tauri set/delete/status; never returns the full key | ✅ implemented |
 | OpenAI Responses API | `openai.rs` migrated to `/v1/responses` (input/instructions/max_output_tokens/reasoning.effort) | ✅ implemented |
 | Review / accept-reject flow | `orchestrator::review` stages/discards in-place changesets and safely applies isolated worktree changes back on accept | ✅ implemented |
@@ -103,20 +103,25 @@ RepoDesk
 13. **OpenAI Responses API** — `openai.rs` now calls `/v1/responses`
     (`input`/`instructions`/`max_output_tokens`, `reasoning.effort` when thinking is
     set), preserving usage extraction, rate-limit handling, and model selection.
+14. **Worktree recovery/cleanup UI** — RepoDesk lists managed isolated worktrees for
+    the active task in the desktop Recovery panel and via
+    `repodesk orchestrate worktrees`. The status includes run/step metadata, path,
+    dirty state, changed-file names, and warnings. Cleanup is explicit via the UI or
+    `repodesk orchestrate cleanup-worktree <workspace_id>`, validates the workspace
+    id/path against RepoDesk's managed parent and git's worktree registry, then
+    removes the worktree plus recovery metadata.
 
 ## Remaining gaps (ordered)
 
 1. **CLI auth depth** — upgrade the existence-based `authenticated` signal to a real
    tri-state once a documented, side-effect-free status command exists per CLI.
-2. **Worktree recovery/cleanup UI** — list interrupted or rejected isolated worktrees,
-   show their metadata, and remove them only on explicit user action.
-3. **Credential-store migration** — move the legacy plaintext provider-settings keys
+2. **Credential-store migration** — move the legacy plaintext provider-settings keys
    into the keychain and stop persisting them in app files.
-4. **Review depth** — inline diff viewer for the captured `diff_path` and an optional
+3. **Review depth** — inline diff viewer for the captured `diff_path` and an optional
    cross-model review of the changeset before the accept/reject decision.
-5. **Local-runtime ownership decision** — keep Ollama/LM Studio as probe-only, or let
+4. **Local-runtime ownership decision** — keep Ollama/LM Studio as probe-only, or let
    RepoDesk manage their process lifecycle. Current behavior is probe-only.
-6. **Deprecation warnings** — user-visible warnings for legacy route aliases
+5. **Deprecation warnings** — user-visible warnings for legacy route aliases
    (`preferred_patch_provider = "codex"` is normalized to `codex_cli` on read).
 
 ## Verification

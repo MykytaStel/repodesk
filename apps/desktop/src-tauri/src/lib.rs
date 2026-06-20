@@ -296,6 +296,8 @@ pub fn run() {
             commands::orchestrate_status,
             commands::orchestrate_show,
             commands::orchestrate_review,
+            commands::orchestrate_worktrees,
+            commands::orchestrate_cleanup_worktree,
             commands::orchestration_runs,
             commands::credential_set,
             commands::credential_delete,

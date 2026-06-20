@@ -600,6 +600,10 @@ pub enum OrchestrateCommand {
         /// `accept` to stage/apply the changes, `reject` to discard or leave them isolated.
         action: String,
     },
+    /// List RepoDesk-managed isolated worktrees for the active task.
+    Worktrees,
+    /// Remove a RepoDesk-managed isolated worktree by workspace id.
+    CleanupWorktree { workspace_id: String },
 }
 
 #[derive(Debug, Subcommand)]

@@ -37,6 +37,12 @@ export function useOrchestrate() {
     enabled: ready,
   });
 
+  const worktrees = useQuery({
+    queryKey: queryKeys.orchestrate.worktrees,
+    queryFn: () => (ready ? api.orchestrateWorktrees() : Promise.resolve([])),
+    enabled: ready,
+  });
+
   const plan = useMutation({
     mutationFn: (v: { goal: string; overrideProvider?: string; overrideModel?: string }) =>
       api.orchestratePlan(v.goal || undefined, v.overrideProvider, v.overrideModel),
@@ -79,6 +85,17 @@ export function useOrchestrate() {
     mutationFn: (v: { runId: string; action: api.ReviewAction }) =>
       api.orchestrateReview(v.runId, v.action),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.worktrees });
+    },
+  });
+
+  const cleanupWorktree = useMutation({
+    mutationFn: (workspaceId: string) => api.orchestrateCleanupWorktree(workspaceId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.worktrees });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.status });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.runs });
       queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
     },
   });
@@ -127,10 +144,13 @@ export function useOrchestrate() {
     timeline: timeline.data ?? [],
     executors: executors.data ?? [],
     executorsLoading: executors.isLoading,
+    worktrees: worktrees.data ?? [],
+    worktreesLoading: worktrees.isLoading,
     plan,
     run,
     showRun,
     review,
+    cleanupWorktree,
     loop,
   };
 }

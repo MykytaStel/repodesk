@@ -12,7 +12,7 @@
 //! Nothing here commits, pushes, merges, or auto-cleans — the human stays the
 //! operator. Lifecycle code lives here, never inside a provider/executor client.
 
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -22,6 +22,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
+use crate::git_workspace::parse_porcelain_status;
 
 /// A linked worktree created for one orchestration run.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -38,6 +39,37 @@ pub struct RunWorktree {
     /// Recovery metadata persisted before the agent process is launched.
     #[serde(default)]
     pub metadata_path: Option<String>,
+}
+
+/// UI/recovery view of one RepoDesk-managed run worktree.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunWorktreeStatus {
+    pub workspace_id: String,
+    pub run_id: Option<String>,
+    pub step_id: Option<String>,
+    /// Absolute path to the worktree root.
+    pub path: String,
+    pub base_commit: Option<String>,
+    pub created_at: Option<String>,
+    pub metadata_path: Option<String>,
+    /// True when `git worktree list` still tracks this path.
+    pub git_tracked: bool,
+    pub exists: bool,
+    pub dirty: bool,
+    pub changed_files: Vec<String>,
+    /// True when RepoDesk can safely remove this worktree by workspace id.
+    pub removable: bool,
+    pub warnings: Vec<String>,
+}
+
+/// Result of explicitly removing a run worktree.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RunWorktreeCleanup {
+    pub workspace_id: String,
+    pub path: String,
+    pub removed: bool,
+    pub metadata_removed: bool,
+    pub warnings: Vec<String>,
 }
 
 static WORKTREE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -105,7 +137,9 @@ fn create_worktree_with_workspace_id(
 /// Remove a previously created run worktree (forced — it may hold the agent's
 /// uncommitted edits, which is the caller's decision to discard).
 pub fn remove_run_worktree(project_path: &Path, worktree: &RunWorktree) -> RepoDeskResult<()> {
-    remove_worktree_path(project_path, Path::new(&worktree.path))
+    remove_worktree_path(project_path, Path::new(&worktree.path)).and_then(|_| {
+        remove_metadata_file(worktree.metadata_path.as_deref().map(Path::new)).map(|_| ())
+    })
 }
 
 fn remove_worktree_path(project_path: &Path, path: &Path) -> RepoDeskResult<()> {
@@ -161,25 +195,102 @@ fn persist_recovery_metadata(parent_dir: &Path, worktree: &mut RunWorktree) -> R
 /// Absolute worktree paths git currently tracks for the project (excluding the
 /// main working tree). Useful for recovering or cleaning up interrupted runs.
 pub fn list_run_worktrees(project_path: &Path) -> RepoDeskResult<Vec<String>> {
-    let output = git_capture(project_path, &["worktree", "list", "--porcelain"])?;
+    let all = git_worktree_paths(project_path)?;
     let main = project_path
         .canonicalize()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| project_path.display().to_string());
-    let mut paths = Vec::new();
-    for line in output.lines() {
-        if let Some(rest) = line.strip_prefix("worktree ") {
-            let candidate = rest.trim().to_string();
-            let canonical = Path::new(&candidate)
-                .canonicalize()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| candidate.clone());
-            if canonical != main {
-                paths.push(candidate);
-            }
-        }
+    Ok(all
+        .into_iter()
+        .filter(|candidate| canonical_display(candidate) != main)
+        .map(|path| path.display().to_string())
+        .collect())
+}
+
+/// RepoDesk-managed run worktrees for the active task parent, including dirty
+/// state and metadata needed for recovery/cleanup UI.
+pub fn list_run_worktree_statuses(
+    project_path: &Path,
+    parent_dir: &Path,
+) -> RepoDeskResult<Vec<RunWorktreeStatus>> {
+    if !parent_dir.exists() {
+        return Ok(Vec::new());
     }
-    Ok(paths)
+
+    let mut statuses = Vec::new();
+    for path in git_worktree_paths(project_path)? {
+        if canonical_display(&path) == canonical_display(project_path) {
+            continue;
+        }
+        if !is_managed_worktree_path(parent_dir, &path) {
+            continue;
+        }
+        statuses.push(inspect_run_worktree(parent_dir, &path, true));
+    }
+
+    statuses.sort_by(|a, b| {
+        b.created_at
+            .cmp(&a.created_at)
+            .then_with(|| a.workspace_id.cmp(&b.workspace_id))
+    });
+    Ok(statuses)
+}
+
+/// Explicitly remove a RepoDesk-managed run worktree by workspace id. The id is
+/// resolved under `parent_dir`; arbitrary paths and user-created git worktrees
+/// are rejected.
+pub fn cleanup_run_worktree(
+    project_path: &Path,
+    parent_dir: &Path,
+    workspace_id: &str,
+) -> RepoDeskResult<RunWorktreeCleanup> {
+    let workspace_id = validate_workspace_id(workspace_id)?.to_string();
+    if !parent_dir.exists() {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!("worktree parent does not exist: {}", parent_dir.display()),
+        });
+    }
+
+    let metadata_path = parent_dir.join(format!("{workspace_id}.json"));
+    let metadata = read_metadata(&metadata_path, &mut Vec::new());
+    let path = metadata
+        .as_ref()
+        .map(|worktree| PathBuf::from(&worktree.path))
+        .unwrap_or_else(|| parent_dir.join(&workspace_id));
+
+    if !is_managed_worktree_path(parent_dir, &path) {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "refusing to remove worktree outside RepoDesk's managed parent: {}",
+                path.display()
+            ),
+        });
+    }
+
+    let tracked = git_worktree_paths(project_path)?;
+    if !tracked.iter().any(|candidate| same_path(candidate, &path)) {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "worktree is not tracked by git for the active project: {}",
+                path.display()
+            ),
+        });
+    }
+
+    let path_display = path.display().to_string();
+    git_capture(
+        project_path,
+        &["worktree", "remove", "--force", &path_display],
+    )?;
+    let metadata_removed = remove_metadata_file(Some(&metadata_path))?;
+
+    Ok(RunWorktreeCleanup {
+        workspace_id,
+        path: path_display,
+        removed: true,
+        metadata_removed,
+        warnings: Vec::new(),
+    })
 }
 
 /// Run a git subcommand (argv-only, no shell) in `project_path`, returning stdout
@@ -203,6 +314,153 @@ fn git_capture(project_path: &Path, args: &[&str]) -> RepoDeskResult<String> {
             ),
         })
     }
+}
+
+fn git_worktree_paths(project_path: &Path) -> RepoDeskResult<Vec<PathBuf>> {
+    let output = git_capture(project_path, &["worktree", "list", "--porcelain"])?;
+    Ok(output
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .collect())
+}
+
+fn inspect_run_worktree(parent_dir: &Path, path: &Path, git_tracked: bool) -> RunWorktreeStatus {
+    let mut warnings = Vec::new();
+    let workspace_id = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let metadata_path = parent_dir.join(format!("{workspace_id}.json"));
+    let metadata = read_metadata(&metadata_path, &mut warnings);
+    if let Some(worktree) = &metadata {
+        if !same_path(Path::new(&worktree.path), path) {
+            warnings.push(format!(
+                "metadata path points to {}, but git tracks {}",
+                worktree.path,
+                path.display()
+            ));
+        }
+        if worktree.workspace_id != workspace_id {
+            warnings.push(format!(
+                "metadata workspace id is {}, but path is {}",
+                worktree.workspace_id, workspace_id
+            ));
+        }
+    }
+
+    let exists = path.exists();
+    let mut changed_files = Vec::new();
+    if exists {
+        match git_capture(path, &["status", "--porcelain=v1"]) {
+            Ok(raw_status) => {
+                changed_files = parse_porcelain_status(&raw_status)
+                    .into_iter()
+                    .map(|change| change.path)
+                    .collect();
+            }
+            Err(error) => warnings.push(format!("failed to read worktree status: {error}")),
+        }
+    } else {
+        warnings.push("worktree path no longer exists".to_string());
+    }
+
+    let removable = git_tracked
+        && exists
+        && is_managed_worktree_path(parent_dir, path)
+        && validate_workspace_id(&workspace_id).is_ok();
+    RunWorktreeStatus {
+        workspace_id,
+        run_id: metadata.as_ref().map(|worktree| worktree.run_id.clone()),
+        step_id: metadata.as_ref().map(|worktree| worktree.step_id.clone()),
+        path: path.display().to_string(),
+        base_commit: metadata
+            .as_ref()
+            .map(|worktree| worktree.base_commit.clone()),
+        created_at: metadata
+            .as_ref()
+            .map(|worktree| worktree.created_at.clone()),
+        metadata_path: if metadata_path.exists() {
+            Some(metadata_path.display().to_string())
+        } else {
+            None
+        },
+        git_tracked,
+        exists,
+        dirty: !changed_files.is_empty(),
+        changed_files,
+        removable,
+        warnings,
+    }
+}
+
+fn read_metadata(metadata_path: &Path, warnings: &mut Vec<String>) -> Option<RunWorktree> {
+    if !metadata_path.exists() {
+        return None;
+    }
+    match fs::read_to_string(metadata_path)
+        .ok()
+        .and_then(|content| serde_json::from_str::<RunWorktree>(&content).ok())
+    {
+        Some(worktree) => Some(worktree),
+        None => {
+            warnings.push(format!(
+                "failed to read worktree metadata: {}",
+                metadata_path.display()
+            ));
+            None
+        }
+    }
+}
+
+fn remove_metadata_file(metadata_path: Option<&Path>) -> RepoDeskResult<bool> {
+    let Some(metadata_path) = metadata_path else {
+        return Ok(false);
+    };
+    if !metadata_path.exists() {
+        return Ok(false);
+    }
+    fs::remove_file(metadata_path)?;
+    Ok(true)
+}
+
+fn validate_workspace_id(value: &str) -> RepoDeskResult<&str> {
+    let value = value.trim();
+    let safe = !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_'));
+    if safe {
+        Ok(value)
+    } else {
+        Err(RepoDeskError::RoutingFailed {
+            detail: format!("unsafe workspace id: {value}"),
+        })
+    }
+}
+
+fn is_managed_worktree_path(parent_dir: &Path, path: &Path) -> bool {
+    let Ok(parent) = parent_dir.canonicalize() else {
+        return false;
+    };
+    let Ok(candidate) = path.canonicalize() else {
+        return false;
+    };
+    candidate.starts_with(parent)
+}
+
+fn same_path(left: &Path, right: &Path) -> bool {
+    canonical_display(left) == canonical_display(right)
+}
+
+fn canonical_display(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .display()
+        .to_string()
 }
 
 /// Convenience for callers that root run worktrees under a task's run dir.
@@ -268,6 +526,7 @@ mod tests {
 
         remove_run_worktree(repo.path(), &wt).unwrap();
         assert!(!Path::new(&wt.path).exists());
+        assert!(!Path::new(metadata_path).exists());
     }
 
     #[test]
@@ -291,6 +550,65 @@ mod tests {
         assert!(!repo.path().join("new.txt").exists());
 
         remove_run_worktree(repo.path(), &wt).unwrap();
+    }
+
+    #[test]
+    fn list_status_reports_dirty_managed_worktree() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+        let wt = create_run_worktree(repo.path(), parent.path(), "run-3", "implement").unwrap();
+        std::fs::write(Path::new(&wt.path).join("seed.txt"), "seed\nagent\n").unwrap();
+        std::fs::write(Path::new(&wt.path).join("new.txt"), "new\n").unwrap();
+
+        let statuses = list_run_worktree_statuses(repo.path(), parent.path()).unwrap();
+        assert_eq!(statuses.len(), 1);
+        let status = &statuses[0];
+        assert_eq!(status.workspace_id, wt.workspace_id);
+        assert_eq!(status.run_id.as_deref(), Some("run-3"));
+        assert_eq!(status.step_id.as_deref(), Some("implement"));
+        assert!(status.git_tracked);
+        assert!(status.exists);
+        assert!(status.dirty);
+        assert!(status.removable);
+        assert!(status.changed_files.iter().any(|path| path == "seed.txt"));
+        assert!(status.changed_files.iter().any(|path| path == "new.txt"));
+
+        remove_run_worktree(repo.path(), &wt).unwrap();
+    }
+
+    #[test]
+    fn cleanup_run_worktree_removes_worktree_and_metadata() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+        let wt = create_run_worktree(repo.path(), parent.path(), "run-4", "implement").unwrap();
+        let metadata_path = wt.metadata_path.clone().expect("metadata path");
+
+        let cleanup = cleanup_run_worktree(repo.path(), parent.path(), &wt.workspace_id).unwrap();
+        assert_eq!(cleanup.workspace_id, wt.workspace_id);
+        assert!(cleanup.removed);
+        assert!(cleanup.metadata_removed);
+        assert!(!Path::new(&wt.path).exists());
+        assert!(!Path::new(&metadata_path).exists());
+        let listed = list_run_worktrees(repo.path()).unwrap();
+        assert!(!listed.iter().any(|path| path.contains(&wt.workspace_id)));
+    }
+
+    #[test]
+    fn cleanup_rejects_unsafe_workspace_id() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+
+        let error = cleanup_run_worktree(repo.path(), parent.path(), "../outside").unwrap_err();
+        assert!(error.to_string().contains("unsafe workspace id"));
     }
 
     #[test]
