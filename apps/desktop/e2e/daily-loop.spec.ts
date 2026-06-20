@@ -20,7 +20,7 @@ test.describe("daily loop (onboarded)", () => {
     // title also appears in the workflow TaskSwitcher panel.
     await expect(page.locator("header").getByText("Wire N2 E2E smoke")).toBeVisible();
     await expect(page.getByText("3 changes")).toBeVisible();
-    await expect(page.getByText("1/2 working")).toBeVisible();
+    await expect(page.getByText("1/4 working")).toBeVisible();
   });
 
   test("workflow home shows a commit-ready next step and route", async ({ page }) => {
@@ -75,6 +75,22 @@ test.describe("daily loop (onboarded)", () => {
       await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
     }
+  });
+
+  test("Models tab guides setup with human status and fixes", async ({ page }) => {
+    const nav = page.locator(".nav-list");
+    await nav.getByRole("button", { name: /^More/ }).click();
+    await nav.getByRole("button", { name: /^Models/ }).click();
+    // Readiness-focused headline + attention banner (1 working, 2 need attention).
+    await expect(page.getByRole("heading", { name: /Ready for AI/ })).toBeVisible();
+    await expect(page.getByText(/need.* attention/i)).toBeVisible();
+    // Human statuses replace raw reachability strings.
+    await expect(page.getByText("Ready", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Needs API key")).toBeVisible();
+    // Concrete one-click fixes are offered.
+    await expect(page.getByRole("button", { name: "Add key" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Launch app" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Turn on" })).toBeVisible();
   });
 
   test("command palette opens with Ctrl-K and navigates", async ({ page }) => {

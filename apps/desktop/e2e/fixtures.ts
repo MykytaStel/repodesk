@@ -61,9 +61,12 @@ export const onboardedFixtures: CommandFixtures = {
 
   model_health_snapshot: {
     providers: [
-      { name: "ollama", reachability: "working", models: [{ name: "llama3" }] },
-      { name: "openai", reachability: "unconfigured", models: [] },
+      { id: "ollama", label: "Ollama", enabled: true, auth_status: "not_required", reachability: "working", models: [{ id: "llama3", provider: "ollama", available: true }] },
+      { id: "openai_api", label: "OpenAI API", enabled: true, auth_status: "auth_missing", reachability: "auth_missing", models: [], error_summary: "401 Unauthorized" },
+      { id: "lm_studio", label: "LM Studio", enabled: true, auth_status: "not_required", reachability: "unreachable", models: [], error_summary: "connection refused" },
+      { id: "anthropic_api", label: "Anthropic API", enabled: false, auth_status: "disabled", reachability: "disabled", models: [] },
     ],
+    warnings: [],
   },
 
   token_usage_snapshot: {

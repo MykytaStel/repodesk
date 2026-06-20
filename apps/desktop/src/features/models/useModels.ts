@@ -17,8 +17,8 @@ export function useModels() {
     }
   });
 
-  const workingProviders = models?.providers.filter((provider) => provider.reachability === "working").length ?? 0;
-  const modelCount = models?.providers.reduce((total, provider) => total + provider.models.length, 0) ?? 0;
+  const workingProviders = models?.providers?.filter((provider) => provider.reachability === "working").length ?? 0;
+  const modelCount = models?.providers?.reduce((total, provider) => total + (provider.models?.length ?? 0), 0) ?? 0;
 
   return { 
     models, 
