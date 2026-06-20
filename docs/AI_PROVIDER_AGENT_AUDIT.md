@@ -43,7 +43,7 @@ RepoDesk
 | Worktree lifecycle | `worktree.rs`: create/list/remove isolated per-step worktrees; runner requires isolation for approved coding-agent runs | ✅ implemented |
 | Secure credential store | `credentials.rs`: `CredentialResolver` + OS keychain (`keyring`) + env fallback; Tauri set/delete/status; never returns the full key | ✅ implemented |
 | OpenAI Responses API | `openai.rs` migrated to `/v1/responses` (input/instructions/max_output_tokens/reasoning.effort) | ✅ implemented |
-| Review / accept-reject flow | `orchestrator::review` stages/discards only non-isolated changesets; isolated worktree changesets fail safely until apply-back exists | ✅ partial |
+| Review / accept-reject flow | `orchestrator::review` stages/discards in-place changesets and safely applies isolated worktree changes back on accept | ✅ implemented |
 
 ## What landed (PRs 1–8 equivalent)
 
@@ -73,13 +73,15 @@ RepoDesk
    propagates `changed_files`/`diff_path` to `SubAgentResult`, and the desktop run
    panel shows the changed-file count + list. Untracked new files are listed but
    their content is not inlined.
-9. **Accept / reject review** — `orchestrator::review` turns an in-place captured
-   changeset into an action: **accept** stages the agent-changed files (`git add`),
-   **reject** discards them (`git restore --source=HEAD` for tracked, `git clean`
-   for untracked). Bounded to the run's recorded paths, path-validated, never
-   commits or pushes. Isolated worktree changesets fail safely with an explicit
-   "apply-back not implemented" error so review never stages/restores the active
-   checkout by path coincidence.
+9. **Accept / reject review** — `orchestrator::review` turns a captured changeset
+   into an action. For in-place legacy runs, **accept** stages the agent-changed
+   files (`git add`) and **reject** discards them (`git restore --source=HEAD` for
+   tracked, `git clean` for untracked). For isolated worktree runs, **accept**
+   applies the worktree diff back only after same-path conflict checks, stages the
+   applied result, and copies untracked files only when the destination is absent;
+   **reject** leaves the active checkout untouched and keeps the worktree for
+   manual inspection/cleanup. Bounded to the run's recorded paths, path-validated,
+   never commits or pushes.
 10. **CLI auth tri-state** — `coding_agent_availability_probed` sets
     `authenticated = Some(true)` when a known local auth artifact (e.g.
     `~/.codex/auth.json`, `~/.claude/.credentials.json`) *exists*; never reads its
@@ -106,9 +108,8 @@ RepoDesk
 
 1. **CLI auth depth** — upgrade the existence-based `authenticated` signal to a real
    tri-state once a documented, side-effect-free status command exists per CLI.
-2. **Worktree apply-back** — wire the isolated-worktree diff into the accept/reject
-   flow (apply the worktree changeset to the main tree on accept), plus interrupted
-   run recovery/cleanup UI.
+2. **Worktree recovery/cleanup UI** — list interrupted or rejected isolated worktrees,
+   show their metadata, and remove them only on explicit user action.
 3. **Credential-store migration** — move the legacy plaintext provider-settings keys
    into the keychain and stop persisting them in app files.
 4. **Review depth** — inline diff viewer for the captured `diff_path` and an optional

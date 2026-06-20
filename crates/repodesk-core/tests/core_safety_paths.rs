@@ -487,11 +487,24 @@ fn list_runs_returns_summaries_newest_first_and_skips_latest_pointer() {
 
 #[test]
 #[serial]
-fn review_run_refuses_isolated_worktree_changesets() {
+fn review_run_accepts_isolated_worktree_changesets() {
     let fx = setup();
+    init_git_repo(&fx.project_path);
     let dir = fx.run_dir.join("orchestrate");
     std::fs::create_dir_all(&dir).expect("orchestrate dir");
     let run_id = "run-isolated";
+    let parent = repodesk_core::worktree::worktrees_parent(&fx.run_dir);
+    let worktree = repodesk_core::worktree::create_run_worktree(
+        &fx.project_path,
+        &parent,
+        run_id,
+        "implement",
+    )
+    .expect("create worktree");
+    let worktree_path = Path::new(&worktree.path);
+    std::fs::write(worktree_path.join("seed.txt"), "seed\nagent\n").expect("edit worktree");
+    std::fs::write(worktree_path.join("added.txt"), "new\n").expect("add worktree file");
+
     let run = OrchestrationRun {
         run_id: run_id.to_string(),
         project: "demo".to_string(),
@@ -512,17 +525,9 @@ fn review_run_refuses_isolated_worktree_changesets() {
             output_tokens: 5,
             cost_units: 0.0,
             captured_proposals: 0,
-            changed_files: vec!["seed.txt".to_string()],
-            diff_path: Some("/tmp/repodesk-diff.diff".to_string()),
-            workspace: Some(repodesk_core::worktree::RunWorktree {
-                workspace_id: "workspace-1".to_string(),
-                run_id: run_id.to_string(),
-                step_id: "implement".to_string(),
-                path: "/tmp/repodesk-worktree".to_string(),
-                base_commit: "abc123".to_string(),
-                created_at: "2026-06-17T10:00:00Z".to_string(),
-                metadata_path: Some("/tmp/repodesk-worktree.json".to_string()),
-            }),
+            changed_files: vec!["seed.txt".to_string(), "added.txt".to_string()],
+            diff_path: None,
+            workspace: Some(worktree.clone()),
             notes: Vec::new(),
         }],
         total_input_tokens: 10,
@@ -532,14 +537,44 @@ fn review_run_refuses_isolated_worktree_changesets() {
     let json = serde_json::to_string_pretty(&run).expect("serialize run");
     std::fs::write(dir.join(format!("{run_id}.json")), &json).expect("write run");
 
-    let err = review_run(run_id, ReviewAction::Accept).expect_err("isolated review must fail");
+    let review = review_run(run_id, ReviewAction::Accept).expect("isolated accept");
+
     assert!(
-        err.to_string().contains("isolated worktree")
-            && err
-                .to_string()
-                .contains("active checkout was left untouched"),
-        "unexpected error: {err}"
+        review.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        review.warnings
     );
+    assert!(
+        review
+            .processed
+            .iter()
+            .any(|file| file.path == "seed.txt" && file.outcome == "applied and staged")
+    );
+    assert!(
+        review
+            .processed
+            .iter()
+            .any(|file| file.path == "added.txt" && file.outcome == "copied and staged")
+    );
+    assert_eq!(
+        std::fs::read_to_string(fx.project_path.join("seed.txt")).expect("seed"),
+        "seed\nagent\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(fx.project_path.join("added.txt")).expect("added"),
+        "new\n"
+    );
+    let staged = std::process::Command::new("git")
+        .args(["diff", "--cached", "--name-only"])
+        .current_dir(&fx.project_path)
+        .output()
+        .expect("git diff cached");
+    let staged = String::from_utf8_lossy(&staged.stdout);
+    assert!(staged.lines().any(|line| line == "seed.txt"));
+    assert!(staged.lines().any(|line| line == "added.txt"));
+
+    repodesk_core::worktree::remove_run_worktree(&fx.project_path, &worktree)
+        .expect("cleanup worktree");
 }
 
 #[test]

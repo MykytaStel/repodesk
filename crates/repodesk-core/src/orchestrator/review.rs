@@ -1,6 +1,6 @@
 //! Human review of a coding-agent run's changeset: **accept** (stage the files
 //! the agent changed, ready for a commit the human makes) or **reject** (discard
-//! them — restore tracked files to HEAD, remove untracked ones).
+//! in-place changes, or leave isolated-worktree changes out of the active tree).
 //!
 //! This is the actionable half of agent-run diff capture
 //! ([`crate::executors`]): the run records *which* files it changed, and this
@@ -9,15 +9,20 @@
 //! whole tree — and it never commits, pushes, or merges. RepoDesk stays the
 //! control plane; the human stays the operator.
 
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::io::Write;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
+use crate::git_workspace::{GitFileChange, parse_porcelain_status};
+use crate::worktree::RunWorktree;
 
 use super::runner::load_run;
-use super::types::OrchestrationRun;
+use super::types::{OrchestrationRun, SubAgentResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -44,7 +49,8 @@ impl ReviewAction {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ReviewedFile {
     pub path: String,
-    /// What happened: `staged`, `restored`, `deleted`, or `skipped: <reason>`.
+    /// What happened: `staged`, `applied and staged`, `restored`, `deleted`,
+    /// `left in isolated worktree`, or `skipped: <reason>`.
     pub outcome: String,
 }
 
@@ -65,7 +71,10 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
     })?;
     let project = crate::projects::get_active_project()?;
     let paths = collect_changed_files(&run);
-    let isolated_workspaces = collect_isolated_workspaces(&run);
+    let has_isolated_changes = run
+        .results
+        .iter()
+        .any(|result| result.workspace.is_some() && !result.changed_files.is_empty());
 
     let mut review = RunReview {
         run_id: run_id.to_string(),
@@ -81,14 +90,6 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
             .push("run recorded no changed files to review".to_string());
         return Ok(review);
     }
-    if !isolated_workspaces.is_empty() {
-        return Err(RepoDeskError::RoutingFailed {
-            detail: format!(
-                "run '{run_id}' produced changes in isolated worktree(s); accept/reject apply-back is not implemented yet, so the active checkout was left untouched. Inspect manually: {}",
-                isolated_workspaces.join(", ")
-            ),
-        });
-    }
     if !is_git_repo(project.path.as_path()) {
         review
             .warnings
@@ -96,10 +97,14 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
         return Ok(review);
     }
 
-    for path in paths {
-        review
-            .processed
-            .push(review_one(project.path.as_path(), &path, action));
+    if has_isolated_changes {
+        review_run_results(project.path.as_path(), &run, action, &mut review)?;
+    } else {
+        for path in paths {
+            review
+                .processed
+                .push(review_one(project.path.as_path(), &path, action));
+        }
     }
     Ok(review)
 }
@@ -118,24 +123,265 @@ fn collect_changed_files(run: &OrchestrationRun) -> Vec<String> {
     seen
 }
 
-fn collect_isolated_workspaces(run: &OrchestrationRun) -> Vec<String> {
-    let mut seen = Vec::new();
+fn review_run_results(
+    project_path: &Path,
+    run: &OrchestrationRun,
+    action: ReviewAction,
+    review: &mut RunReview,
+) -> RepoDeskResult<()> {
     for result in &run.results {
+        if result.changed_files.is_empty() {
+            continue;
+        }
         if let Some(worktree) = &result.workspace {
-            let label = format!(
-                "{} ({})",
-                worktree.path,
-                worktree
-                    .metadata_path
-                    .as_deref()
-                    .unwrap_or("metadata not recorded")
-            );
-            if !seen.iter().any(|existing| existing == &label) {
-                seen.push(label);
+            let mut processed = review_isolated_result(project_path, result, worktree, action)?;
+            review.processed.append(&mut processed);
+            if action == ReviewAction::Reject {
+                review.warnings.push(format!(
+                    "isolated worktree kept for manual inspection/cleanup: {}",
+                    worktree.path
+                ));
+            }
+        } else {
+            for path in &result.changed_files {
+                review
+                    .processed
+                    .push(review_one(project_path, path, action));
             }
         }
     }
-    seen
+    Ok(())
+}
+
+fn review_isolated_result(
+    project_path: &Path,
+    result: &SubAgentResult,
+    worktree: &RunWorktree,
+    action: ReviewAction,
+) -> RepoDeskResult<Vec<ReviewedFile>> {
+    let worktree_path = Path::new(&worktree.path);
+    if !worktree_path.exists() {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!("isolated worktree is missing: {}", worktree.path),
+        });
+    }
+    if !is_git_repo(worktree_path) {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "isolated worktree is not a git repository: {}",
+                worktree.path
+            ),
+        });
+    }
+
+    let paths = safe_unique_paths(&result.changed_files);
+    if paths.is_empty() {
+        return Ok(result
+            .changed_files
+            .iter()
+            .map(|path| ReviewedFile {
+                path: path.clone(),
+                outcome: "skipped: path is absolute or escapes the project".to_string(),
+            })
+            .collect());
+    }
+
+    if action == ReviewAction::Reject {
+        return Ok(paths
+            .into_iter()
+            .map(|path| ReviewedFile {
+                path,
+                outcome: "left in isolated worktree; active checkout untouched".to_string(),
+            })
+            .collect());
+    }
+
+    accept_isolated_changes(project_path, worktree_path, &paths)
+}
+
+fn accept_isolated_changes(
+    project_path: &Path,
+    worktree_path: &Path,
+    paths: &[String],
+) -> RepoDeskResult<Vec<ReviewedFile>> {
+    let statuses = worktree_status_by_path(worktree_path, paths)?;
+    let mut tracked_paths = Vec::new();
+    let mut untracked_paths = Vec::new();
+    let mut processed = Vec::new();
+
+    for path in paths {
+        let Some(change) = statuses.get(path) else {
+            processed.push(ReviewedFile {
+                path: path.clone(),
+                outcome: "skipped: no longer changed in isolated worktree".to_string(),
+            });
+            continue;
+        };
+        if change.renamed {
+            processed.push(ReviewedFile {
+                path: path.clone(),
+                outcome: "skipped: rename apply-back is not implemented".to_string(),
+            });
+        } else if change.untracked {
+            untracked_paths.push(path.clone());
+        } else {
+            tracked_paths.push(path.clone());
+        }
+    }
+
+    let apply_paths = tracked_paths
+        .iter()
+        .chain(untracked_paths.iter())
+        .cloned()
+        .collect::<Vec<_>>();
+    ensure_active_paths_are_clean(project_path, &apply_paths)?;
+    ensure_untracked_destinations_are_free(project_path, &untracked_paths)?;
+
+    if !tracked_paths.is_empty() {
+        let patch = git_diff_head(worktree_path, &tracked_paths)?;
+        if !patch.trim().is_empty() {
+            git_apply_stdin(project_path, &["apply", "--index", "--check", "-"], &patch)?;
+            git_apply_stdin(project_path, &["apply", "--index", "-"], &patch)?;
+        }
+        processed.extend(tracked_paths.into_iter().map(|path| ReviewedFile {
+            path,
+            outcome: "applied and staged".to_string(),
+        }));
+    }
+
+    for path in untracked_paths {
+        copy_untracked_file(worktree_path, project_path, &path)?;
+        if git_ok(project_path, &["add", "--", &path]) {
+            processed.push(ReviewedFile {
+                path,
+                outcome: "copied and staged".to_string(),
+            });
+        } else {
+            processed.push(ReviewedFile {
+                path,
+                outcome: "skipped: copied file but git add failed".to_string(),
+            });
+        }
+    }
+
+    Ok(processed)
+}
+
+fn safe_unique_paths(paths: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut out = Vec::new();
+    for path in paths {
+        let trimmed = path.trim();
+        if is_safe_relative(trimmed) && !seen.contains(trimmed) {
+            seen.insert(trimmed.to_string());
+            out.push(trimmed.to_string());
+        }
+    }
+    out
+}
+
+fn worktree_status_by_path(
+    worktree_path: &Path,
+    paths: &[String],
+) -> RepoDeskResult<HashMap<String, GitFileChange>> {
+    let mut args = vec![
+        "status".to_string(),
+        "--porcelain=v1".to_string(),
+        "--".to_string(),
+    ];
+    args.extend(paths.iter().cloned());
+    let raw = git_capture_owned(worktree_path, &args)?;
+    Ok(parse_porcelain_status(&raw)
+        .into_iter()
+        .map(|change| (change.path.clone(), change))
+        .collect())
+}
+
+fn ensure_active_paths_are_clean(project_path: &Path, paths: &[String]) -> RepoDeskResult<()> {
+    let dirty = paths
+        .iter()
+        .filter(|path| active_path_has_changes(project_path, path))
+        .cloned()
+        .collect::<Vec<_>>();
+    if dirty.is_empty() {
+        Ok(())
+    } else {
+        Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "cannot apply isolated changes because active checkout has local changes in: {}",
+                dirty.join(", ")
+            ),
+        })
+    }
+}
+
+fn ensure_untracked_destinations_are_free(
+    project_path: &Path,
+    paths: &[String],
+) -> RepoDeskResult<()> {
+    let existing = paths
+        .iter()
+        .filter(|path| project_path.join(path).exists())
+        .cloned()
+        .collect::<Vec<_>>();
+    if existing.is_empty() {
+        Ok(())
+    } else {
+        Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "cannot copy isolated untracked files because paths already exist in active checkout: {}",
+                existing.join(", ")
+            ),
+        })
+    }
+}
+
+fn active_path_has_changes(project_path: &Path, path: &str) -> bool {
+    git_capture_owned(
+        project_path,
+        &[
+            "status".to_string(),
+            "--porcelain=v1".to_string(),
+            "--".to_string(),
+            path.to_string(),
+        ],
+    )
+    .map(|output| !output.trim().is_empty())
+    .unwrap_or(true)
+}
+
+fn git_diff_head(worktree_path: &Path, paths: &[String]) -> RepoDeskResult<String> {
+    let mut args = vec![
+        "diff".to_string(),
+        "--binary".to_string(),
+        "--no-color".to_string(),
+        "HEAD".to_string(),
+        "--".to_string(),
+    ];
+    args.extend(paths.iter().cloned());
+    git_capture_owned(worktree_path, &args)
+}
+
+fn copy_untracked_file(
+    worktree_path: &Path,
+    project_path: &Path,
+    path: &str,
+) -> RepoDeskResult<()> {
+    let source = worktree_path.join(path);
+    let destination = project_path.join(path);
+    if !source.is_file() {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "cannot copy isolated untracked path '{}' because it is not a file",
+                path
+            ),
+        });
+    }
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::copy(&source, &destination)?;
+    Ok(())
 }
 
 fn review_one(project_path: &Path, path: &str, action: ReviewAction) -> ReviewedFile {
@@ -221,6 +467,59 @@ fn is_tracked(project_path: &Path, path: &str) -> bool {
     git_ok(project_path, &["ls-files", "--error-unmatch", "--", path])
 }
 
+fn git_capture_owned(project_path: &Path, args: &[String]) -> RepoDeskResult<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(project_path)
+        .output()
+        .map_err(|error| RepoDeskError::RoutingFailed {
+            detail: format!("failed to run git {}: {error}", args.join(" ")),
+        })?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    } else {
+        Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        })
+    }
+}
+
+fn git_apply_stdin(project_path: &Path, args: &[&str], stdin: &str) -> RepoDeskResult<()> {
+    let mut child = Command::new("git")
+        .args(args)
+        .current_dir(project_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| RepoDeskError::RoutingFailed {
+            detail: format!("failed to run git {}: {error}", args.join(" ")),
+        })?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| RepoDeskError::RoutingFailed {
+            detail: format!("failed to open stdin for git {}", args.join(" ")),
+        })?
+        .write_all(stdin.as_bytes())?;
+    let output = child.wait_with_output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "git {} failed: {}",
+                args.join(" "),
+                String::from_utf8_lossy(&output.stderr).trim()
+            ),
+        })
+    }
+}
+
 /// Run a git subcommand (argv-only, no shell) in `project_path`, returning
 /// whether it exited successfully. Output is discarded; callers only need the
 /// status. Paths are passed after `--` so they cannot be read as flags.
@@ -235,7 +534,69 @@ fn git_ok(project_path: &Path, args: &[&str]) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::SubAgentStatus;
     use super::*;
+    use crate::worktree::RunWorktree;
+    use tempfile::TempDir;
+
+    fn git_available() -> bool {
+        Command::new("git").arg("--version").output().is_ok()
+    }
+
+    fn init_repo() -> TempDir {
+        let repo = tempfile::TempDir::new().unwrap();
+        let git = |args: &[&str]| {
+            assert!(git_ok(repo.path(), args), "git {args:?} failed");
+        };
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        std::fs::write(repo.path().join("seed.txt"), "seed\n").unwrap();
+        std::fs::write(repo.path().join("keep.txt"), "keep\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "init"]);
+        repo
+    }
+
+    fn create_worktree(repo: &Path, parent: &Path, id: &str) -> RunWorktree {
+        let path = parent.join(id);
+        let path_str = path.display().to_string();
+        assert!(
+            git_ok(repo, &["worktree", "add", "--detach", &path_str, "HEAD"]),
+            "git worktree add failed"
+        );
+        RunWorktree {
+            workspace_id: id.to_string(),
+            run_id: "run-test".to_string(),
+            step_id: "implement".to_string(),
+            path: path_str,
+            base_commit: git_capture_owned(repo, &["rev-parse".to_string(), "HEAD".to_string()])
+                .unwrap()
+                .trim()
+                .to_string(),
+            created_at: "2026-06-20T00:00:00Z".to_string(),
+            metadata_path: None,
+        }
+    }
+
+    fn isolated_result(paths: &[&str], worktree: &RunWorktree) -> SubAgentResult {
+        SubAgentResult {
+            task_id: "implement".to_string(),
+            agent: "codex_cli".to_string(),
+            provider: "codex_cli".to_string(),
+            model: String::new(),
+            status: SubAgentStatus::Ok,
+            output: String::new(),
+            input_tokens: 1,
+            output_tokens: 1,
+            cost_units: 0.0,
+            captured_proposals: 0,
+            changed_files: paths.iter().map(|path| path.to_string()).collect(),
+            diff_path: None,
+            workspace: Some(worktree.clone()),
+            notes: Vec::new(),
+        }
+    }
 
     #[test]
     fn rejects_unsafe_paths() {
@@ -258,6 +619,138 @@ mod tests {
             ReviewAction::Reject
         );
         assert!(ReviewAction::from_label("merge").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn isolated_accept_applies_tracked_and_untracked_changes() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+        let worktree = create_worktree(repo.path(), parent.path(), "agent-apply");
+        let worktree_path = Path::new(&worktree.path);
+
+        std::fs::write(worktree_path.join("seed.txt"), "seed\nagent\n").unwrap();
+        std::fs::write(worktree_path.join("new.txt"), "new\n").unwrap();
+        std::fs::write(repo.path().join("keep.txt"), "keep\ndeveloper\n").unwrap();
+
+        let result = isolated_result(&["seed.txt", "new.txt"], &worktree);
+        let processed =
+            review_isolated_result(repo.path(), &result, &worktree, ReviewAction::Accept).unwrap();
+
+        assert!(
+            processed
+                .iter()
+                .any(|file| file.path == "seed.txt" && file.outcome == "applied and staged")
+        );
+        assert!(
+            processed
+                .iter()
+                .any(|file| file.path == "new.txt" && file.outcome == "copied and staged")
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("seed.txt")).unwrap(),
+            "seed\nagent\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("keep.txt")).unwrap(),
+            "keep\ndeveloper\n"
+        );
+        let staged = git_capture_owned(
+            repo.path(),
+            &[
+                "diff".to_string(),
+                "--cached".to_string(),
+                "--name-only".to_string(),
+            ],
+        )
+        .unwrap();
+        assert!(staged.lines().any(|line| line == "seed.txt"));
+        assert!(staged.lines().any(|line| line == "new.txt"));
+        assert!(!staged.lines().any(|line| line == "keep.txt"));
+
+        let _ = git_ok(
+            repo.path(),
+            &["worktree", "remove", "--force", &worktree.path],
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn isolated_accept_refuses_when_active_path_is_dirty() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+        let worktree = create_worktree(repo.path(), parent.path(), "agent-conflict");
+        let worktree_path = Path::new(&worktree.path);
+
+        std::fs::write(worktree_path.join("seed.txt"), "seed\nagent\n").unwrap();
+        std::fs::write(repo.path().join("seed.txt"), "seed\ndeveloper\n").unwrap();
+
+        let result = isolated_result(&["seed.txt"], &worktree);
+        let error = review_isolated_result(repo.path(), &result, &worktree, ReviewAction::Accept)
+            .expect_err("dirty active path must block apply-back");
+
+        assert!(
+            error
+                .to_string()
+                .contains("active checkout has local changes")
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("seed.txt")).unwrap(),
+            "seed\ndeveloper\n"
+        );
+        let staged = git_capture_owned(
+            repo.path(),
+            &[
+                "diff".to_string(),
+                "--cached".to_string(),
+                "--name-only".to_string(),
+            ],
+        )
+        .unwrap();
+        assert!(staged.trim().is_empty());
+
+        let _ = git_ok(
+            repo.path(),
+            &["worktree", "remove", "--force", &worktree.path],
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn isolated_reject_leaves_active_checkout_untouched() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+        let worktree = create_worktree(repo.path(), parent.path(), "agent-reject");
+        let worktree_path = Path::new(&worktree.path);
+
+        std::fs::write(worktree_path.join("seed.txt"), "seed\nagent\n").unwrap();
+
+        let result = isolated_result(&["seed.txt"], &worktree);
+        let processed =
+            review_isolated_result(repo.path(), &result, &worktree, ReviewAction::Reject).unwrap();
+
+        assert_eq!(
+            processed[0].outcome,
+            "left in isolated worktree; active checkout untouched"
+        );
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("seed.txt")).unwrap(),
+            "seed\n"
+        );
+
+        let _ = git_ok(
+            repo.path(),
+            &["worktree", "remove", "--force", &worktree.path],
+        );
     }
 
     #[cfg(unix)]

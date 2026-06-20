@@ -137,7 +137,7 @@ pub fn coding_agent_executors() -> Result<Vec<ExecutorAvailability>, ErrorPayloa
         .collect()
 }
 
-/// Accept (stage) or reject (discard) the files a coding-agent run changed.
+/// Accept or reject the files a coding-agent run changed.
 /// `action` is `accept` or `reject`. Bounded to the run's recorded changeset;
 /// never commits or pushes.
 #[tauri::command]

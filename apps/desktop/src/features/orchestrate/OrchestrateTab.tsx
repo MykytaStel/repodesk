@@ -193,13 +193,17 @@ function RunPanel({
               Review {captured} captured memory proposal{captured === 1 ? "" : "s"}
             </button>
           )}
-          {changedCount > 0 && onReview && !isolatedChanged && (
+          {changedCount > 0 && onReview && (
             <>
               <button
                 className="tiny-button"
                 onClick={() => onReview("accept")}
                 disabled={reviewing}
-                title="Stage the changed files so you can commit them"
+                title={
+                  isolatedChanged
+                    ? "Apply the isolated worktree changes into the active checkout and stage them"
+                    : "Stage the changed files so you can commit them"
+                }
               >
                 Accept {changedCount} change{changedCount === 1 ? "" : "s"}
               </button>
@@ -207,7 +211,11 @@ function RunPanel({
                 className="tiny-button"
                 onClick={() => onReview("reject")}
                 disabled={reviewing}
-                title="Discard the agent's changes (restore tracked, remove new files)"
+                title={
+                  isolatedChanged
+                    ? "Leave the isolated worktree unchanged and keep the active checkout untouched"
+                    : "Discard the agent's changes (restore tracked, remove new files)"
+                }
               >
                 Reject changes
               </button>
@@ -218,13 +226,13 @@ function RunPanel({
       {changedCount > 0 && isolatedChanged && (
         <div className="notice warn" style={{ marginTop: 12 }}>
           Agent changes are in isolated worktree{workspaces.length === 1 ? "" : "s"}:{" "}
-          {workspaces.map((workspace) => workspace.path).join(", ")}. Apply-back is not available yet,
-          so Accept/Reject is disabled for this run.
+          {workspaces.map((workspace) => workspace.path).join(", ")}. Accept applies and stages them
+          in the active checkout after conflict checks; Reject leaves the active checkout untouched.
         </div>
       )}
       {reviewResult && (
         <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          {reviewResult.action === "accept" ? "Staged" : "Discarded"}:{" "}
+          {reviewResult.action === "accept" ? "Accepted" : "Reviewed"}:{" "}
           {reviewResult.processed.map((f) => `${f.path} (${f.outcome})`).join(", ") || "nothing"}
           {reviewResult.warnings.length > 0 ? ` — ${reviewResult.warnings.join("; ")}` : ""}
         </p>

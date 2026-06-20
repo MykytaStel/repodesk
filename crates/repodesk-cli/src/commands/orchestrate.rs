@@ -89,8 +89,8 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
 
 fn format_review(review: &repodesk_core::orchestrator::RunReview) -> String {
     let verb = match review.action {
-        repodesk_core::orchestrator::ReviewAction::Accept => "Accepted (staged)",
-        repodesk_core::orchestrator::ReviewAction::Reject => "Rejected (discarded)",
+        repodesk_core::orchestrator::ReviewAction::Accept => "Accepted",
+        repodesk_core::orchestrator::ReviewAction::Reject => "Rejected",
     };
     let mut out = format!(
         "{verb} changeset for run {} (project {})\n",

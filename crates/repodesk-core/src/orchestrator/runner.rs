@@ -343,7 +343,7 @@ pub async fn run_plan(
                 ];
                 if let Some(worktree) = &workspace.worktree {
                     notes.push(format!(
-                        "isolated workspace: {} (id {}, base {}, metadata {}); apply-back is not implemented",
+                        "isolated workspace: {} (id {}, base {}, metadata {}); review accept can apply it back",
                         worktree.path,
                         worktree.workspace_id,
                         worktree.base_commit,

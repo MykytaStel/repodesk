@@ -90,15 +90,17 @@ on the step result (`SubAgentResult.changed_files` / `diff_path`), and the deskt
 shows the count and file list.
 
 **Accept / reject review.** [`orchestrator::review`](../crates/repodesk-core/src/orchestrator/review.rs)
-makes in-place changesets actionable. Given a persisted non-isolated run, the human can **accept**
-(stage the agent-changed files via `git add`, ready for a commit they make) or **reject** (discard
-them — `git restore --source=HEAD` for tracked files, `git clean` for untracked ones). It is
-bounded by construction: it only ever touches the paths the run recorded, validates each is a
-repo-relative path (no `..`, no absolute), and **never commits, pushes, or merges**. For isolated
-worktree runs, accept/reject currently fails safely with an explicit error; apply-back from the
-worktree is the next lifecycle step. Surfaced as `repodesk orchestrate review <run_id>
-<accept|reject>` (CLI) and the `orchestrate_review` Tauri command. The desktop hides
-Accept/Reject for isolated changesets and shows the worktree path instead.
+makes captured changesets actionable. For in-place legacy runs, **accept** stages the recorded
+paths (`git add`) and **reject** discards them (`git restore --source=HEAD` for tracked files,
+`git clean` for untracked ones). For isolated worktree runs, **accept** applies the worktree diff
+back to the active checkout only after conflict checks: any active local change on the same path
+blocks the apply, tracked changes are applied with `git apply --index`, and untracked files are
+copied only when the destination does not already exist. **Reject** leaves the active checkout
+untouched and keeps the worktree for manual inspection/cleanup. It is bounded by construction:
+it only ever touches the paths the run recorded, validates each is repo-relative (no `..`, no
+absolute), and **never commits, pushes, or merges**. Surfaced as
+`repodesk orchestrate review <run_id> <accept|reject>` (CLI), the `orchestrate_review` Tauri
+command, and the desktop run panel.
 
 ### Gates (every step, before any spend)
 - **Safety** — `safety::scan_text` blocks if secret-like content is in the outgoing context.
@@ -115,7 +117,7 @@ repodesk orchestrate run --dry-run [--max-cost N]        # gate + project cost, 
 repodesk orchestrate run [--goal "..."] [--max-cost N] --yes
 repodesk orchestrate status                              # most recent run for the active task
 repodesk orchestrate show <run_id>
-repodesk orchestrate review <run_id> accept|reject       # stage or discard a coding-agent changeset
+repodesk orchestrate review <run_id> accept|reject       # stage/apply or reject a changeset
 ```
 
 Offline preview (no network, no keys):

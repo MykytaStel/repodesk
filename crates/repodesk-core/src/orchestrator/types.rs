@@ -123,8 +123,8 @@ pub struct SubAgentResult {
     #[serde(default)]
     pub diff_path: Option<String>,
     /// Isolated workspace used for this coding-agent step, when one was
-    /// created. Accept/reject must not apply these paths to the active checkout
-    /// until apply-back is implemented.
+    /// created. Review uses this metadata to apply changes back deliberately,
+    /// never by assuming same-named active-checkout paths hold the agent output.
     #[serde(default)]
     pub workspace: Option<RunWorktree>,
     pub notes: Vec<String>,

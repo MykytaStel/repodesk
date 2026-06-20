@@ -91,12 +91,12 @@ Scope:
 - CLI availability: passive PATH lookup + opt-in `--version` probe. ✅
 - Agent-run diff capture: pre/post `git status` delta + unified diff + receipt on each run,
   surfaced on the step result and run panel. ✅
-- Accept/reject review: stage (accept) or discard (reject) non-isolated changesets via CLI/Tauri;
-  isolated worktree changesets fail safely until apply-back exists. ✅
+- Accept/reject review: stage/discard in-place changesets and safely apply isolated-worktree
+  changes back on accept, with same-path conflict checks. ✅
 - CLI auth tri-state (artifact-existence check), required isolated git worktrees for coding-agent
   runs, OS keychain credential store (`credentials.rs` + `keyring`, masked-only to UI), OpenAI
   Responses API (`/v1/responses`). ✅
-- Next (ordered): CLI auth depth, worktree apply-back into review, migrate legacy plaintext keys
+- Next (ordered): CLI auth depth, worktree recovery/cleanup UI, migrate legacy plaintext keys
   to the keychain, inline diff viewer + cross-model changeset review.
 
 ## Development priorities

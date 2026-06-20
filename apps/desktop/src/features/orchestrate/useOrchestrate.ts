@@ -73,8 +73,8 @@ export function useOrchestrate() {
     mutationFn: (runId: string) => api.orchestrateShow(runId),
   });
 
-  // Accept (stage) or reject (discard) a coding-agent run's changeset. Either
-  // way the working tree changed, so refresh the git snapshot.
+  // Review a coding-agent changeset. Accept can stage/apply files; reject may
+  // discard in-place changes or leave an isolated worktree untouched.
   const review = useMutation({
     mutationFn: (v: { runId: string; action: api.ReviewAction }) =>
       api.orchestrateReview(v.runId, v.action),
