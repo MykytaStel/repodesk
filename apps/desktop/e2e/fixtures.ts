@@ -115,6 +115,7 @@ export const onboardedFixtures: CommandFixtures = {
     { id: "smart-context-build", label: "Build bounded context", description: "Assemble safe, bounded context.", risk: "safe", category: "Context" },
     { id: "checks-run", label: "Run checks", description: "Run safety + budget gates.", risk: "safe", category: "Checks" },
   ],
+  run_desktop_action: { ok: true, command: "repodesk smart-context build", stdout: "smart-context.md written", stderr: "", exit_code: 0 },
   action_history: [],
 
   orchestration_runs: [

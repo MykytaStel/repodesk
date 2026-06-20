@@ -77,6 +77,16 @@ test.describe("daily loop (onboarded)", () => {
     }
   });
 
+  test("a journey step can be run from its card with a result", async ({ page }) => {
+    // The focused (current) step card offers a run action…
+    const detail = page.locator(".journey-detail");
+    const runBtn = detail.getByRole("button", { name: /^Run Smart Context/ });
+    await expect(runBtn).toBeVisible();
+    await runBtn.click();
+    // …and reports a human-readable result inline.
+    await expect(detail.getByText(/Smart Context done\./)).toBeVisible();
+  });
+
   test("Models tab guides setup with human status and fixes", async ({ page }) => {
     const nav = page.locator(".nav-list");
     await nav.getByRole("button", { name: /^More/ }).click();

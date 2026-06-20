@@ -4,7 +4,7 @@ import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCos
 import { projectAdd, projectUse, taskNew } from "../../shared/api/workflow";
 import { pickDirectory, basename } from "../../shared/api/dialog";
 import { useWorkflow } from "./useWorkflow";
-import { JourneyStepper } from "./JourneyStepper";
+import { JourneyStepper, type StepRunResult } from "./JourneyStepper";
 import { STEP_META, ACTION_TO_STEP } from "./journeyMeta";
 import { TaskSwitcher } from "./TaskSwitcher";
 import { useRouting } from "../routing/useRouting";
@@ -18,7 +18,7 @@ interface WorkflowTabProps {
 }
 
 export function WorkflowTab({ economyMode }: WorkflowTabProps) {
-  const { workflow, nextAction, doNextSafeStep, isRunning, history, commitChanges, isCommitting, commitError } = useWorkflow();
+  const { workflow, nextAction, doNextSafeStep, runAction, isRunning, history, commitChanges, isCommitting, commitError } = useWorkflow();
   const { routing } = useRouting(economyMode);
   const { tokens } = useTokens();
   const { git, dirty } = useGit();
@@ -41,6 +41,25 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   const [taskTitle, setTaskTitle] = useState("");
   const [diffFile, setDiffFile] = useState<{ path: string; cached: boolean } | null>(null);
   const [selectedStep, setSelectedStep] = useState<string | undefined>(undefined);
+  const [stepResult, setStepResult] = useState<StepRunResult | null>(null);
+
+  // Run a single journey step from its card and surface a human result. Keep
+  // the card focused on the step you ran so its ✓/✗ result stays visible while
+  // the stepper advances "Now" to the next step.
+  async function runStep(actionId: string, stepId: string) {
+    setSelectedStep(stepId);
+    setStepResult(null);
+    const title = STEP_META[stepId]?.title ?? "Step";
+    try {
+      const res = asRecord(await runAction(actionId));
+      const ok = res.ok === undefined ? true : Boolean(res.ok);
+      const stderr = getString(res, "stderr", "");
+      const message = ok ? `${title} done.` : (stderr || `${title} failed.`);
+      setStepResult({ stepId, ok, message: message.split("\n")[0].slice(0, 180) });
+    } catch (error: any) {
+      setStepResult({ stepId, ok: false, message: error?.message || `${title} failed.` });
+    }
+  }
 
   // What the primary CTA will actually do, derived from existing state so the
   // user knows before clicking: which step runs, who performs it, what it does.
@@ -308,7 +327,14 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
       {needsOnboarding ? renderOnboarding() : (
         <>
           {diffFile && <DiffViewerModal filePath={diffFile.path} cached={diffFile.cached} onClose={() => setDiffFile(null)} />}
-          <JourneyStepper steps={steps} selectedStepId={selectedStep} onSelectStep={setSelectedStep} />
+          <JourneyStepper
+            steps={steps}
+            selectedStepId={selectedStep}
+            onSelectStep={setSelectedStep}
+            onRunStep={(actionId, stepId) => void runStep(actionId, stepId)}
+            isRunning={isBusy}
+            runResult={stepResult}
+          />
           <TaskSwitcher />
           {renderCommitReadiness()}
           {promptsOk && <PromptsPanel />}

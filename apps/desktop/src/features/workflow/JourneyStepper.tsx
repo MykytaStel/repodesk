@@ -9,6 +9,12 @@ interface RawStep {
   blocker?: string;
 }
 
+export interface StepRunResult {
+  stepId: string;
+  ok: boolean;
+  message: string;
+}
+
 function normalizeSteps(steps: unknown[]): RawStep[] {
   if (!steps || steps.length === 0) return staticJourney();
   return steps.map((step, index) => {
@@ -30,12 +36,18 @@ export function JourneyStepper({
   currentStepId,
   selectedStepId,
   onSelectStep,
+  onRunStep,
+  isRunning = false,
+  runResult,
   preview = false,
 }: {
   steps: unknown[];
   currentStepId?: string;
   selectedStepId?: string;
   onSelectStep?: (id: string) => void;
+  onRunStep?: (actionId: string, stepId: string) => void;
+  isRunning?: boolean;
+  runResult?: StepRunResult | null;
   preview?: boolean;
 }) {
   const rows = normalizeSteps(steps);
@@ -90,19 +102,40 @@ export function JourneyStepper({
         })}
       </ol>
 
-      {!preview && detailRow && <StepDetailCard step={detailRow} />}
+      {!preview && detailRow && (
+        <StepDetailCard
+          step={detailRow}
+          onRunStep={onRunStep}
+          isRunning={isRunning}
+          runResult={runResult?.stepId === detailRow.id ? runResult : null}
+        />
+      )}
     </section>
   );
 }
 
 /** Explains the focused step: what it does, who does it, why now / what
- *  unblocks it, and what comes next. */
-function StepDetailCard({ step }: { step: RawStep }) {
+ *  unblocks it, and what comes next — and lets you run it if it's an automatic
+ *  step that's ready. */
+function StepDetailCard({
+  step,
+  onRunStep,
+  isRunning,
+  runResult,
+}: {
+  step: RawStep;
+  onRunStep?: (actionId: string, stepId: string) => void;
+  isRunning?: boolean;
+  runResult?: StepRunResult | null;
+}) {
   const meta = stepMeta(step.id);
   if (!meta) return null;
   const isCurrent = step.status === "current";
   const isBlocked = step.status === "blocked";
   const isDone = step.status === "done";
+
+  // Runnable = an automatic step with a backing action whose prerequisites are met.
+  const runnable = Boolean(onRunStep && meta.actionId && meta.mode === "auto" && !isBlocked);
 
   return (
     <div className="journey-detail">
@@ -113,12 +146,34 @@ function StepDetailCard({ step }: { step: RawStep }) {
         <ActorBadge mode={meta.mode} />
       </div>
       <p className="lead">{meta.oneLiner}</p>
-      {isDone && <p className="muted">✓ Done — RepoDesk has this covered.</p>}
+      {isDone && !runResult && <p className="muted">✓ Done — RepoDesk has this covered.</p>}
       {isCurrent && <p className="journey-why">→ {meta.whyNow}</p>}
       {isBlocked && (
         <p className="journey-why muted">⛔ {step.blocker ?? meta.unblockHint}</p>
       )}
+      {meta.mode === "manual" && !isBlocked && !isDone && (
+        <p className="journey-why muted">This one's on you — RepoDesk can't do it automatically.</p>
+      )}
       <p className="muted journey-next">Next: {meta.next}</p>
+
+      {runnable && (
+        <div className="button-row" style={{ marginTop: 12 }}>
+          <button
+            className={isCurrent ? "primary-button" : "ghost-button"}
+            disabled={isRunning}
+            onClick={() => onRunStep!(meta.actionId!, step.id)}
+          >
+            {isRunning ? "Running…" : isDone ? `Re-run ${meta.title}` : `Run ${meta.title}`}
+          </button>
+        </div>
+      )}
+
+      {runResult && (
+        <div className={`notice ${runResult.ok ? "ok" : "danger"}`} style={{ marginTop: 12 }}>
+          {runResult.ok ? "✓ " : "✗ "}
+          {runResult.message}
+        </div>
+      )}
     </div>
   );
 }
