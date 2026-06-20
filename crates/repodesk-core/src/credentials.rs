@@ -146,6 +146,32 @@ pub fn default_resolver() -> Box<dyn CredentialResolver> {
     Box::new(KeyringResolver::new())
 }
 
+/// Persist a secret to the OS keychain. An empty/blank value deletes the entry
+/// instead of storing it. Errors propagate so a caller can refuse to fall back
+/// to insecure storage.
+pub fn store_secret(key: &str, value: &str) -> RepoDeskResult<()> {
+    let resolver = KeyringResolver::new();
+    if value.trim().is_empty() {
+        resolver.delete(key)
+    } else {
+        resolver.set(key, value)
+    }
+}
+
+/// Remove a secret from the OS keychain (idempotent).
+pub fn delete_secret(key: &str) -> RepoDeskResult<()> {
+    KeyringResolver::new().delete(key)
+}
+
+/// Read a secret directly from the keychain only (no env fallback). `Ok(None)`
+/// when unset; `Err` only on a real keychain failure (so a CI box without a
+/// secret service is distinguishable from "not configured").
+pub fn keychain_secret(key: &str) -> RepoDeskResult<Option<String>> {
+    KeyringResolver::new()
+        .get(key)
+        .map(|opt| opt.filter(|v| !v.trim().is_empty()))
+}
+
 /// Resolve a secret for use at call time: the keychain first, then an env-var
 /// fallback so local development keeps working without storing anything.
 pub fn resolve_secret(key: &str) -> Option<String> {

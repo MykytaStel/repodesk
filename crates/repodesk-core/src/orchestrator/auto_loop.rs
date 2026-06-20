@@ -53,6 +53,11 @@ pub struct LoopOptions {
     pub override_model: Option<String>,
     /// Provider credentials/endpoints.
     pub settings: ProviderSettings,
+    /// Isolate write-capable steps in a per-run git worktree instead of writing
+    /// to the active checkout. Defaults to `true`: an autonomous loop has no
+    /// human watching each step, so it must never mutate the active tree in
+    /// place. Worktrees accumulate per attempt and are removed on human review.
+    pub use_isolated_worktree: bool,
 }
 
 impl Default for LoopOptions {
@@ -67,6 +72,7 @@ impl Default for LoopOptions {
             override_provider: None,
             override_model: None,
             settings: ProviderSettings::default(),
+            use_isolated_worktree: true,
         }
     }
 }
@@ -189,9 +195,10 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
                 settings: opts.settings.clone(),
                 approve_coding_agents: opts.approve_coding_agents,
                 coding_agent_timeout_secs: opts.coding_agent_timeout_secs,
-                // The loop retries; isolated worktrees would accumulate per
-                // attempt, so keep write steps in-place here.
-                use_isolated_worktree: false,
+                // Never mutate the active checkout from an unattended loop. Each
+                // attempt isolates write steps in their own worktree; they
+                // accumulate and are cleaned up on human review of the changeset.
+                use_isolated_worktree: opts.use_isolated_worktree,
             },
         )
         .await?;

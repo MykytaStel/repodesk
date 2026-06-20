@@ -63,6 +63,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 override_provider: None,
                 override_model: None,
                 settings,
+                use_isolated_worktree: true,
             };
             let rt = tokio::runtime::Runtime::new()?;
             let loop_run = rt.block_on(orchestrator::run_loop(goal, &opts))?;

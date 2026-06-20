@@ -8,6 +8,7 @@ pub mod brain;
 pub mod budget;
 pub mod capabilities;
 pub mod checks;
+pub mod ci;
 pub mod context;
 pub mod cost;
 pub mod dashboard;
@@ -37,7 +38,6 @@ pub mod task;
 pub mod tokens;
 pub mod ui;
 pub mod workflow;
-pub mod ci;
 
 pub fn dispatch(cli: Cli) -> Result<()> {
     match cli.command {

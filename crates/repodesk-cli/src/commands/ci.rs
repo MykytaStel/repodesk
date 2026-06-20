@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::cli::CiCommand;
+use anyhow::Result;
 
 pub fn handle_ci_command(command: CiCommand) -> Result<()> {
     match command {

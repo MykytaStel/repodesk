@@ -144,6 +144,83 @@ fn available_capacities_with(
         .collect()
 }
 
+/// Find the capacity a manual override names, matching its canonical id against
+/// each capacity's `provider` / `executor_id` / `provider_id` (case-insensitive),
+/// plus coding-agent aliases (`codex` → `codex_cli`). Returns `None` for a blank
+/// or unrecognized override.
+fn find_override_capacity<'a>(
+    caps: &'a [ProviderCapacity],
+    raw: &str,
+) -> Option<&'a ProviderCapacity> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    let canonical_agent = crate::executors::canonical_coding_agent_id(raw);
+    caps.iter().find(|c| {
+        let matches = |candidate: &str| candidate.eq_ignore_ascii_case(raw);
+        matches(&c.provider)
+            || matches(&c.executor_id)
+            || c.provider_id.as_deref().is_some_and(matches)
+            || canonical_agent.is_some_and(|id| {
+                c.executor_id.eq_ignore_ascii_case(id) || c.provider.eq_ignore_ascii_case(id)
+            })
+    })
+}
+
+/// Reject a manual provider/model override that can't be honored, instead of
+/// silently fabricating a route. A blank override is a no-op. A non-blank one
+/// must name a capacity that exists in the registry, is enabled, and (when a
+/// model is given) advertises that model. Per-step write compatibility is
+/// handled in [`route_steps`] (incompatible write steps route normally).
+pub fn validate_override(
+    caps: &[ProviderCapacity],
+    override_provider: &Option<String>,
+    override_model: &Option<String>,
+) -> RepoDeskResult<()> {
+    let Some(raw) = override_provider
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Ok(());
+    };
+    let Some(capacity) = find_override_capacity(caps, raw) else {
+        return Err(crate::errors::RepoDeskError::RoutingFailed {
+            detail: format!(
+                "unknown provider/executor override '{raw}'; it is not in the available capacity registry"
+            ),
+        });
+    };
+    if !capacity.enabled {
+        return Err(crate::errors::RepoDeskError::RoutingFailed {
+            detail: format!(
+                "override '{}' is not enabled; enable it before routing to it",
+                capacity.label
+            ),
+        });
+    }
+    if let Some(model) = override_model
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        && !capacity.models.is_empty()
+        && !capacity
+            .models
+            .iter()
+            .any(|m| m.eq_ignore_ascii_case(model))
+    {
+        return Err(crate::errors::RepoDeskError::RoutingFailed {
+            detail: format!(
+                "override model '{model}' is not offered by '{}' (known: {})",
+                capacity.label,
+                capacity.models.join(", ")
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Route the template steps against `caps`, assigning each a provider/model.
 /// `bias` is the learned routing nudge from the outcome ledger (empty for a
 /// deterministic plan). Pure (no I/O) so it can be unit-tested with injected
@@ -155,32 +232,50 @@ pub fn route_steps(
     override_provider: Option<String>,
     override_model: Option<String>,
 ) -> Vec<SubAgentTask> {
+    // Resolve a manual override to a concrete, real capacity once. Unknown ids
+    // never reach here — `build_plan` rejects them via `validate_override` — but
+    // `route_steps` is also called directly (tests), so it tolerates a miss by
+    // falling back to normal routing rather than fabricating a route.
+    let override_capacity = override_provider
+        .as_deref()
+        .and_then(|raw| find_override_capacity(caps, raw));
+
     TEMPLATE
         .iter()
         .map(|template| {
-            if let Some(provider) = &override_provider {
-                let executor_kind = caps
-                    .iter()
-                    .find(|c| c.provider == *provider || c.executor_id == *provider)
-                    .map(|c| c.executor_kind)
-                    .unwrap_or(crate::routing::types::ExecutorKind::CompletionProvider);
-
-                return SubAgentTask {
-                    id: template.id.to_string(),
-                    title: template.title.to_string(),
-                    kind: template.kind,
-                    agent: provider.clone(),
-                    provider: provider.clone(),
-                    executor_kind,
-                    executor_id: provider.clone(),
-                    provider_id: Some(provider.clone()),
-                    model: override_model.clone().filter(|m| !m.trim().is_empty()),
-                    thinking: template.thinking,
-                    instruction: template.instruction.to_string(),
-                    depends_on: template.depends_on.iter().map(|d| d.to_string()).collect(),
-                    budget_tokens: DEFAULT_STEP_BUDGET,
-                    allow_write: template.allow_write,
-                };
+            // Apply the override only when it can satisfy this step: a write step
+            // requires a coding-agent executor, so a completion/local override is
+            // skipped for it (that step routes normally) instead of forcing a
+            // patch through an LLM API that cannot write files.
+            if let Some(capacity) = override_capacity {
+                let write_ok = !template.allow_write
+                    || capacity.resolved_executor_kind()
+                        == crate::routing::types::ExecutorKind::CodingAgent;
+                if write_ok {
+                    let model = override_model
+                        .clone()
+                        .filter(|m| !m.trim().is_empty())
+                        .or_else(|| capacity.preferred_model.clone());
+                    return SubAgentTask {
+                        id: template.id.to_string(),
+                        title: template.title.to_string(),
+                        kind: template.kind,
+                        agent: capacity.resolved_executor_id().to_string(),
+                        provider: capacity
+                            .provider_id
+                            .clone()
+                            .unwrap_or_else(|| capacity.provider.clone()),
+                        executor_kind: capacity.resolved_executor_kind(),
+                        executor_id: capacity.resolved_executor_id().to_string(),
+                        provider_id: capacity.provider_id.clone(),
+                        model,
+                        thinking: template.thinking,
+                        instruction: template.instruction.to_string(),
+                        depends_on: template.depends_on.iter().map(|d| d.to_string()).collect(),
+                        budget_tokens: DEFAULT_STEP_BUDGET,
+                        allow_write: template.allow_write,
+                    };
+                }
             }
 
             let request = RouteRequest {
@@ -240,6 +335,9 @@ pub fn build_plan(
         .unwrap_or_else(|| task.config.title.clone());
     let budget = load_budget_config()?;
     let caps = available_capacities(settings, &budget);
+    // Reject an override that names something not in the registry (or a model the
+    // capacity doesn't offer) before building any steps.
+    validate_override(&caps, &override_provider, &override_model)?;
     // Learned routing bias from this project's outcome ledger (N8-B). Empty —
     // hence a no-op — until the ledger has enough confirmed/auto signal.
     let bias = crate::outcomes::routing_bias(&project.name).unwrap_or_default();

@@ -23,6 +23,38 @@ use crate::git_workspace::{self, GitFileChange};
 /// balloons; the full working tree is still on disk for the human to inspect.
 const MAX_DIFF_BYTES: usize = 200 * 1024;
 
+/// Caps on the agent output kept on a [`CodingAgentExecution`]. The raw streams
+/// are still on disk (restrictive perms); these bound what enters a run record
+/// and the Memory Brain so a runaway log can't balloon state or exfil secrets.
+const MAX_STDOUT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_STDERR_BYTES: usize = 1024 * 1024;
+
+/// Environment variable names forwarded to a coding-agent subprocess. The child
+/// is otherwise started with a cleared environment, so RepoDesk's own secrets
+/// (provider API keys, cloud creds, DB URLs, …) never leak into it. Agents
+/// authenticate via their own config under `HOME`, not via these vars.
+const FORWARDED_ENV_VARS: &[&str] = &[
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "TEMP",
+    "TMP",
+    "LANG",
+    "LOGNAME",
+    "USER",
+    "SHELL",
+    "PWD",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    // Windows equivalents so agents can locate their config/runtime there too.
+    "SystemRoot",
+    "USERPROFILE",
+    "APPDATA",
+    "LOCALAPPDATA",
+    "PATHEXT",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodingAgentSpec {
     pub id: String,
@@ -81,10 +113,21 @@ pub struct CodingAgentExecution {
     pub status: String,
     pub exit_code: Option<i32>,
     pub duration_ms: u128,
+    /// Bounded ([`MAX_STDOUT_BYTES`]) and secret-redacted stdout. The full raw
+    /// stream is at `stdout_path` with restrictive permissions.
     pub stdout: String,
+    /// Bounded ([`MAX_STDERR_BYTES`]) and secret-redacted stderr.
     pub stderr: String,
     pub stdout_path: String,
     pub stderr_path: String,
+    /// Whether the in-record stdout/stderr were truncated to their byte caps.
+    #[serde(default)]
+    pub stdout_truncated: bool,
+    #[serde(default)]
+    pub stderr_truncated: bool,
+    /// Distinct secret kinds redacted out of the in-record output, if any.
+    #[serde(default)]
+    pub secrets_redacted: Vec<String>,
     pub timed_out: bool,
     /// Files the run changed, as a porcelain delta (post-run minus pre-run git
     /// status). Empty when the working dir is not a git repo or nothing changed.
@@ -367,12 +410,17 @@ pub fn run_coding_agent_command(
     let stderr_path = output_dir.join(format!("{safe_id}-{stamp}.stderr.log"));
     let stdout_file = File::create(&stdout_path)?;
     let stderr_file = File::create(&stderr_path)?;
+    // The raw streams may contain whatever the agent printed; keep them
+    // owner-only so a debug bundle / backup doesn't expose them broadly.
+    restrict_permissions(&stdout_path);
+    restrict_permissions(&stderr_path);
 
     // Snapshot the working tree before the run so we can attribute exactly what
     // the agent changed (post-run minus pre-run). `None` when `cwd` is not a repo.
     let pre_status = git_porcelain(cwd);
 
-    let mut child = Command::new(&command.program)
+    let mut builder = Command::new(&command.program);
+    builder
         .args(&command.args)
         .current_dir(cwd)
         .stdin(if command.stdin_required {
@@ -381,7 +429,11 @@ pub fn run_coding_agent_command(
             Stdio::null()
         })
         .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
+        .stderr(Stdio::from(stderr_file));
+    // Start from an empty environment and forward only non-secret vars, so the
+    // child never inherits RepoDesk's provider keys or other secrets.
+    apply_sanitized_env(&mut builder);
+    let mut child = builder
         .spawn()
         .map_err(|error| RepoDeskError::ProviderUnavailable {
             provider: command.executor_id.clone(),
@@ -413,16 +465,29 @@ pub fn run_coding_agent_command(
     // itself a useful "no writes" receipt.
     let changeset = capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_deref());
 
+    // Bound then secret-redact the streams before they enter the run record /
+    // Memory Brain. The raw, unredacted streams remain at *_path on disk.
+    let (raw_stdout, stdout_truncated) = read_bounded(&stdout_path, MAX_STDOUT_BYTES)?;
+    let (raw_stderr, stderr_truncated) = read_bounded(&stderr_path, MAX_STDERR_BYTES)?;
+    let (stdout, mut secrets_redacted) = crate::security::redact_secrets(&raw_stdout);
+    let (stderr, stderr_secrets) = crate::security::redact_secrets(&raw_stderr);
+    secrets_redacted.extend(stderr_secrets);
+    secrets_redacted.sort();
+    secrets_redacted.dedup();
+
     Ok(CodingAgentExecution {
         executor_id: command.executor_id.clone(),
         command_preview: command.command_preview.clone(),
         status: status_label.to_string(),
         exit_code,
         duration_ms: started.elapsed().as_millis(),
-        stdout: read_lossy(&stdout_path)?,
-        stderr: read_lossy(&stderr_path)?,
+        stdout,
+        stderr,
         stdout_path: stdout_path.display().to_string(),
         stderr_path: stderr_path.display().to_string(),
+        stdout_truncated,
+        stderr_truncated,
+        secrets_redacted,
         timed_out,
         changed_files: changeset.changed_files,
         diff: changeset.diff,
@@ -593,9 +658,50 @@ fn format_command_preview(command: &CodingAgentCommandSpec) -> String {
     parts.join(" ")
 }
 
-fn read_lossy(path: &Path) -> RepoDeskResult<String> {
+/// Read at most `max` bytes of a file, lossily decoded. Returns the text and
+/// whether it was truncated (a marker is appended when so).
+fn read_bounded(path: &Path, max: usize) -> RepoDeskResult<(String, bool)> {
     let bytes = fs::read(path)?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    let truncated = bytes.len() > max;
+    let slice = if truncated { &bytes[..max] } else { &bytes[..] };
+    let mut text = String::from_utf8_lossy(slice).into_owned();
+    if truncated {
+        text.push_str("\n[output truncated]");
+    }
+    Ok((text, truncated))
+}
+
+/// Clear the child's environment and forward only the [`FORWARDED_ENV_VARS`]
+/// allowlist (plus `LC_*` locale vars). `TERM` is pinned to `dumb` so agents
+/// don't emit ANSI control sequences into the captured logs.
+fn apply_sanitized_env(builder: &mut Command) {
+    builder.env_clear();
+    for name in FORWARDED_ENV_VARS {
+        if let Some(value) = env::var_os(name) {
+            builder.env(name, value);
+        }
+    }
+    for (key, value) in env::vars_os() {
+        if key.to_string_lossy().starts_with("LC_") {
+            builder.env(key, value);
+        }
+    }
+    builder.env("TERM", "dumb");
+}
+
+/// Best-effort restrict a file to owner read/write (`0o600`) on Unix. A no-op
+/// elsewhere; failures are ignored since the bounded/redacted in-record copy is
+/// the security-relevant one.
+fn restrict_permissions(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(path, fs::Permissions::from_mode(0o600));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+    }
 }
 
 fn find_executable(name: &str) -> Option<PathBuf> {
@@ -792,14 +898,16 @@ mod tests {
     #[test]
     fn probed_availability_for_missing_binary_skips_probe() {
         // `codex`/`claude` are unlikely to exist on a CI PATH; if they do the
-        // probe just adds a version. Either way the call must not error and must
-        // leave the auth state unknown.
+        // probe may add version/auth metadata from local artifacts. Either way
+        // the call must not error.
         let availability = coding_agent_availability_probed("codex_cli").unwrap();
         assert_eq!(availability.executor_id, "codex_cli");
-        assert_eq!(availability.authenticated, None);
         if !availability.available {
             assert_eq!(availability.version, None);
+            assert_eq!(availability.authenticated, None);
             assert_eq!(availability.status, "missing");
+        } else {
+            assert!(matches!(availability.authenticated, None | Some(true)));
         }
     }
 

@@ -28,7 +28,9 @@ fn orchestrator_settings() -> ProviderSettings {
         settings.ollama.base_url = Some(saved.ollama_url);
         settings.ollama.default_model = Some(saved.ollama_model);
         settings.lm_studio.base_url = Some(saved.lm_studio_url);
-        // Keys pasted into the app take precedence over environment variables.
+        // `read_provider_settings` already resolves secrets keychain-first (with
+        // a legacy plaintext fallback), so a configured key here takes precedence
+        // over the environment. Secrets are never logged or returned to the UI.
         if !saved.anthropic_api_key.trim().is_empty() {
             settings.anthropic.api_key = Some(saved.anthropic_api_key);
         }
@@ -38,18 +40,6 @@ fn orchestrator_settings() -> ProviderSettings {
         if !saved.gemini_api_key.trim().is_empty() {
             settings.gemini.api_key = Some(saved.gemini_api_key);
         }
-    }
-    // Securely stored keychain secrets fill any key still unset (preferred over
-    // plaintext settings; never logged or returned to the frontend).
-    use repodesk_core::credentials::{self, ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY};
-    if settings.openai.api_key.is_none() {
-        settings.openai.api_key = credentials::resolve_secret(OPENAI_API_KEY);
-    }
-    if settings.anthropic.api_key.is_none() {
-        settings.anthropic.api_key = credentials::resolve_secret(ANTHROPIC_API_KEY);
-    }
-    if settings.gemini.api_key.is_none() {
-        settings.gemini.api_key = credentials::resolve_secret(GEMINI_API_KEY);
     }
     settings
 }
@@ -133,6 +123,7 @@ pub async fn orchestrate_loop(
         override_provider,
         override_model,
         settings: orchestrator_settings(),
+        use_isolated_worktree: true,
     };
     Ok(orchestrator::run_loop(goal, &opts).await?)
 }

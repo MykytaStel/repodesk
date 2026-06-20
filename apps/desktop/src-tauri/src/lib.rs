@@ -300,6 +300,8 @@ pub fn run() {
             commands::credential_set,
             commands::credential_delete,
             commands::credential_status,
+            commands::audit_recent,
+            commands::audit_verify,
             commands::task_timeline,
             commands::coding_agent_executors,
             commands::outcomes_list,

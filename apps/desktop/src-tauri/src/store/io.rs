@@ -3,7 +3,66 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use repodesk_core::credentials;
+
 use super::types::{DbStatus, ProviderSettings};
+
+/// Legacy plaintext settings key ↔ canonical keychain credential key, for the
+/// secrets that now live in the OS keychain instead of the SQLite settings table.
+const SECRET_KEYS: &[(&str, &str)] = &[
+    ("provider.anthropic_api_key", credentials::ANTHROPIC_API_KEY),
+    ("provider.openai_api_key", credentials::OPENAI_API_KEY),
+    ("provider.gemini_api_key", credentials::GEMINI_API_KEY),
+];
+
+/// Resolve a provider secret: keychain first, then the legacy plaintext column.
+/// Empty string when neither holds it. Never errors — a keychain miss/failure
+/// falls back to plaintext so the app keeps working pre-migration.
+fn resolve_provider_key(connection: &Connection, setting_key: &str, cred_key: &str) -> String {
+    if let Ok(Some(secret)) = credentials::keychain_secret(cred_key) {
+        return secret;
+    }
+    get_string(connection, setting_key, "").unwrap_or_default()
+}
+
+/// Persist a provider secret to the keychain and clear the legacy plaintext
+/// column. Errors when the keychain write fails, so a secret is never silently
+/// written to plaintext instead.
+fn persist_secret(
+    connection: &Connection,
+    setting_key: &str,
+    cred_key: &str,
+    value: &str,
+) -> Result<(), String> {
+    credentials::store_secret(cred_key, value).map_err(|error| error.to_string())?;
+    // Also covers the empty/clear case (store_secret deletes a blank value).
+    set_setting(connection, setting_key, "")
+}
+
+/// Best-effort, idempotent migration of legacy plaintext API keys into the OS
+/// keychain: store each non-empty plaintext key (unless the keychain already has
+/// one), clear the plaintext column, then VACUUM so the old value can't linger
+/// in freed pages. A box without a keychain leaves the plaintext fallback intact.
+fn migrate_legacy_keys(connection: &Connection) {
+    let mut migrated_any = false;
+    for (setting_key, cred_key) in SECRET_KEYS {
+        let plaintext = match get_setting(connection, setting_key) {
+            Ok(Some(value)) if !value.trim().is_empty() => value,
+            _ => continue,
+        };
+        // Don't clobber an existing keychain value; only store when absent.
+        let needs_store = matches!(credentials::keychain_secret(cred_key), Ok(None));
+        if needs_store && credentials::store_secret(cred_key, &plaintext).is_err() {
+            continue; // Keychain unavailable — keep plaintext, retry next time.
+        }
+        if set_setting(connection, setting_key, "").is_ok() {
+            migrated_any = true;
+        }
+    }
+    if migrated_any {
+        let _ = connection.execute_batch("VACUUM;");
+    }
+}
 
 fn now_ms() -> u128 {
     SystemTime::now()
@@ -139,6 +198,11 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
         &defaults.preferred_review_provider,
     )?);
 
+    // One-time, best-effort move of any legacy plaintext keys into the OS
+    // keychain; clears the plaintext column + VACUUMs on success. A box without
+    // a keychain (headless CI) silently keeps the plaintext fallback below.
+    migrate_legacy_keys(&connection);
+
     Ok(ProviderSettings {
         ollama_enabled: get_bool(
             &connection,
@@ -213,21 +277,23 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
             "provider.anthropic_api_enabled",
             defaults.anthropic_api_enabled,
         )?,
-        anthropic_api_key: get_string(
+        // Secrets resolve keychain-first, with the legacy plaintext column only
+        // as a fallback until migration moves it into the keychain.
+        anthropic_api_key: resolve_provider_key(
             &connection,
             "provider.anthropic_api_key",
-            &defaults.anthropic_api_key,
-        )?,
-        openai_api_key: get_string(
+            credentials::ANTHROPIC_API_KEY,
+        ),
+        openai_api_key: resolve_provider_key(
             &connection,
             "provider.openai_api_key",
-            &defaults.openai_api_key,
-        )?,
-        gemini_api_key: get_string(
+            credentials::OPENAI_API_KEY,
+        ),
+        gemini_api_key: resolve_provider_key(
             &connection,
             "provider.gemini_api_key",
-            &defaults.gemini_api_key,
-        )?,
+            credentials::GEMINI_API_KEY,
+        ),
         allow_paid_agents: get_bool(
             &connection,
             "provider.allow_paid_agents",
@@ -335,19 +401,23 @@ pub fn save_provider_settings(mut settings: ProviderSettings) -> Result<Provider
         "provider.anthropic_api_enabled",
         &settings.anthropic_api_enabled.to_string(),
     )?;
-    set_setting(
+    // Secrets go to the OS keychain, never the plaintext settings table.
+    persist_secret(
         &connection,
         "provider.anthropic_api_key",
+        credentials::ANTHROPIC_API_KEY,
         &settings.anthropic_api_key,
     )?;
-    set_setting(
+    persist_secret(
         &connection,
         "provider.openai_api_key",
+        credentials::OPENAI_API_KEY,
         &settings.openai_api_key,
     )?;
-    set_setting(
+    persist_secret(
         &connection,
         "provider.gemini_api_key",
+        credentials::GEMINI_API_KEY,
         &settings.gemini_api_key,
     )?;
     set_setting(

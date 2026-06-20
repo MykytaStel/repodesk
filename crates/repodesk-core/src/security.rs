@@ -20,7 +20,7 @@ pub struct SecurityPolicy {
     pub blocked_path_patterns: Vec<String>,
     pub paid_agents: Vec<String>,
     pub patch_agents: Vec<String>,
-    
+
     // Enterprise Policy Additions
     pub allowed_models: Option<Vec<String>>,
     pub budget_limit_tokens: Option<u64>,
@@ -211,14 +211,21 @@ Blocked path patterns:
         format_list(&policy.patch_agents),
         format_list(&policy.blocked_path_patterns),
     );
-    
+
     let enterprise_section = format!(
         "\nEnterprise Policy:\n  allowed models: {}\n  budget limit tokens: {}\n  policy source url: {}\n",
-        policy.allowed_models.as_ref().map(|l| l.join(", ")).unwrap_or_else(|| "Any".to_string()),
-        policy.budget_limit_tokens.map(|l| l.to_string()).unwrap_or_else(|| "Unlimited".to_string()),
+        policy
+            .allowed_models
+            .as_ref()
+            .map(|l| l.join(", "))
+            .unwrap_or_else(|| "Any".to_string()),
+        policy
+            .budget_limit_tokens
+            .map(|l| l.to_string())
+            .unwrap_or_else(|| "Unlimited".to_string()),
         policy.policy_source_url.as_deref().unwrap_or("Local")
     );
-    
+
     base_format + &enterprise_section
 }
 
@@ -289,44 +296,66 @@ pub fn is_blocked_path(path: &str) -> Option<String> {
     None
 }
 
-pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
+/// The secret detectors shared by [`scan_text_for_secrets`] and
+/// [`redact_secrets`]: `(kind, regex)`. Compiled once.
+fn secret_detectors() -> &'static [(&'static str, Regex)] {
     use std::sync::OnceLock;
+    static DETECTORS: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
+    DETECTORS.get_or_init(|| {
+        vec![
+            ("AWS Access Key ID", Regex::new(r"AKIA[0-9A-Z]{16}").unwrap()),
+            (
+                "Stripe Live Key",
+                Regex::new(r"(sk_live|rk_live)_[0-9a-zA-Z]{24}").unwrap(),
+            ),
+            (
+                "OpenAI/Anthropic API Key",
+                Regex::new(r"sk-(ant-)?[A-Za-z0-9_-]{20,}").unwrap(),
+            ),
+            (
+                "GitHub Token",
+                Regex::new(r"gh[pousr]_[A-Za-z0-9]{20,}").unwrap(),
+            ),
+            (
+                "Generic API Key or Token",
+                Regex::new(r#"(?i)(api[_-]?key|token|secret|password)["']?\s*[=:]\s*['"]?[a-zA-Z0-9_\-./+]{16,}['"]?"#)
+                    .unwrap(),
+            ),
+            (
+                "Private Key block",
+                Regex::new(
+                    r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----|-----BEGIN [A-Z ]*PRIVATE KEY-----",
+                )
+                    .unwrap(),
+            ),
+        ]
+    })
+}
 
-    let mut findings = Vec::new();
+pub fn scan_text_for_secrets(text: &str) -> Vec<String> {
+    secret_detectors()
+        .iter()
+        .filter(|(_, re)| re.is_match(text))
+        .map(|(kind, _)| (*kind).to_string())
+        .collect()
+}
 
-    // AWS Access Key ID
-    static AWS_REGEX: OnceLock<Regex> = OnceLock::new();
-    let aws_re = AWS_REGEX.get_or_init(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
-    if aws_re.is_match(text) {
-        findings.push("AWS Access Key ID".to_string());
+/// Replace secret-looking substrings with `[REDACTED:<kind>]` markers so the
+/// text is safe to persist and surface. Returns the redacted text and the
+/// distinct kinds that were redacted. Used to sanitize coding-agent output
+/// before it is written to a run record or handed to the Memory Brain.
+pub fn redact_secrets(text: &str) -> (String, Vec<String>) {
+    let mut redacted = text.to_string();
+    let mut kinds = Vec::new();
+    for (kind, re) in secret_detectors() {
+        if re.is_match(&redacted) {
+            redacted = re
+                .replace_all(&redacted, format!("[REDACTED:{kind}]").as_str())
+                .into_owned();
+            kinds.push((*kind).to_string());
+        }
     }
-
-    // Stripe keys
-    static STRIPE_REGEX: OnceLock<Regex> = OnceLock::new();
-    let stripe_re =
-        STRIPE_REGEX.get_or_init(|| Regex::new(r"(sk_live|rk_live)_[0-9a-zA-Z]{24}").unwrap());
-    if stripe_re.is_match(text) {
-        findings.push("Stripe Live Key".to_string());
-    }
-
-    // Generic API keys/tokens (heuristic)
-    static GENERIC_REGEX: OnceLock<Regex> = OnceLock::new();
-    let generic_re = GENERIC_REGEX.get_or_init(|| {
-        Regex::new(r#"(?i)(api_key|token|secret)[=:]\s*['"]?[a-zA-Z0-9_-]{20,}['"]?"#).unwrap()
-    });
-    if generic_re.is_match(text) {
-        findings.push("Generic API Key or Token".to_string());
-    }
-
-    // Private keys
-    if text.contains("-----BEGIN RSA PRIVATE KEY-----")
-        || text.contains("-----BEGIN OPENSSH PRIVATE KEY-----")
-        || text.contains("-----BEGIN PRIVATE KEY-----")
-    {
-        findings.push("Private Key block".to_string());
-    }
-
-    findings
+    (redacted, kinds)
 }
 
 #[cfg(test)]
