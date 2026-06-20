@@ -607,3 +607,65 @@ pub async fn refresh_model_health() -> ModelHealthSnapshot {
             warnings: vec!["Internal async task failure while refreshing models".into()],
         })
 }
+
+#[tauri::command]
+pub async fn start_local_server(provider: String) -> Result<(), String> {
+    use std::process::Command;
+
+    match provider.as_str() {
+        "ollama" => {
+            // macOS standard app bundle path
+            let status = Command::new("open")
+                .arg("-a")
+                .arg("Ollama")
+                .status()
+                .map_err(|e| format!("Failed to launch Ollama: {}", e))?;
+            if !status.success() {
+                return Err("Ollama launch command returned non-zero status".to_string());
+            }
+        }
+        "lm_studio" => {
+            let status = Command::new("open")
+                .arg("-a")
+                .arg("LM Studio")
+                .status()
+                .map_err(|e| format!("Failed to launch LM Studio: {}", e))?;
+            if !status.success() {
+                return Err("LM Studio launch command returned non-zero status".to_string());
+            }
+        }
+        _ => return Err(format!("Provider {} does not support local launch", provider)),
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn system_model_recommendations() -> Vec<String> {
+    let os = std::env::consts::OS;
+    let arch = std::env::consts::ARCH;
+    let mut recommendations = Vec::new();
+
+    if os == "macos" {
+        if arch == "aarch64" {
+            recommendations.push("Your system: Mac (Apple Silicon).".to_string());
+            recommendations.push("Recommendation: Use Ollama with models like Llama 3 or Qwen2.5. Apple's unified memory and Metal optimization give incredible performance for local LLMs.".to_string());
+        } else {
+            recommendations.push("Your system: Mac (Intel).".to_string());
+            recommendations.push("Recommendation: Local inference may be slow. Consider using API-based models (Anthropic, OpenAI) or smaller local models (Phi-3) via LM Studio.".to_string());
+        }
+    } else if os == "windows" {
+        recommendations.push("Your system: Windows.".to_string());
+        recommendations.push("Recommendation: LM Studio is highly recommended if you have an NVidia GPU (uses CUDA). Ollama also works great under WSL2 or natively.".to_string());
+    } else if os == "linux" {
+        recommendations.push("Your system: Linux.".to_string());
+        recommendations.push("Recommendation: Both Ollama and LM Studio work exceptionally well, especially if you have configured NVIDIA/AMD drivers for hardware acceleration.".to_string());
+    } else {
+        recommendations.push(format!("Your system: {} ({}).", os, arch));
+        recommendations.push("Recommendation: We suggest trying Ollama first to see how your system handles local LLMs.".to_string());
+    }
+    
+    recommendations.push("General advice: A model with 7B-8B parameters needs about 8GB RAM. Use larger models (14B-32B) only if you have 16GB+ RAM.".to_string());
+
+    recommendations
+}

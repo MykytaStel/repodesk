@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 /// The schema version the current binary expects.
-pub const TARGET_VERSION: i64 = 3;
+pub const TARGET_VERSION: i64 = 4;
 
 fn db_err(context: &str, e: impl std::fmt::Display) -> RepoDeskError {
     RepoDeskError::Database(format!("{context}: {e}"))
@@ -41,6 +41,11 @@ pub fn run_migrations(conn: &Connection) -> RepoDeskResult<()> {
     if current < 3 {
         migrate_to_v3(conn)?;
         set_version(conn, 3)?;
+    }
+
+    if current < 4 {
+        migrate_to_v4(conn)?;
+        set_version(conn, 4)?;
     }
 
     Ok(())
@@ -195,6 +200,37 @@ fn migrate_to_v3(conn: &Connection) -> RepoDeskResult<()> {
     Ok(())
 }
 
+/// Migration 4 — RAG document embeddings. This table stores the chunked text and 
+/// its vector embedding blob for local semantic search against project files.
+fn migrate_to_v4(conn: &Connection) -> RepoDeskResult<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS project_embeddings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            embedding_blob BLOB NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create project_embeddings table", e))?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_embeddings_project ON project_embeddings (project)",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create idx_embeddings_project", e))?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_embeddings_project_path ON project_embeddings (project, file_path)",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create idx_embeddings_project_path", e))?;
+
+    Ok(())
+}
+
 fn column_exists(conn: &Connection, table: &str, column: &str) -> RepoDeskResult<bool> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -297,5 +333,11 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM run_outcomes", [], |row| row.get(0))
             .unwrap();
         assert_eq!(outcome_count, 0);
+
+        // v4: project_embeddings table exists.
+        let emb_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM project_embeddings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(emb_count, 0);
     }
 }

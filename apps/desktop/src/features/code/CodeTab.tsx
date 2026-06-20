@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { formatNumber, stringifyPreview } from "../../shared/ui/SharedComponents";
+import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { useCode } from "./useCode";
 import { callCommand } from "../../shared/api/queries";
 import {
@@ -74,16 +75,33 @@ export function CodeTab() {
     return [...set].sort((a, b) => (findingsByFile.get(b)?.worstRank ?? 0) - (findingsByFile.get(a)?.worstRank ?? 0) || a.localeCompare(b));
   }, [changedFiles, fileFindings, findingsByFile]);
 
-  const loadCodeFile = async (path: string) => {
+  const [viewMode, setViewMode] = useState<"diff" | "file">("diff");
+
+  const loadCodeFile = async (path: string, mode: "diff" | "file" = viewMode) => {
     setSelectedFile(path);
     setSelectedFileContent("Loading...");
     try {
-      const result = await callCommand<any>("read_code_file", { relativePath: path, relative_path: path });
-      setSelectedFileContent(result?.content ?? stringifyPreview(result));
+      if (mode === "diff") {
+        const result = await callCommand<string>("git_file_diff", { path, cached: false });
+        if (!result.trim()) {
+          const cachedResult = await callCommand<string>("git_file_diff", { path, cached: true });
+          setSelectedFileContent(cachedResult.trim() ? cachedResult : "No differences found.");
+        } else {
+          setSelectedFileContent(result);
+        }
+      } else {
+        const result = await callCommand<any>("read_code_file", { relativePath: path, relative_path: path });
+        setSelectedFileContent(result?.content ?? stringifyPreview(result));
+      }
     } catch (error) {
       setSelectedFileContent(String(error));
     }
   };
+
+  // Re-load when view mode changes
+  useEffect(() => {
+    if (selectedFile) loadCodeFile(selectedFile, viewMode);
+  }, [viewMode]);
 
   const selectedGroup = selectedFile ? findingsByFile.get(selectedFile) : undefined;
   const counts = report?.counts;
@@ -177,9 +195,21 @@ export function CodeTab() {
         <section className="panel fill-height preview-panel">
           <div className="panel-title-row">
             <p className="eyebrow">File preview</p>
-            {selectedFile && <strong>{selectedFile}</strong>}
+            {selectedFile && (
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <strong>{selectedFile}</strong>
+                <div className="button-row" style={{ marginTop: 0 }}>
+                  <button className={`tiny-button ${viewMode === "diff" ? "primary-button" : "ghost-button"}`} onClick={() => setViewMode("diff")}>Diff</button>
+                  <button className={`tiny-button ${viewMode === "file" ? "primary-button" : "ghost-button"}`} onClick={() => setViewMode("file")}>Full File</button>
+                </div>
+              </div>
+            )}
           </div>
-          <pre className="code-panel scrollable">{selectedFileContent || "Select a file to preview"}</pre>
+          {viewMode === "diff" ? (
+            <DiffViewer diff={selectedFileContent === "Loading..." ? "" : selectedFileContent} />
+          ) : (
+            <pre className="code-panel scrollable">{selectedFileContent || "Select a file to preview"}</pre>
+          )}
         </section>
       </div>
     </div>

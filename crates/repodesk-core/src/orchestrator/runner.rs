@@ -39,6 +39,8 @@ use super::types::{
 
 static RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+use wait_timeout::ChildExt;
+
 /// Where coding-agent CLI processes are allowed to run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentWorkspacePolicy {
@@ -104,13 +106,25 @@ pub async fn run_plan(
 
     let mut state = RunState::default();
 
+enum StepExecutionResult {
+    Llm(RepoDeskResult<LlmResponse>),
+    CodingAgent {
+        execution: RepoDeskResult<crate::executors::CodingAgentExecution>,
+        workspace: Option<crate::worktree::RunWorktree>,
+        verify_cmd_notes: Vec<String>,
+        verify_failed: bool,
+        combined_stdout: String,
+        combined_stderr: String,
+    },
+}
+
     for wave in &waves {
         // ── Decision pass: gate every step in ascending index order. Each step
         // is either finalized here (skipped/blocked/manual/dry-run) or has its
         // provider call scheduled. The cost ceiling reserves projected cost in
         // order, so the gating decision is deterministic regardless of the
         // concurrent execution that follows.
-        let mut set: JoinSet<(usize, RepoDeskResult<LlmResponse>)> = JoinSet::new();
+        let mut set: JoinSet<(usize, StepExecutionResult)> = JoinSet::new();
         let mut scheduled: Vec<ExecMeta> = Vec::new();
 
         for &idx in wave {
@@ -281,121 +295,104 @@ pub async fn run_plan(
                 let cwd = workspace.cwd.clone();
                 let output_dir = executor_output_dir.clone();
                 let timeout_secs = opts.coding_agent_timeout_secs;
-                let execution = tokio::task::spawn_blocking(move || {
-                    crate::executors::run_coding_agent_command(
-                        &command,
-                        &prompt,
-                        &cwd,
-                        &output_dir,
-                        timeout_secs,
-                    )
-                })
-                .await
-                .map_err(|error| {
-                    crate::errors::RepoDeskError::Api(format!("coding-agent task failed: {error}"))
-                })?;
+                let verify_cmd_opt = step.verify_command.clone();
+                
+                set.spawn(async move {
+                    let (execution_res, verify_cmd_notes, verify_failed, combined_stdout, combined_stderr) = tokio::task::spawn_blocking(move || {
+                        let res = crate::executors::run_coding_agent_command(
+                            &command,
+                            &prompt,
+                            &cwd,
+                            &output_dir,
+                            timeout_secs,
+                        );
 
-                let execution = match execution {
-                    Ok(execution) => execution,
-                    Err(error) => {
-                        state.running_cost -= projected_cost;
-                        state.push(failed(
-                            step,
-                            format!("coding-agent execution failed: {error}"),
-                        ));
-                        continue;
-                    }
-                };
-                let output_tokens = estimate_text(&execution.stdout).estimated_tokens;
-                let cost = estimate_agent_cost(
-                    &cost_config,
-                    step.resolved_executor_id(),
-                    input_tokens,
-                    output_tokens,
-                )
-                .estimated_cost_units;
-                state.running_cost += cost - projected_cost;
-                let _ = log_token_event(LogTokenInput {
-                    agent: step.resolved_executor_id().to_string(),
-                    model: Some(execution.executor_id.clone()),
-                    input_tokens,
-                    output_tokens,
-                    category: "orchestrate".to_string(),
-                    notes: Some(step.id.clone()),
-                });
-                let captured = if execution.status == "ok" {
-                    crate::memory::capture_from_text(
-                        &plan.project,
-                        &plan.task_id,
-                        step.resolved_executor_id(),
-                        &execution.stdout,
-                    )
-                    .map(|proposals| proposals.len())
-                    .unwrap_or(0)
-                } else {
-                    0
-                };
-                let mut notes = vec![
-                    format!("command: {}", execution.command_preview),
-                    format!("stdout: {}", execution.stdout_path),
-                    format!("stderr: {}", execution.stderr_path),
-                    format!("duration_ms: {}", execution.duration_ms),
-                ];
-                if let Some(worktree) = &workspace.worktree {
-                    notes.push(format!(
-                        "isolated workspace: {} (id {}, base {}, metadata {}); review accept can apply it back",
-                        worktree.path,
-                        worktree.workspace_id,
-                        worktree.base_commit,
-                        worktree.metadata_path.as_deref().unwrap_or("(not recorded)")
-                    ));
-                }
-                let changed_files: Vec<String> = execution
-                    .changed_files
-                    .iter()
-                    .map(|change| change.path.clone())
-                    .collect();
-                if changed_files.is_empty() {
-                    notes.push("changed files: none (no writes detected)".to_string());
-                } else {
-                    notes.push(format!(
-                        "changed files ({}): {}",
-                        changed_files.len(),
-                        changed_files.join(", ")
-                    ));
-                    if let Some(diff_path) = &execution.diff_path {
-                        notes.push(format!(
-                            "diff: {diff_path}{}",
-                            if execution.diff_truncated {
-                                " (truncated)"
-                            } else {
-                                ""
+                        let mut v_notes = Vec::new();
+                        let mut v_failed = false;
+                        let mut c_stdout = String::new();
+                        let mut c_stderr = String::new();
+
+                        if let Ok(exec) = &res {
+                            c_stdout = exec.stdout.clone();
+                            c_stderr = exec.stderr.clone();
+
+                            if exec.status == "ok" {
+                                if let Some(cmd) = &verify_cmd_opt {
+                                    v_notes.push(format!("verify command: {}", cmd));
+                                    let child = std::process::Command::new("sh")
+                                        .arg("-c")
+                                        .arg(cmd)
+                                        .current_dir(&cwd)
+                                        .stdout(std::process::Stdio::piped())
+                                        .stderr(std::process::Stdio::piped())
+                                        .spawn();
+                                        
+                                    match child {
+                                        Ok(mut child) => {
+                                            match child.wait_timeout(std::time::Duration::from_secs(120)) {
+                                                Ok(Some(status)) => {
+                                                    let output = child.wait_with_output().unwrap_or_else(|_| std::process::Output { status, stdout: Vec::new(), stderr: Vec::new() });
+                                                    let verify_stdout = String::from_utf8_lossy(&output.stdout);
+                                                    let verify_stderr = String::from_utf8_lossy(&output.stderr);
+                                                    
+                                                    if !status.success() {
+                                                        v_failed = true;
+                                                        v_notes.push(truncate_note("verify failed", &verify_stderr));
+                                                        
+                                                        c_stderr.push_str("\n\n--- Verification Failed ---\n");
+                                                        if !verify_stdout.is_empty() {
+                                                            c_stderr.push_str(&verify_stdout);
+                                                            c_stderr.push('\n');
+                                                        }
+                                                        c_stderr.push_str(&verify_stderr);
+                                                    } else {
+                                                        v_notes.push("verify passed".to_string());
+                                                    }
+                                                }
+                                                Ok(None) => {
+                                                    let _ = child.kill();
+                                                    let _ = child.wait();
+                                                    v_failed = true;
+                                                    v_notes.push("verify command timed out after 120s".to_string());
+                                                }
+                                                Err(e) => {
+                                                    let _ = child.kill();
+                                                    let _ = child.wait();
+                                                    v_failed = true;
+                                                    v_notes.push(format!("verify command wait failed: {}", e));
+                                                }
+                                            }
+                                        }
+                                        Err(e) => {
+                                            v_failed = true;
+                                            v_notes.push(format!("verify command failed to start: {}", e));
+                                        }
+                                    }
+                                }
                             }
-                        ));
-                    }
-                }
-                if execution.timed_out {
-                    notes.push("coding-agent process timed out and was killed".to_string());
-                }
-                if !execution.stderr.trim().is_empty() {
-                    notes.push(truncate_note("stderr", &execution.stderr));
-                }
-                state.push(SubAgentResult {
-                    status: if execution.status == "ok" {
-                        SubAgentStatus::Ok
-                    } else {
-                        SubAgentStatus::Failed
-                    },
+                        }
+                        (res, v_notes, v_failed, c_stdout, c_stderr)
+                    })
+                    .await
+                    .map_err(|error| {
+                        crate::errors::RepoDeskError::Api(format!("coding-agent task failed: {error}"))
+                    })
+                    .unwrap_or_else(|e| (Err(e), Vec::new(), false, String::new(), String::new()));
+
+                    (idx, StepExecutionResult::CodingAgent {
+                        execution: execution_res,
+                        workspace: workspace.worktree.clone(),
+                        verify_cmd_notes,
+                        verify_failed,
+                        combined_stdout,
+                        combined_stderr,
+                    })
+                });
+                
+                scheduled.push(ExecMeta {
+                    idx,
                     input_tokens,
-                    output_tokens,
-                    output: execution.stdout,
-                    cost_units: cost,
-                    captured_proposals: captured,
-                    changed_files,
-                    diff_path: execution.diff_path.clone(),
-                    workspace: workspace.worktree.clone(),
-                    notes,
-                    ..base_result(step)
+                    projected_cost,
                 });
                 continue;
             }
@@ -468,7 +465,7 @@ pub async fn run_plan(
                 .with_max_tokens(step.budget_tokens as u32)
                 .with_thinking(step.thinking);
             let fut = provider.complete(request);
-            set.spawn(async move { (idx, fut.await) });
+            set.spawn(async move { (idx, StepExecutionResult::Llm(fut.await)) });
             scheduled.push(ExecMeta {
                 idx,
                 input_tokens,
@@ -477,7 +474,7 @@ pub async fn run_plan(
         }
 
         // ── Execute pass: await every scheduled call (they run concurrently).
-        let mut responses: HashMap<usize, RepoDeskResult<LlmResponse>> = HashMap::new();
+        let mut responses: HashMap<usize, StepExecutionResult> = HashMap::new();
         while let Some(joined) = set.join_next().await {
             let (idx, response) = joined.map_err(|error| {
                 crate::errors::RepoDeskError::Api(format!("orchestration task failed: {error}"))
@@ -491,7 +488,7 @@ pub async fn run_plan(
         for meta in scheduled {
             let step = &plan.steps[meta.idx];
             match responses.remove(&meta.idx) {
-                Some(Ok(response)) => {
+                Some(StepExecutionResult::Llm(Ok(response))) => {
                     let _ = log_token_event(LogTokenInput {
                         agent: step.resolved_executor_id().to_string(),
                         model: Some(response.model.clone()),
@@ -531,12 +528,123 @@ pub async fn run_plan(
                         ..base_result(step)
                     });
                 }
-                Some(Err(error)) => {
+                Some(StepExecutionResult::Llm(Err(error))) => {
                     state.running_cost -= meta.projected_cost; // refund: call failed
                     state.push(SubAgentResult {
                         input_tokens: meta.input_tokens,
                         ..failed(step, format!("provider call failed: {error}"))
                     });
+                }
+                Some(StepExecutionResult::CodingAgent { 
+                    execution, workspace, verify_cmd_notes, verify_failed, combined_stdout, combined_stderr 
+                }) => {
+                    match execution {
+                        Ok(execution) => {
+                            let output_tokens = estimate_text(&execution.stdout).estimated_tokens;
+                            let cost = estimate_agent_cost(
+                                &cost_config,
+                                step.resolved_executor_id(),
+                                meta.input_tokens,
+                                output_tokens,
+                            )
+                            .estimated_cost_units;
+                            state.running_cost += cost - meta.projected_cost;
+                            let _ = log_token_event(LogTokenInput {
+                                agent: step.resolved_executor_id().to_string(),
+                                model: Some(execution.executor_id.clone()),
+                                input_tokens: meta.input_tokens,
+                                output_tokens,
+                                category: "orchestrate".to_string(),
+                                notes: Some(step.id.clone()),
+                            });
+                            
+                            let final_status = if execution.status == "ok" && !verify_failed {
+                                SubAgentStatus::Ok
+                            } else {
+                                SubAgentStatus::Failed
+                            };
+                            
+                            let mut notes = vec![
+                                format!("command: {}", execution.command_preview),
+                                format!("stdout: {}", execution.stdout_path),
+                                format!("stderr: {}", execution.stderr_path),
+                                format!("duration_ms: {}", execution.duration_ms),
+                            ];
+                            notes.extend(verify_cmd_notes);
+
+                            let captured = if final_status == SubAgentStatus::Ok {
+                                crate::memory::capture_from_text(
+                                    &plan.project,
+                                    &plan.task_id,
+                                    step.resolved_executor_id(),
+                                    &combined_stdout,
+                                )
+                                .map(|proposals| proposals.len())
+                                .unwrap_or(0)
+                            } else {
+                                0
+                            };
+                            if let Some(worktree) = &workspace {
+                                notes.push(format!(
+                                    "isolated workspace: {} (id {}, base {}, metadata {}); review accept can apply it back",
+                                    worktree.path,
+                                    worktree.workspace_id,
+                                    worktree.base_commit,
+                                    worktree.metadata_path.as_deref().unwrap_or("(not recorded)")
+                                ));
+                            }
+                            let changed_files: Vec<String> = execution
+                                .changed_files
+                                .iter()
+                                .map(|change| change.path.clone())
+                                .collect();
+                            if changed_files.is_empty() {
+                                notes.push("changed files: none (no writes detected)".to_string());
+                            } else {
+                                notes.push(format!(
+                                    "changed files ({}): {}",
+                                    changed_files.len(),
+                                    changed_files.join(", ")
+                                ));
+                                if let Some(diff_path) = &execution.diff_path {
+                                    notes.push(format!(
+                                        "diff: {diff_path}{}",
+                                        if execution.diff_truncated {
+                                            " (truncated)"
+                                        } else {
+                                            ""
+                                        }
+                                    ));
+                                }
+                            }
+                            if execution.timed_out {
+                                notes.push("coding-agent process timed out and was killed".to_string());
+                            }
+                            if !combined_stderr.trim().is_empty() {
+                                notes.push(truncate_note("stderr", &combined_stderr));
+                            }
+                            state.push(SubAgentResult {
+                                status: final_status,
+                                input_tokens: meta.input_tokens,
+                                output_tokens,
+                                output: combined_stdout,
+                                cost_units: cost,
+                                captured_proposals: captured,
+                                changed_files,
+                                diff_path: execution.diff_path.clone(),
+                                workspace: workspace.clone(),
+                                notes,
+                                ..base_result(step)
+                            });
+                        }
+                        Err(error) => {
+                            state.running_cost -= meta.projected_cost;
+                            state.push(SubAgentResult {
+                                input_tokens: meta.input_tokens,
+                                ..failed(step, format!("coding-agent execution failed: {error}"))
+                            });
+                        }
+                    }
                 }
                 None => {
                     state.running_cost -= meta.projected_cost;

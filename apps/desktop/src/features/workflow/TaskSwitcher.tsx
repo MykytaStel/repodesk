@@ -11,6 +11,7 @@ import { TaskSummary, taskList, taskNew, taskUse } from "../../shared/api/workfl
 export function TaskSwitcher() {
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
+  const [verifyCommand, setVerifyCommand] = useState("");
   const [error, setError] = useState("");
 
   const { data, isLoading } = useQuery<TaskSummary[]>({
@@ -38,7 +39,7 @@ export function TaskSwitcher() {
   });
 
   const createTask = useMutation({
-    mutationFn: (t: string) => taskNew(t),
+    mutationFn: (t: string) => taskNew(t, verifyCommand.trim() || undefined),
     onSuccess: (result) => {
       if (!result.ok) {
         setError(result.stderr || "Could not create task.");
@@ -46,6 +47,7 @@ export function TaskSwitcher() {
       }
       setError("");
       setTitle("");
+      setVerifyCommand("");
       void refetchAll();
     },
     onError: (e: any) => setError(e?.message || String(e)),
@@ -96,6 +98,15 @@ export function TaskSwitcher() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="New task title"
+          disabled={busy}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && title.trim() && !busy) createTask.mutate(title.trim());
+          }}
+        />
+        <input
+          value={verifyCommand}
+          onChange={(e) => setVerifyCommand(e.target.value)}
+          placeholder="Verify Command (e.g. npm test) (optional)"
           disabled={busy}
           onKeyDown={(e) => {
             if (e.key === "Enter" && title.trim() && !busy) createTask.mutate(title.trim());

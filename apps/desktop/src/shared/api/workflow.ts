@@ -170,8 +170,8 @@ export async function projectAdd(input: ProjectAddInput): Promise<CommandResult>
   return invoke("project_add", { input });
 }
 
-export async function taskNew(title: string): Promise<CommandResult> {
-  return invoke("task_new", { title });
+export async function taskNew(title: string, verify_command?: string): Promise<CommandResult> {
+  return invoke("task_new", { title, verifyCommand: verify_command });
 }
 
 export type TaskSummary = {

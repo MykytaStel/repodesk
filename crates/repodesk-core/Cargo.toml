@@ -23,6 +23,7 @@ reqwest = { version = "0.12", features = ["json"] }
 sha2 = "0.10"
 hex = "0.4"
 keyring = "4"
+ureq = { version = "3.3.0", features = ["json"] }
 
 [dev-dependencies]
 tempfile = "3"

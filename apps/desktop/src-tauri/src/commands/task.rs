@@ -6,10 +6,11 @@ use super::{
 use std::fs;
 
 #[tauri::command]
-pub fn task_new(title: String) -> Result<CommandResult, ErrorPayload> {
+pub fn task_new(title: String, verify_command: Option<String>) -> Result<CommandResult, ErrorPayload> {
     validate_text("Task title", &title, 180)?;
     match repodesk_core::tasks::create_task(repodesk_core::tasks::NewTaskInput {
         title: title.clone(),
+        verify_command,
     }) {
         Ok(task) => {
             let stdout = format!(

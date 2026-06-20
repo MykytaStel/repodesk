@@ -10,8 +10,8 @@ pub mod capabilities;
 pub mod checks;
 pub mod context;
 pub mod credentials;
-
 pub mod desktop;
+pub mod embeddings;
 pub mod errors;
 pub mod executors;
 pub mod guard;

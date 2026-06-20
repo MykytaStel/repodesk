@@ -95,6 +95,7 @@ mod tests {
             thinking: ThinkingLevel::None,
             instruction: "Do the thing.".to_string(),
             depends_on: vec!["analyze".to_string()],
+            verify_command: None,
             budget_tokens: 1_000,
             allow_write,
         }

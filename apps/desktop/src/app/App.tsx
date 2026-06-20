@@ -1,6 +1,8 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { callCommand } from "../shared/api/queries";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import { CommandPalette, type Command } from "../shared/ui/CommandPalette";
@@ -34,6 +36,12 @@ export default function App() {
 
   const workingProviders = models?.providers?.filter((provider: any) => provider.reachability === "working").length ?? 0;
   const booting = workspaceLoading;
+
+  const { data: projects = [] } = useQuery({
+    queryKey: ["project_list_configs"],
+    queryFn: () => invoke<any[]>("project_list_configs").catch(() => []),
+    staleTime: 60_000,
+  });
 
 
   useEffect(() => {
@@ -85,7 +93,16 @@ export default function App() {
       }
     };
     window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
+    
+    // Listen for global shortcut trigger from Tauri
+    const unlisten = listen('open-command-palette', () => {
+      setPaletteOpen(true);
+    });
+
+    return () => {
+      window.removeEventListener("keydown", handler);
+      unlisten.then(f => f());
+    };
   }, []);
 
   const commands = useMemo<Command[]>(() => {
@@ -104,8 +121,18 @@ export default function App() {
       { id: "action:theme-light", label: "Theme: Light", run: () => setTheme("light") },
       { id: "action:theme-system", label: "Theme: Auto", run: () => setTheme("system") },
     ];
-    return [...tabCommands, ...actions];
-  }, [queryClient]);
+    const projectCommands: Command[] = projects.map((p) => ({
+      id: `project:${p.name}`,
+      label: `Switch to project: ${p.name}`,
+      hint: p.path,
+      run: () => {
+        void invoke("project_use", { name: p.name })
+          .then(() => queryClient.invalidateQueries())
+          .catch((e: any) => console.error("Failed to switch project", e));
+      }
+    }));
+    return [...tabCommands, ...actions, ...projectCommands];
+  }, [queryClient, projects]);
 
   function renderActiveTab() {
     if (booting) return <StartupSkeleton />;

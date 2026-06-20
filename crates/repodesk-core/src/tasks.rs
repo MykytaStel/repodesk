@@ -15,6 +15,8 @@ pub struct TaskConfig {
     pub project_name: String,
     pub title: String,
     pub status: TaskStatus,
+    #[serde(default)]
+    pub verify_command: Option<String>,
     pub run_dir: PathBuf,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -30,6 +32,7 @@ pub enum TaskStatus {
 #[derive(Debug, Clone)]
 pub struct NewTaskInput {
     pub title: String,
+    pub verify_command: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +69,7 @@ pub fn create_task(input: NewTaskInput) -> RepoDeskResult<TaskInfo> {
         project_name: project.name.clone(),
         title: title.to_string(),
         status: TaskStatus::Open,
+        verify_command: input.verify_command,
         run_dir: run_dir.clone(),
         created_at: now,
         updated_at: now,

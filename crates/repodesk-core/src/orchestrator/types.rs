@@ -43,6 +43,9 @@ pub struct SubAgentTask {
     /// Whether the sub-agent is allowed to propose file writes/patches.
     #[serde(default)]
     pub allow_write: bool,
+    /// Optional command to run inside the worktree after an agent completes writes to verify them.
+    #[serde(default)]
+    pub verify_command: Option<String>,
 }
 
 impl SubAgentTask {
@@ -341,6 +344,7 @@ mod tests {
             thinking: ThinkingLevel::None,
             instruction: String::new(),
             depends_on: deps.iter().map(|d| d.to_string()).collect(),
+            verify_command: None,
             budget_tokens: 1_000,
             allow_write: false,
         }

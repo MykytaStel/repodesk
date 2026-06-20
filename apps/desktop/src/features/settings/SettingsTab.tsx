@@ -8,12 +8,14 @@ import {
   type CredentialMetadata,
 } from "../../shared/api/credentials";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { pickDirectory, basename } from "../../shared/api/dialog";
 import { useToast } from "../../shared/ui/Toast";
 import { useSettings } from "./useSettings";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { queryKeys } from "../../shared/api/queries";
+import { invoke } from "@tauri-apps/api/core";
+import { startLocalServer, refreshModelHealth, type ModelHealthSnapshot, type ProviderHealth } from "../../shared/api/models";
 
 export function SettingsTab() {
   const queryClient = useQueryClient();
@@ -42,6 +44,24 @@ export function SettingsTab() {
 
   const loadProjectMemory = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
+  };
+
+  const modelHealthQuery = useQuery({
+    queryKey: queryKeys.models.health,
+    queryFn: () => invoke<ModelHealthSnapshot>("model_health_snapshot"),
+  });
+
+  const handleLaunch = async (provider: string) => {
+    try {
+      await startLocalServer(provider);
+      toast.success(`Launched ${provider}, waiting for server...`);
+      // wait a bit for server to start before refreshing
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.models.health });
+      }, 3000);
+    } catch (error: any) {
+      toast.error(error?.message || `Could not launch ${provider}`);
+    }
   };
 
   const saveApiKeys = async () => {
@@ -222,7 +242,14 @@ export function SettingsTab() {
             <option value="empty">empty</option>
           </select></label>
           <label>Ollama URL<input value={providerSettings.ollama_url} onChange={(event) => saveSettings({ ...providerSettings, ollama_url: event.target.value })} /></label>
-          <label>Ollama default model<input value={providerSettings.ollama_model} onChange={(event) => saveSettings({ ...providerSettings, ollama_model: event.target.value })} /></label>
+          <LocalModelSelect
+            label="Ollama default model"
+            providerId="ollama"
+            value={providerSettings.ollama_model}
+            onChange={(val) => saveSettings({ ...providerSettings, ollama_model: val })}
+            health={modelHealthQuery.data?.providers.find((p: any) => p.id === "ollama")}
+            onLaunch={() => void handleLaunch("ollama")}
+          />
           <label>LM Studio URL<input value={providerSettings.lm_studio_url} onChange={(event) => saveSettings({ ...providerSettings, lm_studio_url: event.target.value })} /></label>
           <label>Llamafile URL<input value={providerSettings.llamafile_url} onChange={(event) => saveSettings({ ...providerSettings, llamafile_url: event.target.value })} /></label>
           <label>LocalAI URL<input value={providerSettings.localai_url} onChange={(event) => saveSettings({ ...providerSettings, localai_url: event.target.value })} /></label>
@@ -422,6 +449,58 @@ function KeyField({
         )}
       </div>
       <span className="text-sm text-muted">{hint}</span>
+    </label>
+  );
+}
+
+function LocalModelSelect({
+  label,
+  providerId,
+  value,
+  onChange,
+  health,
+  onLaunch,
+}: {
+  label: string;
+  providerId: string;
+  value: string;
+  onChange: (value: string) => void;
+  health?: ProviderHealth;
+  onLaunch: () => void;
+}) {
+  const isReachable = health?.reachability === "working";
+  
+  return (
+    <label>
+      <div className="flex items-center gap-sm" style={{ marginBottom: 4 }}>
+        <strong>{label}</strong>
+        {health && (
+          <span className={`pill ${isReachable ? "ok" : "warn"}`}>
+            {isReachable ? "🟢 Running" : "🔴 Stopped"}
+          </span>
+        )}
+      </div>
+      <div className="input-with-action">
+        {isReachable && health.models.length > 0 ? (
+          <select value={value} onChange={(e) => onChange(e.target.value)} style={{ flex: 1 }}>
+            <option value="">-- select a model --</option>
+            {health.models.map((m) => (
+              <option key={m.id} value={m.id}>{m.id}</option>
+            ))}
+          </select>
+        ) : (
+          <input 
+            value={value} 
+            onChange={(e) => onChange(e.target.value)} 
+            placeholder={isReachable ? "No models found" : `Enter ${providerId} model name`} 
+          />
+        )}
+        {!isReachable && (
+          <button type="button" className="ghost-button" onClick={onLaunch}>
+            Launch {providerId}
+          </button>
+        )}
+      </div>
     </label>
   );
 }

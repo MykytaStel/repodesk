@@ -64,6 +64,7 @@ fn setup() -> Fixture {
 
     let task = create_task(NewTaskInput {
         title: "demo task".to_string(),
+        verify_command: None,
     })
     .expect("create_task");
 
@@ -150,6 +151,7 @@ fn list_tasks_orders_newest_first_and_use_task_switches_active() {
     // Second task becomes the newly active one.
     create_task(NewTaskInput {
         title: "second task".to_string(),
+        verify_command: None,
     })
     .expect("create second");
 
@@ -652,6 +654,7 @@ fn diamond_plan(project: &str, task_id: &str, provider: &str) -> OrchestrationPl
         thinking: ThinkingLevel::None,
         instruction: format!("do {id}"),
         depends_on: deps.iter().map(|d| d.to_string()).collect(),
+        verify_command: None,
         budget_tokens: 500,
         allow_write: false,
     };
@@ -686,6 +689,7 @@ fn coding_agent_plan(project: &str, task_id: &str) -> OrchestrationPlan {
             thinking: ThinkingLevel::None,
             instruction: "Prepare a bounded patch.".to_string(),
             depends_on: Vec::new(),
+            verify_command: None,
             budget_tokens: 500,
             allow_write: true,
         }],
@@ -1005,6 +1009,7 @@ fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationR
         thinking: ThinkingLevel::None,
         instruction: format!("do {id}"),
         depends_on: Vec::new(),
+        verify_command: None,
         budget_tokens: 500,
         allow_write: false,
     };
@@ -1175,6 +1180,7 @@ fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize,
             thinking: ThinkingLevel::None,
             instruction: String::new(),
             depends_on: Vec::new(),
+            verify_command: None,
             budget_tokens: 100,
             allow_write: false,
         })

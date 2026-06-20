@@ -220,6 +220,12 @@ mod code_workbench_commands {
     }
 }
 
+use tauri::Manager;
+use tauri::Emitter;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri_plugin_global_shortcut::ShortcutState;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -229,6 +235,56 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         // Native file/folder pickers (used to choose a project directory).
         .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcuts(["shift+super+k", "shift+ctrl+k"])
+                .unwrap_or_else(|err| {
+                    eprintln!("Failed to register global shortcuts: {}", err);
+                    tauri_plugin_global_shortcut::Builder::new()
+                })
+                .with_handler(|app: &tauri::AppHandle, shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.emit("open-command-palette", ());
+                        }
+                    }
+                })
+                .build(),
+        )
+        .setup(|app| {
+            let quit_i = MenuItem::with_id(app, "quit", "Quit RepoDesk", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&quit_i])?;
+
+            let _tray = TrayIconBuilder::new()
+                .menu(&menu)
+                .show_menu_on_left_click(true)
+                .icon(app.default_window_icon().cloned().unwrap())
+                .on_menu_event(|app: &tauri::AppHandle, event| {
+                    if event.id.as_ref() == "quit" {
+                        app.exit(0);
+                    }
+                })
+                .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
+                    if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        if let Some(window) = tray.app_handle().get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+            _ => {}
+        })
         .invoke_handler(tauri::generate_handler![
             code_workbench_commands::read_code_file,
             code_workbench_commands::code_workbench_snapshot,
@@ -261,6 +317,8 @@ pub fn run() {
             commands::token_cost_trend,
             commands::model_health_snapshot,
             commands::refresh_model_health,
+            commands::start_local_server,
+            commands::system_model_recommendations,
             commands::routing_decision,
             commands::routing_snapshot,
             commands::get_active_project_config,

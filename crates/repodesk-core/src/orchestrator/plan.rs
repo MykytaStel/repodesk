@@ -231,6 +231,7 @@ pub fn route_steps(
     bias: &RouteBias,
     override_provider: Option<String>,
     override_model: Option<String>,
+    verify_command: Option<String>,
 ) -> Vec<SubAgentTask> {
     // Resolve a manual override to a concrete, real capacity once. Unknown ids
     // never reach here — `build_plan` rejects them via `validate_override` — but
@@ -274,6 +275,7 @@ pub fn route_steps(
                         depends_on: template.depends_on.iter().map(|d| d.to_string()).collect(),
                         budget_tokens: DEFAULT_STEP_BUDGET,
                         allow_write: template.allow_write,
+                        verify_command: if template.allow_write { verify_command.clone() } else { None },
                     };
                 }
             }
@@ -316,6 +318,7 @@ pub fn route_steps(
                 depends_on: template.depends_on.iter().map(|d| d.to_string()).collect(),
                 budget_tokens: DEFAULT_STEP_BUDGET,
                 allow_write: template.allow_write,
+                verify_command: if template.allow_write { verify_command.clone() } else { None },
             }
         })
         .collect()
@@ -346,7 +349,7 @@ pub fn build_plan(
         project: project.name,
         task_id: task.config.id,
         goal,
-        steps: route_steps(&caps, &budget, &bias, override_provider, override_model),
+        steps: route_steps(&caps, &budget, &bias, override_provider, override_model, task.config.verify_command),
     })
 }
 
@@ -358,7 +361,7 @@ mod tests {
     fn routes_all_template_steps_with_a_provider() {
         let budget = BudgetConfig::default();
         let caps = default_capacities(&budget);
-        let steps = route_steps(&caps, &budget, &RouteBias::default(), None, None);
+        let steps = route_steps(&caps, &budget, &RouteBias::default(), None, None, None);
 
         assert_eq!(steps.len(), 3);
         assert_eq!(steps[0].id, "analyze");
@@ -447,7 +450,7 @@ mod tests {
             project: "demo".to_string(),
             task_id: "task".to_string(),
             goal: "ship it".to_string(),
-            steps: route_steps(&caps, &budget, &RouteBias::default(), None, None),
+            steps: route_steps(&caps, &budget, &RouteBias::default(), None, None, None),
         };
 
         assert!(plan_has_coding_agent_step(&plan));

@@ -32,3 +32,11 @@ export async function modelHealthSnapshot(): Promise<ModelHealthSnapshot> {
 export async function refreshModelHealth(): Promise<ModelHealthSnapshot> {
   return invoke("refresh_model_health");
 }
+
+export async function startLocalServer(provider: string): Promise<void> {
+  return invoke("start_local_server", { provider });
+}
+
+export async function systemModelRecommendations(): Promise<string[]> {
+  return invoke("system_model_recommendations");
+}
