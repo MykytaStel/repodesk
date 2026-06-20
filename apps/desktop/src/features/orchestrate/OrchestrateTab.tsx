@@ -4,6 +4,7 @@ import { useModels } from "../models/useModels";
 import {
   planHasCodingAgentStep,
   planHasPaidStep,
+  stepIsApprovalGated,
   type ExecutorAvailability,
   type LoopRun,
   type LoopStatus,
@@ -17,7 +18,7 @@ import {
   type SubAgentStatus,
   type TaskEvent,
 } from "../../shared/api/orchestrate";
-import { MetricCard, errorToMessage, formatCost, formatNumber, EmptyState } from "../../shared/ui/SharedComponents";
+import { MetricCard, errorToMessage, formatCost, formatNumber, EmptyState, ActorBadge } from "../../shared/ui/SharedComponents";
 import type { TabId } from "../../shared/types/api";
 
 const STATUS_COLOR: Record<SubAgentStatus, string> = {
@@ -54,6 +55,7 @@ function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
         {plan.steps.map((step, index) => {
           const executor = step.executor_id ?? step.agent;
           const provider = step.provider_id ?? step.provider;
+          const gated = stepIsApprovalGated(step);
           return (
             <div key={step.id} className="timeline-step neutral">
               <span>{index + 1}</span>
@@ -61,14 +63,22 @@ function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
                 {step.id} — {step.title}
               </strong>
               <small>{executor}{provider && provider !== executor ? ` → ${provider}` : ""} / {step.model ?? "default model"}</small>
-              <p>
-                {step.allow_write ? <strong style={{ color: "#d29922" }}>Writes permitted</strong> : "Read-only"}. 
+              <div className="button-row" style={{ margin: "8px 0 0", gap: 6 }}>
+                <ActorBadge mode={gated ? "manual" : "auto"} />
+                {gated && <span className="pill warn">Approval-gated</span>}
+              </div>
+              <p style={{ marginTop: 8 }}>
+                {step.allow_write ? <strong style={{ color: "var(--warning)" }}>Writes permitted</strong> : "Read-only"}.
                 {step.depends_on.length > 0 && ` Depends on: ${step.depends_on.join(", ")}.`}
               </p>
             </div>
           );
         })}
       </div>
+      <p className="muted" style={{ marginTop: 12, fontSize: 13 }}>
+        Steps marked <em>Approval-gated</em> spend money or launch a CLI agent — RepoDesk pauses
+        for your OK before running them. The rest run automatically.
+      </p>
     </section>
   );
 }
@@ -288,6 +298,7 @@ function RunPanel({
           )}
           {changedCount > 0 && onReview && (
             <>
+              <ActorBadge mode="manual" />
               <button
                 className="tiny-button"
                 onClick={() => onReview("accept")}
@@ -677,6 +688,37 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           </div>
         </div>
 
+        {(() => {
+          const previewed = orchestrate.plan.data;
+          if (!previewed) {
+            return (
+              <p className="muted" style={{ marginTop: 16, fontSize: 13 }}>
+                Tip: <strong>Preview plan</strong> first to see exactly which steps RepoDesk will run on its own and which need your approval.
+              </p>
+            );
+          }
+          const hasPaid = planHasPaidStep(previewed);
+          const hasCoding = planHasCodingAgentStep(previewed);
+          const pausePaid = hasPaid && !approvePaid;
+          const pauseCoding = hasCoding && !approveCodingAgents;
+          const willPause = pausePaid || pauseCoding;
+          const gatedCount = previewed.steps.filter(stepIsApprovalGated).length;
+          const autoCount = previewed.steps.length - gatedCount;
+          return (
+            <div className={`notice ${willPause ? "warn" : "ok"}`} style={{ marginTop: 16 }}>
+              <strong>What runs without asking</strong>
+              <p style={{ margin: "4px 0 0" }}>
+                RepoDesk will run <strong>{autoCount}</strong> step{autoCount === 1 ? "" : "s"} automatically.
+                {gatedCount > 0 && willPause &&
+                  ` It will pause for your approval on ${gatedCount} paid/agent step${gatedCount === 1 ? "" : "s"} before spending money or launching a CLI agent.`}
+                {gatedCount > 0 && !willPause &&
+                  ` You've pre-approved the ${gatedCount} paid/agent step${gatedCount === 1 ? "" : "s"} — they'll run without pausing.`}
+                {gatedCount === 0 && " No paid or CLI-agent steps in this plan."}
+              </p>
+            </div>
+          );
+        })()}
+
         <div className="button-row" style={{ marginTop: 16, gap: 12 }}>
           <button className="ghost-button" onClick={() => void handlePreview()} disabled={busy}>
             {orchestrate.plan.isPending ? "Building..." : "Preview plan"}
@@ -691,6 +733,10 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
             {orchestrate.loop.isPending ? "Looping..." : "Run autonomous loop"}
           </button>
         </div>
+        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+          <strong>Run single step</strong>: one pass, then you review the result.
+          {" "}<strong>Run autonomous loop</strong>: retries up to {Number(maxIterations) || 3} time{(Number(maxIterations) || 3) === 1 ? "" : "s"}, stopping at your cost ceiling or any guardrail.
+        </p>
       </section>
 
       {error && (

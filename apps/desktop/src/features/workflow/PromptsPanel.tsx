@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { usePrompts } from "./usePrompts";
 import { useTokens } from "../tokens/useTokens";
-import { formatNumber, formatCost } from "../../shared/ui/SharedComponents";
+import { formatNumber, formatCost, ActorBadge } from "../../shared/ui/SharedComponents";
 
 function formatPrompt(content: string) {
   if (!content) return null;
@@ -52,6 +52,7 @@ export function PromptsPanel() {
           <h2>Agent hand-off</h2>
         </div>
         <div className="button-row compact-buttons">
+          <ActorBadge mode="manual" />
           {!pendingPaid && artifactContent && (
             <>
               {artifactKind === "prompt_chatgpt" && (

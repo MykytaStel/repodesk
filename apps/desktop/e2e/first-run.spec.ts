@@ -24,6 +24,14 @@ test.describe("first run (empty workspace)", () => {
     await expect(page.getByText("No active task")).toBeVisible();
   });
 
+  test("onboarding previews the whole 8-step journey", async ({ page }) => {
+    // First-run users should see the entire path, greyed, not just blank inputs.
+    await expect(page.getByRole("heading", { name: "One task, eight steps" })).toBeVisible();
+    const track = page.locator(".journey-preview .journey-track");
+    await expect(track.locator(".journey-node")).toHaveCount(8);
+    await expect(page.locator(".journey-preview").getByText("Preview")).toBeVisible();
+  });
+
   test("Connect project button enables once name + path are filled", async ({ page }) => {
     const connect = page.getByRole("button", { name: "Connect project" });
     await expect(connect).toBeDisabled();

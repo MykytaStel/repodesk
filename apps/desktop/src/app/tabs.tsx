@@ -21,26 +21,39 @@ const AuditTab = lazy(() => import("../features/audit/AuditTab").then((m) => ({ 
 const PlaybooksTab = lazy(() => import("../features/playbooks/PlaybooksTab").then((m) => ({ default: m.PlaybooksTab })));
 
 export type TabGroup = "Work" | "AI" | "System";
+export type TabTier = "primary" | "more";
 
-export const APP_TABS: Array<{ id: TabId; title: string; subtitle: string; group: TabGroup }> = [
-  // Work — the daily loop; Workflow is the home surface.
-  { id: "workflow", title: "Workflow", subtitle: "Next step", group: "Work" },
-  { id: "dashboard", title: "Dashboard", subtitle: "Daily state", group: "Work" },
-  { id: "git", title: "Git", subtitle: "Workspace", group: "Work" },
-  { id: "code", title: "Code", subtitle: "Changed files", group: "Work" },
-  // AI — providers, routing, memory, orchestration.
-  { id: "models", title: "Models", subtitle: "Runtime health", group: "AI" },
-  { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI" },
-  { id: "memory", title: "Memory", subtitle: "Project context", group: "AI" },
-  { id: "orchestrate", title: "Orchestrate", subtitle: "Sub-agents", group: "AI" },
-  { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI" },
-  { id: "playbooks", title: "Playbooks", subtitle: "Team recipes", group: "AI" },
-  // System — configuration and diagnostics.
-  { id: "audit", title: "Audit", subtitle: "Enterprise trail", group: "System" },
-  { id: "settings", title: "Settings", subtitle: "Providers", group: "System" },
-  { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System" },
-  { id: "debug", title: "Debug", subtitle: "Traces", group: "System" },
+export interface AppTab {
+  id: TabId;
+  title: string;
+  subtitle: string;
+  group: TabGroup;
+  tier: TabTier;
+}
+
+// Primary tabs are the daily spine (kept short so the app leads the user);
+// `more` tabs are diagnostics/depth, tucked into a collapsible section.
+// Ordered primary-first so ⌘1..9 jump to the everyday surfaces.
+export const APP_TABS: AppTab[] = [
+  { id: "workflow", title: "Workflow", subtitle: "Home · your 8 steps", group: "Work", tier: "primary" },
+  { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "primary" },
+  { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "primary" },
+  { id: "memory", title: "Memory", subtitle: "Context agents remember", group: "AI", tier: "primary" },
+  { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to sub-agents", group: "AI", tier: "primary" },
+  { id: "settings", title: "Settings", subtitle: "Providers & keys", group: "System", tier: "primary" },
+  // More — depth & diagnostics, collapsed by default.
+  { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },
+  { id: "models", title: "Models", subtitle: "Runtime health", group: "AI", tier: "more" },
+  { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI", tier: "more" },
+  { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI", tier: "more" },
+  { id: "playbooks", title: "Playbooks", subtitle: "Team recipes", group: "AI", tier: "more" },
+  { id: "audit", title: "Audit", subtitle: "Enterprise trail", group: "System", tier: "more" },
+  { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System", tier: "more" },
+  { id: "debug", title: "Debug", subtitle: "Traces", group: "System", tier: "more" },
 ];
+
+export const PRIMARY_TABS = APP_TABS.filter((tab) => tab.tier === "primary");
+export const MORE_TABS = APP_TABS.filter((tab) => tab.tier === "more");
 
 export const TAB_GROUP_ORDER: TabGroup[] = ["Work", "AI", "System"];
 

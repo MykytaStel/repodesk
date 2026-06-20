@@ -88,6 +88,20 @@ export function MetricCard({ label, value, detail, tone = "neutral" }: { label: 
   return <section className={`panel metric ${tone}`}><p className="eyebrow">{label}</p><h2>{value}</h2><p className="muted">{detail}</p></section>;
 }
 
+/** Tells the user, at a glance, who performs an action: RepoDesk (automatic)
+ *  or the user (manual hand-off). Reuses the shared `.pill` styling. */
+export function ActorBadge({ mode, className = "" }: { mode: "auto" | "manual"; className?: string }) {
+  const isAuto = mode === "auto";
+  return (
+    <span
+      className={`pill actor-badge ${isAuto ? "ok" : "neutral"} ${className}`.trim()}
+      title={isAuto ? "RepoDesk runs this step for you" : "This step needs your input"}
+    >
+      {isAuto ? "RepoDesk does this" : "You do this"}
+    </span>
+  );
+}
+
 /** Consistent "nothing here yet" placeholder for empty lists/panels. */
 export function EmptyState({ message, hint }: { message: string; hint?: string }) {
   return (

@@ -212,20 +212,33 @@ const PAID_IDS = [
 
 const CODING_AGENT_IDS = ["codex_cli", "claude_code_cli", "codex", "claude", "claude_code"];
 
+function stepIds(step: OrchestrationPlan["steps"][number]): string[] {
+  return [step.provider, step.provider_id ?? "", step.agent, step.executor_id ?? ""].map((id) => id.toLowerCase());
+}
+
+/** Whether a single step spends money on a paid completion/manual provider. */
+export function stepIsPaid(step: OrchestrationPlan["steps"][number]): boolean {
+  return stepIds(step).some((id) => PAID_IDS.includes(id));
+}
+
+/** Whether a single step launches a coding-agent CLI process. */
+export function stepIsCodingAgent(step: OrchestrationPlan["steps"][number]): boolean {
+  return stepIds(step).some((id) => CODING_AGENT_IDS.includes(id)) || step.executor_kind === "coding_agent";
+}
+
+/** A step that needs explicit approval before it runs for real. */
+export function stepIsApprovalGated(step: OrchestrationPlan["steps"][number]): boolean {
+  return stepIsPaid(step) || stepIsCodingAgent(step);
+}
+
 /** Whether a plan includes any paid completion/manual-provider step. */
 export function planHasPaidStep(plan: OrchestrationPlan): boolean {
-  return plan.steps.some((step) => {
-    const ids = [step.provider, step.provider_id ?? "", step.agent, step.executor_id ?? ""].map((id) => id.toLowerCase());
-    return ids.some((id) => PAID_IDS.includes(id));
-  });
+  return plan.steps.some(stepIsPaid);
 }
 
 /** Whether a plan includes any coding-agent CLI step. */
 export function planHasCodingAgentStep(plan: OrchestrationPlan): boolean {
-  return plan.steps.some((step) => {
-    const ids = [step.provider, step.provider_id ?? "", step.agent, step.executor_id ?? ""].map((id) => id.toLowerCase());
-    return ids.some((id) => CODING_AGENT_IDS.includes(id)) || step.executor_kind === "coding_agent";
-  });
+  return plan.steps.some(stepIsCodingAgent);
 }
 
 export async function orchestratePlan(

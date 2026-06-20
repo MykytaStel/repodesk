@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList } from "../../shared/ui/SharedComponents";
+import { asArray, asRecord, getString, stringifyPreview, formatNumber, formatCost, statusTone, RouteList, ActorBadge } from "../../shared/ui/SharedComponents";
 import { projectAdd, projectUse, taskNew } from "../../shared/api/workflow";
 import { pickDirectory, basename } from "../../shared/api/dialog";
 import { useWorkflow } from "./useWorkflow";
+import { JourneyStepper } from "./JourneyStepper";
+import { STEP_META, ACTION_TO_STEP } from "./journeyMeta";
 import { TaskSwitcher } from "./TaskSwitcher";
 import { useRouting } from "../routing/useRouting";
 import { useTokens } from "../tokens/useTokens";
@@ -38,6 +40,13 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
   const [projType, setProjType] = useState("rust");
   const [taskTitle, setTaskTitle] = useState("");
   const [diffFile, setDiffFile] = useState<{ path: string; cached: boolean } | null>(null);
+  const [selectedStep, setSelectedStep] = useState<string | undefined>(undefined);
+
+  // What the primary CTA will actually do, derived from existing state so the
+  // user knows before clicking: which step runs, who performs it, what it does.
+  const recommendedActionId = getString(workflow, "recommended_action_id", nextAction?.id ?? "");
+  const ctaStepId = ACTION_TO_STEP[recommendedActionId];
+  const ctaMeta = ctaStepId ? STEP_META[ctaStepId] : undefined;
 
   function getValue(source: unknown, key: string): unknown {
     return asRecord(source)[key];
@@ -97,7 +106,8 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
       <section className="panel onboarding wide-panel">
         <p className="eyebrow">Get started</p>
         <h2>{!projectOk ? "Step 1 · Connect a project" : "Step 2 · Create a task"}</h2>
-        <p className="lead">RepoDesk works one task at a time. Connect a project, then create the task you want to work on.</p>
+        <p className="lead">RepoDesk runs one task at a time through these 8 steps. Connect a project, then create the task you want to work on — RepoDesk guides you the rest of the way.</p>
+        <JourneyStepper steps={[]} preview />
         {!projectOk ? (
           <div className="form-grid">
             <label>Name<input value={projName} onChange={(e) => setProjName(e.target.value)} placeholder="my-app" /></label>
@@ -148,7 +158,10 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
             <p className="eyebrow">Commit readiness</p>
             <h2>{getString(readiness, "headline", label)}</h2>
           </div>
-          <span className={`pill ${tone}`}>{label}</span>
+          <div className="button-row">
+            <ActorBadge mode="manual" />
+            <span className={`pill ${tone}`}>{label}</span>
+          </div>
         </div>
         <div className="route-summary-grid">
           {branch && <div><span>Branch</span><strong>{branch}</strong></div>}
@@ -285,39 +298,27 @@ export function WorkflowTab({ economyMode }: WorkflowTabProps) {
           <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy || needsOnboarding}>{nextAction?.label ?? "Do next safe step"}</button>
           <button className="ghost-button" onClick={() => void queryClient.invalidateQueries()} disabled={isBusy}>Refresh workflow</button>
         </div>
+        {!needsOnboarding && ctaMeta && (
+          <p className="cta-preview muted">
+            <ActorBadge mode={ctaMeta.mode} /> This runs <strong>{ctaMeta.title}</strong> — {ctaMeta.oneLiner}
+          </p>
+        )}
       </section>
 
       {needsOnboarding ? renderOnboarding() : (
         <>
           {diffFile && <DiffViewerModal filePath={diffFile.path} cached={diffFile.cached} onClose={() => setDiffFile(null)} />}
+          <JourneyStepper steps={steps} selectedStepId={selectedStep} onSelectStep={setSelectedStep} />
           <TaskSwitcher />
           {renderCommitReadiness()}
           {promptsOk && <PromptsPanel />}
           {renderBestRoutePanel()}
 
-          <section className="panel wide-panel">
-            <div className="timeline">
-              {steps.length === 0 ? <p className="muted">No workflow steps loaded yet.</p> : steps.map((step, index) => {
-                const record = asRecord(step);
-                const status = getString(record, "status", "unknown");
-                return (
-                  <div key={getString(record, "id", String(index))} className={`timeline-step ${statusTone(status)}`}>
-                    <span>{index + 1}</span>
-                    <strong>{getString(record, "title", `Step ${index + 1}`)}</strong>
-                    <small>{status}</small>
-                    <p>{getString(record, "description", "")}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="panel">
-            <p className="eyebrow">Next action</p>
-            <h2>{nextAction?.label ?? "No action loaded"}</h2>
-            <p className="muted">{nextAction?.description ?? "Open Settings to connect project and task."}</p>
-            {dirty && <div className="notice warn">Workspace has Git changes. Review them before agent-like actions.</div>}
-          </section>
+          {dirty && (
+            <section className="panel">
+              <div className="notice warn">Workspace has Git changes. Review them before agent-like actions.</div>
+            </section>
+          )}
 
           {renderChangedFiles()}
 

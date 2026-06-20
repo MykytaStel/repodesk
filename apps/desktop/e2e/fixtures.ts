@@ -86,12 +86,17 @@ export const onboardedFixtures: CommandFixtures = {
   product_workflow_state: {
     project_ok: true,
     task_ok: true,
-    primary_cta: "Run safety checks",
+    primary_cta: "Build smart context",
     recommended_action_id: "smart-context-build",
     steps: [
-      { id: "context", title: "Build bounded context", status: "done", description: "Context assembled within budget." },
-      { id: "checks", title: "Run safety checks", status: "pending", description: "Safety + budget gates before AI." },
-      { id: "commit", title: "Commit when safe", status: "pending", description: "Pre-commit secret scan + readiness." },
+      { id: "project", title: "Project", status: "done", description: "Active project connected." },
+      { id: "task", title: "Task", status: "done", description: "Scoped to one task." },
+      { id: "context", title: "Context", status: "done", description: "Context assembled within budget." },
+      { id: "smart_context", title: "Smart Context", status: "current", description: "Compress before AI sees it." },
+      { id: "safety", title: "Safety", status: "blocked", description: "Scan for secrets.", blocker: "Requires smart context" },
+      { id: "prompts", title: "Prompts", status: "blocked", description: "Generate bounded prompts.", blocker: "Requires safety pass" },
+      { id: "checks", title: "Checks", status: "blocked", description: "Run configured checks.", blocker: "Generate prompts first" },
+      { id: "review", title: "Review", status: "blocked", description: "Final human review.", blocker: "Complete earlier steps" },
     ],
     commit_readiness: {
       status: "ready",
@@ -158,6 +163,9 @@ export const firstRunFixtures: CommandFixtures = {
   desktop_snapshot: {},
   get_active_project_config: null,
   db_status: { ok: true, path: "/tmp/repodesk-firstrun/repodesk.db" },
+  // A fresh install has zero connected projects (the real backend returns an
+  // empty array here, never null) — so the command palette has nothing to list.
+  project_list_configs: [],
   git_workspace_snapshot: { branch: "-", is_dirty: false, changed_files: [] },
   model_health_snapshot: { providers: [] },
   token_usage_snapshot: { totals: { total_tokens: 0 }, cost_estimate: { currency_label: "USD" } },

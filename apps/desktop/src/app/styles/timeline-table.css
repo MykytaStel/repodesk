@@ -38,6 +38,87 @@
   font-size: 13px;
 }
 
+/* Journey stepper — the always-visible spine of the daily loop. */
+.journey-track {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.journey-node {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  text-align: left;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+}
+.journey-node:disabled { cursor: default; }
+.journey-node:not(:disabled):hover { border-color: var(--border-strong); }
+.journey-node.current {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 18px var(--accent-glow);
+  background: var(--accent-soft);
+}
+.journey-node.selected { border-color: var(--accent-border); }
+.journey-index {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  font-weight: 900;
+  font-size: 13px;
+  color: var(--accent-contrast);
+  background: var(--accent);
+}
+.journey-node.ok .journey-index { background: var(--success); }
+.journey-node.warn .journey-index { background: var(--warning); }
+.journey-node.danger .journey-index { background: var(--danger); }
+.journey-node.neutral .journey-index { background: var(--muted-2); }
+.journey-node-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.journey-node-body strong { font-size: 14px; }
+.journey-actor { align-self: flex-start; font-size: 11px; }
+.journey-status {
+  margin-left: auto;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-size: 10px;
+}
+.journey-detail {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.journey-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.journey-detail-head h3 { margin: 0; }
+.journey-why { margin: 8px 0 0; }
+.journey-next { margin: 8px 0 0; font-size: 13px; }
+.actor-badge { white-space: nowrap; }
+.journey-preview { opacity: .72; }
+.journey-preview .journey-node { background: var(--surface-3); }
+
 .table-list,
 .file-list,
 .model-list,

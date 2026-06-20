@@ -17,7 +17,7 @@ import { TabErrorBoundary } from "../shared/ui/TabErrorBoundary";
 import type { TabId, Theme } from "../shared/types/api";
 import { formatNumber } from "../shared/utils/helpers";
 import { StatusBox } from "./StatusBox";
-import { APP_TABS, TAB_GROUP_ORDER, renderAppTab } from "./tabs";
+import { APP_TABS, PRIMARY_TABS, MORE_TABS, TAB_GROUP_ORDER, renderAppTab } from "./tabs";
 import { STORAGE_KEYS } from "./constants";
 import { readStoredActiveTab, readStoredEconomyMode, readStoredTheme } from "./storage";
 
@@ -26,6 +26,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [economyMode, setEconomyMode] = useState<EconomyMode>(readStoredEconomyMode);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(() => MORE_TABS.some((tab) => tab.id === readStoredActiveTab()));
   const queryClient = useQueryClient();
 
   // React Query hooks driving the shell state
@@ -46,6 +47,7 @@ export default function App() {
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.activeTab, activeTab);
+    if (MORE_TABS.some((tab) => tab.id === activeTab)) setMoreOpen(true);
   }, [activeTab]);
 
   useEffect(() => {
@@ -153,16 +155,32 @@ export default function App() {
             <div><strong>RepoDesk</strong><span>AI control cockpit</span></div>
           </div>
           <nav className="nav-list">
-            {TAB_GROUP_ORDER.map((group) => (
-              <div key={group} className="nav-group">
-                <p className="nav-group-title">{group}</p>
-                {APP_TABS.filter((tab) => tab.group === group).map((tab) => (
-                  <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
-                    <strong>{tab.title}</strong><span>{tab.subtitle}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
+            <div className="nav-group">
+              {PRIMARY_TABS.map((tab) => (
+                <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
+                  <strong>{tab.title}</strong><span>{tab.subtitle}</span>
+                </button>
+              ))}
+            </div>
+            <div className="nav-group">
+              <button type="button" className="nav-more-toggle" onClick={() => setMoreOpen((open) => !open)} aria-expanded={moreOpen}>
+                <strong>More</strong><span>{moreOpen ? "Hide depth & diagnostics ▾" : "Depth & diagnostics ▸"}</span>
+              </button>
+              {moreOpen && TAB_GROUP_ORDER.map((group) => {
+                const tabs = MORE_TABS.filter((tab) => tab.group === group);
+                if (tabs.length === 0) return null;
+                return (
+                  <div key={group} className="nav-subgroup">
+                    <p className="nav-group-title">{group}</p>
+                    {tabs.map((tab) => (
+                      <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
+                        <strong>{tab.title}</strong><span>{tab.subtitle}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           </nav>
         </div>
         <div className="sidebar-footer">
