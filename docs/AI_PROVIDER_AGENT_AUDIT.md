@@ -40,10 +40,10 @@ RepoDesk
 | Paid/agent confirmation | `approve_paid` + `approve_coding_agents` are separate gates (CLI `--yes`, desktop switches) | ✅ implemented |
 | Desktop agent status panel | "Executor availability" panel lists binary/path/status/version | ✅ implemented |
 | Changed-file/diff in agent result | `CodingAgentExecution` captures pre/post porcelain delta + unified diff + receipt path; surfaced on `SubAgentResult` and the run panel | ✅ implemented |
-| Worktree lifecycle | `worktree.rs`: create/list/remove isolated per-run worktrees; runner `use_isolated_worktree` opt-in (CLI `--worktree`, desktop toggle) | ✅ implemented |
+| Worktree lifecycle | `worktree.rs`: create/list/remove isolated per-step worktrees; runner requires isolation for approved coding-agent runs | ✅ implemented |
 | Secure credential store | `credentials.rs`: `CredentialResolver` + OS keychain (`keyring`) + env fallback; Tauri set/delete/status; never returns the full key | ✅ implemented |
 | OpenAI Responses API | `openai.rs` migrated to `/v1/responses` (input/instructions/max_output_tokens/reasoning.effort) | ✅ implemented |
-| Review / accept-reject flow | `orchestrator::review` stages (accept) or discards (reject) a run's changeset; CLI + Tauri + run-panel buttons | ✅ implemented |
+| Review / accept-reject flow | `orchestrator::review` stages/discards only non-isolated changesets; isolated worktree changesets fail safely until apply-back exists | ✅ partial |
 
 ## What landed (PRs 1–8 equivalent)
 
@@ -73,22 +73,25 @@ RepoDesk
    propagates `changed_files`/`diff_path` to `SubAgentResult`, and the desktop run
    panel shows the changed-file count + list. Untracked new files are listed but
    their content is not inlined.
-9. **Accept / reject review** — `orchestrator::review` turns a captured changeset
-   into an action: **accept** stages the agent-changed files (`git add`), **reject**
-   discards them (`git restore --source=HEAD` for tracked, `git clean` for
-   untracked). Bounded to the run's recorded paths, path-validated, never commits
-   or pushes. Exposed via `repodesk orchestrate review`, the `orchestrate_review`
-   Tauri command, and run-panel buttons.
+9. **Accept / reject review** — `orchestrator::review` turns an in-place captured
+   changeset into an action: **accept** stages the agent-changed files (`git add`),
+   **reject** discards them (`git restore --source=HEAD` for tracked, `git clean`
+   for untracked). Bounded to the run's recorded paths, path-validated, never
+   commits or pushes. Isolated worktree changesets fail safely with an explicit
+   "apply-back not implemented" error so review never stages/restores the active
+   checkout by path coincidence.
 10. **CLI auth tri-state** — `coding_agent_availability_probed` sets
     `authenticated = Some(true)` when a known local auth artifact (e.g.
     `~/.codex/auth.json`, `~/.claude/.credentials.json`) *exists*; never reads its
     contents, never treats an API-key env var as CLI auth, and never reports
     `Some(false)` (absence ≠ unauthenticated — keychain/env may hold it).
 11. **Git worktree lifecycle** — `worktree.rs` creates/lists/removes isolated
-    per-run worktrees checked out at HEAD; the runner's `use_isolated_worktree`
-    opt-in (CLI `--worktree`, desktop toggle) runs write-capable steps there so the
-    diff is attributable on a dirty tree. Non-destructive: the worktree is left for
-    review and cleanup is explicit. Lifecycle code stays out of executor clients.
+    per-step worktrees checked out at HEAD. Approved coding-agent runs require an
+    isolated workspace by default; creation failure blocks the step and no CLI is
+    launched. Worktree ids include run + step identity plus collision-resistant
+    suffixes, stale paths are never force-removed, and recovery metadata is written
+    before launch. Non-destructive: the worktree is left for review and cleanup is
+    explicit. Lifecycle code stays out of executor clients.
 12. **OS keychain credential store** — `credentials.rs` defines `CredentialResolver`
     with `KeyringResolver` (macOS Keychain / Windows Credential Manager / Linux
     Secret Service via `keyring`) and a read-only `EnvResolver` fallback. Tauri
@@ -105,7 +108,7 @@ RepoDesk
    tri-state once a documented, side-effect-free status command exists per CLI.
 2. **Worktree apply-back** — wire the isolated-worktree diff into the accept/reject
    flow (apply the worktree changeset to the main tree on accept), plus interrupted
-   -run recovery/cleanup UI.
+   run recovery/cleanup UI.
 3. **Credential-store migration** — move the legacy plaintext provider-settings keys
    into the keychain and stop persisting them in app files.
 4. **Review depth** — inline diff viewer for the captured `diff_path` and an optional

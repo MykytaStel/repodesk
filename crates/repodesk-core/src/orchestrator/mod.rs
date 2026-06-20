@@ -22,7 +22,9 @@ pub use plan::{
     plan_has_paid_step, route_steps,
 };
 pub use review::{ReviewAction, ReviewedFile, RunReview, review_run};
-pub use runner::{RunOptions, list_runs, load_latest_run, load_run, run_plan};
+pub use runner::{
+    AgentWorkspacePolicy, RunOptions, list_runs, load_latest_run, load_run, run_plan,
+};
 pub use types::{
     OrchestrationPlan, OrchestrationRun, RunStatus, RunSummary, SubAgentResult, SubAgentStatus,
     SubAgentTask, topological_order,

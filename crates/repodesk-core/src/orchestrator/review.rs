@@ -65,6 +65,7 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
     })?;
     let project = crate::projects::get_active_project()?;
     let paths = collect_changed_files(&run);
+    let isolated_workspaces = collect_isolated_workspaces(&run);
 
     let mut review = RunReview {
         run_id: run_id.to_string(),
@@ -79,6 +80,14 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
             .warnings
             .push("run recorded no changed files to review".to_string());
         return Ok(review);
+    }
+    if !isolated_workspaces.is_empty() {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "run '{run_id}' produced changes in isolated worktree(s); accept/reject apply-back is not implemented yet, so the active checkout was left untouched. Inspect manually: {}",
+                isolated_workspaces.join(", ")
+            ),
+        });
     }
     if !is_git_repo(project.path.as_path()) {
         review
@@ -103,6 +112,26 @@ fn collect_changed_files(run: &OrchestrationRun) -> Vec<String> {
         for path in &result.changed_files {
             if !seen.iter().any(|existing| existing == path) {
                 seen.push(path.clone());
+            }
+        }
+    }
+    seen
+}
+
+fn collect_isolated_workspaces(run: &OrchestrationRun) -> Vec<String> {
+    let mut seen = Vec::new();
+    for result in &run.results {
+        if let Some(worktree) = &result.workspace {
+            let label = format!(
+                "{} ({})",
+                worktree.path,
+                worktree
+                    .metadata_path
+                    .as_deref()
+                    .unwrap_or("metadata not recorded")
+            );
+            if !seen.iter().any(|existing| existing == &label) {
+                seen.push(label);
             }
         }
     }

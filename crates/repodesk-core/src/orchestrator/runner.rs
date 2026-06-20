@@ -14,6 +14,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chrono::Utc;
 use tokio::fs;
@@ -36,6 +37,19 @@ use super::types::{
     SubAgentTask, dependency_waves,
 };
 
+static RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Where coding-agent CLI processes are allowed to run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentWorkspacePolicy {
+    /// Every coding-agent step must run in a freshly-created isolated worktree.
+    IsolatedRequired,
+    /// Read-only coding-agent steps may run in place; write-capable steps still
+    /// require an isolated worktree. This is kept for explicit internal callers,
+    /// not exposed as a desktop unsafe mode.
+    InPlaceReadOnly,
+}
+
 /// Options that govern a run.
 #[derive(Debug, Clone)]
 pub struct RunOptions {
@@ -50,11 +64,9 @@ pub struct RunOptions {
     pub approve_coding_agents: bool,
     /// Timeout for one coding-agent process.
     pub coding_agent_timeout_secs: u64,
-    /// Run write-capable coding-agent steps inside an isolated git worktree
-    /// (checked out at the project's HEAD) instead of the live working tree, so
-    /// the agent's diff is attributable even when the main tree is dirty. The
-    /// worktree is left in place for review; cleanup is an explicit human action.
-    pub use_isolated_worktree: bool,
+    /// Workspace policy for coding-agent CLIs. Defaults to requiring a fresh
+    /// isolated worktree for every approved coding-agent process.
+    pub agent_workspace_policy: AgentWorkspacePolicy,
 }
 
 impl Default for RunOptions {
@@ -65,7 +77,7 @@ impl Default for RunOptions {
             settings: ProviderSettings::default(),
             approve_coding_agents: false,
             coding_agent_timeout_secs: 600,
-            use_isolated_worktree: false,
+            agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
         }
     }
 }
@@ -76,7 +88,7 @@ pub async fn run_plan(
     opts: &RunOptions,
 ) -> RepoDeskResult<OrchestrationRun> {
     let started_at = Utc::now().to_rfc3339();
-    let run_id = format!("run-{}", Utc::now().format("%Y%m%d-%H%M%S"));
+    let run_id = new_run_id();
 
     // Steps grouped into dependency waves: every step in a wave is independent
     // of the others, so their provider calls can run concurrently.
@@ -244,29 +256,29 @@ pub async fn run_plan(
                 let command = handoff.command.clone();
                 let prompt = format!("{}\n\n{}", step_system_prompt(step), prompt);
 
-                // For write-capable steps, optionally run inside an isolated
-                // worktree so the diff is attributable even on a dirty main tree.
-                let mut worktree_note = None;
-                let cwd = if opts.use_isolated_worktree && step.allow_write {
-                    let parent = crate::worktree::worktrees_parent(&task.config.run_dir);
-                    match crate::worktree::create_run_worktree(&project.path, &parent, &run_id) {
-                        Ok(worktree) => {
-                            worktree_note = Some(format!(
-                                "isolated worktree: {} (base {}); remove it after applying/discarding",
-                                worktree.path, worktree.base_commit
-                            ));
-                            PathBuf::from(worktree.path)
-                        }
-                        Err(error) => {
-                            worktree_note = Some(format!(
-                                "isolated worktree unavailable, ran in place: {error}"
-                            ));
-                            project.path.clone()
-                        }
+                // Coding-agent CLIs run in an isolated workspace by default.
+                // For write-capable steps this is a hard security boundary:
+                // setup failure blocks the step and no subprocess is launched.
+                let workspace = match prepare_agent_workspace(
+                    &project.path,
+                    &task.config.run_dir,
+                    &run_id,
+                    step,
+                    opts.agent_workspace_policy,
+                ) {
+                    Ok(workspace) => workspace,
+                    Err(error) => {
+                        state.running_cost -= projected_cost;
+                        state.push(blocked(
+                            step,
+                            format!(
+                                "blocked: isolated workspace is required before launching coding agent: {error}"
+                            ),
+                        ));
+                        continue;
                     }
-                } else {
-                    project.path.clone()
                 };
+                let cwd = workspace.cwd.clone();
                 let output_dir = executor_output_dir.clone();
                 let timeout_secs = opts.coding_agent_timeout_secs;
                 let execution = tokio::task::spawn_blocking(move || {
@@ -329,8 +341,14 @@ pub async fn run_plan(
                     format!("stderr: {}", execution.stderr_path),
                     format!("duration_ms: {}", execution.duration_ms),
                 ];
-                if let Some(note) = worktree_note {
-                    notes.push(note);
+                if let Some(worktree) = &workspace.worktree {
+                    notes.push(format!(
+                        "isolated workspace: {} (id {}, base {}, metadata {}); apply-back is not implemented",
+                        worktree.path,
+                        worktree.workspace_id,
+                        worktree.base_commit,
+                        worktree.metadata_path.as_deref().unwrap_or("(not recorded)")
+                    ));
                 }
                 let changed_files: Vec<String> = execution
                     .changed_files
@@ -375,6 +393,7 @@ pub async fn run_plan(
                     captured_proposals: captured,
                     changed_files,
                     diff_path: execution.diff_path.clone(),
+                    workspace: workspace.worktree.clone(),
                     notes,
                     ..base_result(step)
                 });
@@ -665,8 +684,53 @@ fn base_result(step: &SubAgentTask) -> SubAgentResult {
         captured_proposals: 0,
         changed_files: Vec::new(),
         diff_path: None,
+        workspace: None,
         notes: Vec::new(),
     }
+}
+
+struct PreparedWorkspace {
+    cwd: PathBuf,
+    worktree: Option<crate::worktree::RunWorktree>,
+}
+
+fn prepare_agent_workspace(
+    project_path: &std::path::Path,
+    run_dir: &std::path::Path,
+    run_id: &str,
+    step: &SubAgentTask,
+    policy: AgentWorkspacePolicy,
+) -> RepoDeskResult<PreparedWorkspace> {
+    let isolate = match policy {
+        AgentWorkspacePolicy::IsolatedRequired => true,
+        AgentWorkspacePolicy::InPlaceReadOnly => step.allow_write,
+    };
+    if !isolate {
+        return Ok(PreparedWorkspace {
+            cwd: project_path.to_path_buf(),
+            worktree: None,
+        });
+    }
+
+    let parent = crate::worktree::worktrees_parent(run_dir);
+    let worktree = crate::worktree::create_run_worktree(project_path, &parent, run_id, &step.id)?;
+    Ok(PreparedWorkspace {
+        cwd: PathBuf::from(&worktree.path),
+        worktree: Some(worktree),
+    })
+}
+
+fn new_run_id() -> String {
+    let now = Utc::now();
+    let nanos = now
+        .timestamp_nanos_opt()
+        .unwrap_or_else(|| now.timestamp_micros().saturating_mul(1_000));
+    let counter = RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!(
+        "run-{}-{nanos}-{}-{counter}",
+        now.format("%Y%m%d-%H%M%S"),
+        std::process::id()
+    )
 }
 
 fn skipped(step: &SubAgentTask, note: String) -> SubAgentResult {

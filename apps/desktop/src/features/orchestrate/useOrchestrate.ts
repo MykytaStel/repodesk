@@ -48,7 +48,6 @@ export function useOrchestrate() {
       dryRun: boolean;
       maxCost?: number | null;
       approveCodingAgents: boolean;
-      useIsolatedWorktree?: boolean;
       overrideProvider?: string;
       overrideModel?: string;
     }) =>
@@ -57,7 +56,6 @@ export function useOrchestrate() {
         v.dryRun,
         v.maxCost ?? null,
         v.approveCodingAgents,
-        v.useIsolatedWorktree ?? false,
         v.overrideProvider,
         v.overrideModel,
       ),

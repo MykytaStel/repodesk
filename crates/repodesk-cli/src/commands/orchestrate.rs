@@ -3,8 +3,8 @@ use anyhow::{Result, anyhow};
 use crate::cli::OrchestrateCommand;
 use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::orchestrator::{
-    self, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun, RunOptions, SubAgentTask,
-    plan_has_paid_step,
+    self, AgentWorkspacePolicy, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun,
+    RunOptions, SubAgentTask, plan_has_paid_step,
 };
 
 pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
@@ -21,6 +21,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
             yes,
             worktree,
         } => {
+            let _legacy_worktree_flag = worktree;
             let settings = ProviderSettings::from_env();
             let plan = orchestrator::build_plan(goal, &settings, None, None)?;
 
@@ -39,7 +40,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 settings,
                 approve_coding_agents: yes,
                 coding_agent_timeout_secs: 600,
-                use_isolated_worktree: worktree,
+                agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
             };
             let rt = tokio::runtime::Runtime::new()?;
             let run = rt.block_on(orchestrator::run_plan(&plan, &opts))?;
@@ -63,7 +64,7 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 override_provider: None,
                 override_model: None,
                 settings,
-                use_isolated_worktree: true,
+                agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
             };
             let rt = tokio::runtime::Runtime::new()?;
             let loop_run = rt.block_on(orchestrator::run_loop(goal, &opts))?;

@@ -24,7 +24,7 @@ use crate::api_clients::ProviderSettings;
 use crate::errors::RepoDeskResult;
 
 use super::plan::{build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step};
-use super::runner::{RunOptions, run_plan};
+use super::runner::{AgentWorkspacePolicy, RunOptions, run_plan};
 use super::types::{RunStatus, SubAgentStatus};
 
 /// Default attempt cap when the caller does not specify one.
@@ -53,11 +53,9 @@ pub struct LoopOptions {
     pub override_model: Option<String>,
     /// Provider credentials/endpoints.
     pub settings: ProviderSettings,
-    /// Isolate write-capable steps in a per-run git worktree instead of writing
-    /// to the active checkout. Defaults to `true`: an autonomous loop has no
-    /// human watching each step, so it must never mutate the active tree in
-    /// place. Worktrees accumulate per attempt and are removed on human review.
-    pub use_isolated_worktree: bool,
+    /// Workspace policy for coding-agent CLIs. Defaults to requiring isolation:
+    /// an autonomous loop must never launch a CLI in the active checkout.
+    pub agent_workspace_policy: AgentWorkspacePolicy,
 }
 
 impl Default for LoopOptions {
@@ -72,7 +70,7 @@ impl Default for LoopOptions {
             override_provider: None,
             override_model: None,
             settings: ProviderSettings::default(),
-            use_isolated_worktree: true,
+            agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
         }
     }
 }
@@ -195,10 +193,7 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
                 settings: opts.settings.clone(),
                 approve_coding_agents: opts.approve_coding_agents,
                 coding_agent_timeout_secs: opts.coding_agent_timeout_secs,
-                // Never mutate the active checkout from an unattended loop. Each
-                // attempt isolates write steps in their own worktree; they
-                // accumulate and are cleaned up on human review of the changeset.
-                use_isolated_worktree: opts.use_isolated_worktree,
+                agent_workspace_policy: opts.agent_workspace_policy,
             },
         )
         .await?;

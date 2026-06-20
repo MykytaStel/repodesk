@@ -138,9 +138,11 @@ about the limits. Updated during P2 (security hardening).
    a passive PATH lookup; the optional `--version` probe is itself argv-only with a
    5s timeout and reads no credential files. Execution requires a **separate**
    approval from paid-API approval (`RunOptions.approve_coding_agents`); without it
-   the runner records a skipped hand-off. Runs enforce a timeout (kill on overrun)
-   and capture stdout/stderr to size-limited receipt files. A coding-agent route
-   never falls back to an OpenAI/Anthropic completion client.
+   the runner records a skipped hand-off. Approved coding-agent runs require a fresh
+   isolated git worktree; if workspace creation fails, the step is blocked and the
+   CLI is not launched. Runs enforce a timeout (kill on overrun) and capture
+   stdout/stderr to size-limited receipt files. A coding-agent route never falls
+   back to an OpenAI/Anthropic completion client.
 
 ### Desktop (Tauri) posture
 - CSP: `default-src 'self'`, no `unsafe` in `script-src`. `connect-src` is narrowed to

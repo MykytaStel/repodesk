@@ -4,14 +4,14 @@
 //! test runs against an isolated temporary home. `REPODESK_HOME` is a process-global
 //! env var, so every test here is `#[serial]` to prevent cross-test interference.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use repodesk_core::api_clients::{ProviderSettings, ThinkingLevel};
 use repodesk_core::guard::{GuardLevel, preflight};
 use repodesk_core::judge::{JudgementDecision, judge_agent};
 use repodesk_core::orchestrator::{
-    OrchestrationPlan, OrchestrationRun, RunOptions, RunStatus, SubAgentResult, SubAgentStatus,
-    SubAgentTask, list_runs, run_plan,
+    OrchestrationPlan, OrchestrationRun, ReviewAction, RunOptions, RunStatus, SubAgentResult,
+    SubAgentStatus, SubAgentTask, list_runs, review_run, run_plan,
 };
 use repodesk_core::persistence::event_journal::{LogEventInput, log_event, read_task_events};
 use repodesk_core::persistence::{count_action_runs, recent_action_runs, record_action_run};
@@ -72,6 +72,27 @@ fn setup() -> Fixture {
         run_dir: task.config.run_dir,
         project_path,
     }
+}
+
+fn init_git_repo(path: &Path) {
+    let git = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(path)
+                .output()
+                .expect("run git")
+                .status
+                .success(),
+            "git {args:?} failed"
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    std::fs::write(path.join("seed.txt"), "seed\n").expect("seed file");
+    git(&["add", "."]);
+    git(&["commit", "-qm", "init"]);
 }
 
 // --- repopilot health trend --------------------------------------------------
@@ -420,6 +441,7 @@ fn write_run(orchestrate_dir: &std::path::Path, run_id: &str, goal: &str, status
             captured_proposals: 0,
             changed_files: Vec::new(),
             diff_path: None,
+            workspace: None,
             notes: Vec::new(),
         }],
         total_input_tokens: 10,
@@ -461,6 +483,63 @@ fn list_runs_returns_summaries_newest_first_and_skips_latest_pointer() {
     assert_eq!(runs[0].status, RunStatus::Partial);
     assert_eq!(runs[0].step_count, 1);
     assert_eq!(runs[1].run_id, "run-20260617-100000");
+}
+
+#[test]
+#[serial]
+fn review_run_refuses_isolated_worktree_changesets() {
+    let fx = setup();
+    let dir = fx.run_dir.join("orchestrate");
+    std::fs::create_dir_all(&dir).expect("orchestrate dir");
+    let run_id = "run-isolated";
+    let run = OrchestrationRun {
+        run_id: run_id.to_string(),
+        project: "demo".to_string(),
+        task_id: "task".to_string(),
+        goal: "isolated".to_string(),
+        status: RunStatus::Completed,
+        dry_run: false,
+        started_at: "2026-06-17T10:00:00Z".to_string(),
+        finished_at: "2026-06-17T10:01:00Z".to_string(),
+        results: vec![SubAgentResult {
+            task_id: "implement".to_string(),
+            agent: "codex_cli".to_string(),
+            provider: "codex_cli".to_string(),
+            model: String::new(),
+            status: SubAgentStatus::Ok,
+            output: String::new(),
+            input_tokens: 10,
+            output_tokens: 5,
+            cost_units: 0.0,
+            captured_proposals: 0,
+            changed_files: vec!["seed.txt".to_string()],
+            diff_path: Some("/tmp/repodesk-diff.diff".to_string()),
+            workspace: Some(repodesk_core::worktree::RunWorktree {
+                workspace_id: "workspace-1".to_string(),
+                run_id: run_id.to_string(),
+                step_id: "implement".to_string(),
+                path: "/tmp/repodesk-worktree".to_string(),
+                base_commit: "abc123".to_string(),
+                created_at: "2026-06-17T10:00:00Z".to_string(),
+                metadata_path: Some("/tmp/repodesk-worktree.json".to_string()),
+            }),
+            notes: Vec::new(),
+        }],
+        total_input_tokens: 10,
+        total_output_tokens: 5,
+        total_cost_units: 0.0,
+    };
+    let json = serde_json::to_string_pretty(&run).expect("serialize run");
+    std::fs::write(dir.join(format!("{run_id}.json")), &json).expect("write run");
+
+    let err = review_run(run_id, ReviewAction::Accept).expect_err("isolated review must fail");
+    assert!(
+        err.to_string().contains("isolated worktree")
+            && err
+                .to_string()
+                .contains("active checkout was left untouched"),
+        "unexpected error: {err}"
+    );
 }
 
 #[test]
@@ -696,7 +775,8 @@ async fn real_run_previews_coding_agent_without_provider_call() {
 #[serial]
 #[cfg(unix)]
 async fn approved_coding_agent_runs_through_argv_executor() {
-    let _fx = setup();
+    let fx = setup();
+    init_git_repo(&fx.project_path);
     let active_id = show_active_task().expect("active").config.id;
     let bin_dir = TempDir::new().expect("bin tempdir");
     let fake_codex = bin_dir.path().join("codex");
@@ -749,9 +829,88 @@ async fn approved_coding_agent_runs_through_argv_executor() {
     assert_eq!(result.status, SubAgentStatus::Ok);
     assert!(result.output.contains("agent-output"));
     assert!(
+        result.workspace.is_some(),
+        "approved coding-agent runs should use an isolated workspace"
+    );
+    assert!(
         result.notes.iter().any(|note| note.contains("stdout:")),
         "execution notes should include stdout receipt path: {:?}",
         result.notes
+    );
+}
+
+#[tokio::test]
+#[serial]
+#[cfg(unix)]
+async fn approved_coding_agent_blocks_when_isolated_workspace_cannot_be_created() {
+    let fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+    let bin_dir = TempDir::new().expect("bin tempdir");
+    let marker = bin_dir.path().join("launched");
+    let fake_codex = bin_dir.path().join("codex");
+    std::fs::write(
+        &fake_codex,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\necho launched > {}\necho agent-output\n",
+            marker.display()
+        ),
+    )
+    .expect("write fake codex");
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake_codex, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod fake codex");
+
+    let old_path = std::env::var_os("PATH");
+    let new_path = match old_path.as_ref() {
+        Some(path) => {
+            let mut paths = vec![bin_dir.path().to_path_buf()];
+            paths.extend(std::env::split_paths(path));
+            std::env::join_paths(paths).expect("join path")
+        }
+        None => bin_dir.path().as_os_str().to_os_string(),
+    };
+    unsafe {
+        std::env::set_var("PATH", &new_path);
+    }
+
+    let run_result = run_plan(
+        &coding_agent_plan("demo", &active_id),
+        &RunOptions {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+            approve_coding_agents: true,
+            coding_agent_timeout_secs: 5,
+            ..RunOptions::default()
+        },
+    )
+    .await;
+
+    unsafe {
+        match old_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+
+    let run = run_result.expect("run_plan");
+    let result = &run.results[0];
+    assert_eq!(result.status, SubAgentStatus::Blocked);
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|note| note.contains("isolated workspace is required")),
+        "expected fail-closed workspace note: {:?}",
+        result.notes
+    );
+    assert!(
+        !marker.exists(),
+        "coding-agent process must not launch when isolated workspace creation fails"
+    );
+    assert!(
+        !fx.project_path.join("launched").exists(),
+        "active checkout must remain untouched"
     );
 }
 
@@ -837,6 +996,7 @@ fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationR
         captured_proposals: 0,
         changed_files: Vec::new(),
         diff_path: None,
+        workspace: None,
         notes: Vec::new(),
     };
     let run = OrchestrationRun {
@@ -1003,6 +1163,7 @@ fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize,
             captured_proposals: 0,
             changed_files: Vec::new(),
             diff_path: None,
+            workspace: None,
             notes: Vec::new(),
         })
         .collect();

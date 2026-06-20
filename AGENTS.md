@@ -108,10 +108,11 @@ checked explicitly (never on launch).
   the separate `approve_coding_agents` gate. **Done:** separation, canonical ids, safe runner,
   read-only + workspace-write commands, routing + orchestrator integration, CLI version probe,
   agent-run diff capture (pre/post git porcelain delta + unified diff + receipt on each run,
-  surfaced on `SubAgentResult.changed_files`/`diff_path`), accept/reject review
-  (`orchestrator::review`: stage or discard a run's changeset; CLI + Tauri + run-panel buttons),
-  CLI auth tri-state (artifact-existence check, never reads contents), isolated git worktrees
-  (`worktree.rs`, runner `use_isolated_worktree` / `--worktree`), OS keychain credential store
+  surfaced on `SubAgentResult.changed_files`/`diff_path`), accept/reject review for non-isolated
+  changesets (`orchestrator::review`: stage or discard via CLI + Tauri; isolated worktree
+  changesets fail safely until apply-back exists), CLI auth tri-state (artifact-existence check,
+  never reads contents), required isolated git worktrees for coding-agent runs (`worktree.rs`),
+  OS keychain credential store
   (`credentials.rs`: `CredentialResolver` + `keyring`; `credential_*` Tauri cmds return only
   masked hints), and the OpenAI Responses API (`/v1/responses`). **Open (ordered):** CLI auth
   depth, worktree apply-back into review, migrate legacy plaintext keys to the keychain, inline

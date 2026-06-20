@@ -569,8 +569,8 @@ pub enum OrchestrateCommand {
         /// Confirm execution of paid provider and coding-agent CLI steps.
         #[arg(long)]
         yes: bool,
-        /// Run write-capable coding-agent steps in an isolated git worktree.
-        #[arg(long)]
+        /// Deprecated no-op: coding-agent steps now always require isolated workspaces.
+        #[arg(long, hide = true)]
         worktree: bool,
     },
     /// Autonomously attempt the task: plan → run → re-plan/retry under guardrails.

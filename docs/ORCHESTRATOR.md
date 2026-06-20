@@ -73,11 +73,13 @@ The runner launches these commands only when `RunOptions.approve_coding_agents` 
 skipped. Executions capture stdout/stderr to receipt files, enforce a timeout, and never fall
 back from a coding-agent executor to an OpenAI/Anthropic completion client.
 
-**Isolated worktree (opt-in).** With `RunOptions.use_isolated_worktree` (CLI `--worktree`, the
-desktop "Isolated worktree" toggle), a write-capable step runs inside a fresh git worktree
-checked out at the project's HEAD (`crate::worktree`), so its diff is attributable even when the
-main tree is dirty. The worktree is left in place for review; cleanup
-(`worktree::remove_run_worktree`) is an explicit human action — nothing is auto-discarded.
+**Isolated workspace required.** Approved coding-agent steps run inside a fresh git worktree
+checked out at the project's HEAD (`crate::worktree`), so their diff is attributable even when
+the main tree is dirty. Worktree creation is fail-closed: if RepoDesk cannot create the isolated
+workspace, the step is blocked and no agent process is launched. Workspaces use a per-run/per-step
+collision-resistant id, are never automatically force-removed or reused, and write recovery
+metadata before launch. The worktree is left in place for review; cleanup
+(`worktree::remove_run_worktree`) is an explicit human action.
 
 **Changeset capture.** Around each run the executor snapshots `git status --porcelain` before
 and after, so a write-capable run produces a reviewable changeset, not just stdout:
@@ -88,13 +90,15 @@ on the step result (`SubAgentResult.changed_files` / `diff_path`), and the deskt
 shows the count and file list.
 
 **Accept / reject review.** [`orchestrator::review`](../crates/repodesk-core/src/orchestrator/review.rs)
-makes that changeset actionable. Given a persisted run, the human can **accept** (stage the
-agent-changed files via `git add`, ready for a commit they make) or **reject** (discard them —
-`git restore --source=HEAD` for tracked files, `git clean` for untracked ones). It is bounded by
-construction: it only ever touches the paths the run recorded, validates each is a repo-relative
-path (no `..`, no absolute), and **never commits, pushes, or merges**. Surfaced as
-`repodesk orchestrate review <run_id> <accept|reject>` (CLI), the `orchestrate_review` Tauri
-command, and Accept/Reject buttons on the desktop run panel.
+makes in-place changesets actionable. Given a persisted non-isolated run, the human can **accept**
+(stage the agent-changed files via `git add`, ready for a commit they make) or **reject** (discard
+them — `git restore --source=HEAD` for tracked files, `git clean` for untracked ones). It is
+bounded by construction: it only ever touches the paths the run recorded, validates each is a
+repo-relative path (no `..`, no absolute), and **never commits, pushes, or merges**. For isolated
+worktree runs, accept/reject currently fails safely with an explicit error; apply-back from the
+worktree is the next lifecycle step. Surfaced as `repodesk orchestrate review <run_id>
+<accept|reject>` (CLI) and the `orchestrate_review` Tauri command. The desktop hides
+Accept/Reject for isolated changesets and shows the worktree path instead.
 
 ### Gates (every step, before any spend)
 - **Safety** — `safety::scan_text` blocks if secret-like content is in the outgoing context.
@@ -108,7 +112,7 @@ command, and Accept/Reject buttons on the desktop run panel.
 ```bash
 repodesk orchestrate plan [--goal "..."]                 # route every step; no execution
 repodesk orchestrate run --dry-run [--max-cost N]        # gate + project cost, no provider calls
-repodesk orchestrate run [--goal "..."] [--max-cost N] [--worktree] --yes
+repodesk orchestrate run [--goal "..."] [--max-cost N] --yes
 repodesk orchestrate status                              # most recent run for the active task
 repodesk orchestrate show <run_id>
 repodesk orchestrate review <run_id> accept|reject       # stage or discard a coding-agent changeset

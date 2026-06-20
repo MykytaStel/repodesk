@@ -114,6 +114,7 @@ mod tests {
             captured_proposals: 0,
             changed_files: Vec::new(),
             diff_path: None,
+            workspace: None,
             notes: Vec::new(),
         }
     }

@@ -34,7 +34,18 @@ export type SubAgentResult = {
   captured_proposals: number;
   changed_files?: string[];
   diff_path?: string | null;
+  workspace?: RunWorkspace | null;
   notes: string[];
+};
+
+export type RunWorkspace = {
+  workspace_id: string;
+  run_id: string;
+  step_id: string;
+  path: string;
+  base_commit: string;
+  created_at: string;
+  metadata_path?: string | null;
 };
 
 export type OrchestrationPlan = {
@@ -207,7 +218,6 @@ export async function orchestrateRun(
   dryRun: boolean,
   maxCost?: number | null,
   approveCodingAgents = false,
-  useIsolatedWorktree = false,
   overrideProvider?: string,
   overrideModel?: string
 ): Promise<OrchestrationRun> {
@@ -216,7 +226,6 @@ export async function orchestrateRun(
     dryRun,
     maxCost: maxCost ?? null,
     approveCodingAgents,
-    useIsolatedWorktree,
     overrideProvider: overrideProvider ?? null,
     overrideModel: overrideModel ?? null,
   });

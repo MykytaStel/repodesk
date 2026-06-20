@@ -5,8 +5,8 @@
 use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::executors::{self, ExecutorAvailability};
 use repodesk_core::orchestrator::{
-    self, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun, ReviewAction, RunOptions,
-    RunReview, RunSummary, review_run,
+    self, AgentWorkspacePolicy, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun,
+    ReviewAction, RunOptions, RunReview, RunSummary, review_run,
 };
 use repodesk_core::persistence::event_journal::{self, EventEntry};
 use repodesk_core::tasks::show_active_task;
@@ -77,7 +77,6 @@ pub async fn orchestrate_run(
     dry_run: bool,
     max_cost: Option<f64>,
     approve_coding_agents: bool,
-    use_isolated_worktree: Option<bool>,
     override_provider: Option<String>,
     override_model: Option<String>,
 ) -> Result<OrchestrationRun, ErrorPayload> {
@@ -90,7 +89,7 @@ pub async fn orchestrate_run(
         settings,
         approve_coding_agents,
         coding_agent_timeout_secs: 600,
-        use_isolated_worktree: use_isolated_worktree.unwrap_or(false),
+        agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
     };
     Ok(orchestrator::run_plan(&plan, &opts).await?)
 }
@@ -123,7 +122,7 @@ pub async fn orchestrate_loop(
         override_provider,
         override_model,
         settings: orchestrator_settings(),
-        use_isolated_worktree: true,
+        agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
     };
     Ok(orchestrator::run_loop(goal, &opts).await?)
 }

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::api_clients::ThinkingLevel;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::routing::types::{ExecutorKind, TaskKind};
+use crate::worktree::RunWorktree;
 
 /// One unit of delegated work: an agent + resolved provider/model + the context
 /// it needs, plus the dependencies that must finish before it runs.
@@ -121,6 +122,11 @@ pub struct SubAgentResult {
     /// Receipt file holding the full captured diff for a coding-agent step.
     #[serde(default)]
     pub diff_path: Option<String>,
+    /// Isolated workspace used for this coding-agent step, when one was
+    /// created. Accept/reject must not apply these paths to the active checkout
+    /// until apply-back is implemented.
+    #[serde(default)]
+    pub workspace: Option<RunWorktree>,
     pub notes: Vec<String>,
 }
 

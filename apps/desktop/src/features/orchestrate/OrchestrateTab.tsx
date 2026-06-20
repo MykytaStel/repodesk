@@ -134,6 +134,10 @@ function RunPanel({
 }) {
   const captured = run.results.reduce((sum, r) => sum + r.captured_proposals, 0);
   const changedCount = run.results.reduce((sum, r) => sum + (r.changed_files?.length ?? 0), 0);
+  const isolatedChanged = run.results.some((r) => r.workspace && (r.changed_files?.length ?? 0) > 0);
+  const workspaces = run.results
+    .flatMap((r) => (r.workspace ? [r.workspace] : []))
+    .filter((workspace, index, all) => all.findIndex((w) => w.workspace_id === workspace.workspace_id) === index);
   return (
     <section className="panel">
       <p className="eyebrow">
@@ -169,6 +173,11 @@ function RunPanel({
                 Changed files: {result.changed_files.join(", ")}
               </p>
             ) : null}
+            {result.workspace ? (
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                Workspace: {result.workspace.path}
+              </p>
+            ) : null}
             {result.notes.map((note, i) => (
               <p className="muted" key={i} style={{ fontSize: 12, margin: 0 }}>
                 {note}
@@ -184,7 +193,7 @@ function RunPanel({
               Review {captured} captured memory proposal{captured === 1 ? "" : "s"}
             </button>
           )}
-          {changedCount > 0 && onReview && (
+          {changedCount > 0 && onReview && !isolatedChanged && (
             <>
               <button
                 className="tiny-button"
@@ -204,6 +213,13 @@ function RunPanel({
               </button>
             </>
           )}
+        </div>
+      )}
+      {changedCount > 0 && isolatedChanged && (
+        <div className="notice warn" style={{ marginTop: 12 }}>
+          Agent changes are in isolated worktree{workspaces.length === 1 ? "" : "s"}:{" "}
+          {workspaces.map((workspace) => workspace.path).join(", ")}. Apply-back is not available yet,
+          so Accept/Reject is disabled for this run.
         </div>
       )}
       {reviewResult && (
@@ -355,7 +371,6 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const [maxIterations, setMaxIterations] = useState("3");
   const [approvePaid, setApprovePaid] = useState(false);
   const [approveCodingAgents, setApproveCodingAgents] = useState(false);
-  const [useIsolatedWorktree, setUseIsolatedWorktree] = useState(false);
   const [targetModelCombo, setTargetModelCombo] = useState<string>("auto");
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
   const [reviewResult, setReviewResult] = useState<RunReview | null>(null);
@@ -430,7 +445,6 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       dryRun,
       maxCost: parsedMaxCost(),
       approveCodingAgents,
-      useIsolatedWorktree,
       overrideProvider,
       overrideModel,
     });
@@ -539,15 +553,6 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
                 style={{ margin: 0, width: "auto" }}
               />
               <span style={{ fontSize: 14 }}>Auto-approve CLI agents</span>
-            </label>
-            <label className="toggle-row" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                checked={useIsolatedWorktree}
-                onChange={(e) => setUseIsolatedWorktree(e.target.checked)}
-                style={{ margin: 0, width: "auto" }}
-              />
-              <span style={{ fontSize: 14 }}>Isolated worktree</span>
             </label>
           </div>
         </div>
