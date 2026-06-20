@@ -114,6 +114,13 @@ pub struct SubAgentResult {
     pub cost_units: f64,
     /// How many Memory Brain capture proposals this output produced.
     pub captured_proposals: usize,
+    /// Repo-relative paths a coding-agent step changed (empty for every other
+    /// executor kind). The reviewable changeset for an accept/reject decision.
+    #[serde(default)]
+    pub changed_files: Vec<String>,
+    /// Receipt file holding the full captured diff for a coding-agent step.
+    #[serde(default)]
+    pub diff_path: Option<String>,
     pub notes: Vec<String>,
 }
 

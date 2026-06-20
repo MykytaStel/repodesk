@@ -300,6 +300,30 @@ pub async fn run_plan(
                     format!("stderr: {}", execution.stderr_path),
                     format!("duration_ms: {}", execution.duration_ms),
                 ];
+                let changed_files: Vec<String> = execution
+                    .changed_files
+                    .iter()
+                    .map(|change| change.path.clone())
+                    .collect();
+                if changed_files.is_empty() {
+                    notes.push("changed files: none (no writes detected)".to_string());
+                } else {
+                    notes.push(format!(
+                        "changed files ({}): {}",
+                        changed_files.len(),
+                        changed_files.join(", ")
+                    ));
+                    if let Some(diff_path) = &execution.diff_path {
+                        notes.push(format!(
+                            "diff: {diff_path}{}",
+                            if execution.diff_truncated {
+                                " (truncated)"
+                            } else {
+                                ""
+                            }
+                        ));
+                    }
+                }
                 if execution.timed_out {
                     notes.push("coding-agent process timed out and was killed".to_string());
                 }
@@ -317,6 +341,8 @@ pub async fn run_plan(
                     output: execution.stdout,
                     cost_units: cost,
                     captured_proposals: captured,
+                    changed_files,
+                    diff_path: execution.diff_path.clone(),
                     notes,
                     ..base_result(step)
                 });
@@ -605,6 +631,8 @@ fn base_result(step: &SubAgentTask) -> SubAgentResult {
         output_tokens: 0,
         cost_units: 0.0,
         captured_proposals: 0,
+        changed_files: Vec::new(),
+        diff_path: None,
         notes: Vec::new(),
     }
 }

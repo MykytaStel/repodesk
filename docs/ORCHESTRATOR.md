@@ -54,12 +54,31 @@ fall back to a clearly-flagged **manual** step at zero cost.
 
 ### Coding-agent executors
 `executors.rs` defines the CLI-agent boundary for `codex_cli` and `claude_code_cli`.
-It normalizes legacy aliases, checks PATH passively, and builds argv-only command previews
-with the bounded prompt carried on stdin. The runner launches these commands only when
-`RunOptions.approve_coding_agents` is true (CLI `--yes`, or the desktop's explicit CLI-agent
-approval); otherwise it records the handoff as skipped. Executions capture stdout/stderr to
-receipt files, enforce a timeout, and never fall back from a coding-agent executor to an
-OpenAI/Anthropic completion client.
+It normalizes legacy aliases, builds argv-only command previews with the bounded prompt carried
+on stdin, and reports availability at two levels:
+
+- **Passive** (`coding_agent_availability`) — a PATH lookup only; no process is spawned. Used by
+  routing/planning and the runtime status, where listing must stay cheap and side-effect-free.
+- **Probed** (`coding_agent_availability_probed`) — passive lookup *plus* a bounded
+  `<binary> --version` probe (argv-only, 5s timeout, no `sh -c`). Running the CLI's own version
+  command confirms the binary is actually runnable and surfaces its `version`. `authenticated`
+  stays `None` (unknown) on purpose: neither CLI exposes a documented, side-effect-free
+  auth-status command, and RepoDesk never parses credential files. The desktop "Executor
+  availability" panel uses this variant.
+
+The runner launches these commands only when `RunOptions.approve_coding_agents` is true (CLI
+`--yes`, or the desktop's explicit CLI-agent approval); otherwise it records the handoff as
+skipped. Executions capture stdout/stderr to receipt files, enforce a timeout, and never fall
+back from a coding-agent executor to an OpenAI/Anthropic completion client.
+
+**Changeset capture.** Around each run the executor snapshots `git status --porcelain` before
+and after, so a write-capable run produces a reviewable changeset, not just stdout:
+`CodingAgentExecution` carries `changed_files` (the porcelain delta), a size-limited unified
+`diff` of the tracked changes (staged + unstaged; new untracked files are listed but not
+inlined), and a `diff_path` receipt file. The runner surfaces the changed-file list + diff path
+on the step result (`SubAgentResult.changed_files` / `diff_path`), and the desktop run panel
+shows the count and file list. This is the foundation for the planned accept/reject review flow
+— RepoDesk still never commits, pushes, or merges on its own.
 
 ### Gates (every step, before any spend)
 - **Safety** — `safety::scan_text` blocks if secret-like content is in the outgoing context.

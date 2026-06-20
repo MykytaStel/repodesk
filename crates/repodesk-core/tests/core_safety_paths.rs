@@ -418,6 +418,8 @@ fn write_run(orchestrate_dir: &std::path::Path, run_id: &str, goal: &str, status
             output_tokens: 5,
             cost_units: 0.0,
             captured_proposals: 0,
+            changed_files: Vec::new(),
+            diff_path: None,
             notes: Vec::new(),
         }],
         total_input_tokens: 10,
@@ -832,6 +834,8 @@ fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationR
         output_tokens: 5,
         cost_units: cost,
         captured_proposals: 0,
+        changed_files: Vec::new(),
+        diff_path: None,
         notes: Vec::new(),
     };
     let run = OrchestrationRun {
@@ -996,6 +1000,8 @@ fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize,
             output_tokens: 1,
             cost_units: 0.1,
             captured_proposals: 0,
+            changed_files: Vec::new(),
+            diff_path: None,
             notes: Vec::new(),
         })
         .collect();

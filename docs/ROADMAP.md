@@ -78,6 +78,22 @@ Scope:
   outputs as human-reviewable proposals; safety/budget/cost gates; CLI + desktop "Orchestrate" tab. ✅
 - Next: concurrent execution of independent steps; LLM-assisted / user-authored plans.
 
+### Milestone 7 — Providers vs coding-agent executors (in progress)
+
+Cleanly separate **completion providers** (HTTP model APIs) from **coding-agent executors**
+(local CLIs that edit a working tree). See [AI_PROVIDER_AGENT_AUDIT.md](AI_PROVIDER_AGENT_AUDIT.md).
+
+Scope:
+- `ExecutorKind` + canonical ids; `codex`/`claude` never map to API clients. ✅
+- Coding-agent execution contract + safe argv-only runner (no `sh -c`, stdin prompt, timeout). ✅
+- Codex CLI + Claude Code read-only and workspace-write commands; routing + orchestrator
+  integration behind a separate `approve_coding_agents` gate. ✅
+- CLI availability: passive PATH lookup + opt-in `--version` probe. ✅
+- Agent-run diff capture: pre/post `git status` delta + unified diff + receipt on each run,
+  surfaced on the step result and run panel. ✅
+- Next (ordered): CLI auth detection, git worktree lifecycle, OS keychain credential store,
+  OpenAI Responses API migration, accept/reject review flow.
+
 ## Development priorities
 
 1. Stability before new features.

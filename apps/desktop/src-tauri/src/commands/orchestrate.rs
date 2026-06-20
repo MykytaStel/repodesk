@@ -79,12 +79,7 @@ pub async fn orchestrate_run(
 ) -> Result<OrchestrationRun, ErrorPayload> {
     let goal = clean_goal(goal)?;
     let settings = orchestrator_settings();
-    let plan = orchestrator::build_plan(
-        goal,
-        &settings,
-        override_provider,
-        override_model,
-    )?;
+    let plan = orchestrator::build_plan(goal, &settings, override_provider, override_model)?;
     let opts = RunOptions {
         dry_run,
         max_cost,
@@ -128,7 +123,9 @@ pub async fn orchestrate_loop(
 pub fn coding_agent_executors() -> Result<Vec<ExecutorAvailability>, ErrorPayload> {
     executors::coding_agent_specs()
         .iter()
-        .map(|spec| executors::coding_agent_availability(&spec.id).map_err(ErrorPayload::from))
+        .map(|spec| {
+            executors::coding_agent_availability_probed(&spec.id).map_err(ErrorPayload::from)
+        })
         .collect()
 }
 

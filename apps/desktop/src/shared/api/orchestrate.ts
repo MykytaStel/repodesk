@@ -32,6 +32,8 @@ export type SubAgentResult = {
   output_tokens: number;
   cost_units: number;
   captured_proposals: number;
+  changed_files?: string[];
+  diff_path?: string | null;
   notes: string[];
 };
 
@@ -85,6 +87,8 @@ export type ExecutorAvailability = {
   available: boolean;
   executable_path?: string | null;
   status: string;
+  version?: string | null;
+  authenticated?: boolean | null;
   notes: string[];
 };
 

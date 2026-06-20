@@ -100,4 +100,15 @@ checked explicitly (never on launch).
   (⌘K command palette, header project switcher, clickable git diff viewer, toast notifications),
   and perf (tabs `React.lazy` code-split). Frontend leans on CSS-variable tokens in
   `apps/desktop/src/app/styles/foundation.css` — theme via `data-theme`, never hardcode colors.
+- **Provider/agent separation** (see `docs/AI_PROVIDER_AGENT_AUDIT.md`): completion providers
+  (`api_clients/`, ids `openai_api`/`anthropic_api`/`gemini_api`/`ollama`/`lm_studio`) and
+  coding-agent executors (`executors.rs`, ids `codex_cli`/`claude_code_cli`) are distinct by
+  `ExecutorKind` — `codex`/`claude` never resolve to API clients. Executors are argv-only (no
+  `sh -c`), prompt-on-stdin, PATH-passive with an opt-in `--version` probe, and run only behind
+  the separate `approve_coding_agents` gate. **Done:** separation, canonical ids, safe runner,
+  read-only + workspace-write commands, routing + orchestrator integration, CLI version probe,
+  agent-run diff capture (pre/post git porcelain delta + unified diff + receipt on each run,
+  surfaced on `SubAgentResult.changed_files`/`diff_path`). **Open (ordered):** CLI auth tri-state,
+  git worktree lifecycle, OS keychain credential store, OpenAI Responses API migration,
+  accept/reject review flow.
 </content>

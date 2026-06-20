@@ -112,6 +112,8 @@ mod tests {
             output_tokens: 20,
             cost_units: 0.0,
             captured_proposals: 0,
+            changed_files: Vec::new(),
+            diff_path: None,
             notes: Vec::new(),
         }
     }

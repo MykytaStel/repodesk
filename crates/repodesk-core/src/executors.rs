@@ -4,6 +4,7 @@
 //! argv-only command specs, and the low-level process runner used after the
 //! orchestrator has explicit human approval. No `sh -c`.
 
+use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
@@ -15,6 +16,12 @@ use serde::{Deserialize, Serialize};
 use wait_timeout::ChildExt;
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
+use crate::git_workspace::{self, GitFileChange};
+
+/// Maximum diff size kept on a [`CodingAgentExecution`] / written to a receipt.
+/// A larger diff is truncated with a trailing marker so the run record never
+/// balloons; the full working tree is still on disk for the human to inspect.
+const MAX_DIFF_BYTES: usize = 200 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CodingAgentSpec {
@@ -34,6 +41,15 @@ pub struct ExecutorAvailability {
     pub available: bool,
     pub executable_path: Option<String>,
     pub status: String,
+    /// Version string reported by the CLI's own `--version`, when probed.
+    /// `None` means "not probed" (passive PATH lookup only) or "probe failed".
+    #[serde(default)]
+    pub version: Option<String>,
+    /// Tri-state local authentication: `Some(true)`/`Some(false)` only when a
+    /// supported, non-destructive status check is available; `None` is the
+    /// honest default — RepoDesk never parses undocumented credential files.
+    #[serde(default)]
+    pub authenticated: Option<bool>,
     pub notes: Vec<String>,
 }
 
@@ -70,6 +86,20 @@ pub struct CodingAgentExecution {
     pub stdout_path: String,
     pub stderr_path: String,
     pub timed_out: bool,
+    /// Files the run changed, as a porcelain delta (post-run minus pre-run git
+    /// status). Empty when the working dir is not a git repo or nothing changed.
+    #[serde(default)]
+    pub changed_files: Vec<GitFileChange>,
+    /// Unified diff (staged + unstaged vs the index/HEAD) of the tracked changes
+    /// the run produced, size-limited to [`MAX_DIFF_BYTES`]. Untracked new files
+    /// appear in `changed_files` but not here (their content is on disk).
+    #[serde(default)]
+    pub diff: String,
+    #[serde(default)]
+    pub diff_truncated: bool,
+    /// Receipt file holding the captured diff, when one was written.
+    #[serde(default)]
+    pub diff_path: Option<String>,
 }
 
 pub fn coding_agent_specs() -> Vec<CodingAgentSpec> {
@@ -123,6 +153,10 @@ pub fn coding_agent_spec(value: &str) -> RepoDeskResult<CodingAgentSpec> {
         })
 }
 
+/// Passive availability: a PATH lookup only. No process is spawned, so this is
+/// cheap and safe to call for listing. `version`/`authenticated` are left
+/// `None`; use [`coding_agent_availability_probed`] to additionally run the
+/// CLI's own `--version`.
 pub fn coding_agent_availability(value: &str) -> RepoDeskResult<ExecutorAvailability> {
     let spec = coding_agent_spec(value)?;
     let executable_path = find_executable(&spec.binary);
@@ -141,8 +175,82 @@ pub fn coding_agent_availability(value: &str) -> RepoDeskResult<ExecutorAvailabi
         available,
         executable_path: executable_path.map(|path| path.display().to_string()),
         status: if available { "available" } else { "missing" }.to_string(),
+        version: None,
+        authenticated: None,
         notes,
     })
+}
+
+/// Active availability: passive PATH lookup *plus* a bounded `<binary> --version`
+/// probe. Running the CLI's own version command confirms the executable is
+/// actually runnable (not just present) and surfaces its version for the
+/// desktop "Coding agents" panel. The probe is argv-only with a short timeout;
+/// it never uses `sh -c` and never inspects credential files. `authenticated`
+/// stays `None` (unknown) because neither CLI exposes a documented,
+/// side-effect-free auth-status command we can rely on.
+pub fn coding_agent_availability_probed(value: &str) -> RepoDeskResult<ExecutorAvailability> {
+    let mut availability = coding_agent_availability(value)?;
+    if !availability.available {
+        return Ok(availability);
+    }
+
+    match probe_version(&availability.binary) {
+        Some(version) => {
+            availability
+                .notes
+                .push(format!("Version probe succeeded: {version}"));
+            availability.version = Some(version);
+        }
+        None => {
+            // Present on PATH but `--version` did not return cleanly. Keep it
+            // listed as available (it may still run) but flag the probe.
+            availability.status = "present_unverified".to_string();
+            availability.notes.push(
+                "Executable is on PATH but `--version` did not return a recognizable version."
+                    .to_string(),
+            );
+        }
+    }
+
+    Ok(availability)
+}
+
+/// Run `<binary> --version` argv-only with a short timeout and return the first
+/// non-empty trimmed line of stdout (falling back to stderr). Any failure —
+/// missing binary, non-zero exit, timeout, empty output — yields `None`.
+fn probe_version(binary: &str) -> Option<String> {
+    if validate_token("program", binary).is_err() {
+        return None;
+    }
+    let mut child = Command::new(binary)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .ok()?;
+
+    match child.wait_timeout(Duration::from_secs(5)).ok()? {
+        Some(status) if status.success() => {}
+        Some(_) => return None,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+    }
+
+    let output = child.wait_with_output().ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    first_meaningful_line(&stdout).or_else(|| first_meaningful_line(&stderr))
+}
+
+fn first_meaningful_line(text: &str) -> Option<String> {
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToString::to_string)
 }
 
 pub fn build_coding_agent_command(
@@ -218,6 +326,10 @@ pub fn run_coding_agent_command(
     let stdout_file = File::create(&stdout_path)?;
     let stderr_file = File::create(&stderr_path)?;
 
+    // Snapshot the working tree before the run so we can attribute exactly what
+    // the agent changed (post-run minus pre-run). `None` when `cwd` is not a repo.
+    let pre_status = git_porcelain(cwd);
+
     let mut child = Command::new(&command.program)
         .args(&command.args)
         .current_dir(cwd)
@@ -241,39 +353,137 @@ pub fn run_coding_agent_command(
     }
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
-    let status = match child.wait_timeout(timeout)? {
-        Some(status) => status,
+    let (status_label, exit_code, timed_out) = match child.wait_timeout(timeout)? {
+        Some(status) => (
+            if status.success() { "ok" } else { "failed" },
+            status.code(),
+            false,
+        ),
         None => {
             let _ = child.kill();
             let status = child.wait()?;
-            return Ok(CodingAgentExecution {
-                executor_id: command.executor_id.clone(),
-                command_preview: command.command_preview.clone(),
-                status: "timed_out".to_string(),
-                exit_code: status.code(),
-                duration_ms: started.elapsed().as_millis(),
-                stdout: read_lossy(&stdout_path)?,
-                stderr: read_lossy(&stderr_path)?,
-                stdout_path: stdout_path.display().to_string(),
-                stderr_path: stderr_path.display().to_string(),
-                timed_out: true,
-            });
+            ("timed_out", status.code(), true)
         }
     };
 
-    let success = status.success();
+    // Capture the changeset the run produced (cheap; empty when not a git repo
+    // or nothing changed). Always done — a read-only run that changed nothing is
+    // itself a useful "no writes" receipt.
+    let changeset = capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_deref());
+
     Ok(CodingAgentExecution {
         executor_id: command.executor_id.clone(),
         command_preview: command.command_preview.clone(),
-        status: if success { "ok" } else { "failed" }.to_string(),
-        exit_code: status.code(),
+        status: status_label.to_string(),
+        exit_code,
         duration_ms: started.elapsed().as_millis(),
         stdout: read_lossy(&stdout_path)?,
         stderr: read_lossy(&stderr_path)?,
         stdout_path: stdout_path.display().to_string(),
         stderr_path: stderr_path.display().to_string(),
-        timed_out: false,
+        timed_out,
+        changed_files: changeset.changed_files,
+        diff: changeset.diff,
+        diff_truncated: changeset.diff_truncated,
+        diff_path: changeset.diff_path,
     })
+}
+
+/// The working-tree changeset a run produced.
+struct Changeset {
+    changed_files: Vec<GitFileChange>,
+    diff: String,
+    diff_truncated: bool,
+    diff_path: Option<String>,
+}
+
+/// Compare the post-run git status to the pre-run snapshot, capture the unified
+/// diff of the tracked changes, and write it to a `.diff` receipt. Returns an
+/// empty changeset when `cwd` is not a git repo or nothing changed.
+fn capture_changeset(
+    cwd: &Path,
+    output_dir: &Path,
+    safe_id: &str,
+    stamp: u128,
+    pre_status: Option<&str>,
+) -> Changeset {
+    let empty = Changeset {
+        changed_files: Vec::new(),
+        diff: String::new(),
+        diff_truncated: false,
+        diff_path: None,
+    };
+    let Some(pre) = pre_status else {
+        return empty;
+    };
+    let post = git_workspace::run_git_captured(cwd, &["status", "--porcelain=v1"]);
+    let changed_files = changed_since(pre, &post);
+    if changed_files.is_empty() {
+        return empty;
+    }
+
+    // Staged + unstaged tracked diffs; neither needs an existing HEAD, so this
+    // works in a brand-new repo too. Untracked files are listed in
+    // `changed_files` but their content is not inlined here.
+    let mut raw_diff = git_workspace::run_git_captured(cwd, &["diff", "--no-color"]);
+    let cached = git_workspace::run_git_captured(cwd, &["diff", "--cached", "--no-color"]);
+    if !cached.trim().is_empty() {
+        if !raw_diff.trim().is_empty() {
+            raw_diff.push('\n');
+        }
+        raw_diff.push_str(&cached);
+    }
+
+    let (diff, diff_truncated) = truncate_to_bytes(&raw_diff, MAX_DIFF_BYTES);
+    let diff_path = {
+        let path = output_dir.join(format!("{safe_id}-{stamp}.diff"));
+        match fs::write(&path, diff.as_bytes()) {
+            Ok(()) => Some(path.display().to_string()),
+            Err(_) => None,
+        }
+    };
+
+    Changeset {
+        changed_files,
+        diff,
+        diff_truncated,
+        diff_path,
+    }
+}
+
+/// Porcelain status of `cwd`, or `None` when it is not inside a git work tree.
+fn git_porcelain(cwd: &Path) -> Option<String> {
+    let inside = git_workspace::run_git_captured(cwd, &["rev-parse", "--is-inside-work-tree"]);
+    if inside.trim() != "true" {
+        return None;
+    }
+    Some(git_workspace::run_git_captured(
+        cwd,
+        &["status", "--porcelain=v1"],
+    ))
+}
+
+/// Porcelain lines present after the run but not before it — the files the run
+/// added or whose status it changed.
+fn changed_since(pre: &str, post: &str) -> Vec<GitFileChange> {
+    let pre_lines: HashSet<&str> = pre.lines().collect();
+    post.lines()
+        .filter(|line| !pre_lines.contains(*line))
+        .filter_map(git_workspace::parse_porcelain_line)
+        .collect()
+}
+
+/// Truncate `text` to at most `max` bytes on a char boundary, appending a marker
+/// when truncated. Returns `(text, was_truncated)`.
+fn truncate_to_bytes(text: &str, max: usize) -> (String, bool) {
+    if text.len() <= max {
+        return (text.to_string(), false);
+    }
+    let mut end = max;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    (format!("{}\n[diff truncated]", &text[..end]), true)
 }
 
 pub fn preview_coding_agent_handoff(
@@ -486,6 +696,49 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn probe_version_reads_first_stdout_line() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let script = dir.path().join("fake-agent");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'fake-agent 1.2.3'; fi\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let version = probe_version(&script.display().to_string());
+        assert_eq!(version.as_deref(), Some("fake-agent 1.2.3"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn probe_version_returns_none_on_nonzero_exit() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let script = dir.path().join("broken-agent");
+        std::fs::write(&script, "#!/bin/sh\nexit 1\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(probe_version(&script.display().to_string()), None);
+    }
+
+    #[test]
+    fn probed_availability_for_missing_binary_skips_probe() {
+        // `codex`/`claude` are unlikely to exist on a CI PATH; if they do the
+        // probe just adds a version. Either way the call must not error and must
+        // leave the auth state unknown.
+        let availability = coding_agent_availability_probed("codex_cli").unwrap();
+        assert_eq!(availability.executor_id, "codex_cli");
+        assert_eq!(availability.authenticated, None);
+        if !availability.available {
+            assert_eq!(availability.version, None);
+            assert_eq!(availability.status, "missing");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
     fn run_command_times_out_and_kills_child() {
         let dir = tempfile::TempDir::new().unwrap();
         let script = dir.path().join("agent");
@@ -507,5 +760,89 @@ mod tests {
             .expect("timeout result");
         assert_eq!(result.status, "timed_out");
         assert!(result.timed_out);
+    }
+
+    #[test]
+    fn truncate_to_bytes_marks_when_over_limit() {
+        assert_eq!(
+            truncate_to_bytes("short", 100),
+            ("short".to_string(), false)
+        );
+        let (text, truncated) = truncate_to_bytes("abcdefgh", 4);
+        assert!(truncated);
+        assert!(text.starts_with("abcd"));
+        assert!(text.contains("[diff truncated]"));
+    }
+
+    #[test]
+    fn changed_since_reports_only_new_status_lines() {
+        let pre = " M seed.txt\n";
+        let post = " M seed.txt\n M other.rs\n?? added.txt\n";
+        let changed = changed_since(pre, post);
+        let paths: Vec<&str> = changed.iter().map(|c| c.path.as_str()).collect();
+        assert_eq!(paths, vec!["other.rs", "added.txt"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_command_captures_git_changeset() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo = tempfile::TempDir::new().unwrap();
+        let git = |args: &[&str]| {
+            let ok = Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            assert!(ok, "git {args:?} failed");
+        };
+        if Command::new("git").arg("--version").output().is_err() {
+            return; // git not installed on this runner
+        }
+        git(&["init", "-q"]);
+        git(&["config", "user.email", "t@example.com"]);
+        git(&["config", "user.name", "Test"]);
+        std::fs::write(repo.path().join("seed.txt"), "seed\n").unwrap();
+        git(&["add", "."]);
+        git(&["commit", "-qm", "init"]);
+
+        // Fake agent: consume stdin, modify a tracked file, create a new file.
+        let out = tempfile::TempDir::new().unwrap();
+        let script = out.path().join("agent");
+        std::fs::write(
+            &script,
+            "#!/bin/sh\ncat > /dev/null\necho changed >> seed.txt\necho new > added.txt\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let command = CodingAgentCommandSpec {
+            executor_id: "codex_cli".to_string(),
+            label: "Test Agent".to_string(),
+            program: script.display().to_string(),
+            args: Vec::new(),
+            stdin_required: true,
+            cwd_required: true,
+            writes_allowed: true,
+            command_preview: "agent [stdin: bounded prompt]".to_string(),
+        };
+
+        let result =
+            run_coding_agent_command(&command, "prompt", repo.path(), out.path(), 5).unwrap();
+        assert_eq!(result.status, "ok");
+        let paths: Vec<&str> = result
+            .changed_files
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect();
+        assert!(paths.contains(&"seed.txt"), "tracked change: {paths:?}");
+        assert!(paths.contains(&"added.txt"), "new file: {paths:?}");
+        // The tracked modification appears in the unified diff; the receipt exists.
+        assert!(result.diff.contains("seed.txt"));
+        assert!(!result.diff_truncated);
+        let diff_path = result.diff_path.expect("diff receipt written");
+        assert!(std::path::Path::new(&diff_path).exists());
     }
 }

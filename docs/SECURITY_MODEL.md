@@ -121,6 +121,18 @@ about the limits. Updated during P2 (security hardening).
 6. **Pre-commit secret scan** — `scripts/secret-scan-basic.sh` detects literal secret
    *values* (quoted long literals assigned to secret-named fields, `AKIA…`,
    private-key blocks, `ghp_`/`sk_live_`/`xox…` prefixes), not identifiers.
+7. **Coding-agent executor boundary** — `repodesk_core::executors` is the only path
+   that launches an external coding-agent CLI (`codex_cli`, `claude_code_cli`).
+   Commands are **argv-only** (no `sh -c`, no string interpolation); every program
+   and argument is rejected if it contains a shell metacharacter
+   (`validate_command_spec`). The bounded prompt is delivered on **stdin**, never in
+   argv, so it cannot leak through process listings or shell history. Availability is
+   a passive PATH lookup; the optional `--version` probe is itself argv-only with a
+   5s timeout and reads no credential files. Execution requires a **separate**
+   approval from paid-API approval (`RunOptions.approve_coding_agents`); without it
+   the runner records a skipped hand-off. Runs enforce a timeout (kill on overrun)
+   and capture stdout/stderr to size-limited receipt files. A coding-agent route
+   never falls back to an OpenAI/Anthropic completion client.
 
 ### Desktop (Tauri) posture
 - CSP: `default-src 'self'`, no `unsafe` in `script-src`. `connect-src` is narrowed to

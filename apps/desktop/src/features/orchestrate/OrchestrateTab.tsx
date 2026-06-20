@@ -103,6 +103,7 @@ function ExecutorStatusPanel({
               <div className="row-meta">
                 <span>{executor.binary}</span>
                 <span>{executor.executable_path ?? executor.status}</span>
+                {executor.version ? <span>{executor.version}</span> : null}
               </div>
               <p className="muted" style={{ fontSize: 12, margin: 0 }}>
                 Launch still requires explicit approval for this run.
@@ -149,7 +150,15 @@ function RunPanel({
               <span>out {formatNumber(result.output_tokens)}</span>
               <span>cost {formatCost(result.cost_units, "units")}</span>
               <span>captured {result.captured_proposals}</span>
+              {result.changed_files && result.changed_files.length > 0 ? (
+                <span>changed {result.changed_files.length}</span>
+              ) : null}
             </div>
+            {result.changed_files && result.changed_files.length > 0 ? (
+              <p className="muted" style={{ fontSize: 12, margin: 0 }}>
+                Changed files: {result.changed_files.join(", ")}
+              </p>
+            ) : null}
             {result.notes.map((note, i) => (
               <p className="muted" key={i} style={{ fontSize: 12, margin: 0 }}>
                 {note}
