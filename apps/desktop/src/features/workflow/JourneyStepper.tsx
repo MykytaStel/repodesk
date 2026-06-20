@@ -1,5 +1,5 @@
 import React from "react";
-import { asRecord, getString, statusTone, ActorBadge } from "../../shared/ui/SharedComponents";
+import { asRecord, getString, ActorBadge } from "../../shared/ui/SharedComponents";
 import { STEP_META, staticJourney, stepMeta } from "./journeyMeta";
 
 interface RawStep {
@@ -39,9 +39,19 @@ export function JourneyStepper({
   preview?: boolean;
 }) {
   const rows = normalizeSteps(steps);
-  const activeId = currentStepId ?? rows.find((s) => s.status === "current")?.id;
+  // Only the *first* current step is the "now" step — the engine can mark a
+  // later step (e.g. review) current too, but showing two "NOW"s is confusing.
+  const activeIndex = rows.findIndex((s) => s.status === "current");
+  const activeId = currentStepId ?? (activeIndex >= 0 ? rows[activeIndex].id : undefined);
   const detailId = selectedStepId ?? activeId ?? rows[0]?.id;
   const detailRow = rows.find((s) => s.id === detailId);
+
+  function stateTag(step: RawStep, index: number): { label: string; tone: string } {
+    if (preview) return { label: `Step ${index + 1}`, tone: "neutral" };
+    if (step.status === "done") return { label: "Done", tone: "ok" };
+    if (step.status === "current") return index === activeIndex ? { label: "Now", tone: "accent" } : { label: "Soon", tone: "neutral" };
+    return { label: "Locked", tone: "muted" };
+  }
 
   return (
     <section className={`panel journey wide-panel ${preview ? "journey-preview" : ""}`}>
@@ -54,11 +64,11 @@ export function JourneyStepper({
       </div>
 
       <ol className="journey-track">
-        {rows.map((step) => {
+        {rows.map((step, index) => {
           const meta = stepMeta(step.id);
           const isCurrent = step.id === activeId && !preview;
           const isSelected = step.id === detailId && !preview;
-          const tone = preview ? "neutral" : statusTone(step.status);
+          const tone = stateTag(step, index).tone;
           return (
             <li key={step.id}>
               <button
@@ -68,12 +78,12 @@ export function JourneyStepper({
                 onClick={() => onSelectStep?.(step.id)}
                 title={meta?.oneLiner ?? step.title}
               >
-                <span className="journey-index">{meta?.order ?? "?"}</span>
-                <span className="journey-node-body">
-                  <strong>{step.title}</strong>
-                  {meta && <ActorBadge mode={meta.mode} className="journey-actor" />}
+                <span className="journey-node-head">
+                  <span className="journey-index">{meta?.order ?? index + 1}</span>
+                  <span className={`journey-state-tag ${tone}`}>{stateTag(step, index).label}</span>
                 </span>
-                {!preview && <small className="journey-status">{step.status}</small>}
+                <strong className="journey-title">{step.title}</strong>
+                {meta && <span className={`journey-tag ${meta.mode}`} title={meta.mode === "auto" ? "RepoDesk does this for you" : "This step needs your input"}>{meta.mode === "auto" ? "Auto" : "You"}</span>}
               </button>
             </li>
           );

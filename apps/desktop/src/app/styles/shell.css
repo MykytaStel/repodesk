@@ -254,8 +254,21 @@
 }
 
 .status-dot.ok {
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent);
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+}
+
+button.status-box {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+button.status-box:hover {
+  border-color: var(--border-strong);
+  background: var(--neutral-soft);
 }
 
 .status-box span,

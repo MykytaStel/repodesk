@@ -43,9 +43,12 @@ test.describe("daily loop (onboarded)", () => {
     await expect(track.locator(".journey-node")).toHaveCount(8);
     // The current step (smart_context) is highlighted.
     await expect(track.locator(".journey-node.current")).toContainText("Smart Context");
-    // Auto-vs-manual is explicit on every step.
-    await expect(track.getByText("RepoDesk does this").first()).toBeVisible();
-    await expect(track.getByText("You do this").first()).toBeVisible();
+    // Auto-vs-manual is explicit on every step via compact tags.
+    await expect(track.locator(".journey-tag")).toHaveCount(8);
+    await expect(track.getByText("Auto", { exact: true }).first()).toBeVisible();
+    await expect(track.getByText("You", { exact: true }).first()).toBeVisible();
+    // The focused step spells out who performs it in full.
+    await expect(page.locator(".journey-detail").getByText("RepoDesk does this")).toBeVisible();
     // The primary CTA previews what it will run, before clicking.
     await expect(page.locator(".cta-preview")).toContainText("This runs");
     await expect(page.locator(".cta-preview")).toContainText("Smart Context");
@@ -55,18 +58,19 @@ test.describe("daily loop (onboarded)", () => {
     // Visit all surfaces — partial mock data must render an empty state, never
     // the error boundary ("This view crashed" / "Something went wrong").
     // Primary tabs are always shown; depth tabs live under a collapsible "More".
+    const nav = page.locator(".nav-list");
     const primaryTabs = ["Git", "Code", "Memory", "Orchestrate", "Settings"];
     const moreTabs = ["Dashboard", "Models", "Tokens", "System Registry", "Debug"];
     for (const tab of primaryTabs) {
-      await page.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
+      await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
       await expect(page.locator(".app-shell")).toBeVisible();
       await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
     }
     // Expand the "More" section to reach depth & diagnostics surfaces.
-    await page.getByRole("button", { name: /^More/ }).click();
+    await nav.getByRole("button", { name: /^More/ }).click();
     for (const tab of moreTabs) {
-      await page.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
+      await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
       await expect(page.locator(".app-shell")).toBeVisible();
       await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
