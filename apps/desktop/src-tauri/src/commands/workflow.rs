@@ -77,59 +77,14 @@ use std::time::Instant;
 
 static WORKFLOW_CACHE: Mutex<Option<(ProductWorkflowState, Instant)>> = Mutex::new(None);
 
-/// Stage all changes and commit them, but only after the commit-readiness gate
-/// passes. The gate is re-evaluated server-side here — the UI verdict is never
-/// trusted. Uses `git` with argument arrays (no shell) so the message cannot
-/// inject commands.
+/// Commit the **already-staged, reviewed** changeset — never `git add -A`. The
+/// bounded-commit gate lives in core ([`repodesk_core::workflow::commit_reviewed_index`]):
+/// it refuses unless the run was accepted and verification is still fresh, and
+/// refuses if the index holds anything outside the reviewed set.
 #[tauri::command]
 pub fn commit_ready_changes(message: String) -> Result<CommandResult, String> {
-    let trimmed = message.trim();
-    if trimmed.is_empty() {
-        return Err("Commit message cannot be empty".into());
-    }
-    if trimmed.chars().count() > 500 {
-        return Err("Commit message is too long".into());
-    }
-    if trimmed.contains('\0') || trimmed.contains('\r') {
-        return Err("Commit message contains unsupported characters".into());
-    }
-
-    let state = build_product_workflow_state();
-    match state.commit_readiness.status.as_str() {
-        "blocked" => {
-            return Err(format!(
-                "Commit blocked: {}",
-                state.commit_readiness.blockers.join("; ")
-            ));
-        }
-        "not_a_repo" => return Err("Active project is not a Git repository.".into()),
-        "nothing_to_commit" => return Err("Working tree is clean — nothing to commit.".into()),
-        _ => {}
-    }
-
-    let project =
-        repodesk_core::projects::get_active_project().map_err(|error| error.to_string())?;
-    let path = project.path;
-
-    let add = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&path)
-        .args(["add", "-A"])
-        .output()
-        .map_err(|error| format!("git add failed: {error}"))?;
-    if !add.status.success() {
-        return Err(format!(
-            "git add failed: {}",
-            String::from_utf8_lossy(&add.stderr)
-        ));
-    }
-
-    let commit = std::process::Command::new("git")
-        .arg("-C")
-        .arg(&path)
-        .args(["commit", "-m", trimmed])
-        .output()
-        .map_err(|error| format!("git commit failed: {error}"))?;
+    let outcome = repodesk_core::workflow::commit_reviewed_index(&message)
+        .map_err(|error| error.to_string())?;
 
     // Drop the cached workflow state so the UI re-reads the new clean tree.
     if let Ok(mut cache) = WORKFLOW_CACHE.lock() {
@@ -137,99 +92,77 @@ pub fn commit_ready_changes(message: String) -> Result<CommandResult, String> {
     }
 
     Ok(CommandResult {
-        ok: commit.status.success(),
+        ok: true,
         command: "git commit".into(),
-        stdout: String::from_utf8_lossy(&commit.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&commit.stderr).to_string(),
-        exit_code: commit.status.code(),
+        stdout: format!(
+            "Committed {} ({} file(s))",
+            &outcome.commit_sha[..outcome.commit_sha.len().min(12)],
+            outcome.committed_paths.len()
+        ),
+        stderr: String::new(),
+        exit_code: Some(0),
     })
 }
 
-use repodesk_core::git_workspace::GitWorkspaceSnapshot;
-use repodesk_core::orchestrator::{self, OrchestrationRun, RunStatus};
+use repodesk_core::orchestrator::{self, ReviewAction};
 use repodesk_core::workflow::{
-    ExecutionMode, PhaseProgress, PhaseSignals, TaskPhaseState, derive_progress, load_phase_state,
-    mark_committed, mark_reviewed, set_execution_mode,
+    Evidence, ExecutionMode, PhaseProgress, derive_progress, derive_signals, load_phase_state,
+    set_execution_mode,
 };
 
-/// Map the desktop's observable state onto the core phase signals.
-///
-/// Scope/Prepare come straight from the workflow engine's `*_ok` flags. The
-/// post-execution phases are worktree-aware: a run that wrote only inside its
-/// isolated worktree still reports `changed_files`, so it counts as having
-/// changes. Review/Finish completion is an explicit user transition (an ack
-/// keyed to the run id), not a fragile git heuristic — accepting a changeset or
-/// committing records the run id, and a newer run invalidates a stale ack.
-fn map_phase_signals(
-    wf: &ProductWorkflowState,
-    latest: Option<&OrchestrationRun>,
-    git: &GitWorkspaceSnapshot,
-    state: &TaskPhaseState,
-) -> PhaseSignals {
-    let execution_started = latest.map(|run| !run.dry_run).unwrap_or(false);
-    let execution_succeeded = latest
-        .map(|run| !run.dry_run && matches!(run.status, RunStatus::Completed | RunStatus::Partial))
-        .unwrap_or(false);
+/// Gather the evidence the phase gates derive from. Scope/Prepare come from the
+/// workflow engine's `*_ok` flags; everything past Prepare comes only from the
+/// task run receipt + current git state — never a stale run or a stray index.
+/// The CLI builds the same `Evidence`, so the two surfaces can't drift.
+fn build_evidence() -> Evidence {
+    let state = load_phase_state().unwrap_or_default();
+    let wf = build_product_workflow_state();
+    let receipt = repodesk_core::workflow::load_receipt().ok().flatten();
+    let project_path = repodesk_core::projects::get_active_project()
+        .ok()
+        .map(|project| project.path);
 
-    let latest_id = latest.map(|run| run.run_id.as_str());
-    let run_produced_changes = latest
-        .map(|run| {
-            run.results
-                .iter()
-                .any(|step| !step.changed_files.is_empty())
-        })
-        .unwrap_or(false);
-    // Real artifact-backed signals (not proxied off smart-context).
-    let cost_estimated = artifact_status("token_estimate").exists;
-    // Baseline checks are checks that ran *before* any execution; once a run
-    // exists, a checks summary belongs to the final Verify phase instead.
-    let baseline_checks_ran = artifact_status("checks_summary").exists && latest.is_none();
+    let head_sha = project_path
+        .as_deref()
+        .and_then(repodesk_core::workflow::head_sha);
+    let index_tree_sha = project_path
+        .as_deref()
+        .and_then(repodesk_core::workflow::index_tree_sha);
+    let finish_commit_exists = match (
+        project_path.as_deref(),
+        receipt.as_ref().and_then(|r| r.finish.as_ref()),
+    ) {
+        (Some(path), Some(finish)) => {
+            repodesk_core::workflow::commit_exists(path, &finish.commit_sha)
+        }
+        _ => false,
+    };
 
-    // Worktree-aware: count both the run's recorded changeset and live edits.
-    let has_changes = run_produced_changes || git.is_dirty;
-    // Reviewed when the user acked this run's changeset (or staged it directly),
-    // and trivially satisfied when there is nothing to review.
-    let changes_reviewed = !has_changes
-        || git.staged_count > 0
-        || (latest_id.is_some() && state.reviewed_run_id.as_deref() == latest_id);
-    // Committed is an explicit transition tied to this run.
-    let committed = latest_id.is_some() && state.committed_run_id.as_deref() == latest_id;
-
-    PhaseSignals {
+    Evidence {
         project_ok: wf.project_ok,
         task_ok: wf.task_ok,
         goal_defined: wf.task_ok,
         context_ok: wf.context_ok,
         safety_ok: wf.safety_ok,
         route_ready: wf.smart_context_ok,
-        cost_estimated,
-        baseline_checks_ran,
-        execution_started,
-        execution_succeeded,
-        has_changes,
-        changes_reviewed,
-        final_checks_ok: wf.checks_ok,
-        committed,
+        // Real artifact-backed signals (not proxied off smart-context).
+        cost_estimated: artifact_status("token_estimate").exists,
+        // Baseline checks ran *before* any execution; once a run receipt exists
+        // the summary belongs to the final (receipt-bound) Verify phase instead.
+        baseline_checks_ran: artifact_status("checks_summary").exists && receipt.is_none(),
+        mode: state.execution_mode,
+        receipt,
+        head_sha,
+        index_tree_sha,
+        finish_commit_exists,
     }
 }
 
 fn current_progress() -> PhaseProgress {
-    let state = load_phase_state().unwrap_or_default();
-    let wf = build_product_workflow_state();
-    let latest = orchestrator::load_latest_run().ok().flatten();
-    let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
-    let signals = map_phase_signals(&wf, latest.as_ref(), &git, &state);
-    derive_progress(&signals, state.execution_mode)
-}
-
-/// The id of the active task's latest non-dry orchestration run, if any — used to
-/// key the review/commit acknowledgements.
-fn latest_run_id() -> Option<String> {
-    orchestrator::load_latest_run()
-        .ok()
-        .flatten()
-        .filter(|run| !run.dry_run)
-        .map(|run| run.run_id)
+    let evidence = build_evidence();
+    let mode = evidence.mode;
+    let signals = derive_signals(&evidence);
+    derive_progress(&signals, mode)
 }
 
 /// The current six-phase progression for the active task: derived phase
@@ -257,23 +190,23 @@ pub async fn work_set_execution_mode(mode: String) -> Result<PhaseProgress, Erro
     Ok(current_progress())
 }
 
-/// Record that the latest run's changeset has been reviewed (Review → done).
+/// Review the run's changeset and record the decision atomically: accept stages
+/// the run's files and records an Accepted receipt (Review → done, advance to
+/// Verify); reject discards them and records a Rejected receipt (re-open
+/// Execute). A skipped-file accept fails and Review stays open.
 #[tauri::command]
-pub async fn work_mark_reviewed() -> Result<PhaseProgress, ErrorPayload> {
-    let run_id = latest_run_id().ok_or_else(|| {
-        ErrorPayload::configuration("No orchestration run to review for the active task")
-    })?;
-    mark_reviewed(&run_id)?;
+pub async fn work_review(run_id: String, action: String) -> Result<PhaseProgress, ErrorPayload> {
+    let action = ReviewAction::from_label(&action).map_err(ErrorPayload::from)?;
+    let review = orchestrator::review_run(&run_id, action).map_err(ErrorPayload::from)?;
+    orchestrator::record_review(&run_id, action, &review).map_err(ErrorPayload::from)?;
     Ok(current_progress())
 }
 
-/// Record that the latest run's changes have been committed (Finish → done).
+/// Run final verification and record a receipt bound to the current run, HEAD,
+/// staged index tree, and reviewed changeset (Verify → done while fresh).
 #[tauri::command]
-pub async fn work_mark_committed() -> Result<PhaseProgress, ErrorPayload> {
-    let run_id = latest_run_id().ok_or_else(|| {
-        ErrorPayload::configuration("No orchestration run to commit for the active task")
-    })?;
-    mark_committed(&run_id)?;
+pub async fn work_verify() -> Result<PhaseProgress, ErrorPayload> {
+    repodesk_core::workflow::run_verification().map_err(ErrorPayload::from)?;
     Ok(current_progress())
 }
 

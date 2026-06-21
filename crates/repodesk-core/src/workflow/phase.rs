@@ -168,6 +168,108 @@ impl PhaseSignals {
     }
 }
 
+/// All the evidence the post-Prepare gates derive from. The Scope/Prepare facts
+/// come from the workflow engine; the post-execution facts come **only** from the
+/// run receipt and current git state — never a manual ack or a stray index entry.
+/// Both the desktop and the CLI build this and call [`derive_signals`], so the
+/// two surfaces can never drift apart.
+#[derive(Debug, Clone, Default)]
+pub struct Evidence {
+    // Scope/Prepare facts (already computed by the workflow engine).
+    pub project_ok: bool,
+    pub task_ok: bool,
+    pub goal_defined: bool,
+    pub context_ok: bool,
+    pub safety_ok: bool,
+    pub route_ready: bool,
+    pub cost_estimated: bool,
+    pub baseline_checks_ran: bool,
+    /// The chosen Execute mode.
+    pub mode: ExecutionMode,
+    /// The active task's run receipt, if a run has produced one.
+    pub receipt: Option<crate::workflow::receipt::TaskRunReceipt>,
+    /// Current HEAD and staged-index-tree shas (None when not a repo / no commit).
+    pub head_sha: Option<String>,
+    pub index_tree_sha: Option<String>,
+    /// Whether the receipt's recorded finish commit still exists in the repo.
+    pub finish_commit_exists: bool,
+}
+
+/// Turn evidence into the phase signals — the one place the "is this phase
+/// really done?" rules live, so the desktop and CLI stay identical.
+pub fn derive_signals(evidence: &Evidence) -> PhaseSignals {
+    use crate::workflow::receipt::ReviewDecision;
+
+    let receipt = evidence.receipt.as_ref();
+    let execution = receipt.map(|r| &r.execution);
+    let review = receipt.and_then(|r| r.review.as_ref());
+    let verification = receipt.and_then(|r| r.verification.as_ref());
+    let finish = receipt.and_then(|r| r.finish.as_ref());
+
+    // A run receipt only ever belongs to an Agent run; a Manual handoff never
+    // produces one, so it can never derive execution success from a stale run.
+    let agent_run = evidence.mode == ExecutionMode::AgentRun;
+    let execution_started = agent_run && receipt.is_some();
+    let rejected = review
+        .map(|r| r.decision == ReviewDecision::Rejected)
+        .unwrap_or(false);
+    let execution_succeeded =
+        agent_run && execution.map(|e| e.succeeded()).unwrap_or(false) && !rejected;
+
+    // The reviewable changeset is exactly the run's recorded files.
+    let run_digest = execution.and_then(|e| e.changeset_digest.clone());
+    let has_changes = run_digest.is_some();
+
+    // Reviewed only when the human accepted *this* run's *exact* changeset.
+    let changes_reviewed = matches!(
+        (receipt, review),
+        (Some(r), Some(rv))
+            if rv.decision == ReviewDecision::Accepted
+                && rv.run_id == r.run_id
+                && Some(&rv.changeset_digest) == run_digest.as_ref()
+    );
+
+    // Verification counts only if it ran for this run and nothing has moved.
+    let final_checks_ok = matches!((receipt, verification), (Some(r), Some(v))
+    if v.run_id == r.run_id
+        && match (evidence.head_sha.as_deref(), evidence.index_tree_sha.as_deref(), run_digest.as_deref()) {
+            (Some(head), Some(tree), Some(digest)) => v.valid_for(head, tree, digest),
+            _ => false,
+        });
+
+    // Committed only when a real commit landed for this run.
+    let committed = matches!((receipt, finish), (Some(r), Some(f))
+        if f.run_id == r.run_id && evidence.finish_commit_exists);
+
+    // A recorded commit is terminal proof the whole chain held: the bounded
+    // commit ([`super::finish::commit_reviewed_index`]) refuses unless the run
+    // was accepted and verification was fresh. Committing then moves HEAD, which
+    // would otherwise invalidate the now-historical verification — so a valid
+    // finish marks the upstream phases done rather than re-opening Verify.
+    let (execution_succeeded, changes_reviewed, final_checks_ok) = if committed {
+        (true, true, true)
+    } else {
+        (execution_succeeded, changes_reviewed, final_checks_ok)
+    };
+
+    PhaseSignals {
+        project_ok: evidence.project_ok,
+        task_ok: evidence.task_ok,
+        goal_defined: evidence.goal_defined,
+        context_ok: evidence.context_ok,
+        safety_ok: evidence.safety_ok,
+        route_ready: evidence.route_ready,
+        cost_estimated: evidence.cost_estimated,
+        baseline_checks_ran: evidence.baseline_checks_ran,
+        execution_started,
+        execution_succeeded,
+        has_changes,
+        changes_reviewed,
+        final_checks_ok,
+        committed,
+    }
+}
+
 /// One phase, ready to render: its status and a one-line summary of what it does
 /// or what is needed next.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -330,7 +432,9 @@ fn phase_cta(
             ExecutionMode::ManualHandoff => ("Generate context pack", Some("prompt-all")),
         },
         Phase::Review => ("Review diff", None),
-        Phase::Verify => ("Run checks", Some("checks-run")),
+        // Verification is receipt-bound (run_id + HEAD + index tree + changeset),
+        // so the surface drives a dedicated verify path, not the generic action.
+        Phase::Verify => ("Run verification", None),
         Phase::Finish => ("Commit changes", None),
     };
     PhaseCta {
@@ -342,23 +446,12 @@ fn phase_cta(
 
 // ── Persisted state (user-controlled transitions) ────────────────────────────
 
-/// The user-controlled, persisted phase state for a task. Everything else is
-/// derived from signals; these are the explicit decisions a user makes that
-/// reality can't infer: the chosen execution mode, and the acknowledgements that
-/// a specific run's changes were reviewed / committed.
-///
-/// The review/commit acks are **keyed to the run id** they applied to, so a
-/// later run automatically invalidates a stale ack (a new run id won't match) —
-/// the flow re-opens Review/Finish for the new work without any reset bookkeeping.
+/// The user-controlled, persisted phase state for a task. The only decision
+/// reality can't infer is the chosen Execute mode; everything past it (review /
+/// verify / commit) is proven by the run receipt, not a stored acknowledgement.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TaskPhaseState {
     pub execution_mode: ExecutionMode,
-    /// The run whose changeset the user accepted/rejected (reviewed).
-    #[serde(default)]
-    pub reviewed_run_id: Option<String>,
-    /// The run whose changes the user committed.
-    #[serde(default)]
-    pub committed_run_id: Option<String>,
 }
 
 fn phase_state_path() -> RepoDeskResult<PathBuf> {
@@ -388,26 +481,10 @@ fn save_phase_state(state: &TaskPhaseState) -> RepoDeskResult<()> {
     Ok(())
 }
 
-/// Persist the chosen execution mode for the active task (preserving acks).
+/// Persist the chosen execution mode for the active task.
 pub fn set_execution_mode(mode: ExecutionMode) -> RepoDeskResult<TaskPhaseState> {
     let mut state = load_phase_state()?;
     state.execution_mode = mode;
-    save_phase_state(&state)?;
-    Ok(state)
-}
-
-/// Record that `run_id`'s changeset has been reviewed (accepted or rejected).
-pub fn mark_reviewed(run_id: &str) -> RepoDeskResult<TaskPhaseState> {
-    let mut state = load_phase_state()?;
-    state.reviewed_run_id = Some(run_id.to_string());
-    save_phase_state(&state)?;
-    Ok(state)
-}
-
-/// Record that `run_id`'s changes have been committed.
-pub fn mark_committed(run_id: &str) -> RepoDeskResult<TaskPhaseState> {
-    let mut state = load_phase_state()?;
-    state.committed_run_id = Some(run_id.to_string());
     save_phase_state(&state)?;
     Ok(state)
 }
@@ -554,5 +631,207 @@ mod tests {
         let manual = derive_progress(&signals, ExecutionMode::ManualHandoff);
         assert_eq!(manual.cta.label, "Generate context pack");
         assert_eq!(manual.cta.action_id.as_deref(), Some("prompt-all"));
+    }
+
+    // ── Evidence → signals (the receipt-bound gate) ─────────────────────────
+
+    use crate::orchestrator::types::{RunStatus, SubAgentStatus};
+    use crate::workflow::receipt::{
+        ExecutionReceipt, ReviewDecision, ReviewReceipt, StepReceipt, TaskRunReceipt,
+        VerificationReceipt, changeset_digest,
+    };
+
+    /// A receipt for an agent run with a prep step (Ok) and an implementation
+    /// step whose status + changed files are given.
+    fn run_receipt(run_id: &str, impl_status: SubAgentStatus, changed: &[&str]) -> TaskRunReceipt {
+        let changed: Vec<String> = changed.iter().map(|s| s.to_string()).collect();
+        let digest = if changed.is_empty() {
+            None
+        } else {
+            Some(changeset_digest(&changed))
+        };
+        TaskRunReceipt {
+            task_id: "t".into(),
+            run_id: run_id.into(),
+            execution_mode: ExecutionMode::AgentRun,
+            base_commit: Some("base".into()),
+            execution: ExecutionReceipt {
+                status: RunStatus::Partial,
+                required_steps: vec![
+                    StepReceipt {
+                        task_id: "prep".into(),
+                        status: SubAgentStatus::Ok,
+                        allow_write: false,
+                        changed_files: vec![],
+                    },
+                    StepReceipt {
+                        task_id: "impl".into(),
+                        status: impl_status,
+                        allow_write: true,
+                        changed_files: changed,
+                    },
+                ],
+                changeset_digest: digest,
+            },
+            review: None,
+            verification: None,
+            finish: None,
+        }
+    }
+
+    fn evidence(receipt: TaskRunReceipt, mode: ExecutionMode) -> Evidence {
+        Evidence {
+            project_ok: true,
+            task_ok: true,
+            goal_defined: true,
+            context_ok: true,
+            safety_ok: true,
+            route_ready: true,
+            cost_estimated: true,
+            baseline_checks_ran: false,
+            mode,
+            receipt: Some(receipt),
+            head_sha: Some("head".into()),
+            index_tree_sha: Some("tree".into()),
+            finish_commit_exists: false,
+        }
+    }
+
+    fn accepted(run_id: &str, paths: &[&str]) -> ReviewReceipt {
+        let paths: Vec<String> = paths.iter().map(|s| s.to_string()).collect();
+        ReviewReceipt {
+            run_id: run_id.into(),
+            decision: ReviewDecision::Accepted,
+            changeset_digest: changeset_digest(&paths),
+            reviewed_paths: paths,
+            index_tree_after_accept: Some("tree".into()),
+        }
+    }
+
+    #[test]
+    fn partial_run_with_failed_required_step_stays_in_execute() {
+        let ev = evidence(
+            run_receipt("r1", SubAgentStatus::Failed, &["src/a.rs"]),
+            ExecutionMode::AgentRun,
+        );
+        let signals = derive_signals(&ev);
+        assert!(!signals.execution_succeeded);
+        assert_eq!(
+            derive_progress(&signals, ExecutionMode::AgentRun).current,
+            Phase::Execute
+        );
+    }
+
+    #[test]
+    fn successful_run_without_accepted_review_stays_in_review() {
+        // A stray staged file used to satisfy Review; now only an Accepted
+        // receipt for this run's changeset can.
+        let ev = evidence(
+            run_receipt("r1", SubAgentStatus::Ok, &["src/a.rs"]),
+            ExecutionMode::AgentRun,
+        );
+        let signals = derive_signals(&ev);
+        assert!(signals.execution_succeeded);
+        assert!(signals.has_changes);
+        assert!(!signals.changes_reviewed);
+        assert_eq!(
+            derive_progress(&signals, ExecutionMode::AgentRun).current,
+            Phase::Review
+        );
+    }
+
+    #[test]
+    fn fresh_run_receipt_has_no_review_so_review_reopens() {
+        // A new run overwrites the receipt with review = None (invalidating any
+        // earlier accept), so Review re-opens for the new changeset.
+        let ev = evidence(
+            run_receipt("r2", SubAgentStatus::Ok, &["src/a.rs"]),
+            ExecutionMode::AgentRun,
+        );
+        assert!(!derive_signals(&ev).changes_reviewed);
+    }
+
+    #[test]
+    fn review_digest_must_match_run_changeset() {
+        // An Accepted review whose digest is for a different changeset (e.g. a
+        // stale review) does not count for this run.
+        let mut receipt = run_receipt("r1", SubAgentStatus::Ok, &["src/a.rs"]);
+        receipt.review = Some(accepted("r1", &["src/OTHER.rs"]));
+        let ev = evidence(receipt, ExecutionMode::AgentRun);
+        assert!(!derive_signals(&ev).changes_reviewed);
+    }
+
+    #[test]
+    fn reject_returns_task_to_execute() {
+        let mut receipt = run_receipt("r1", SubAgentStatus::Ok, &["src/a.rs"]);
+        receipt.review = Some(ReviewReceipt {
+            run_id: "r1".into(),
+            decision: ReviewDecision::Rejected,
+            changeset_digest: changeset_digest(&["src/a.rs".to_string()]),
+            reviewed_paths: vec!["src/a.rs".into()],
+            index_tree_after_accept: None,
+        });
+        let ev = evidence(receipt, ExecutionMode::AgentRun);
+        let signals = derive_signals(&ev);
+        assert!(!signals.execution_succeeded);
+        assert_eq!(
+            derive_progress(&signals, ExecutionMode::AgentRun).current,
+            Phase::Execute
+        );
+    }
+
+    #[test]
+    fn manual_mode_never_inherits_an_agent_run() {
+        // The same successful agent-run receipt, read in Manual mode, must not
+        // advance past Execute (a manual handoff produces no run evidence).
+        let ev = evidence(
+            run_receipt("r1", SubAgentStatus::Ok, &["src/a.rs"]),
+            ExecutionMode::ManualHandoff,
+        );
+        let signals = derive_signals(&ev);
+        assert!(!signals.execution_succeeded);
+        assert_eq!(
+            derive_progress(&signals, ExecutionMode::ManualHandoff).current,
+            Phase::Execute
+        );
+    }
+
+    #[test]
+    fn verification_freshness_gates_verify_then_finish() {
+        let digest = changeset_digest(&["src/a.rs".to_string()]);
+        let mut receipt = run_receipt("r1", SubAgentStatus::Ok, &["src/a.rs"]);
+        receipt.review = Some(accepted("r1", &["src/a.rs"]));
+
+        // Accepted but unverified → Verify is current.
+        let ev = evidence(receipt.clone(), ExecutionMode::AgentRun);
+        let signals = derive_signals(&ev);
+        assert!(signals.changes_reviewed);
+        assert!(!signals.final_checks_ok);
+        assert_eq!(
+            derive_progress(&signals, ExecutionMode::AgentRun).current,
+            Phase::Verify
+        );
+
+        // Fresh verification matching head/tree/digest → Verify done → Finish.
+        receipt.verification = Some(VerificationReceipt {
+            run_id: "r1".into(),
+            head_sha: "head".into(),
+            index_tree_sha: "tree".into(),
+            changeset_digest: digest,
+            commands: vec![],
+            success: true,
+            verified_at: "now".into(),
+        });
+        let ev_ok = evidence(receipt.clone(), ExecutionMode::AgentRun);
+        assert!(derive_signals(&ev_ok).final_checks_ok);
+        assert_eq!(
+            derive_progress(&derive_signals(&ev_ok), ExecutionMode::AgentRun).current,
+            Phase::Finish
+        );
+
+        // Staged index moved after checks → verification stale → Verify re-opens.
+        let mut ev_stale = evidence(receipt, ExecutionMode::AgentRun);
+        ev_stale.index_tree_sha = Some("tree-moved".into());
+        assert!(!derive_signals(&ev_stale).final_checks_ok);
     }
 }

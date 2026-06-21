@@ -53,6 +53,37 @@ export const onboardedFixtures: CommandFixtures = {
       { phase: "finish", status: "locked", title: "Finish", summary: "Stage, commit, and close the task" },
     ],
   },
+  // Accept records an Accepted receipt and advances to Verify (the mock ignores
+  // the action arg; reject would re-open Execute in the real backend).
+  work_review: {
+    current: "verify",
+    complete: false,
+    execution_mode: "agent_run",
+    cta: { phase: "verify", label: "Run verification", action_id: null },
+    phases: [
+      { phase: "scope", status: "done", title: "Scope", summary: "Project, task, and goal are set" },
+      { phase: "prepare", status: "done", title: "Prepare", summary: "Context is built, scanned, and routed" },
+      { phase: "execute", status: "done", title: "Execute", summary: "Launch the coding agent in an isolated worktree" },
+      { phase: "review", status: "done", title: "Review", summary: "Review changed files and accept or reject" },
+      { phase: "verify", status: "available", title: "Verify", summary: "Run final project checks and verification" },
+      { phase: "finish", status: "locked", title: "Finish", summary: "Stage, commit, and close the task" },
+    ],
+  },
+  // Verification records a fresh receipt and advances to Finish.
+  work_verify: {
+    current: "finish",
+    complete: false,
+    execution_mode: "agent_run",
+    cta: { phase: "finish", label: "Commit changes", action_id: null },
+    phases: [
+      { phase: "scope", status: "done", title: "Scope", summary: "Project, task, and goal are set" },
+      { phase: "prepare", status: "done", title: "Prepare", summary: "Context is built, scanned, and routed" },
+      { phase: "execute", status: "done", title: "Execute", summary: "Launch the coding agent in an isolated worktree" },
+      { phase: "review", status: "done", title: "Review", summary: "Review changed files and accept or reject" },
+      { phase: "verify", status: "done", title: "Verify", summary: "Run final project checks and verification" },
+      { phase: "finish", status: "available", title: "Finish", summary: "Stage, commit, and close the task" },
+    ],
+  },
 
   project_list_configs: [
     { name: "RepoDesk", path: "/Users/you/code/repodesk", project_type: "rust" },

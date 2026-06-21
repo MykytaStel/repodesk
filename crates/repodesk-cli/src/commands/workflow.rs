@@ -94,45 +94,61 @@ pub fn handle_workflow_command(command: WorkflowCommand) -> Result<()> {
         WorkflowCommand::Show => {
             print!("{}", read_or_create_workflow_plan()?);
         }
-        WorkflowCommand::Phase { mark } => {
-            if let Some(mark) = mark {
-                let run_id = repodesk_core::orchestrator::load_latest_run()?
-                    .filter(|run| !run.dry_run)
-                    .map(|run| run.run_id)
-                    .ok_or_else(|| anyhow::anyhow!("no orchestration run for the active task"))?;
-                match mark.as_str() {
-                    "reviewed" => {
-                        repodesk_core::workflow::mark_reviewed(&run_id)?;
-                    }
-                    "committed" => {
-                        repodesk_core::workflow::mark_committed(&run_id)?;
-                    }
-                    other => {
-                        return Err(anyhow::anyhow!(
-                            "unknown --mark '{other}' (expected 'reviewed' or 'committed')"
-                        ));
-                    }
-                }
+        WorkflowCommand::Phase => {
+            print!("{}", format_phase_progress(&cli_progress()));
+        }
+        WorkflowCommand::Review { accept, reject } => {
+            use repodesk_core::orchestrator::{ReviewAction, record_review, review_run};
+            let action = match (accept, reject) {
+                (true, false) => ReviewAction::Accept,
+                (false, true) => ReviewAction::Reject,
+                _ => return Err(anyhow::anyhow!("pass exactly one of --accept or --reject")),
+            };
+            let run_id = repodesk_core::orchestrator::load_latest_run()?
+                .filter(|run| !run.dry_run)
+                .map(|run| run.run_id)
+                .ok_or_else(|| anyhow::anyhow!("no orchestration run for the active task"))?;
+            let review = review_run(&run_id, action)?;
+            record_review(&run_id, action, &review)?;
+            for file in &review.processed {
+                println!("  {} — {}", file.path, file.outcome);
             }
-            let mode = repodesk_core::workflow::load_phase_state()
-                .map(|state| state.execution_mode)
-                .unwrap_or_default();
-            let progress =
-                repodesk_core::workflow::derive_progress(&gather_cli_phase_signals(), mode);
-            print!("{}", format_phase_progress(&progress));
+            for warning in &review.warnings {
+                println!("  ! {warning}");
+            }
+            println!();
+            print!("{}", format_phase_progress(&cli_progress()));
+        }
+        WorkflowCommand::Verify => {
+            let outcome = repodesk_core::workflow::run_verification()?;
+            println!(
+                "Verification: {}",
+                if outcome.success { "passed" } else { "FAILED" }
+            );
+            for check in &outcome.commands {
+                println!(
+                    "  {} {}",
+                    if check.success { "[x]" } else { "[ ]" },
+                    check.command
+                );
+            }
+            println!();
+            print!("{}", format_phase_progress(&cli_progress()));
         }
     }
 
     Ok(())
 }
 
-/// Gather the phase signals from core services (parallel to the desktop's
-/// mapping, but computed directly rather than from `ProductWorkflowState`).
-fn gather_cli_phase_signals() -> repodesk_core::workflow::PhaseSignals {
-    use repodesk_core::orchestrator::{self, RunStatus};
+/// Build the active task's phase progression from evidence — the same
+/// [`repodesk_core::workflow::Evidence`] the desktop builds, so the CLI and the
+/// Work tab can never report different phases.
+fn cli_progress() -> repodesk_core::workflow::PhaseProgress {
     use repodesk_core::safety::SafetyLevel;
+    use repodesk_core::workflow::{self, Evidence};
 
-    let project_ok = get_active_project().is_ok();
+    let project = get_active_project().ok();
+    let project_path = project.as_ref().map(|p| p.path.clone());
     let task = show_active_task().ok();
     let run_dir = task.as_ref().map(|t| t.config.run_dir.clone());
     let exists = |name: &str| {
@@ -142,23 +158,22 @@ fn gather_cli_phase_signals() -> repodesk_core::workflow::PhaseSignals {
             .unwrap_or(false)
     };
 
-    let checks_preview = run_dir
-        .as_ref()
-        .and_then(|dir| std::fs::read_to_string(dir.join("checks-summary.md")).ok());
-    let final_checks_ok = exists("checks-summary.md")
-        && repodesk_core::workflow::checks_passed(checks_preview.as_deref()) != Some(false);
+    let receipt = workflow::load_receipt().ok().flatten();
+    let head_sha = project_path.as_deref().and_then(workflow::head_sha);
+    let index_tree_sha = project_path.as_deref().and_then(workflow::index_tree_sha);
+    let finish_commit_exists = match (
+        project_path.as_deref(),
+        receipt.as_ref().and_then(|r| r.finish.as_ref()),
+    ) {
+        (Some(path), Some(finish)) => workflow::commit_exists(path, &finish.commit_sha),
+        _ => false,
+    };
+    let mode = workflow::load_phase_state()
+        .map(|state| state.execution_mode)
+        .unwrap_or_default();
 
-    let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
-    let latest = orchestrator::load_latest_run().ok().flatten();
-    let execution_started = latest.as_ref().map(|run| !run.dry_run).unwrap_or(false);
-    let execution_succeeded = latest
-        .as_ref()
-        .map(|run| !run.dry_run && matches!(run.status, RunStatus::Completed | RunStatus::Partial))
-        .unwrap_or(false);
-    let has_changes = git.is_dirty;
-
-    repodesk_core::workflow::PhaseSignals {
-        project_ok,
+    let evidence = Evidence {
+        project_ok: project.is_some(),
         task_ok: task.is_some(),
         goal_defined: task.is_some(),
         context_ok: exists("context.md"),
@@ -167,14 +182,14 @@ fn gather_cli_phase_signals() -> repodesk_core::workflow::PhaseSignals {
             .unwrap_or(true),
         route_ready: exists("smart-context.md"),
         cost_estimated: exists("token-estimate.txt"),
-        baseline_checks_ran: false,
-        execution_started,
-        execution_succeeded,
-        has_changes,
-        changes_reviewed: !has_changes || git.staged_count > 0,
-        final_checks_ok,
-        committed: execution_succeeded && !git.is_dirty,
-    }
+        baseline_checks_ran: exists("checks-summary.md") && receipt.is_none(),
+        mode,
+        receipt,
+        head_sha,
+        index_tree_sha,
+        finish_commit_exists,
+    };
+    workflow::derive_progress(&workflow::derive_signals(&evidence), mode)
 }
 
 fn format_phase_progress(progress: &repodesk_core::workflow::PhaseProgress) -> String {

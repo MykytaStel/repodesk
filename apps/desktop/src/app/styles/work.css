@@ -291,6 +291,16 @@
   background: var(--success-soft);
 }
 
+/* Experimental manual-handoff steps. */
+.manual-steps {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
 /* Right-aligned actions in the unified Changes header (pill + refresh/review). */
 .changes-actions {
   display: flex;

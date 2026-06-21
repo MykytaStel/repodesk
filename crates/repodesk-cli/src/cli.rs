@@ -321,11 +321,18 @@ pub enum WorkflowCommand {
     Plan,
     Show,
     /// Print the six-phase progression (Scope → … → Finish) for the active task.
-    Phase {
-        /// Record a transition for the latest run: `reviewed` or `committed`.
+    Phase,
+    /// Review the latest run's changeset and record the decision (evidence-bound).
+    Review {
+        /// Accept the run's changes (stage them, record an Accepted receipt).
+        #[arg(long, conflicts_with = "reject")]
+        accept: bool,
+        /// Reject the run's changes (discard them, re-open Execute).
         #[arg(long)]
-        mark: Option<String>,
+        reject: bool,
     },
+    /// Run final verification and record a receipt bound to the current tree.
+    Verify,
 }
 
 #[derive(Debug, Subcommand)]

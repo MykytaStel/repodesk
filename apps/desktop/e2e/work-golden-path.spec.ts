@@ -109,6 +109,22 @@ test.describe("work tab review (commit visibility + memory)", () => {
     expect(commands).toContain("orchestrate_run_diffs");
     expect(commands).toContain("memory_proposals_list");
   });
+
+  test("Review has evidence-bound Accept/Reject and no manual bypass", async ({ page }) => {
+    await installMockIpc(page, reviewFixtures);
+    await page.goto("/");
+    await expect(page.locator(".phase-rail .phase-current")).toContainText("Review");
+
+    // The phase advances only through accept/reject — the old "Mark reviewed"
+    // and "Mark committed" bypass buttons are gone.
+    await expect(page.getByRole("button", { name: "Mark reviewed" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Mark committed" })).toHaveCount(0);
+
+    // Accept drives the atomic, evidence-bound backend review (which records the
+    // Accepted receipt and advances the phase server-side).
+    await page.getByRole("button", { name: /Accept .* Verify/ }).click();
+    await expect.poll(async () => await recordedCommands(page)).toContain("work_review");
+  });
 });
 
 test.describe("work tab scope onboarding (first run)", () => {

@@ -1233,28 +1233,18 @@ async fn write_capable_coding_agent_blocks_without_workspace_write_authorization
 
 #[test]
 #[serial]
-fn phase_state_persists_mode_and_keyed_acks() {
-    use repodesk_core::workflow::{
-        ExecutionMode, load_phase_state, mark_committed, mark_reviewed, set_execution_mode,
-    };
+fn phase_state_persists_execution_mode() {
+    use repodesk_core::workflow::{ExecutionMode, load_phase_state, set_execution_mode};
     let _fx = setup();
 
-    // Fresh task: defaults, no acks.
+    // Fresh task defaults to the agent-run mode. Review/commit are no longer
+    // manual acks — they're proven by the run receipt, not stored here.
     let state = load_phase_state().expect("load");
     assert_eq!(state.execution_mode, ExecutionMode::AgentRun);
-    assert!(state.reviewed_run_id.is_none());
-    assert!(state.committed_run_id.is_none());
 
-    // A review ack survives a later mode change (acks and mode are independent).
-    mark_reviewed("run-xyz").expect("review");
-    let state = set_execution_mode(ExecutionMode::ManualHandoff).expect("mode");
-    assert_eq!(state.execution_mode, ExecutionMode::ManualHandoff);
-    assert_eq!(state.reviewed_run_id.as_deref(), Some("run-xyz"));
-
-    // Commit ack is keyed to the run id and round-trips from disk.
-    mark_committed("run-xyz").expect("commit");
+    // The chosen mode round-trips from disk.
+    set_execution_mode(ExecutionMode::ManualHandoff).expect("mode");
     let reloaded = load_phase_state().expect("reload");
-    assert_eq!(reloaded.committed_run_id.as_deref(), Some("run-xyz"));
     assert_eq!(reloaded.execution_mode, ExecutionMode::ManualHandoff);
 }
 

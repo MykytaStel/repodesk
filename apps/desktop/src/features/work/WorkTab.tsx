@@ -71,13 +71,13 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     onSuccess: refreshAll,
   });
 
-  // Review: accept/reject the last run's changeset, then record the ack.
+  // Review: accept (stage + record Accepted → Verify) or reject (discard +
+  // record Rejected → re-open Execute), atomically server-side. No manual ack.
   const review = useMutation({
-    mutationFn: async (action: api.ReviewAction) => {
+    mutationFn: (action: api.ReviewAction) => {
       const runId = latestRun.data?.run_id;
       if (!runId) throw new Error("No run to review yet.");
-      await api.orchestrateReview(runId, action);
-      return api.workMarkReviewed();
+      return api.workReview(runId, action);
     },
     onSuccess: (next) => {
       setPhase(next);
@@ -85,14 +85,25 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     },
   });
 
-  // Finish: commit (server re-checks readiness), then record the commit ack.
+  // Verify: run the receipt-bound verification (project checks against the
+  // current HEAD + staged index + reviewed changeset).
+  const verify = useMutation({
+    mutationFn: () => api.workVerify(),
+    onSuccess: (next) => {
+      setPhase(next);
+      refreshAll();
+    },
+  });
+
+  // Finish: the bounded commit (server commits only the reviewed, staged index
+  // and writes the finish receipt). No manual "mark committed".
   const commit = useMutation({
     mutationFn: async (message: string) => {
       const result = await callCommand<{ ok: boolean; stderr: string }>("commit_ready_changes", {
         message,
       });
       if (!result.ok) throw new Error(result.stderr || "Commit failed.");
-      return api.workMarkCommitted();
+      return api.workPhaseState();
     },
     onSuccess: (next) => {
       setCommitMessage("");
@@ -100,10 +111,6 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
       refreshAll();
     },
   });
-
-  // Fallback acks when no run-backed action applies (e.g. hand-edited changes).
-  const ackReviewed = useMutation({ mutationFn: api.workMarkReviewed, onSuccess: setPhase });
-  const ackCommitted = useMutation({ mutationFn: api.workMarkCommitted, onSuccess: setPhase });
 
   if (phase.isLoading || !phase.data) {
     return (
@@ -120,7 +127,11 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const current = progress.phases.find((p) => p.phase === progress.current) ?? progress.phases[0];
   const isAgentRun = progress.execution_mode === "agent_run";
   const busy =
-    runCta.isPending || runAgent.isPending || review.isPending || commit.isPending;
+    runCta.isPending ||
+    runAgent.isPending ||
+    review.isPending ||
+    verify.isPending ||
+    commit.isPending;
 
   const latest = latestRun.data ?? null;
   const changedCount = latest
@@ -133,6 +144,10 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     const { action_id, phase: ctaPhase } = progress.cta;
     if (ctaPhase === "execute" && isAgentRun) {
       runAgent.mutate();
+      return;
+    }
+    if (ctaPhase === "verify") {
+      verify.mutate();
       return;
     }
     if (action_id) {
@@ -154,6 +169,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const mutationError =
     (runAgent.error as Error | null)?.message ??
     (review.error as Error | null)?.message ??
+    (verify.error as Error | null)?.message ??
     (commit.error as Error | null)?.message ??
     null;
 
@@ -219,8 +235,8 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                 onClick={() => setMode.mutate("agent_run")}
               />
               <ModeButton
-                label="Manual handoff"
-                hint="Generate a context pack to copy to an external agent"
+                label="Manual handoff (experimental)"
+                hint="Preview only — generates a context pack; no return-import yet"
                 active={!isAgentRun}
                 onClick={() => setMode.mutate("manual_handoff")}
               />
@@ -245,9 +261,19 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                 </label>
               </div>
             ) : (
-              // Manual handoff: generate the pack with the CTA, then copy a prompt
-              // here to hand to an external agent — no detour to a separate tab.
+              // Manual handoff: generate the pack and continue in an external
+              // agent. This mode is a preview — RepoDesk can't yet import the
+              // returned changes as run evidence, so the six-phase flow won't
+              // auto-advance past Execute until you switch back to an agent run.
               <div className="phase-controls">
+                <div className="notice">
+                  <strong>Experimental — preview only.</strong>
+                  <ol className="manual-steps">
+                    <li>Generate the context pack below.</li>
+                    <li>Continue the work in your external agent.</li>
+                    <li>Import / confirm the returned changes — <em>not implemented yet</em>.</li>
+                  </ol>
+                </div>
                 <PromptsPanel />
               </div>
             )}
@@ -269,19 +295,20 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                 onClick={() => review.mutate("accept")}
                 disabled={review.isPending || !latest}
               >
-                Accept & stage
+                Accept &amp; stage → Verify
               </button>
               <button
                 className="secondary-cta"
                 onClick={() => review.mutate("reject")}
                 disabled={review.isPending || !latest}
               >
-                Reject
-              </button>
-              <button className="link-cta" onClick={() => ackReviewed.mutate()}>
-                Mark reviewed
+                Reject → re-run
               </button>
             </div>
+            <p className="muted">
+              Accept stages exactly this run's files and moves to Verify. Reject discards them and
+              re-opens Execute — no changes are kept.
+            </p>
           </div>
         )}
 
@@ -301,12 +328,12 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                 onClick={() => commit.mutate(commitMessage.trim())}
                 disabled={commit.isPending || commitMessage.trim().length === 0}
               >
-                Commit changes
-              </button>
-              <button className="link-cta" onClick={() => ackCommitted.mutate()}>
-                Mark committed
+                Commit reviewed changes
               </button>
             </div>
+            <p className="muted">
+              Commits only the reviewed, staged changeset — never a blanket <code>git add -A</code>.
+            </p>
           </div>
         )}
 

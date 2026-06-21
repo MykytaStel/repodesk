@@ -400,12 +400,15 @@ export async function workSetExecutionMode(mode: ExecutionMode): Promise<PhasePr
   return invoke("work_set_execution_mode", { mode });
 }
 
-export async function workMarkReviewed(): Promise<PhaseProgress> {
-  return invoke("work_mark_reviewed");
+/** Review the run's changeset and record the decision atomically (accept stages
+ * + advances to Verify; reject discards + re-opens Execute). */
+export async function workReview(runId: string, action: ReviewAction): Promise<PhaseProgress> {
+  return invoke("work_review", { runId, action });
 }
 
-export async function workMarkCommitted(): Promise<PhaseProgress> {
-  return invoke("work_mark_committed");
+/** Run final verification and record a receipt bound to the current run/tree. */
+export async function workVerify(): Promise<PhaseProgress> {
+  return invoke("work_verify");
 }
 
 export async function outcomesList(limit?: number): Promise<OutcomeRecord[]> {

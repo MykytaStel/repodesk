@@ -109,6 +109,77 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
     Ok(review)
 }
 
+/// Persist a [`ReviewReceipt`] for `run_id` from the result of [`review_run`].
+///
+/// **Accept is atomic**: if any intended file was `skipped` (not applied/staged),
+/// no Accepted receipt is written and the Review phase stays open — a partial
+/// apply must never look reviewed. The receipt binds to the run and the run's
+/// changeset digest, so a later run (new digest) can't inherit this review, and
+/// any review supersedes a prior verification/finish.
+pub fn record_review(run_id: &str, action: ReviewAction, review: &RunReview) -> RepoDeskResult<()> {
+    use crate::workflow::receipt::{
+        ReviewDecision, ReviewReceipt, index_tree_sha, load_receipt_for_run, save_receipt,
+    };
+
+    let mut receipt =
+        load_receipt_for_run(run_id)?.ok_or_else(|| RepoDeskError::RoutingFailed {
+            detail: format!("no run receipt for '{run_id}' — cannot record review"),
+        })?;
+
+    let reviewed_paths: Vec<String> = review.processed.iter().map(|f| f.path.clone()).collect();
+    // The reviewed changeset is, by construction, the run's recorded changeset;
+    // bind to the execution digest so the phase signal matches exactly.
+    let changeset_digest = receipt
+        .execution
+        .changeset_digest
+        .clone()
+        .unwrap_or_else(|| crate::workflow::receipt::changeset_digest(&reviewed_paths));
+
+    let decision = match action {
+        ReviewAction::Accept => {
+            let skipped: Vec<String> = review
+                .processed
+                .iter()
+                .filter(|f| f.outcome.starts_with("skipped"))
+                .map(|f| f.path.clone())
+                .collect();
+            if !skipped.is_empty() {
+                return Err(RepoDeskError::RoutingFailed {
+                    detail: format!(
+                        "accept blocked: {} of the run's files were not applied ({}). \
+                         Resolve them before accepting so Review reflects the whole changeset.",
+                        skipped.len(),
+                        skipped.join(", ")
+                    ),
+                });
+            }
+            ReviewDecision::Accepted
+        }
+        ReviewAction::Reject => ReviewDecision::Rejected,
+    };
+
+    let index_tree_after_accept = if decision == ReviewDecision::Accepted {
+        crate::projects::get_active_project()
+            .ok()
+            .and_then(|project| index_tree_sha(&project.path))
+    } else {
+        None
+    };
+
+    receipt.review = Some(ReviewReceipt {
+        run_id: run_id.to_string(),
+        decision,
+        reviewed_paths,
+        changeset_digest,
+        index_tree_after_accept,
+    });
+    // A new review decision invalidates any prior verification/commit evidence.
+    receipt.verification = None;
+    receipt.finish = None;
+    save_receipt(&receipt)?;
+    Ok(())
+}
+
 /// Distinct repo-relative paths the run's steps reported changing, in first-seen
 /// order.
 fn collect_changed_files(run: &OrchestrationRun) -> Vec<String> {

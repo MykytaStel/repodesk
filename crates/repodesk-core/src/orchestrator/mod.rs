@@ -21,7 +21,7 @@ pub use plan::{
     available_capacities, build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step,
     plan_has_paid_step, route_steps, step_uses_paid_provider,
 };
-pub use review::{ReviewAction, ReviewedFile, RunReview, review_run};
+pub use review::{ReviewAction, ReviewedFile, RunReview, record_review, review_run};
 pub use runner::{
     AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, list_runs, load_latest_run, load_run,
     run_plan,

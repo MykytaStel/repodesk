@@ -722,6 +722,12 @@ pub async fn run_plan(
     };
 
     persist_run(&run).await?;
+    // Write the evidence receipt: a fresh receipt for this run (which auto-
+    // invalidates any stale review/verification from an earlier run). Dry runs
+    // carry no evidence; a receipt error never fails a run that already completed.
+    if !run.dry_run {
+        let _ = write_execution_receipt(plan, &run);
+    }
     // Record the outcome ledger (the N8 learning signal). Dry runs carry no
     // signal and are skipped inside `record_run`; a ledger error never fails a
     // run that already completed.
@@ -914,6 +920,70 @@ fn truncate_note(label: &str, value: &str) -> String {
         text.push_str(" [truncated]");
     }
     format!("{label}: {text}")
+}
+
+/// Persist a fresh [`TaskRunReceipt`] for this run: the execution evidence the
+/// Work flow's post-Prepare gates derive from. Writing it resets any review /
+/// verification / finish from an earlier run (a new `run_id` invalidates them).
+fn write_execution_receipt(plan: &OrchestrationPlan, run: &OrchestrationRun) -> RepoDeskResult<()> {
+    use crate::workflow::receipt::{
+        ExecutionReceipt, StepReceipt, TaskRunReceipt, changeset_digest, head_sha, save_receipt,
+    };
+
+    let allow_write_of = |task_id: &str| {
+        plan.steps
+            .iter()
+            .find(|step| step.id == task_id)
+            .map(|step| step.allow_write)
+            .unwrap_or(false)
+    };
+
+    let mut changed: Vec<String> = Vec::new();
+    let required_steps: Vec<StepReceipt> = run
+        .results
+        .iter()
+        .map(|result| {
+            for path in &result.changed_files {
+                if !changed.iter().any(|existing| existing == path) {
+                    changed.push(path.clone());
+                }
+            }
+            StepReceipt {
+                task_id: result.task_id.clone(),
+                status: result.status,
+                allow_write: allow_write_of(&result.task_id),
+                changed_files: result.changed_files.clone(),
+            }
+        })
+        .collect();
+
+    let changeset_digest = if changed.is_empty() {
+        None
+    } else {
+        Some(changeset_digest(&changed))
+    };
+    let base_commit = crate::projects::get_active_project()
+        .ok()
+        .and_then(|project| head_sha(&project.path));
+    let execution_mode = crate::workflow::load_phase_state()
+        .map(|state| state.execution_mode)
+        .unwrap_or_default();
+
+    let receipt = TaskRunReceipt {
+        task_id: run.task_id.clone(),
+        run_id: run.run_id.clone(),
+        execution_mode,
+        base_commit,
+        execution: ExecutionReceipt {
+            status: run.status,
+            required_steps,
+            changeset_digest,
+        },
+        review: None,
+        verification: None,
+        finish: None,
+    };
+    save_receipt(&receipt)
 }
 
 async fn persist_run(run: &OrchestrationRun) -> RepoDeskResult<PathBuf> {
