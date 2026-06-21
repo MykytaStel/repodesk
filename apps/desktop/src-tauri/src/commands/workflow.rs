@@ -148,33 +148,46 @@ pub fn commit_ready_changes(message: String) -> Result<CommandResult, String> {
 use repodesk_core::git_workspace::GitWorkspaceSnapshot;
 use repodesk_core::orchestrator::{self, OrchestrationRun, RunStatus};
 use repodesk_core::workflow::{
-    ExecutionMode, PhaseProgress, PhaseSignals, derive_progress, load_phase_state,
-    set_execution_mode,
+    ExecutionMode, PhaseProgress, PhaseSignals, TaskPhaseState, derive_progress, load_phase_state,
+    mark_committed, mark_reviewed, set_execution_mode,
 };
 
 /// Map the desktop's observable state onto the core phase signals.
 ///
 /// Scope/Prepare come straight from the workflow engine's `*_ok` flags. The
-/// post-execution phases (Execute → Finish) are a first-approximation read of
-/// the latest orchestration run plus live git state; the isolated-worktree
-/// review nuance (changes that live in a worktree until accepted) is refined as
-/// the Work tab wires the accept/commit transitions.
+/// post-execution phases are worktree-aware: a run that wrote only inside its
+/// isolated worktree still reports `changed_files`, so it counts as having
+/// changes. Review/Finish completion is an explicit user transition (an ack
+/// keyed to the run id), not a fragile git heuristic — accepting a changeset or
+/// committing records the run id, and a newer run invalidates a stale ack.
 fn map_phase_signals(
     wf: &ProductWorkflowState,
     latest: Option<&OrchestrationRun>,
     git: &GitWorkspaceSnapshot,
+    state: &TaskPhaseState,
 ) -> PhaseSignals {
     let execution_started = latest.map(|run| !run.dry_run).unwrap_or(false);
     let execution_succeeded = latest
         .map(|run| !run.dry_run && matches!(run.status, RunStatus::Completed | RunStatus::Partial))
         .unwrap_or(false);
-    // Changes to review are the live working-tree edits (an accepted changeset is
-    // applied/staged into the active tree); a run that wrote only inside its
-    // isolated worktree surfaces here once those changes are applied.
-    let has_changes = git.is_dirty;
-    let changes_reviewed = !has_changes || git.staged_count > 0;
-    let committed =
-        execution_succeeded && !git.is_dirty && wf.commit_readiness.status == "nothing_to_commit";
+
+    let latest_id = latest.map(|run| run.run_id.as_str());
+    let run_produced_changes = latest
+        .map(|run| {
+            run.results
+                .iter()
+                .any(|step| !step.changed_files.is_empty())
+        })
+        .unwrap_or(false);
+    // Worktree-aware: count both the run's recorded changeset and live edits.
+    let has_changes = run_produced_changes || git.is_dirty;
+    // Reviewed when the user acked this run's changeset (or staged it directly),
+    // and trivially satisfied when there is nothing to review.
+    let changes_reviewed = !has_changes
+        || git.staged_count > 0
+        || (latest_id.is_some() && state.reviewed_run_id.as_deref() == latest_id);
+    // Committed is an explicit transition tied to this run.
+    let committed = latest_id.is_some() && state.committed_run_id.as_deref() == latest_id;
 
     PhaseSignals {
         project_ok: wf.project_ok,
@@ -194,11 +207,23 @@ fn map_phase_signals(
     }
 }
 
-fn current_phase_signals() -> PhaseSignals {
+fn current_progress() -> PhaseProgress {
+    let state = load_phase_state().unwrap_or_default();
     let wf = build_product_workflow_state();
     let latest = orchestrator::load_latest_run().ok().flatten();
     let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
-    map_phase_signals(&wf, latest.as_ref(), &git)
+    let signals = map_phase_signals(&wf, latest.as_ref(), &git, &state);
+    derive_progress(&signals, state.execution_mode)
+}
+
+/// The id of the active task's latest non-dry orchestration run, if any — used to
+/// key the review/commit acknowledgements.
+fn latest_run_id() -> Option<String> {
+    orchestrator::load_latest_run()
+        .ok()
+        .flatten()
+        .filter(|run| !run.dry_run)
+        .map(|run| run.run_id)
 }
 
 /// The current six-phase progression for the active task: derived phase
@@ -206,10 +231,7 @@ fn current_phase_signals() -> PhaseSignals {
 /// execution mode. This is the Work tab's source of truth.
 #[tauri::command]
 pub async fn work_phase_state() -> Result<PhaseProgress, ErrorPayload> {
-    let mode = load_phase_state()
-        .map(|state| state.execution_mode)
-        .unwrap_or_default();
-    Ok(derive_progress(&current_phase_signals(), mode))
+    Ok(current_progress())
 }
 
 /// Persist the Execute-phase mode (Agent run vs Manual handoff) and return the
@@ -226,7 +248,27 @@ pub async fn work_set_execution_mode(mode: String) -> Result<PhaseProgress, Erro
         }
     };
     set_execution_mode(mode)?;
-    Ok(derive_progress(&current_phase_signals(), mode))
+    Ok(current_progress())
+}
+
+/// Record that the latest run's changeset has been reviewed (Review → done).
+#[tauri::command]
+pub async fn work_mark_reviewed() -> Result<PhaseProgress, ErrorPayload> {
+    let run_id = latest_run_id().ok_or_else(|| {
+        ErrorPayload::configuration("No orchestration run to review for the active task")
+    })?;
+    mark_reviewed(&run_id)?;
+    Ok(current_progress())
+}
+
+/// Record that the latest run's changes have been committed (Finish → done).
+#[tauri::command]
+pub async fn work_mark_committed() -> Result<PhaseProgress, ErrorPayload> {
+    let run_id = latest_run_id().ok_or_else(|| {
+        ErrorPayload::configuration("No orchestration run to commit for the active task")
+    })?;
+    mark_committed(&run_id)?;
+    Ok(current_progress())
 }
 
 pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {

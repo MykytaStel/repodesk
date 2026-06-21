@@ -100,3 +100,53 @@
 .work-tab .disclosure:hover {
   color: var(--text);
 }
+
+.work-tab .work-cta-row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.work-tab .secondary-cta {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.work-tab .secondary-cta:hover {
+  border-color: var(--accent-border);
+}
+
+/* Segmented sub-nav shared by the Changes and History container tabs. */
+.subnav-host .subnav {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: 0 0 var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.subnav-host .subnav button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.subnav-host .subnav button.selected {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.subnav-host .subnav button:hover {
+  color: var(--text);
+}

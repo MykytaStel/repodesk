@@ -22,6 +22,38 @@ export const onboardedFixtures: CommandFixtures = {
   },
   db_status: { ok: true, path: "/tmp/repodesk-dev/repodesk.db" },
 
+  // Work tab phase progression — mid-flow at Execute, so the rail shows
+  // completed/locked phases, the mode toggle, and the single CTA.
+  work_phase_state: {
+    current: "execute",
+    complete: false,
+    execution_mode: "agent_run",
+    cta: { phase: "execute", label: "Run agent", action_id: null },
+    phases: [
+      { phase: "scope", status: "done", title: "Scope", summary: "Project, task, and goal are set" },
+      { phase: "prepare", status: "done", title: "Prepare", summary: "Context is built, scanned, and routed" },
+      { phase: "execute", status: "in_progress", title: "Execute", summary: "Launch the coding agent in an isolated worktree" },
+      { phase: "review", status: "locked", title: "Review", summary: "Review changed files and accept or reject" },
+      { phase: "verify", status: "locked", title: "Verify", summary: "Run final project checks and verification" },
+      { phase: "finish", status: "locked", title: "Finish", summary: "Stage, commit, and close the task" },
+    ],
+  },
+  // The mock ignores args, so a mode switch resolves to the manual-handoff state.
+  work_set_execution_mode: {
+    current: "execute",
+    complete: false,
+    execution_mode: "manual_handoff",
+    cta: { phase: "execute", label: "Generate context pack", action_id: "prompt-all" },
+    phases: [
+      { phase: "scope", status: "done", title: "Scope", summary: "Project, task, and goal are set" },
+      { phase: "prepare", status: "done", title: "Prepare", summary: "Context is built, scanned, and routed" },
+      { phase: "execute", status: "in_progress", title: "Execute", summary: "Generate a context pack to hand to an external agent" },
+      { phase: "review", status: "locked", title: "Review", summary: "Review changed files and accept or reject" },
+      { phase: "verify", status: "locked", title: "Verify", summary: "Run final project checks and verification" },
+      { phase: "finish", status: "locked", title: "Finish", summary: "Stage, commit, and close the task" },
+    ],
+  },
+
   project_list_configs: [
     { name: "RepoDesk", path: "/Users/you/code/repodesk", project_type: "rust" },
     { name: "my-api", path: "/Users/you/code/my-api", project_type: "node" },
@@ -263,6 +295,20 @@ export const firstRunFixtures: CommandFixtures = {
     task_ok: false,
     steps: [],
     commit_readiness: { status: "" },
+  },
+  work_phase_state: {
+    current: "scope",
+    complete: false,
+    execution_mode: "agent_run",
+    cta: { phase: "scope", label: "Add or select a project", action_id: null },
+    phases: [
+      { phase: "scope", status: "available", title: "Scope", summary: "Select or connect a project" },
+      { phase: "prepare", status: "locked", title: "Prepare", summary: "Build bounded context for this task" },
+      { phase: "execute", status: "locked", title: "Execute", summary: "Launch the coding agent in an isolated worktree" },
+      { phase: "review", status: "locked", title: "Review", summary: "No changes to review yet" },
+      { phase: "verify", status: "locked", title: "Verify", summary: "Run final project checks and verification" },
+      { phase: "finish", status: "locked", title: "Finish", summary: "Stage, commit, and close the task" },
+    ],
   },
   desktop_actions: [],
   action_history: [],

@@ -44,6 +44,13 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     },
   });
 
+  // Explicit Review/Finish transitions (acks keyed to the latest run id).
+  const transition = useMutation({
+    mutationFn: (kind: "reviewed" | "committed") =>
+      kind === "reviewed" ? api.workMarkReviewed() : api.workMarkCommitted(),
+    onSuccess: (next) => queryClient.setQueryData(["work", "phase-state"], next),
+  });
+
   if (phase.isLoading || !phase.data) {
     return (
       <div className="content-grid">
@@ -77,7 +84,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
         setShowAdvanced(true);
         break;
       case "finish":
-        setActiveTab("git");
+        setActiveTab("changes");
         break;
       default:
         setShowAdvanced(true);
@@ -128,7 +135,8 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           </div>
         )}
 
-        {/* The one primary CTA. */}
+        {/* The one primary CTA, plus the explicit transition for the phase that
+            needs a human decision (review / commit). */}
         <div className="work-cta-row">
           <button
             className="primary-cta"
@@ -137,6 +145,24 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           >
             {runCta.isPending ? "Working…" : progress.cta.label}
           </button>
+          {progress.current === "review" && (
+            <button
+              className="secondary-cta"
+              onClick={() => transition.mutate("reviewed")}
+              disabled={transition.isPending}
+            >
+              Mark changes reviewed
+            </button>
+          )}
+          {progress.current === "finish" && (
+            <button
+              className="secondary-cta"
+              onClick={() => transition.mutate("committed")}
+              disabled={transition.isPending}
+            >
+              Mark committed
+            </button>
+          )}
         </div>
       </section>
 

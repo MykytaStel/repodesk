@@ -1,6 +1,15 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { installMockIpc, recordedCommands } from "./mock-ipc";
 import { onboardedFixtures } from "./fixtures";
+
+// The classic Workflow surface moved under "Advanced" in the redesigned nav
+// (the Work tab is the new default home). Open it explicitly where a test
+// asserts Workflow internals.
+async function openWorkflow(page: Page) {
+  const nav = page.locator(".nav-list");
+  await nav.getByRole("button", { name: /^Advanced/ }).click();
+  await nav.getByRole("button", { name: /^Workflow/ }).click();
+}
 
 // Drives the daily loop on a fully onboarded, commit-ready workspace:
 // shell boots → workflow home → dashboard → git → code, asserting the key UI
@@ -24,7 +33,7 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("workflow home shows a commit-ready next step and route", async ({ page }) => {
-    // Workflow is the default home surface.
+    await openWorkflow(page);
     await expect(page.getByRole("heading", { level: 1, name: "Build smart context" })).toBeVisible();
     // Commit readiness panel reflects the "ready" status.
     await expect(page.getByText("All checks passed — safe to commit")).toBeVisible();
@@ -36,7 +45,8 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("journey stepper makes the 8-step path legible", async ({ page }) => {
-    // The stepper is the spine of the home surface.
+    await openWorkflow(page);
+    // The stepper is the spine of the classic Workflow surface.
     await expect(page.getByRole("heading", { name: "One task, eight steps" })).toBeVisible();
     // All 8 steps render, including blocked ones downstream.
     const track = page.locator(".journey-track");
@@ -57,18 +67,18 @@ test.describe("daily loop (onboarded)", () => {
   test("navigates every tab without crashing", async ({ page }) => {
     // Visit all surfaces — partial mock data must render an empty state, never
     // the error boundary ("This view crashed" / "Something went wrong").
-    // Primary tabs are always shown; depth tabs live under a collapsible "More".
+    // Primary spine is collapsed to four surfaces; depth lives under "Advanced".
     const nav = page.locator(".nav-list");
-    const primaryTabs = ["Git", "Code", "Memory", "Orchestrate", "Settings"];
-    const moreTabs = ["Dashboard", "Models", "Tokens", "System Registry", "Debug"];
+    const primaryTabs = ["Work", "Changes", "History", "Settings"];
+    const moreTabs = ["Workflow", "Dashboard", "Git", "Code", "Orchestrate", "Memory", "Models", "Tokens", "System Registry", "Debug"];
     for (const tab of primaryTabs) {
       await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
       await expect(page.locator(".app-shell")).toBeVisible();
       await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
     }
-    // Expand the "More" section to reach depth & diagnostics surfaces.
-    await nav.getByRole("button", { name: /^More/ }).click();
+    // Expand the "Advanced" section to reach depth & diagnostics surfaces.
+    await nav.getByRole("button", { name: /^Advanced/ }).click();
     for (const tab of moreTabs) {
       await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
       await expect(page.locator(".app-shell")).toBeVisible();
@@ -78,6 +88,7 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("the hero next-step CTA reports its result too", async ({ page }) => {
+    await openWorkflow(page);
     // Clicking the big "do next safe step" CTA surfaces the same human result
     // on the matching step card as running it from the card would.
     await page.getByRole("button", { name: "Build bounded context" }).click();
@@ -85,6 +96,7 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("a journey step can be run from its card with a result", async ({ page }) => {
+    await openWorkflow(page);
     // The focused (current) step card offers a run action…
     const detail = page.locator(".journey-detail");
     const runBtn = detail.getByRole("button", { name: /^Run Smart Context/ });
@@ -96,7 +108,7 @@ test.describe("daily loop (onboarded)", () => {
 
   test("Models tab guides setup with human status and fixes", async ({ page }) => {
     const nav = page.locator(".nav-list");
-    await nav.getByRole("button", { name: /^More/ }).click();
+    await nav.getByRole("button", { name: /^Advanced/ }).click();
     await nav.getByRole("button", { name: /^Models/ }).click();
     // Readiness-focused headline + attention banner (1 working, 2 need attention).
     await expect(page.getByRole("heading", { name: /Ready for AI/ })).toBeVisible();
@@ -111,6 +123,7 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("command palette opens with Ctrl-K and navigates", async ({ page }) => {
+    await openWorkflow(page);
     // Wait for the app to mount (so the global keydown listener is attached).
     await expect(page.getByRole("heading", { level: 1, name: "Build smart context" })).toBeVisible();
     await page.locator("body").click();
@@ -130,6 +143,7 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("frontend actually issued the daily-loop commands through IPC", async ({ page }) => {
+    await openWorkflow(page);
     // Give the React Query hooks a beat to fire.
     await expect(page.getByText("All checks passed — safe to commit")).toBeVisible();
     const commands = await recordedCommands(page);
@@ -141,6 +155,7 @@ test.describe("daily loop (onboarded)", () => {
 
   test("orchestrate shows reviewable agent changes with proof", async ({ page }) => {
     const nav = page.locator(".nav-list");
+    await nav.getByRole("button", { name: /^Advanced/ }).click();
     await nav.getByRole("button", { name: /^Orchestrate/ }).click();
     await expect(page.getByRole("heading", { name: /Conduct sub-agents/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /agent-changed file/ })).toBeVisible();
@@ -168,6 +183,7 @@ test.describe("finish line (prompts ready)", () => {
       product_workflow_state: { ...(onboardedFixtures.product_workflow_state as object), prompts_ok: true },
     });
     await page.goto("/");
+    await openWorkflow(page);
     await expect(page.getByRole("heading", { name: "Hand off & complete the task" })).toBeVisible();
     // Explains the prompt is built locally (trust), and points concretely at the panel.
     await expect(page.getByText(/assembled your prompt/)).toBeVisible();

@@ -400,6 +400,14 @@ export async function workSetExecutionMode(mode: ExecutionMode): Promise<PhasePr
   return invoke("work_set_execution_mode", { mode });
 }
 
+export async function workMarkReviewed(): Promise<PhaseProgress> {
+  return invoke("work_mark_reviewed");
+}
+
+export async function workMarkCommitted(): Promise<PhaseProgress> {
+  return invoke("work_mark_committed");
+}
+
 export async function outcomesList(limit?: number): Promise<OutcomeRecord[]> {
   return invoke("outcomes_list", { limit: limit ?? null });
 }

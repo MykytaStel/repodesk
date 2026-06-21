@@ -340,13 +340,25 @@ fn phase_cta(
     }
 }
 
-// ── Persisted state (execution mode) ─────────────────────────────────────────
+// ── Persisted state (user-controlled transitions) ────────────────────────────
 
-/// The only user-controlled, persisted phase state for a task: the chosen
-/// execution mode. Everything else is derived from signals.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+/// The user-controlled, persisted phase state for a task. Everything else is
+/// derived from signals; these are the explicit decisions a user makes that
+/// reality can't infer: the chosen execution mode, and the acknowledgements that
+/// a specific run's changes were reviewed / committed.
+///
+/// The review/commit acks are **keyed to the run id** they applied to, so a
+/// later run automatically invalidates a stale ack (a new run id won't match) —
+/// the flow re-opens Review/Finish for the new work without any reset bookkeeping.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TaskPhaseState {
     pub execution_mode: ExecutionMode,
+    /// The run whose changeset the user accepted/rejected (reviewed).
+    #[serde(default)]
+    pub reviewed_run_id: Option<String>,
+    /// The run whose changes the user committed.
+    #[serde(default)]
+    pub committed_run_id: Option<String>,
 }
 
 fn phase_state_path() -> RepoDeskResult<PathBuf> {
@@ -367,16 +379,36 @@ pub fn load_phase_state() -> RepoDeskResult<TaskPhaseState> {
     Ok(state)
 }
 
-/// Persist the chosen execution mode for the active task.
-pub fn set_execution_mode(mode: ExecutionMode) -> RepoDeskResult<TaskPhaseState> {
-    let state = TaskPhaseState {
-        execution_mode: mode,
-    };
+fn save_phase_state(state: &TaskPhaseState) -> RepoDeskResult<()> {
     let path = phase_state_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&path, serde_json::to_string_pretty(&state)?)?;
+    std::fs::write(&path, serde_json::to_string_pretty(state)?)?;
+    Ok(())
+}
+
+/// Persist the chosen execution mode for the active task (preserving acks).
+pub fn set_execution_mode(mode: ExecutionMode) -> RepoDeskResult<TaskPhaseState> {
+    let mut state = load_phase_state()?;
+    state.execution_mode = mode;
+    save_phase_state(&state)?;
+    Ok(state)
+}
+
+/// Record that `run_id`'s changeset has been reviewed (accepted or rejected).
+pub fn mark_reviewed(run_id: &str) -> RepoDeskResult<TaskPhaseState> {
+    let mut state = load_phase_state()?;
+    state.reviewed_run_id = Some(run_id.to_string());
+    save_phase_state(&state)?;
+    Ok(state)
+}
+
+/// Record that `run_id`'s changes have been committed.
+pub fn mark_committed(run_id: &str) -> RepoDeskResult<TaskPhaseState> {
+    let mut state = load_phase_state()?;
+    state.committed_run_id = Some(run_id.to_string());
+    save_phase_state(&state)?;
     Ok(state)
 }
 

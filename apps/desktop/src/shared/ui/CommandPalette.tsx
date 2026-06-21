@@ -25,9 +25,8 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return commands;
-    // Simple subsequence match so "gst" matches "Go to Settings".
-    const matches = (label: string) => {
-      const text = label.toLowerCase();
+    // Subsequence match so "gst" still matches "Go to Settings"…
+    const subseq = (text: string) => {
       let i = 0;
       for (const ch of q) {
         i = text.indexOf(ch, i);
@@ -36,7 +35,21 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
       }
       return true;
     };
-    return commands.filter((c) => matches(c.label) || matches(c.hint ?? ""));
+    // …but rank contiguous-substring hits first, so typing "git" lands on
+    // "Go to Git" rather than "Go to His(t)ory" (a subsequence-only match).
+    const rank = (c: Command): number | null => {
+      const label = c.label.toLowerCase();
+      const hint = (c.hint ?? "").toLowerCase();
+      if (label.includes(q)) return 0;
+      if (hint.includes(q)) return 1;
+      if (subseq(label) || subseq(hint)) return 2;
+      return null;
+    };
+    return commands
+      .map((c, index) => ({ c, index, score: rank(c) }))
+      .filter((entry): entry is { c: Command; index: number; score: number } => entry.score !== null)
+      .sort((a, b) => a.score - b.score || a.index - b.index)
+      .map((entry) => entry.c);
   }, [commands, query]);
 
   if (!open) return null;

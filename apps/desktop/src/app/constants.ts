@@ -13,6 +13,8 @@ export const DEFAULT_THEME: Theme = "system";
 
 export const TAB_IDS: readonly TabId[] = [
   "work",
+  "changes",
+  "history",
   "dashboard",
   "workflow",
   "tokens",

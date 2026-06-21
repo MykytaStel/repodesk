@@ -294,6 +294,8 @@ pub fn run() {
             commands::product_workflow_state,
             commands::work_phase_state,
             commands::work_set_execution_mode,
+            commands::work_mark_reviewed,
+            commands::work_mark_committed,
             commands::read_artifact,
             commands::agent_context_pack,
             commands::desktop_actions,

@@ -6,6 +6,8 @@ import type { TabId } from "../shared/types/api";
 // initial bundle small. Each feature module exports a named component, so the
 // lazy loader maps it to a default export.
 const WorkTab = lazy(() => import("../features/work/WorkTab").then((m) => ({ default: m.WorkTab })));
+const ChangesTab = lazy(() => import("../features/changes/ChangesTab").then((m) => ({ default: m.ChangesTab })));
+const HistoryTab = lazy(() => import("../features/history/HistoryTab").then((m) => ({ default: m.HistoryTab })));
 const DashboardTab = lazy(() => import("../features/dashboard/DashboardTab").then((m) => ({ default: m.DashboardTab })));
 const WorkflowTab = lazy(() => import("../features/workflow/WorkflowTab").then((m) => ({ default: m.WorkflowTab })));
 const TokensTab = lazy(() => import("../features/tokens/TokensTab").then((m) => ({ default: m.TokensTab })));
@@ -36,15 +38,20 @@ export interface AppTab {
 // `more` tabs are diagnostics/depth, tucked into a collapsible section.
 // Ordered primary-first so ⌘1..9 jump to the everyday surfaces.
 export const APP_TABS: AppTab[] = [
+  // Primary spine — the four surfaces that carry the daily flow.
   { id: "work", title: "Work", subtitle: "Home · Scope → Finish", group: "Work", tier: "primary" },
-  { id: "workflow", title: "Workflow", subtitle: "Classic · 8 steps", group: "Work", tier: "more" },
-  { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "primary" },
-  { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "primary" },
-  { id: "memory", title: "Memory", subtitle: "Context agents remember", group: "AI", tier: "primary" },
-  { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to sub-agents", group: "AI", tier: "more" },
+  { id: "changes", title: "Changes", subtitle: "Diffs, files & review", group: "Work", tier: "primary" },
+  { id: "history", title: "History", subtitle: "Runs, memory & audit", group: "AI", tier: "primary" },
   { id: "settings", title: "Settings", subtitle: "Providers & keys", group: "System", tier: "primary" },
-  // More — depth & diagnostics, collapsed by default.
+  // Advanced — depth & diagnostics, collapsed by default. The merged surfaces
+  // (Git/Code → Changes, Outcomes/Memory/Audit → History) still live here as
+  // direct links for power users and ⌘K, but are not part of the primary spine.
+  { id: "workflow", title: "Workflow", subtitle: "Classic · 8 steps", group: "Work", tier: "more" },
   { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },
+  { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "more" },
+  { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "more" },
+  { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to sub-agents", group: "AI", tier: "more" },
+  { id: "memory", title: "Memory", subtitle: "Context agents remember", group: "AI", tier: "more" },
   { id: "models", title: "Models", subtitle: "Runtime health", group: "AI", tier: "more" },
   { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI", tier: "more" },
   { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI", tier: "more" },
@@ -73,6 +80,10 @@ export function renderAppTab({
   switch (activeTab) {
     case "work":
       return <WorkTab setActiveTab={setActiveTab} />;
+    case "changes":
+      return <ChangesTab />;
+    case "history":
+      return <HistoryTab />;
     case "dashboard":
       return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
     case "workflow":

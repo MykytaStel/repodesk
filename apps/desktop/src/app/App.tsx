@@ -164,7 +164,7 @@ export default function App() {
             </div>
             <div className="nav-group">
               <button type="button" className="nav-more-toggle" onClick={() => setMoreOpen((open) => !open)} aria-expanded={moreOpen}>
-                <strong>More</strong><span>{moreOpen ? "Hide depth & diagnostics ▾" : "Depth & diagnostics ▸"}</span>
+                <strong>Advanced</strong><span>{moreOpen ? "Hide depth & diagnostics ▾" : "Depth & diagnostics ▸"}</span>
               </button>
               {moreOpen && TAB_GROUP_ORDER.map((group) => {
                 const tabs = MORE_TABS.filter((tab) => tab.group === group);
@@ -196,7 +196,7 @@ export default function App() {
           </div>
           <div className="status-strip">
             <StatusBox label="Task" value={taskTitle} ok={hasTask} hint={hasTask ? "Active task — open the work flow" : "No active task — create one"} onClick={() => setActiveTab("work")} />
-            <StatusBox label="Git" value={dirty ? `${dirtyCount} changes` : "Clean"} ok={!dirty} hint={dirty ? "Uncommitted changes — review the diff" : "Working tree clean"} onClick={() => setActiveTab("git")} />
+            <StatusBox label="Git" value={dirty ? `${dirtyCount} changes` : "Clean"} ok={!dirty} hint={dirty ? "Uncommitted changes — review the diff" : "Working tree clean"} onClick={() => setActiveTab("changes")} />
             <StatusBox label="Tokens" value={formatNumber(tokens?.totals.total_tokens)} ok={Boolean(tokens)} hint="Token usage & cost" onClick={() => setActiveTab("tokens")} />
             <StatusBox label="Models" value={`${workingProviders}/${models?.providers.length ?? 0} working`} ok={workingProviders > 0} hint={workingProviders > 0 ? "Reachable models — open runtime health" : "No reachable models — configure providers"} onClick={() => setActiveTab(workingProviders > 0 ? "models" : "settings")} />
           </div>
