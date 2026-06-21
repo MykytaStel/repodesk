@@ -110,7 +110,7 @@ pub fn runtime_providers() -> Vec<RuntimeProvider> {
         RuntimeProvider {
             name: "codex_cli".to_string(),
             kind: "coding_agent_executor".to_string(),
-            access_model: "bounded repository access via CLI executor (planned)".to_string(),
+            access_model: "bounded repository access via isolated-worktree CLI executor".to_string(),
             cost_profile: "paid/limited tokens".to_string(),
             trust_level: "powerful but must be guarded".to_string(),
             strengths: vec![
@@ -126,13 +126,13 @@ pub fn runtime_providers() -> Vec<RuntimeProvider> {
             health_check: RuntimeHealthCheck {
                 mode: "manual".to_string(),
                 command: None,
-                notes: "Coding-agent executor. CLI execution is planned behind guard/judge/access checks.".to_string(),
+                notes: "Coding-agent executor. CLI execution runs in an isolated worktree behind guard/judge/access checks.".to_string(),
             },
         },
         RuntimeProvider {
             name: "claude_code_cli".to_string(),
             kind: "coding_agent_executor".to_string(),
-            access_model: "bounded repository access via CLI executor (planned)".to_string(),
+            access_model: "bounded repository access via isolated-worktree CLI executor".to_string(),
             cost_profile: "paid/limited tokens".to_string(),
             trust_level: "powerful but must be guarded".to_string(),
             strengths: vec![
@@ -148,7 +148,7 @@ pub fn runtime_providers() -> Vec<RuntimeProvider> {
             health_check: RuntimeHealthCheck {
                 mode: "passive_path".to_string(),
                 command: Some("claude".to_string()),
-                notes: "Coding-agent executor. CLI execution is planned behind guard/judge/access checks.".to_string(),
+                notes: "Coding-agent executor. CLI execution runs in an isolated worktree behind guard/judge/access checks.".to_string(),
             },
         },
         RuntimeProvider {

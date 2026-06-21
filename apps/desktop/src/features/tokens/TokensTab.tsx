@@ -6,6 +6,7 @@ import { queryKeys } from "../../shared/api/queries";
 import { useTokens } from "./useTokens";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { ArtifactViewerModal } from "../../shared/ui/ArtifactViewerModal";
+import { RateCardEditor } from "./RateCardEditor";
 
 interface TokensTabProps {}
 
@@ -69,8 +70,10 @@ export function TokensTab({}: TokensTabProps) {
         <MetricCard label="Input" value={formatNumber(tokens?.totals?.total_input_tokens)} detail="Logged input tokens" />
         <MetricCard label="Output" value={formatNumber(tokens?.totals?.total_output_tokens)} detail="Logged output tokens" />
         <MetricCard label="Entries" value={formatNumber(tokens?.totals?.entries_count)} detail="Ledger rows" />
-        <MetricCard label="Estimated cost" value={formatCost(tokens?.cost_estimate?.estimated_total_units, tokens?.cost_estimate?.currency_label)} detail="Local planning units" />
+        <MetricCard label="Estimated cost" value={formatCost(tokens?.cost_estimate?.estimated_total_units, tokens?.cost_estimate?.currency_label)} detail={`Estimated ${tokens?.cost_estimate?.currency_label ?? "cost"} from the rate card`} />
       </div>
+
+      <RateCardEditor />
 
       {tokens?.totals && (() => {
         const todayUsed = tokens.totals.today_total_tokens ?? 0;

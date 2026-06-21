@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as orchestrate from "../../shared/api/orchestrate";
 import * as memory from "../../shared/api/memory";
 import { queryKeys } from "../../shared/api/queries";
+import { DiffViewer } from "../../shared/ui/DiffViewer";
 
 // Review surface: makes the run's output legible before it's committed — the
 // exact files/diffs that changed, plus the memory the run proposed capturing
@@ -63,7 +64,7 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
                 {d.task_id} — {d.changed_files.length} file(s): {d.changed_files.join(", ")}
               </summary>
               {d.diff.trim() ? (
-                <pre className="review-diff">{d.diff}</pre>
+                <DiffViewer diff={d.diff} />
               ) : (
                 <p className="muted">No unified diff (new, binary, or already moved).</p>
               )}

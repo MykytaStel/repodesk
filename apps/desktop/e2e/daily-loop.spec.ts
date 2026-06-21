@@ -109,7 +109,8 @@ test.describe("daily loop (onboarded)", () => {
     await openGroup(page, "AI");
     await tabButton(page, "Playbooks").click();
     await expect(page.getByRole("heading", { name: "Workflow shortcuts" })).toBeVisible();
-    await expect(page.getByText("Authoring planned")).toBeVisible();
+    // Playbooks are now authorable: a New-playbook control + per-card edit/delete.
+    await expect(page.getByRole("button", { name: "New playbook" })).toBeVisible();
     await expect(page.getByText("No hidden run").first()).toBeVisible();
     await expect(page.getByText("Visible result").first()).toBeVisible();
 
@@ -117,7 +118,7 @@ test.describe("daily loop (onboarded)", () => {
 
     await expect(tabButton(page, "Changes")).toHaveClass(/active/);
     await expect(page.getByText("Active view")).toBeVisible();
-    await expect(page.getByText("Security Hotspot Review: Opened Changes for security review.")).toBeVisible();
+    await expect(page.getByText("Security Hotspot Review: opened Changes.")).toBeVisible();
   });
 
   test("Memory shows what becomes agent context", async ({ page }) => {

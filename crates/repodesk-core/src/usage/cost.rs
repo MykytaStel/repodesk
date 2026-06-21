@@ -32,8 +32,12 @@ pub struct CostEstimate {
 
 impl Default for CostConfig {
     fn default() -> Self {
+        // Rates are USD **per 1K tokens** for each provider's RepoDesk default
+        // model, from public list pricing (≈ mid-2026). They are deliberate
+        // estimates, not a billing source of truth — actual spend depends on the
+        // exact model and your plan, so override per provider in `costs.toml`.
         Self {
-            currency_label: "cost_units".to_string(),
+            currency_label: "USD".to_string(),
             rates: vec![
                 AgentRate {
                     agent: "ollama".to_string(),
@@ -44,51 +48,58 @@ impl Default for CostConfig {
                 },
                 AgentRate {
                     agent: "openai_api".to_string(),
-                    model: "user-configured".to_string(),
-                    input_cost_per_1k_units: 1.0,
-                    output_cost_per_1k_units: 3.0,
-                    notes: "Placeholder OpenAI API rate. Replace with your real plan/model economics if needed.".to_string(),
+                    model: "gpt-4o-mini".to_string(),
+                    input_cost_per_1k_units: 0.00015,
+                    output_cost_per_1k_units: 0.0006,
+                    notes: "USD/1K for gpt-4o-mini list pricing. Override for larger OpenAI models.".to_string(),
                 },
                 AgentRate {
                     agent: "anthropic_api".to_string(),
-                    model: "user-configured".to_string(),
-                    input_cost_per_1k_units: 1.0,
-                    output_cost_per_1k_units: 3.0,
-                    notes: "Placeholder Anthropic API rate. Replace with your real plan/model economics if needed.".to_string(),
+                    model: "claude-sonnet-4-6".to_string(),
+                    input_cost_per_1k_units: 0.003,
+                    output_cost_per_1k_units: 0.015,
+                    notes: "USD/1K for Claude Sonnet list pricing. Override for Haiku/Opus tiers.".to_string(),
                 },
                 AgentRate {
                     agent: "gemini_api".to_string(),
-                    model: "user-configured".to_string(),
-                    input_cost_per_1k_units: 0.8,
-                    output_cost_per_1k_units: 2.5,
-                    notes: "Placeholder Gemini API rate. Replace with your real plan/model economics if needed.".to_string(),
+                    model: "gemini-2.5-flash".to_string(),
+                    input_cost_per_1k_units: 0.000075,
+                    output_cost_per_1k_units: 0.0003,
+                    notes: "USD/1K for Gemini Flash list pricing. Override for Pro tiers.".to_string(),
                 },
                 AgentRate {
                     agent: "codex_cli".to_string(),
-                    model: "user-configured".to_string(),
-                    input_cost_per_1k_units: 1.2,
-                    output_cost_per_1k_units: 4.0,
-                    notes: "Placeholder rate for coding-agent patch work. Update locally when you know real costs.".to_string(),
+                    model: "subscription".to_string(),
+                    input_cost_per_1k_units: 0.0,
+                    output_cost_per_1k_units: 0.0,
+                    notes: "Coding-agent CLI billed by your CLI plan, not per token. Set a nominal rate to register patch-run spend.".to_string(),
+                },
+                AgentRate {
+                    agent: "claude_code_cli".to_string(),
+                    model: "subscription".to_string(),
+                    input_cost_per_1k_units: 0.0,
+                    output_cost_per_1k_units: 0.0,
+                    notes: "Coding-agent CLI billed by your CLI plan, not per token. Set a nominal rate to register patch-run spend.".to_string(),
                 },
                 AgentRate {
                     agent: "chatgpt".to_string(),
                     model: "legacy".to_string(),
-                    input_cost_per_1k_units: 1.0,
-                    output_cost_per_1k_units: 3.0,
+                    input_cost_per_1k_units: 0.00015,
+                    output_cost_per_1k_units: 0.0006,
                     notes: "Legacy manual ChatGPT route retained for historical ledger entries.".to_string(),
                 },
                 AgentRate {
                     agent: "codex".to_string(),
                     model: "legacy".to_string(),
-                    input_cost_per_1k_units: 1.2,
-                    output_cost_per_1k_units: 4.0,
+                    input_cost_per_1k_units: 0.0,
+                    output_cost_per_1k_units: 0.0,
                     notes: "Legacy Codex route retained for historical ledger entries.".to_string(),
                 },
                 AgentRate {
                     agent: "gemini".to_string(),
                     model: "legacy".to_string(),
-                    input_cost_per_1k_units: 0.8,
-                    output_cost_per_1k_units: 2.5,
+                    input_cost_per_1k_units: 0.000075,
+                    output_cost_per_1k_units: 0.0003,
                     notes: "Legacy Gemini route retained for historical ledger entries.".to_string(),
                 },
                 AgentRate {
@@ -115,6 +126,19 @@ pub fn ensure_cost_config() -> RepoDeskResult<CostConfig> {
 pub fn load_cost_config() -> RepoDeskResult<CostConfig> {
     use crate::utils::ConfigStore;
     CostConfig::load_config()
+}
+
+/// Persist an edited cost config to `costs.toml`.
+pub fn save_cost_config(config: &CostConfig) -> RepoDeskResult<()> {
+    use crate::utils::ConfigStore;
+    config.save_config()
+}
+
+/// Reset `costs.toml` to the built-in default rate card and return it.
+pub fn reset_cost_config() -> RepoDeskResult<CostConfig> {
+    let config = CostConfig::default();
+    save_cost_config(&config)?;
+    Ok(config)
 }
 
 pub fn estimate_agent_cost(

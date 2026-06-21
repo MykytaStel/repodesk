@@ -98,7 +98,7 @@ pub fn list_modules() -> Vec<BrainModule> {
         BrainModule {
             name: "desktop_ui",
             layer: "interface",
-            status: "planned",
+            status: "active",
             purpose: "Human cockpit for the control brain.",
         },
     ]
@@ -119,14 +119,13 @@ pub fn recommend_modules(need: &str) -> Vec<BrainModule> {
 
 pub fn audit_modules() -> ModuleAudit {
     let modules = list_modules();
-    let mut missing_recommended = Vec::new();
-
-    if !modules
+    // Every registered brain module is active; flag any that regress to a
+    // non-active status so the audit still surfaces real gaps.
+    let missing_recommended: Vec<&'static str> = modules
         .iter()
-        .any(|module| module.name == "desktop_ui" && module.status == "active")
-    {
-        missing_recommended.push("desktop_ui is planned but not active yet");
-    }
+        .filter(|module| module.status != "active")
+        .map(|module| module.name)
+        .collect();
 
     ModuleAudit {
         modules_count: modules.len(),

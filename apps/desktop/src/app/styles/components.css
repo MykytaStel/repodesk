@@ -281,6 +281,63 @@
   gap: var(--space-2);
 }
 
+/* Cost rate-card editor table. */
+.rate-card-table {
+  display: grid;
+  gap: 4px;
+  margin: var(--space-3) 0;
+}
+.rate-card-head,
+.rate-card-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr 1fr 1fr;
+  gap: var(--space-2);
+  align-items: center;
+}
+.rate-card-head {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rate-card-row input {
+  padding: 6px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-body);
+  color: var(--text);
+  font: inherit;
+  width: 100%;
+}
+
+/* Authoring form: two-column label grid. */
+.playbook-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+.playbook-form label {
+  display: grid;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+.playbook-form input,
+.playbook-form select {
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-body);
+  color: var(--text);
+  font: inherit;
+}
+.playbook-form-check {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+}
+
 .playbook-result {
   display: grid;
   gap: 3px;

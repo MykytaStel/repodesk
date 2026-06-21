@@ -274,8 +274,8 @@ fn default_capabilities_config() -> CapabilitiesConfig {
             },
             Capability {
                 name: "desktop-ui".to_string(),
-                kind: "planned_ui".to_string(),
-                enabled: false,
+                kind: "ui".to_string(),
+                enabled: true,
                 local: true,
                 risk: "medium".to_string(),
                 boundary: "Tauri UI over core commands/events.".to_string(),

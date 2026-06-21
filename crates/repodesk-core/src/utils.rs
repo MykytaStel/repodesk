@@ -70,4 +70,14 @@ pub trait ConfigStore: serde::Serialize + serde::de::DeserializeOwned + Default 
     fn load_config() -> crate::errors::RepoDeskResult<Self> {
         Self::ensure_config()
     }
+
+    /// Persist the config to its file, replacing any existing contents.
+    fn save_config(&self) -> crate::errors::RepoDeskResult<()> {
+        crate::init::init_home()?;
+        let paths = crate::paths::RepoDeskPaths::resolve()?;
+        let file = paths.config_dir.join(Self::FILE_NAME);
+        let content = toml::to_string_pretty(self)?;
+        std::fs::write(&file, content)?;
+        Ok(())
+    }
 }

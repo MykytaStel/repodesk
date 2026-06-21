@@ -272,3 +272,25 @@ pub fn token_cost_trend(
     let window = days.unwrap_or(14).clamp(1, 90);
     repodesk_core::usage::token_ledger::cost_trend(window).map_err(ErrorPayload::from)
 }
+
+/// The current cost rate card (`costs.toml`), seeded with USD defaults on first
+/// run. Surfaced so the Models & Cost surface can show and edit real rates.
+#[tauri::command]
+pub async fn cost_config_get() -> Result<repodesk_core::usage::cost::CostConfig, ErrorPayload> {
+    repodesk_core::usage::cost::load_cost_config().map_err(ErrorPayload::from)
+}
+
+/// Persist an edited cost rate card.
+#[tauri::command]
+pub async fn cost_config_save(
+    config: repodesk_core::usage::cost::CostConfig,
+) -> Result<repodesk_core::usage::cost::CostConfig, ErrorPayload> {
+    repodesk_core::usage::cost::save_cost_config(&config).map_err(ErrorPayload::from)?;
+    Ok(config)
+}
+
+/// Reset the cost rate card to the built-in USD defaults.
+#[tauri::command]
+pub async fn cost_config_reset() -> Result<repodesk_core::usage::cost::CostConfig, ErrorPayload> {
+    repodesk_core::usage::cost::reset_cost_config().map_err(ErrorPayload::from)
+}

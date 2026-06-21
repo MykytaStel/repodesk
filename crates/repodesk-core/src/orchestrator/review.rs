@@ -278,9 +278,26 @@ fn accept_isolated_changes(
     let statuses = worktree_status_by_path(worktree_path, paths)?;
     let mut tracked_paths = Vec::new();
     let mut untracked_paths = Vec::new();
+    // (old, new) pairs for staged renames, recorded by the diff delta as a single
+    // "old -> new" path string the working-tree status pathspec can't re-match.
+    let mut rename_pairs: Vec<(String, String)> = Vec::new();
     let mut processed = Vec::new();
 
     for path in paths {
+        // A rename arrives as a combined "old -> new" path (porcelain rename
+        // notation), so detect it before the status lookup — the pathspec can't
+        // match that literal string.
+        if let Some((old, new)) = split_rename(path) {
+            if is_safe_relative(&old) && is_safe_relative(&new) {
+                rename_pairs.push((old, new));
+            } else {
+                processed.push(ReviewedFile {
+                    path: path.clone(),
+                    outcome: "skipped: rename path is absolute or escapes the project".to_string(),
+                });
+            }
+            continue;
+        }
         let Some(change) = statuses.get(path) else {
             processed.push(ReviewedFile {
                 path: path.clone(),
@@ -288,25 +305,28 @@ fn accept_isolated_changes(
             });
             continue;
         };
-        if change.renamed {
-            processed.push(ReviewedFile {
-                path: path.clone(),
-                outcome: "skipped: rename apply-back is not implemented".to_string(),
-            });
-        } else if change.untracked {
+        if change.untracked {
             untracked_paths.push(path.clone());
         } else {
             tracked_paths.push(path.clone());
         }
     }
 
-    let apply_paths = tracked_paths
+    // Pre-flight all destinations together so a partial apply can't happen: the
+    // active checkout must be clean for every touched path (incl. both ends of a
+    // rename), and new destinations (untracked + rename targets) must be free.
+    let rename_old: Vec<String> = rename_pairs.iter().map(|(old, _)| old.clone()).collect();
+    let rename_new: Vec<String> = rename_pairs.iter().map(|(_, new)| new.clone()).collect();
+    let clean_paths = tracked_paths
         .iter()
         .chain(untracked_paths.iter())
+        .chain(rename_old.iter())
+        .chain(rename_new.iter())
         .cloned()
         .collect::<Vec<_>>();
-    ensure_active_paths_are_clean(project_path, &apply_paths)?;
+    ensure_active_paths_are_clean(project_path, &clean_paths)?;
     ensure_untracked_destinations_are_free(project_path, &untracked_paths)?;
+    ensure_untracked_destinations_are_free(project_path, &rename_new)?;
 
     if !tracked_paths.is_empty() {
         let patch = git_diff_head(worktree_path, &tracked_paths)?;
@@ -318,6 +338,26 @@ fn accept_isolated_changes(
             path,
             outcome: "applied and staged".to_string(),
         }));
+    }
+
+    // Apply each rename as a rename-aware diff (`-M`): `git apply --index` then
+    // performs the move (and any content edit) in the active index + worktree.
+    for (old, new) in rename_pairs {
+        let patch = git_diff_head_renames(worktree_path, &[old.clone(), new.clone()])?;
+        let display = format!("{old} -> {new}");
+        if patch.trim().is_empty() {
+            processed.push(ReviewedFile {
+                path: display,
+                outcome: "skipped: rename no longer present in isolated worktree".to_string(),
+            });
+            continue;
+        }
+        git_apply_stdin(project_path, &["apply", "--index", "--check", "-"], &patch)?;
+        git_apply_stdin(project_path, &["apply", "--index", "-"], &patch)?;
+        processed.push(ReviewedFile {
+            path: display,
+            outcome: "renamed and staged".to_string(),
+        });
     }
 
     for path in untracked_paths {
@@ -336,6 +376,23 @@ fn accept_isolated_changes(
     }
 
     Ok(processed)
+}
+
+/// Split a porcelain rename path (`old -> new`, each side optionally quoted) into
+/// its two repo-relative paths. Returns `None` when there is no rename arrow.
+fn split_rename(path: &str) -> Option<(String, String)> {
+    let (old, new) = path.split_once(" -> ")?;
+    Some((unquote_path(old), unquote_path(new)))
+}
+
+/// Strip the surrounding quotes git adds to paths with special characters.
+fn unquote_path(value: &str) -> String {
+    let trimmed = value.trim();
+    trimmed
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(trimmed)
+        .to_string()
 }
 
 fn safe_unique_paths(paths: &[String]) -> Vec<String> {
@@ -426,6 +483,21 @@ fn git_diff_head(worktree_path: &Path, paths: &[String]) -> RepoDeskResult<Strin
         "diff".to_string(),
         "--binary".to_string(),
         "--no-color".to_string(),
+        "HEAD".to_string(),
+        "--".to_string(),
+    ];
+    args.extend(paths.iter().cloned());
+    git_capture_owned(worktree_path, &args)
+}
+
+/// Like [`git_diff_head`] but with rename detection (`-M`) on, so a moved file
+/// produces a `rename from/to` patch `git apply --index` replays as a real move.
+fn git_diff_head_renames(worktree_path: &Path, paths: &[String]) -> RepoDeskResult<String> {
+    let mut args = vec![
+        "diff".to_string(),
+        "--binary".to_string(),
+        "--no-color".to_string(),
+        "--find-renames".to_string(),
         "HEAD".to_string(),
         "--".to_string(),
     ];
@@ -745,6 +817,69 @@ mod tests {
         assert!(staged.lines().any(|line| line == "seed.txt"));
         assert!(staged.lines().any(|line| line == "new.txt"));
         assert!(!staged.lines().any(|line| line == "keep.txt"));
+
+        let _ = git_ok(
+            repo.path(),
+            &["worktree", "remove", "--force", &worktree.path],
+        );
+    }
+
+    #[test]
+    fn split_rename_parses_porcelain_arrow() {
+        assert_eq!(
+            split_rename("old.rs -> new.rs"),
+            Some(("old.rs".to_string(), "new.rs".to_string()))
+        );
+        assert_eq!(
+            split_rename("\"old name.rs\" -> \"new name.rs\""),
+            Some(("old name.rs".to_string(), "new name.rs".to_string()))
+        );
+        assert_eq!(split_rename("plain.rs"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn isolated_accept_applies_a_rename() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+        let worktree = create_worktree(repo.path(), parent.path(), "agent-rename");
+        let worktree_path = Path::new(&worktree.path);
+
+        // Stage a rename in the isolated worktree (git mv stages it; status → R).
+        assert!(git_ok(worktree_path, &["mv", "seed.txt", "renamed.txt"]));
+
+        // The diff delta records a rename as a single "old -> new" path.
+        let result = isolated_result(&["seed.txt -> renamed.txt"], &worktree);
+        let processed =
+            review_isolated_result(repo.path(), &result, &worktree, ReviewAction::Accept).unwrap();
+
+        assert!(
+            processed
+                .iter()
+                .any(|f| f.path == "seed.txt -> renamed.txt" && f.outcome == "renamed and staged"),
+            "expected rename to be applied, got {processed:?}"
+        );
+        // The active checkout reflects the move.
+        assert!(!repo.path().join("seed.txt").exists());
+        assert_eq!(
+            std::fs::read_to_string(repo.path().join("renamed.txt")).unwrap(),
+            "seed\n"
+        );
+        // Both ends of the rename are staged.
+        let staged = git_capture_owned(
+            repo.path(),
+            &[
+                "diff".to_string(),
+                "--cached".to_string(),
+                "--name-status".to_string(),
+            ],
+        )
+        .unwrap();
+        assert!(staged.contains("seed.txt"));
+        assert!(staged.contains("renamed.txt"));
 
         let _ = git_ok(
             repo.path(),

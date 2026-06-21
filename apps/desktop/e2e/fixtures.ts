@@ -347,6 +347,28 @@ export const onboardedFixtures: CommandFixtures = {
       ],
     },
   },
+  playbooks_list: [
+    {
+      id: "db-migrations",
+      title: "Generate DB Migrations",
+      summary: "Start the guarded Work flow, then run the agent with review and verification.",
+      target: "work",
+      destination: "Work / Execute",
+      action: "Sets you in the six-phase task flow.",
+      artifact: "After the run: Review shows changed files, diff, proof, and memory proposals.",
+      starts_agent: false,
+    },
+    {
+      id: "security-hotspot",
+      title: "Security Hotspot Review",
+      summary: "Inspect changed files, run RepoPilot, and review blocking findings inline.",
+      target: "changes",
+      destination: "Changes",
+      action: "Opens the current git diff and RepoPilot review surface.",
+      artifact: "You inspect file diffs, findings, and staged/unstaged status.",
+      starts_agent: false,
+    },
+  ],
 };
 
 /** A brand-new REPODESK_HOME — no project, no task. Forces onboarding. */
