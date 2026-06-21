@@ -53,6 +53,45 @@ export const onboardedFixtures: CommandFixtures = {
       { phase: "finish", status: "locked", title: "Finish", summary: "Stage, commit, and close the task" },
     ],
   },
+  // What the agent run would do, shown on the Execute card before launch.
+  work_execution_preview: {
+    goal: "Wire N2 E2E smoke",
+    steps: [
+      {
+        step_id: "analyze",
+        title: "Analyze",
+        executor_label: "Ollama",
+        executor_kind: "local_runtime",
+        model: "llama3",
+        allow_write: false,
+        isolated_workspace: false,
+        paid: false,
+        estimated_input_tokens: 4000,
+        estimated_output_tokens: 1500,
+        estimated_cost_units: 0,
+      },
+      {
+        step_id: "implement",
+        title: "Implement",
+        executor_label: "Codex CLI",
+        executor_kind: "coding_agent",
+        model: "codex",
+        allow_write: true,
+        isolated_workspace: true,
+        paid: false,
+        estimated_input_tokens: 4000,
+        estimated_output_tokens: 1500,
+        estimated_cost_units: 0,
+      },
+    ],
+    total_estimated_tokens: 11000,
+    total_estimated_cost_units: 0,
+    currency_label: "cost_units",
+    expected_writes: true,
+    isolated_workspace: true,
+    requires_coding_agent_approval: true,
+    requires_paid_approval: false,
+  },
   // Accept records an Accepted receipt and advances to Verify (the mock ignores
   // the action arg; reject would re-open Execute in the real backend).
   work_review: {

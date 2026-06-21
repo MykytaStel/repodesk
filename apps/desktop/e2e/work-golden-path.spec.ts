@@ -52,14 +52,26 @@ test.describe("work tab golden path (onboarded)", () => {
     expect(commands).toContain("work_set_execution_mode");
   });
 
-  test("Execute phase runs the agent inline with the approval gates", async ({ page }) => {
+  test("Execute previews the run and gates launch on required approvals", async ({ page }) => {
+    // The pre-launch preview spells out executor/model/workspace/writes/cost.
+    await expect(page.getByText("Before you launch")).toBeVisible();
+    await expect(page.locator(".exec-preview-grid").getByText("Codex CLI")).toBeVisible();
+    await expect(page.locator(".exec-preview-grid").getByText("Isolated worktree")).toBeVisible();
+
     // Agent-run mode surfaces the ExecutionAuthorization gates on the card.
     await expect(page.getByText(/Approve coding-agent CLIs/)).toBeVisible();
     await expect(page.getByText(/Approve paid providers/)).toBeVisible();
 
-    // The primary CTA launches the orchestrator run inline (no advanced panel).
-    await page.locator(".work-cta-row .primary-cta").click();
+    // The run needs the coding-agent approval, so the CTA is blocked until granted.
+    const cta = page.locator(".work-cta-row .primary-cta");
+    await expect(cta).toBeDisabled();
+    await page.getByRole("checkbox", { name: /Approve coding-agent CLIs/ }).check();
+    await expect(cta).toBeEnabled();
+
+    // Now the primary CTA launches the orchestrator run inline.
+    await cta.click();
     const commands = await recordedCommands(page);
+    expect(commands).toContain("work_execution_preview");
     expect(commands).toContain("orchestrate_run");
   });
 

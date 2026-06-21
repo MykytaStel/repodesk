@@ -8,7 +8,7 @@ import { codeChangedFiles } from "../../shared/utils/helpers";
 import { TaskSwitcher } from "../workflow/TaskSwitcher";
 import { PromptsPanel } from "../workflow/PromptsPanel";
 import { ReviewPanel } from "./ReviewPanel";
-import type { PhaseProgress, PhaseStatus } from "../../shared/api/orchestrate";
+import type { PhaseProgress, PhaseStatus, ExecutionPreview } from "../../shared/api/orchestrate";
 import type { TabId } from "../../shared/types/api";
 
 // The advanced orchestrator surface (plan/run/diff/history) is reused verbatim
@@ -46,6 +46,13 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const latestRun = useQuery({
     queryKey: ["work", "latest-run"],
     queryFn: () => api.orchestrateStatus(),
+  });
+  // What the agent run would do, shown before launch. Only fetched while the
+  // Execute phase is the agent-run target.
+  const executePreview = useQuery({
+    queryKey: ["work", "exec-preview"],
+    queryFn: () => api.workExecutionPreview(),
+    enabled: phase.data?.current === "execute" && phase.data?.execution_mode === "agent_run",
   });
 
   const setPhase = (next: PhaseProgress) => queryClient.setQueryData(PHASE_KEY, next);
@@ -132,6 +139,15 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     review.isPending ||
     verify.isPending ||
     commit.isPending;
+
+  // An agent run can't launch until the approvals the preview says it needs are
+  // granted (the backend enforces this too; the gate just makes it legible).
+  const preview = executePreview.data ?? null;
+  const executeApprovalsMet =
+    (!preview?.requires_coding_agent_approval || approveCodingAgents) &&
+    (!preview?.requires_paid_approval || approvePaid);
+  const executeBlocked =
+    progress.current === "execute" && isAgentRun && !executeApprovalsMet;
 
   const latest = latestRun.data ?? null;
   const changedCount = latest
@@ -243,21 +259,42 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
             </div>
             {isAgentRun ? (
               <div className="phase-controls" role="group" aria-label="Run approvals">
-                <label className="approval-check">
+                <ExecutionPreviewPanel
+                  preview={executePreview.data ?? null}
+                  loading={executePreview.isLoading}
+                  error={(executePreview.error as Error | null)?.message ?? null}
+                />
+                <label
+                  className={`approval-check${
+                    executePreview.data?.requires_coding_agent_approval && !approveCodingAgents
+                      ? " required"
+                      : ""
+                  }`}
+                >
                   <input
                     type="checkbox"
                     checked={approveCodingAgents}
                     onChange={(e) => setApproveCodingAgents(e.target.checked)}
                   />
                   Approve coding-agent CLIs (launch + workspace writes)
+                  {executePreview.data?.requires_coding_agent_approval && (
+                    <span className="approval-required">required</span>
+                  )}
                 </label>
-                <label className="approval-check">
+                <label
+                  className={`approval-check${
+                    executePreview.data?.requires_paid_approval && !approvePaid ? " required" : ""
+                  }`}
+                >
                   <input
                     type="checkbox"
                     checked={approvePaid}
                     onChange={(e) => setApprovePaid(e.target.checked)}
                   />
                   Approve paid providers (may spend)
+                  {executePreview.data?.requires_paid_approval && (
+                    <span className="approval-required">required</span>
+                  )}
                 </label>
               </div>
             ) : (
@@ -339,9 +376,16 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
 
         {/* The one primary CTA. */}
         <div className="work-cta-row">
-          <button className="primary-cta" onClick={handlePrimary} disabled={progress.complete || busy}>
+          <button
+            className="primary-cta"
+            onClick={handlePrimary}
+            disabled={progress.complete || busy || executeBlocked}
+          >
             {busy ? "Working…" : progress.cta.label}
           </button>
+          {executeBlocked && (
+            <span className="muted">Grant the required approvals above to launch.</span>
+          )}
         </div>
 
         {mutationError && <p className="work-error">{mutationError}</p>}
@@ -384,6 +428,76 @@ function CommitFiles({ files, onView }: { files: string[]; onView: () => void })
         ))}
         {files.length > 12 && <li className="muted">…and {files.length - 12} more</li>}
       </ul>
+    </div>
+  );
+}
+
+function ExecutionPreviewPanel({
+  preview,
+  loading,
+  error,
+}: {
+  preview: ExecutionPreview | null;
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) return <p className="muted">Estimating the run…</p>;
+  if (error) return <p className="muted">Couldn't build a run preview: {error}</p>;
+  if (!preview || preview.steps.length === 0) return null;
+
+  // Headline on the write (implementation) step when there is one, else the last.
+  const lead =
+    preview.steps.find((s) => s.allow_write) ?? preview.steps[preview.steps.length - 1];
+
+  return (
+    <div className="exec-preview">
+      <p className="eyebrow">Before you launch</p>
+      <dl className="exec-preview-grid">
+        {lead && (
+          <>
+            <dt>Executor</dt>
+            <dd>{lead.executor_label}</dd>
+            <dt>Model</dt>
+            <dd>{lead.model}</dd>
+          </>
+        )}
+        <dt>Workspace</dt>
+        <dd>{preview.isolated_workspace ? "Isolated worktree" : "Active checkout"}</dd>
+        <dt>Expected writes</dt>
+        <dd>{preview.expected_writes ? "Yes" : "No"}</dd>
+        <dt>Estimated tokens</dt>
+        <dd>{preview.total_estimated_tokens.toLocaleString()}</dd>
+        <dt>Estimated cost</dt>
+        <dd>
+          {preview.total_estimated_cost_units.toFixed(2)} {preview.currency_label}
+        </dd>
+      </dl>
+
+      {preview.steps.length > 1 && (
+        <ul className="exec-preview-steps">
+          {preview.steps.map((s) => (
+            <li key={s.step_id}>
+              <code>{s.title}</code> — {s.executor_label} · {s.model}
+              {s.allow_write && <span className="pill warn">writes</span>}
+              {s.paid && <span className="pill">paid</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <div className="exec-preview-approvals">
+        <span className="eyebrow">Required approvals</span>
+        {!preview.requires_coding_agent_approval && !preview.requires_paid_approval ? (
+          <span className="muted"> none — local, no writes</span>
+        ) : (
+          <ul>
+            {preview.requires_coding_agent_approval && (
+              <li>Coding-agent process + workspace writes</li>
+            )}
+            {preview.requires_paid_approval && <li>Paid providers (may spend)</li>}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

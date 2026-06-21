@@ -12,6 +12,7 @@
 pub mod auto_loop;
 pub mod context;
 pub mod plan;
+pub mod preview;
 pub mod review;
 pub mod runner;
 pub mod types;
@@ -21,6 +22,7 @@ pub use plan::{
     available_capacities, build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step,
     plan_has_paid_step, route_steps, step_uses_paid_provider,
 };
+pub use preview::{ExecutionPreview, ExecutionPreviewStep, execution_preview, preview_plan};
 pub use review::{ReviewAction, ReviewedFile, RunReview, record_review, review_run};
 pub use runner::{
     AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, list_runs, load_latest_run, load_run,

@@ -6,8 +6,9 @@ use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::checks;
 use repodesk_core::executors::{self, ExecutorAvailability};
 use repodesk_core::orchestrator::{
-    self, AgentWorkspacePolicy, ExecutionAuthorization, LoopOptions, LoopRun, OrchestrationPlan,
-    OrchestrationRun, ReviewAction, RunOptions, RunReview, RunSummary, review_run,
+    self, AgentWorkspacePolicy, ExecutionAuthorization, ExecutionPreview, LoopOptions, LoopRun,
+    OrchestrationPlan, OrchestrationRun, ReviewAction, RunOptions, RunReview, RunSummary,
+    review_run,
 };
 use repodesk_core::persistence::event_journal::{self, EventEntry};
 use repodesk_core::projects::get_active_project;
@@ -104,6 +105,25 @@ pub async fn orchestrate_plan(
 ) -> Result<OrchestrationPlan, ErrorPayload> {
     let goal = clean_goal(goal)?;
     Ok(orchestrator::build_plan(
+        goal,
+        &orchestrator_settings(),
+        override_provider,
+        override_model,
+    )?)
+}
+
+/// Preview what an agent run would do — executor/model, isolated workspace,
+/// expected writes, token/cost estimate, and the exact approvals required —
+/// computed from the same routed plan `orchestrate_run` would launch, so the
+/// user can read it before authorizing spend or workspace writes.
+#[tauri::command]
+pub async fn work_execution_preview(
+    goal: Option<String>,
+    override_provider: Option<String>,
+    override_model: Option<String>,
+) -> Result<ExecutionPreview, ErrorPayload> {
+    let goal = clean_goal(goal)?;
+    Ok(orchestrator::execution_preview(
         goal,
         &orchestrator_settings(),
         override_provider,

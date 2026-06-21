@@ -353,6 +353,7 @@ pub fn run() {
             commands::memory_proposal_reject,
             commands::memory_reconcile_conflict,
             commands::orchestrate_plan,
+            commands::work_execution_preview,
             commands::orchestrate_run,
             commands::orchestrate_loop,
             commands::orchestrate_status,

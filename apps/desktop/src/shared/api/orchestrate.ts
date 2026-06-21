@@ -283,6 +283,46 @@ export async function orchestratePlan(
   });
 }
 
+export type ExecutionPreviewStep = {
+  step_id: string;
+  title: string;
+  executor_label: string;
+  executor_kind: string;
+  model: string;
+  allow_write: boolean;
+  isolated_workspace: boolean;
+  paid: boolean;
+  estimated_input_tokens: number;
+  estimated_output_tokens: number;
+  estimated_cost_units: number;
+};
+
+export type ExecutionPreview = {
+  goal: string;
+  steps: ExecutionPreviewStep[];
+  total_estimated_tokens: number;
+  total_estimated_cost_units: number;
+  currency_label: string;
+  expected_writes: boolean;
+  isolated_workspace: boolean;
+  requires_coding_agent_approval: boolean;
+  requires_paid_approval: boolean;
+};
+
+/** Preview what an agent run would do (executor/model/workspace/writes/tokens/
+ * cost/approvals) from the same routed plan the run would launch. */
+export async function workExecutionPreview(
+  goal?: string | null,
+  overrideProvider?: string | null,
+  overrideModel?: string | null
+): Promise<ExecutionPreview> {
+  return invoke("work_execution_preview", {
+    goal: goal ?? null,
+    overrideProvider: overrideProvider ?? null,
+    overrideModel: overrideModel ?? null,
+  });
+}
+
 export async function orchestrateRun(
   goal: string | undefined,
   dryRun: boolean,
