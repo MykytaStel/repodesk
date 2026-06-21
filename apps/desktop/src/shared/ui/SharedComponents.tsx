@@ -95,7 +95,7 @@ export function ActorBadge({ mode, className = "" }: { mode: "auto" | "manual"; 
   return (
     <span
       className={`pill actor-badge ${isAuto ? "ok" : "neutral"} ${className}`.trim()}
-      title={isAuto ? "RepoDesk runs this step for you" : "This step needs your input"}
+      aria-label={isAuto ? "RepoDesk runs this step for you" : "This step needs your input"}
     >
       {isAuto ? "RepoDesk does this" : "You do this"}
     </span>

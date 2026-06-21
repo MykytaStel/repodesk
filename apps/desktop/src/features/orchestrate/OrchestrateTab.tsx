@@ -750,7 +750,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
 
   if (!orchestrate.ready) {
     return (
-      <div className="content-grid">
+      <div className="content-grid orchestrate-tab">
         <section className="hero-panel wide-panel">
           <p className="eyebrow">Orchestrator</p>
           <h1>No active project + task</h1>
@@ -764,17 +764,16 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   }
 
   return (
-    <div className="content-grid">
+    <div className="content-grid orchestrate-tab">
       <section className="hero-panel wide-panel">
         <p className="eyebrow">Orchestrator</p>
         <h1>
-          Conduct sub-agents for{" "}
+          Run sub-agents for{" "}
           <em style={{ fontStyle: "normal", color: "var(--accent)" }}>{orchestrate.projectName}</em>
         </h1>
         <p className="lead">
-          Each sub-agent gets its own bounded, Memory-Brain-injected context and a per-task model
-          (cheap/local where it can, premium where it must). Outputs flow downstream and become
-          human-reviewable memory proposals. Preview the plan and cost before running.
+          Preview the plan, cost, approvals, and target model before RepoDesk starts local or paid
+          agents for this task.
         </p>
 
         <div className="orchestrate-control-panel">

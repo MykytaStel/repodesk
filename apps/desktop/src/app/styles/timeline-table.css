@@ -46,15 +46,15 @@
 .debug-list,
 .form-stack {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .table-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: center;
-  padding: 12px;
+  padding: var(--space-3);
 }
 .table-row strong,
 .table-row span {
@@ -79,7 +79,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-3);
   color: var(--muted);
   font-size: 13px;
 }

@@ -1,12 +1,12 @@
 .route-panel {
   display: grid;
-  gap: 14px;
+  gap: var(--space-3);
 }
 
 .route-summary-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: var(--space-2);
 }
 
 .route-summary-grid div,
@@ -19,7 +19,8 @@
 }
 
 .route-summary-grid div {
-  padding: 10px 11px;
+  min-height: 64px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .route-summary-grid span,
@@ -36,7 +37,7 @@
   color: var(--muted);
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: .07em;
+  letter-spacing: .06em;
 }
 
 .route-summary-grid strong {
@@ -48,12 +49,13 @@
 
 .route-detail-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-2);
 }
 
 .route-list {
-  padding: 11px 12px;
+  min-height: 104px;
+  padding: var(--space-3);
 }
 
 .route-list strong {
@@ -75,11 +77,12 @@
 .route-candidate-strip {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  gap: var(--space-2);
 }
 
 .route-candidate {
-  padding: 10px;
+  min-height: 64px;
+  padding: var(--space-3);
 }
 
 .route-candidate span {
@@ -101,7 +104,7 @@
 
 .model-row,
 .snippet-card {
-  padding: 11px 12px;
+  padding: var(--space-3);
 }
 .model-row strong,
 .model-row span,
@@ -154,7 +157,7 @@
   border-radius: 8px;
 }
 .findings-list .finding strong { flex: 1; min-width: 0; font-size: 13px; }
-.findings-list .finding small { color: var(--muted); font-family: "SFMono-Regular", Consolas, monospace; font-size: 11px; }
+.findings-list .finding small { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
 
 /* --- Code tab: inline RepoPilot findings + health trend (N6-A) --- */
 .file-row {
@@ -163,16 +166,26 @@
   justify-content: space-between;
   gap: 10px;
   width: 100%;
+  min-height: 38px;
   padding: 6px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
-  background: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: inherit;
   cursor: pointer;
   text-align: left;
+  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease;
 }
-.file-row:hover { background: rgba(255, 255, 255, 0.04); }
-.file-row.active { border-color: var(--border); background: rgba(255, 255, 255, 0.06); }
+.file-row:hover {
+  border-color: var(--border);
+  background: var(--neutral-soft);
+  box-shadow: none;
+  transform: none;
+}
+.file-row.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
 .file-row code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-badges { display: flex; gap: 6px; flex-shrink: 0; }
 
@@ -206,6 +219,25 @@
 .task-row-main strong { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-row-main small {
   color: var(--muted);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
+}
+
+.file-group-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.provider-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 238px;
+}
+
+.provider-panel .model-list {
+  margin-top: var(--space-3);
+}
+
+.provider-panel .notice {
+  margin-top: var(--space-2);
 }

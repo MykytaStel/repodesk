@@ -46,11 +46,11 @@ export function GitTab() {
             <button className="primary-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh workspace</button>
           </div>
         </section>
-        <section className="panel">
+        <div className="file-group-stack">
           <FileGroup title="Staged" files={staged} onSelect={(f) => void showDiff(f)} activeFile={selectedFile} />
           <FileGroup title="Unstaged" files={listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"])} onSelect={(f) => void showDiff(f)} activeFile={selectedFile} />
           <FileGroup title="Untracked" files={listFromRecord(git, ["untracked", "untracked_files"])} />
-        </section>
+        </div>
       </div>
       <div className="right-column">
         <section className="panel fill-height">

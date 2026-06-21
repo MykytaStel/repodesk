@@ -6,7 +6,7 @@ code {
   color: var(--accent-2);
   background: var(--code-bg);
   border: 1px solid var(--border);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
@@ -22,7 +22,7 @@ pre,
   border: 1px solid var(--border);
   background: var(--code-bg);
   color: var(--text);
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -50,6 +50,17 @@ select {
   color: var(--text);
   padding: 9px 10px;
   outline: none;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  accent-color: var(--accent);
 }
 
 textarea { resize: vertical; }
@@ -114,7 +125,7 @@ select:focus { border-color: var(--accent-border); }
 .changed-files code { margin-right: 6px; }
 
 /* Branch heading: keep long branch names from blowing up the hero. */
-.branch-heading { word-break: break-word; font-size: clamp(22px, 3vw, 34px); }
+.branch-heading { word-break: break-word; font-size: 28px; }
 
 /* Clickable changed-file buttons + colorized diff view (Git tab). */
 .diff-file-btn {

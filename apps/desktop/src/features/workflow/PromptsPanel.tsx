@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { usePrompts } from "./usePrompts";
 import { useTokens } from "../tokens/useTokens";
 import { formatNumber, formatCost, ActorBadge } from "../../shared/ui/SharedComponents";
+import { CloseIcon, ExternalLinkIcon } from "../../app/NavIcons";
 
 function formatPrompt(content: string) {
   if (!content) return null;
@@ -60,7 +61,8 @@ export function PromptsPanel() {
             <>
               {artifactKind === "prompt_chatgpt" && (
                 <a href="https://chatgpt.com/" target="_blank" rel="noreferrer" className="ghost-button" title="Open ChatGPT in browser">
-                  Open ChatGPT ↗
+                  Open ChatGPT
+                  <ExternalLinkIcon />
                 </a>
               )}
               <button className="primary-button" onClick={() => void copyPrompt()}>
@@ -68,8 +70,13 @@ export function PromptsPanel() {
               </button>
             </>
           )}
-          <button className="ghost-button" onClick={() => setIsDismissed(true)} title="Dismiss panel">
-            ✖
+          <button
+            className="ghost-button icon-button"
+            onClick={() => setIsDismissed(true)}
+            title="Dismiss panel"
+            aria-label="Dismiss panel"
+          >
+            <CloseIcon />
           </button>
         </div>
       </div>

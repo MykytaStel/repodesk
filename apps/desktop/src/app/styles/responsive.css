@@ -44,7 +44,7 @@
     grid-template-columns: 1fr;
   }
   .span-2 { grid-column: span 1; }
-  h1 { font-size: 32px; }
+  h1 { font-size: 24px; }
   .table-row,
   .debug-event summary {
     grid-template-columns: 1fr;

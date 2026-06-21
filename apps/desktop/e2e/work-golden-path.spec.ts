@@ -15,9 +15,11 @@ test.describe("work tab golden path (onboarded)", () => {
   });
 
   test("Work is the default home and renders the six-phase rail", async ({ page }) => {
-    // Work is the primary spine's first tab and the default landing.
-    const nav = page.locator(".nav-list");
-    await expect(nav.getByRole("button", { name: /^Work/ })).toHaveClass(/active/);
+    // Work is the primary spine's first tab and the default landing. Scope to
+    // `.nav-item` so the "Work" tab isn't confused with the "Work" group toggle.
+    await expect(
+      page.locator(".nav-item").filter({ has: page.getByText("Work", { exact: true }) }),
+    ).toHaveClass(/active/);
 
     // The phase rail shows all six phases in order.
     const rail = page.locator(".phase-rail");

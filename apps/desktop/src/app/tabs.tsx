@@ -34,15 +34,16 @@ export interface AppTab {
 }
 
 // Primary tabs are the daily spine (kept short so the app leads the user);
-// `more` tabs are diagnostics/depth, tucked into a collapsible section.
-// Ordered primary-first so ⌘1..9 jump to the everyday surfaces.
+// `more` tabs are diagnostics/depth, tucked into collapsible group sections.
+// Ordered primary-first so ⌘1..9 jump to the everyday surfaces. Each tab's icon
+// is rendered by `TabIcon` (NavIcons.tsx), keyed by id.
 export const APP_TABS: AppTab[] = [
   // Primary spine — the four surfaces that carry the daily flow.
   { id: "work", title: "Work", subtitle: "Home · Scope → Finish", group: "Work", tier: "primary" },
   { id: "changes", title: "Changes", subtitle: "Diffs, files & review", group: "Work", tier: "primary" },
   { id: "history", title: "History", subtitle: "Runs, memory & audit", group: "AI", tier: "primary" },
   { id: "settings", title: "Settings", subtitle: "Providers & keys", group: "System", tier: "primary" },
-  // Advanced — depth & diagnostics, collapsed by default. The merged surfaces
+  // Advanced — depth & diagnostics, grouped and collapsible. The merged surfaces
   // (Git/Code → Changes, Outcomes/Memory/Audit → History) still live here as
   // direct links for power users and ⌘K, but are not part of the primary spine.
   { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },

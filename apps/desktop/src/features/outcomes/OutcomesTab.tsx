@@ -1,6 +1,7 @@
 import { useOutcomes } from "./useOutcomes";
 import type { OutcomeRecord, ProviderStat, Verdict } from "../../shared/api/orchestrate";
 import { EmptyState, formatCost, formatNumber } from "../../shared/ui/SharedComponents";
+import { CheckIcon } from "../../app/NavIcons";
 
 const VERDICT_TONE: Record<Verdict, "ok" | "danger" | "neutral"> = {
   good: "ok",
@@ -75,7 +76,11 @@ function OutcomeRow({
         </strong>
         <span className={`pill ${VERDICT_TONE[row.verdict]}`}>
           {row.verdict}
-          {row.confirmed ? " ✓" : ""}
+          {row.confirmed && (
+            <span className="pill-inline-icon" aria-label="confirmed">
+              <CheckIcon />
+            </span>
+          )}
         </span>
       </div>
       <div className="row-meta">

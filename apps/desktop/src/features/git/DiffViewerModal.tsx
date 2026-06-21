@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { callCommand } from "../../shared/api/queries";
 import { DiffView } from "../../shared/ui/SharedComponents";
+import { CloseIcon } from "../../app/NavIcons";
 
 interface DiffViewerModalProps {
   filePath: string;
@@ -52,7 +53,10 @@ export function DiffViewerModal({ filePath, cached = false, onClose }: DiffViewe
             <p className="eyebrow">Git Diff</p>
             <h2>{filePath}</h2>
           </div>
-          <button className="ghost-button" onClick={onClose}>✖ Close</button>
+          <button className="ghost-button" onClick={onClose}>
+            <CloseIcon />
+            Close
+          </button>
         </div>
         <div className="scroll-area" style={{ flex: 1, padding: "1rem", overflow: "auto" }}>
           {loading ? (

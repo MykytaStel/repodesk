@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { projectUse, projectAdd } from "../shared/api/workflow";
 import { pickDirectory, basename } from "../shared/api/dialog";
 import { useToast } from "../shared/ui/Toast";
+import { CheckIcon, ChevronIcon, FolderIcon, PlusIcon } from "./NavIcons";
 
 type ProjectConfig = { name: string; path?: string; project_type?: string };
 
@@ -75,7 +76,9 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
     <div className="project-switcher" ref={ref}>
       <button className="project-switcher-trigger" onClick={() => setOpen((o) => !o)}>
         <h2>{projectName}</h2>
-        <span className="project-switcher-caret">▾</span>
+        <span className="project-switcher-caret" aria-hidden="true">
+          <ChevronIcon open />
+        </span>
       </button>
       {open && (
         <div className="project-switcher-menu">
@@ -88,18 +91,24 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
               onClick={() => switchProject.mutate(p.name)}
               title={p.path}
             >
-              <span className="project-switcher-check">{p.name === projectName ? "✓" : ""}</span>
+              <span className="project-switcher-check" aria-hidden="true">
+                {p.name === projectName ? <CheckIcon /> : null}
+              </span>
               <span className="project-switcher-name">{p.name}</span>
               {p.project_type && <span className="project-switcher-type">{p.project_type}</span>}
             </button>
           ))}
           <div className="project-switcher-sep" />
           <button className="project-switcher-item" disabled={openFromFolder.isPending} onClick={() => openFromFolder.mutate()}>
-            <span className="project-switcher-check">📁</span>
+            <span className="project-switcher-check" aria-hidden="true">
+              <FolderIcon />
+            </span>
             <span className="project-switcher-name">{openFromFolder.isPending ? "Opening…" : "Open from folder…"}</span>
           </button>
           <button className="project-switcher-item" onClick={() => { setOpen(false); onConnectProject(); }}>
-            <span className="project-switcher-check">+</span>
+            <span className="project-switcher-check" aria-hidden="true">
+              <PlusIcon />
+            </span>
             <span className="project-switcher-name">Connect with details…</span>
           </button>
         </div>

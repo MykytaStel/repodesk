@@ -1,6 +1,19 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { installMockIpc, recordedCommands } from "./mock-ipc";
 import { onboardedFixtures } from "./fixtures";
+
+// Tab entries are `.nav-item`; deep tabs live under collapsible group toggles
+// (Work / AI / System). Helpers scope to those so a group name (e.g. "Work")
+// never collides with a same-named tab.
+function tabButton(page: Page, name: string) {
+  // Match the nav-item whose title (the `strong`) is exactly `name`, so a name
+  // like "Memory" never matches another tab's subtitle ("Runs, memory & audit")
+  // and the leading icon doesn't defeat a start anchor.
+  return page.locator(".nav-item").filter({ has: page.getByText(name, { exact: true }) });
+}
+async function openGroup(page: Page, group: string) {
+  await page.locator(".nav-group-toggle").filter({ hasText: group }).click();
+}
 
 // Drives the daily loop on a fully onboarded workspace. Work is the default home
 // and carries the six-phase task flow end to end.
@@ -19,34 +32,62 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("Work is the home surface with the phase rail", async ({ page }) => {
-    const nav = page.locator(".nav-list");
-    await expect(nav.getByRole("button", { name: /^Work/ })).toHaveClass(/active/);
+    await expect(tabButton(page, "Work")).toHaveClass(/active/);
     await expect(page.locator(".phase-rail .phase-chip")).toHaveCount(6);
   });
 
   test("navigates every tab without crashing", async ({ page }) => {
-    const nav = page.locator(".nav-list");
     const primaryTabs = ["Work", "Changes", "History", "Settings"];
-    const moreTabs = ["Dashboard", "Git", "Code", "Orchestrate", "Memory", "Models", "Tokens", "System Registry", "Debug"];
+    const moreTabs = [
+      "Dashboard",
+      "Git",
+      "Code",
+      "Orchestrate",
+      "Memory",
+      "Models",
+      "Tokens",
+      "Outcomes",
+      "Playbooks",
+      "Audit",
+      "System Registry",
+      "Debug",
+    ];
     for (const tab of primaryTabs) {
-      await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
+      await tabButton(page, tab).click();
       await expect(page.locator(".app-shell")).toBeVisible();
       await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
     }
-    await nav.getByRole("button", { name: /^Advanced/ }).click();
+    // Expand all three Advanced groups, then visit each deep tab.
+    for (const group of ["Work", "AI", "System"]) await openGroup(page, group);
     for (const tab of moreTabs) {
-      await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
+      await tabButton(page, tab).click();
       await expect(page.locator(".app-shell")).toBeVisible();
       await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
     }
   });
 
+  test("burger collapses the sidebar to an icon rail", async ({ page }) => {
+    const sidebar = page.locator(".sidebar");
+    await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
+    // Labels are visible while expanded.
+    await expect(tabButton(page, "Work").locator(".nav-text")).toBeVisible();
+
+    await page.getByRole("button", { name: /Collapse sidebar/ }).click();
+    await expect(sidebar).toHaveClass(/sidebar--collapsed/);
+    // Collapsed: the icon stays, the label is hidden (icons-only rail).
+    await expect(page.locator(".nav-item").first().locator(".nav-icon")).toBeVisible();
+    await expect(page.locator(".nav-item").first().locator(".nav-text")).toBeHidden();
+
+    // Expanding restores the labels.
+    await page.getByRole("button", { name: /Expand sidebar/ }).click();
+    await expect(sidebar).not.toHaveClass(/sidebar--collapsed/);
+  });
+
   test("Models tab guides setup with human status and fixes", async ({ page }) => {
-    const nav = page.locator(".nav-list");
-    await nav.getByRole("button", { name: /^Advanced/ }).click();
-    await nav.getByRole("button", { name: /^Models/ }).click();
+    await openGroup(page, "AI");
+    await tabButton(page, "Models").click();
     await expect(page.getByRole("heading", { name: /Ready for AI/ })).toBeVisible();
     await expect(page.getByText(/need.* attention/i)).toBeVisible();
     await expect(page.getByText("Ready", { exact: true }).first()).toBeVisible();
@@ -84,10 +125,9 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("orchestrate shows reviewable agent changes with proof", async ({ page }) => {
-    const nav = page.locator(".nav-list");
-    await nav.getByRole("button", { name: /^Advanced/ }).click();
-    await nav.getByRole("button", { name: /^Orchestrate/ }).click();
-    await expect(page.getByRole("heading", { name: /Conduct sub-agents/ })).toBeVisible();
+    await openGroup(page, "AI");
+    await tabButton(page, "Orchestrate").click();
+    await expect(page.getByRole("heading", { name: /Run sub-agents/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /agent-changed file/ })).toBeVisible();
     await expect(page.getByText("Checks passed")).toBeVisible();
     await expect(page.getByText("verify passed").first()).toBeVisible();

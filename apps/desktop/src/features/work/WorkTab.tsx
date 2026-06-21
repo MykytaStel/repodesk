@@ -10,6 +10,7 @@ import { PromptsPanel } from "../workflow/PromptsPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import type { PhaseProgress, PhaseStatus, ExecutionPreview } from "../../shared/api/orchestrate";
 import type { TabId } from "../../shared/types/api";
+import { ChevronIcon } from "../../app/NavIcons";
 
 // The advanced orchestrator surface (plan/run/diff/history) is reused verbatim
 // inside a collapsible panel — the Work tab leads with the single phase flow and
@@ -18,14 +19,39 @@ const OrchestrateTab = lazy(() =>
   import("../orchestrate/OrchestrateTab").then((m) => ({ default: m.OrchestrateTab })),
 );
 
-const PHASE_GLYPH: Record<PhaseStatus, string> = {
-  done: "✓",
-  in_progress: "◐",
-  available: "→",
-  locked: "•",
-};
-
 const PHASE_KEY = ["work", "phase-state"] as const;
+
+function PhaseStatusIcon({ status }: { status: PhaseStatus }) {
+  switch (status) {
+    case "done":
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="m3.2 8.2 3 3 6.6-6.8" />
+        </svg>
+      );
+    case "in_progress":
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5" />
+          <path d="M2.5 8H5" />
+        </svg>
+      );
+    case "available":
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 8h9" />
+          <path d="m9 5 3 3-3 3" />
+        </svg>
+      );
+    case "locked":
+      return (
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="4" y="7" width="8" height="6" rx="1.4" />
+          <path d="M6 7V5.5a2 2 0 0 1 4 0V7" />
+        </svg>
+      );
+  }
+}
 
 export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }) {
   const queryClient = useQueryClient();
@@ -212,7 +238,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
               }`}
             >
               <span className="phase-glyph" aria-hidden="true">
-                {PHASE_GLYPH[view.status]}
+                <PhaseStatusIcon status={view.status} />
               </span>
               <span className="phase-title">{view.title}</span>
             </li>
@@ -398,7 +424,10 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           aria-expanded={showAdvanced}
           onClick={() => setShowAdvanced((open) => !open)}
         >
-          {showAdvanced ? "▾" : "▸"} Advanced orchestrator details
+          <span className="disclosure-icon" aria-hidden="true">
+            <ChevronIcon open={showAdvanced} />
+          </span>
+          Advanced orchestrator details
         </button>
         {showAdvanced && (
           <Suspense fallback={<p className="muted">Loading orchestrator…</p>}>
