@@ -19,11 +19,12 @@ pub mod types;
 pub use auto_loop::{LoopIteration, LoopOptions, LoopRun, LoopStatus, run_loop};
 pub use plan::{
     available_capacities, build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step,
-    plan_has_paid_step, route_steps,
+    plan_has_paid_step, route_steps, step_uses_paid_provider,
 };
 pub use review::{ReviewAction, ReviewedFile, RunReview, review_run};
 pub use runner::{
-    AgentWorkspacePolicy, RunOptions, list_runs, load_latest_run, load_run, run_plan,
+    AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, list_runs, load_latest_run, load_run,
+    run_plan,
 };
 pub use types::{
     OrchestrationPlan, OrchestrationRun, RunStatus, RunSummary, SubAgentResult, SubAgentStatus,

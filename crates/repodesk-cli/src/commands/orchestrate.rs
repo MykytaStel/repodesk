@@ -3,8 +3,8 @@ use anyhow::{Result, anyhow};
 use crate::cli::OrchestrateCommand;
 use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::orchestrator::{
-    self, AgentWorkspacePolicy, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun,
-    RunOptions, SubAgentTask, plan_has_paid_step,
+    self, AgentWorkspacePolicy, ExecutionAuthorization, LoopOptions, LoopRun, OrchestrationPlan,
+    OrchestrationRun, RunOptions, SubAgentTask, plan_has_paid_step,
 };
 use repodesk_core::worktree::{RunWorktreeCleanup, RunWorktreeStatus};
 
@@ -39,7 +39,11 @@ pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
                 dry_run,
                 max_cost,
                 settings,
-                approve_coding_agents: yes,
+                authorization: ExecutionAuthorization {
+                    allow_paid_providers: yes,
+                    allow_coding_agents: yes,
+                    allow_workspace_writes: yes,
+                },
                 coding_agent_timeout_secs: 600,
                 agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
             };

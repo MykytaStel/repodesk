@@ -24,7 +24,7 @@ use crate::api_clients::ProviderSettings;
 use crate::errors::RepoDeskResult;
 
 use super::plan::{build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step};
-use super::runner::{AgentWorkspacePolicy, RunOptions, run_plan};
+use super::runner::{AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, run_plan};
 use super::types::{RunStatus, SubAgentStatus};
 
 /// Default attempt cap when the caller does not specify one.
@@ -191,7 +191,13 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
                 dry_run: opts.dry_run,
                 max_cost: remaining,
                 settings: opts.settings.clone(),
-                approve_coding_agents: opts.approve_coding_agents,
+                authorization: ExecutionAuthorization {
+                    allow_paid_providers: opts.approve_paid,
+                    allow_coding_agents: opts.approve_coding_agents,
+                    // An approved coding-agent step in the loop writes only inside
+                    // its isolated worktree, so agent approval authorizes that.
+                    allow_workspace_writes: opts.approve_coding_agents,
+                },
                 coding_agent_timeout_secs: opts.coding_agent_timeout_secs,
                 agent_workspace_policy: opts.agent_workspace_policy,
             },

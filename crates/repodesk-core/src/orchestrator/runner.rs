@@ -39,8 +39,6 @@ use super::types::{
 
 static RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-use wait_timeout::ChildExt;
-
 /// Where coding-agent CLI processes are allowed to run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AgentWorkspacePolicy {
@@ -52,6 +50,26 @@ pub enum AgentWorkspacePolicy {
     InPlaceReadOnly,
 }
 
+/// The independent human-in-the-loop gates a run honors. Every field defaults
+/// to denied: each capability — spending on a paid completion API, launching a
+/// coding-agent CLI, and letting that agent modify files — requires its own
+/// explicit grant, and one never implies another. The runner checks these in
+/// [`run_plan`] *before* any HTTP request or process launch.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExecutionAuthorization {
+    /// Allow steps that route to a paid completion provider to actually call it
+    /// (and spend). Local runtimes are free and run regardless.
+    pub allow_paid_providers: bool,
+    /// Allow approved coding-agent CLIs (`codex_cli`, `claude_code_cli`) to
+    /// launch. Paid-provider approval alone is not enough.
+    pub allow_coding_agents: bool,
+    /// Allow a launched coding-agent step to modify the workspace (write-capable
+    /// steps). Without this, a write-capable coding-agent step is blocked before
+    /// launch even when [`Self::allow_coding_agents`] is granted — read-only
+    /// agent steps are unaffected.
+    pub allow_workspace_writes: bool,
+}
+
 /// Options that govern a run.
 #[derive(Debug, Clone)]
 pub struct RunOptions {
@@ -61,9 +79,9 @@ pub struct RunOptions {
     pub max_cost: Option<f64>,
     /// Provider credentials/endpoints.
     pub settings: ProviderSettings,
-    /// Explicit human approval to launch coding-agent CLIs (`codex_cli`,
-    /// `claude_code_cli`). Paid-provider approval alone is not enough.
-    pub approve_coding_agents: bool,
+    /// Human-in-the-loop approvals for spend / CLI launch (see
+    /// [`ExecutionAuthorization`]). Both gates default to denied.
+    pub authorization: ExecutionAuthorization,
     /// Timeout for one coding-agent process.
     pub coding_agent_timeout_secs: u64,
     /// Workspace policy for coding-agent CLIs. Defaults to requiring a fresh
@@ -77,7 +95,7 @@ impl Default for RunOptions {
             dry_run: false,
             max_cost: None,
             settings: ProviderSettings::default(),
-            approve_coding_agents: false,
+            authorization: ExecutionAuthorization::default(),
             coding_agent_timeout_secs: 600,
             agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
         }
@@ -229,7 +247,7 @@ pub async fn run_plan(
                 let notes = match &handoff {
                     Ok(handoff) => {
                         let mut notes = handoff.notes.clone();
-                        if !opts.dry_run && !opts.approve_coding_agents {
+                        if !opts.dry_run && !opts.authorization.allow_coding_agents {
                             notes.push(
                                 "coding-agent execution requires explicit approval (--yes in CLI)"
                                     .to_string(),
@@ -239,7 +257,7 @@ pub async fn run_plan(
                     }
                     Err(error) => vec![format!("coding-agent handoff unavailable: {error}")],
                 };
-                if opts.dry_run || !opts.approve_coding_agents {
+                if opts.dry_run || !opts.authorization.allow_coding_agents {
                     state.push(SubAgentResult {
                         status: if opts.dry_run {
                             SubAgentStatus::Ok
@@ -251,6 +269,20 @@ pub async fn run_plan(
                         notes,
                         ..base_result(step)
                     });
+                    continue;
+                }
+
+                // Workspace-write gate — a write-capable coding-agent step must
+                // be separately authorized to modify files, even inside its
+                // isolated worktree. Checked before any process launch; read-only
+                // agent steps are unaffected.
+                if step.allow_write && !opts.authorization.allow_workspace_writes {
+                    state.push(blocked(
+                        step,
+                        "blocked: workspace writes are not authorized for this run; \
+                         this coding-agent step needs write access"
+                            .to_string(),
+                    ));
                     continue;
                 }
 
@@ -326,75 +358,29 @@ pub async fn run_plan(
                                 && let Some(cmd) = &verify_cmd_opt
                             {
                                 v_notes.push(format!("verify command: {}", cmd));
-                                let child = std::process::Command::new("sh")
-                                    .arg("-c")
-                                    .arg(cmd)
-                                    .current_dir(&cwd)
-                                    .stdout(std::process::Stdio::piped())
-                                    .stderr(std::process::Stdio::piped())
-                                    .spawn();
-
-                                match child {
-                                    Ok(mut child) => {
-                                        match child
-                                            .wait_timeout(std::time::Duration::from_secs(120))
-                                        {
-                                            Ok(Some(status)) => {
-                                                let output = child
-                                                    .wait_with_output()
-                                                    .unwrap_or_else(|_| std::process::Output {
-                                                        status,
-                                                        stdout: Vec::new(),
-                                                        stderr: Vec::new(),
-                                                    });
-                                                let verify_stdout =
-                                                    String::from_utf8_lossy(&output.stdout);
-                                                let verify_stderr =
-                                                    String::from_utf8_lossy(&output.stderr);
-
-                                                if !status.success() {
-                                                    v_failed = true;
-                                                    v_notes.push(truncate_note(
-                                                        "verify failed",
-                                                        &verify_stderr,
-                                                    ));
-
-                                                    c_stderr.push_str(
-                                                        "\n\n--- Verification Failed ---\n",
-                                                    );
-                                                    if !verify_stdout.is_empty() {
-                                                        c_stderr.push_str(&verify_stdout);
-                                                        c_stderr.push('\n');
-                                                    }
-                                                    c_stderr.push_str(&verify_stderr);
-                                                } else {
-                                                    v_notes.push("verify passed".to_string());
-                                                }
-                                            }
-                                            Ok(None) => {
-                                                let _ = child.kill();
-                                                let _ = child.wait();
-                                                v_failed = true;
-                                                v_notes.push(
-                                                    "verify command timed out after 120s"
-                                                        .to_string(),
-                                                );
-                                            }
-                                            Err(e) => {
-                                                let _ = child.kill();
-                                                let _ = child.wait();
-                                                v_failed = true;
-                                                v_notes.push(format!(
-                                                    "verify command wait failed: {}",
-                                                    e
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
+                                // Route through the shared validated check runner:
+                                // the command is allowlist-checked (no shell
+                                // metacharacters, only whitelisted binaries) before
+                                // any process is spawned — no raw `sh -c` here.
+                                let check = crate::checks::run_validated_check(cmd, &cwd, 120);
+                                match check.status.as_str() {
+                                    "passed" => v_notes.push("verify passed".to_string()),
+                                    "timeout" => {
                                         v_failed = true;
-                                        v_notes
-                                            .push(format!("verify command failed to start: {}", e));
+                                        v_notes.push(
+                                            "verify command timed out after 120s".to_string(),
+                                        );
+                                    }
+                                    _ => {
+                                        v_failed = true;
+                                        v_notes.push(truncate_note("verify failed", &check.stderr));
+
+                                        c_stderr.push_str("\n\n--- Verification Failed ---\n");
+                                        if !check.stdout.is_empty() {
+                                            c_stderr.push_str(&check.stdout);
+                                            c_stderr.push('\n');
+                                        }
+                                        c_stderr.push_str(&check.stderr);
                                     }
                                 }
                             }
@@ -426,6 +412,26 @@ pub async fn run_plan(
                     idx,
                     input_tokens,
                     projected_cost,
+                });
+                continue;
+            }
+
+            // Paid-provider gate — never spend on a paid completion API without
+            // explicit human approval. Local runtimes are free and run ungated.
+            // Mirrors the coding-agent gate above: previewed in dry-run, skipped
+            // (no spend, no call) in a real run that lacks the approval.
+            if !opts.dry_run
+                && !opts.authorization.allow_paid_providers
+                && super::plan::step_uses_paid_provider(step)
+            {
+                state.push(SubAgentResult {
+                    status: SubAgentStatus::Skipped,
+                    input_tokens,
+                    notes: vec![
+                        "paid provider execution requires explicit approval (--yes in CLI)"
+                            .to_string(),
+                    ],
+                    ..base_result(step)
                 });
                 continue;
             }

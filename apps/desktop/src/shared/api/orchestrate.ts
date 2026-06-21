@@ -287,6 +287,7 @@ export async function orchestrateRun(
   goal: string | undefined,
   dryRun: boolean,
   maxCost?: number | null,
+  approvePaid = false,
   approveCodingAgents = false,
   overrideProvider?: string,
   overrideModel?: string
@@ -295,6 +296,7 @@ export async function orchestrateRun(
     goal: goal ?? null,
     dryRun,
     maxCost: maxCost ?? null,
+    approvePaid,
     approveCodingAgents,
     overrideProvider: overrideProvider ?? null,
     overrideModel: overrideModel ?? null,

@@ -6,8 +6,8 @@ use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::checks;
 use repodesk_core::executors::{self, ExecutorAvailability};
 use repodesk_core::orchestrator::{
-    self, AgentWorkspacePolicy, LoopOptions, LoopRun, OrchestrationPlan, OrchestrationRun,
-    ReviewAction, RunOptions, RunReview, RunSummary, review_run,
+    self, AgentWorkspacePolicy, ExecutionAuthorization, LoopOptions, LoopRun, OrchestrationPlan,
+    OrchestrationRun, ReviewAction, RunOptions, RunReview, RunSummary, review_run,
 };
 use repodesk_core::persistence::event_journal::{self, EventEntry};
 use repodesk_core::projects::get_active_project;
@@ -111,11 +111,17 @@ pub async fn orchestrate_plan(
     )?)
 }
 
+// A Tauri command's parameters map 1:1 to named JS args, so the flat signature
+// is intentional. `approve_paid` and `approve_coding_agents` are separate
+// human-in-the-loop gates; a paid completion call needs the former, a
+// coding-agent CLI launch the latter.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn orchestrate_run(
     goal: Option<String>,
     dry_run: bool,
     max_cost: Option<f64>,
+    approve_paid: bool,
     approve_coding_agents: bool,
     override_provider: Option<String>,
     override_model: Option<String>,
@@ -127,7 +133,13 @@ pub async fn orchestrate_run(
         dry_run,
         max_cost,
         settings,
-        approve_coding_agents,
+        authorization: ExecutionAuthorization {
+            allow_paid_providers: approve_paid,
+            allow_coding_agents: approve_coding_agents,
+            // Approving the coding-agent CLI authorizes its isolated-worktree
+            // writes; the active checkout stays protected by worktree isolation.
+            allow_workspace_writes: approve_coding_agents,
+        },
         coding_agent_timeout_secs: 600,
         agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
     };

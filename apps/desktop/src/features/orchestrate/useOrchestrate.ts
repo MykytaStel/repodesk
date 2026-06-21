@@ -53,6 +53,7 @@ export function useOrchestrate() {
       goal: string;
       dryRun: boolean;
       maxCost?: number | null;
+      approvePaid: boolean;
       approveCodingAgents: boolean;
       overrideProvider?: string;
       overrideModel?: string;
@@ -61,6 +62,7 @@ export function useOrchestrate() {
         v.goal || undefined,
         v.dryRun,
         v.maxCost ?? null,
+        v.approvePaid,
         v.approveCodingAgents,
         v.overrideProvider,
         v.overrideModel,

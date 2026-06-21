@@ -10,8 +10,8 @@ use repodesk_core::api_clients::{ProviderSettings, ThinkingLevel};
 use repodesk_core::guard::{GuardLevel, preflight};
 use repodesk_core::judge::{JudgementDecision, judge_agent};
 use repodesk_core::orchestrator::{
-    OrchestrationPlan, OrchestrationRun, ReviewAction, RunOptions, RunStatus, SubAgentResult,
-    SubAgentStatus, SubAgentTask, list_runs, review_run, run_plan,
+    ExecutionAuthorization, OrchestrationPlan, OrchestrationRun, ReviewAction, RunOptions,
+    RunStatus, SubAgentResult, SubAgentStatus, SubAgentTask, list_runs, review_run, run_plan,
 };
 use repodesk_core::persistence::event_journal::{LogEventInput, log_event, read_task_events};
 use repodesk_core::persistence::{count_action_runs, recent_action_runs, record_action_run};
@@ -671,6 +671,45 @@ fn diamond_plan(project: &str, task_id: &str, provider: &str) -> OrchestrationPl
     }
 }
 
+/// A single step that routes to a paid completion provider (no dependencies),
+/// so the paid-approval gate is exercised in isolation.
+fn paid_provider_plan(project: &str, task_id: &str) -> OrchestrationPlan {
+    OrchestrationPlan {
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "paid step".to_string(),
+        steps: vec![SubAgentTask {
+            id: "analyze".to_string(),
+            title: "Analyze".to_string(),
+            kind: TaskKind::Plan,
+            agent: "openai_api".to_string(),
+            provider: "openai_api".to_string(),
+            executor_kind: ExecutorKind::LocalRuntime,
+            executor_id: "openai_api".to_string(),
+            provider_id: Some("openai_api".to_string()),
+            model: Some("gpt-4o-mini".to_string()),
+            thinking: ThinkingLevel::None,
+            instruction: "Outline an approach.".to_string(),
+            depends_on: Vec::new(),
+            verify_command: None,
+            budget_tokens: 500,
+            allow_write: false,
+        }],
+    }
+}
+
+/// A coding-agent step carrying a `verify_command`, used to prove the verify
+/// path is routed through the validated check runner (never raw `sh -c`).
+fn coding_agent_plan_with_verify(
+    project: &str,
+    task_id: &str,
+    verify_command: &str,
+) -> OrchestrationPlan {
+    let mut plan = coding_agent_plan(project, task_id);
+    plan.steps[0].verify_command = Some(verify_command.to_string());
+    plan
+}
+
 fn coding_agent_plan(project: &str, task_id: &str) -> OrchestrationPlan {
     OrchestrationPlan {
         project: project.to_string(),
@@ -847,7 +886,11 @@ async fn approved_coding_agent_runs_through_argv_executor() {
             dry_run: false,
             max_cost: None,
             settings: ProviderSettings::default(),
-            approve_coding_agents: true,
+            authorization: ExecutionAuthorization {
+                allow_paid_providers: false,
+                allow_coding_agents: true,
+                allow_workspace_writes: true,
+            },
             coding_agent_timeout_secs: 5,
             ..RunOptions::default()
         },
@@ -918,7 +961,11 @@ async fn approved_coding_agent_blocks_when_isolated_workspace_cannot_be_created(
             dry_run: false,
             max_cost: None,
             settings: ProviderSettings::default(),
-            approve_coding_agents: true,
+            authorization: ExecutionAuthorization {
+                allow_paid_providers: false,
+                allow_coding_agents: true,
+                allow_workspace_writes: true,
+            },
             coding_agent_timeout_secs: 5,
             ..RunOptions::default()
         },
@@ -950,6 +997,237 @@ async fn approved_coding_agent_blocks_when_isolated_workspace_cannot_be_created(
     assert!(
         !fx.project_path.join("launched").exists(),
         "active checkout must remain untouched"
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn real_run_skips_paid_provider_without_approval() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+    let plan = paid_provider_plan("demo", &active_id);
+
+    // Default authorization denies paid spend: the step must be skipped, not
+    // called, and no cost may be charged.
+    let run = run_plan(
+        &plan,
+        &RunOptions {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+            ..RunOptions::default()
+        },
+    )
+    .await
+    .expect("run_plan");
+
+    assert_eq!(run.results.len(), 1);
+    let result = &run.results[0];
+    assert_eq!(result.status, SubAgentStatus::Skipped);
+    assert_eq!(result.cost_units, 0.0);
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|note| note.contains("paid provider execution requires explicit approval")),
+        "expected paid-approval skip note: {:?}",
+        result.notes
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn approved_paid_provider_passes_the_gate() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+    let plan = paid_provider_plan("demo", &active_id);
+
+    // With paid approval the gate is cleared, so the step proceeds to the
+    // provider call. No API key is configured, so it fails at the provider —
+    // crucially *not* skipped with the approval note.
+    let run = run_plan(
+        &plan,
+        &RunOptions {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+            authorization: ExecutionAuthorization {
+                allow_paid_providers: true,
+                allow_coding_agents: false,
+                allow_workspace_writes: false,
+            },
+            ..RunOptions::default()
+        },
+    )
+    .await
+    .expect("run_plan");
+
+    let result = &run.results[0];
+    assert_ne!(result.status, SubAgentStatus::Skipped);
+    assert!(
+        !result
+            .notes
+            .iter()
+            .any(|note| note.contains("paid provider execution requires explicit approval")),
+        "approved paid step must not carry the approval-skip note: {:?}",
+        result.notes
+    );
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|note| note.contains("provider unavailable")),
+        "expected an unavailable-provider failure (no key configured): {:?}",
+        result.notes
+    );
+}
+
+#[tokio::test]
+#[serial]
+#[cfg(unix)]
+async fn coding_agent_verify_command_is_validated_not_shelled() {
+    let fx = setup();
+    init_git_repo(&fx.project_path);
+    let active_id = show_active_task().expect("active").config.id;
+    let bin_dir = TempDir::new().expect("bin tempdir");
+    let fake_codex = bin_dir.path().join("codex");
+    std::fs::write(
+        &fake_codex,
+        "#!/bin/sh\ncat >/dev/null\necho agent-output\n",
+    )
+    .expect("write fake codex");
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake_codex, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod fake codex");
+
+    let old_path = std::env::var_os("PATH");
+    let new_path = match old_path.as_ref() {
+        Some(path) => {
+            let mut paths = vec![bin_dir.path().to_path_buf()];
+            paths.extend(std::env::split_paths(path));
+            std::env::join_paths(paths).expect("join path")
+        }
+        None => bin_dir.path().as_os_str().to_os_string(),
+    };
+    unsafe {
+        std::env::set_var("PATH", &new_path);
+    }
+
+    // A verify command with a shell metacharacter and a chained `rm -rf /` must
+    // be rejected by the validated check runner before any process spawns — it
+    // can never reach a raw `sh -c`.
+    let run_result = run_plan(
+        &coding_agent_plan_with_verify("demo", &active_id, "cargo test; rm -rf /"),
+        &RunOptions {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+            authorization: ExecutionAuthorization {
+                allow_paid_providers: false,
+                allow_coding_agents: true,
+                allow_workspace_writes: true,
+            },
+            coding_agent_timeout_secs: 5,
+            ..RunOptions::default()
+        },
+    )
+    .await;
+
+    unsafe {
+        match old_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+
+    let run = run_result.expect("run_plan");
+    let result = &run.results[0];
+    // Agent succeeded, but verification failed validation → overall Failed.
+    assert_eq!(result.status, SubAgentStatus::Failed);
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|note| note.contains("verify failed") && note.contains("Validation Error")),
+        "expected a verify-validation failure note: {:?}",
+        result.notes
+    );
+}
+
+#[tokio::test]
+#[serial]
+#[cfg(unix)]
+async fn write_capable_coding_agent_blocks_without_workspace_write_authorization() {
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+    let bin_dir = TempDir::new().expect("bin tempdir");
+    let marker = bin_dir.path().join("launched");
+    let fake_codex = bin_dir.path().join("codex");
+    std::fs::write(
+        &fake_codex,
+        format!(
+            "#!/bin/sh\ncat >/dev/null\necho launched > {}\necho agent-output\n",
+            marker.display()
+        ),
+    )
+    .expect("write fake codex");
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&fake_codex, std::fs::Permissions::from_mode(0o755))
+        .expect("chmod fake codex");
+
+    let old_path = std::env::var_os("PATH");
+    let new_path = match old_path.as_ref() {
+        Some(path) => {
+            let mut paths = vec![bin_dir.path().to_path_buf()];
+            paths.extend(std::env::split_paths(path));
+            std::env::join_paths(paths).expect("join path")
+        }
+        None => bin_dir.path().as_os_str().to_os_string(),
+    };
+    unsafe {
+        std::env::set_var("PATH", &new_path);
+    }
+
+    // The coding agent is approved, but workspace writes are NOT. The implement
+    // step is write-capable, so it must be blocked before any process launch.
+    let run_result = run_plan(
+        &coding_agent_plan("demo", &active_id),
+        &RunOptions {
+            dry_run: false,
+            max_cost: None,
+            settings: ProviderSettings::default(),
+            authorization: ExecutionAuthorization {
+                allow_paid_providers: false,
+                allow_coding_agents: true,
+                allow_workspace_writes: false,
+            },
+            coding_agent_timeout_secs: 5,
+            ..RunOptions::default()
+        },
+    )
+    .await;
+
+    unsafe {
+        match old_path {
+            Some(path) => std::env::set_var("PATH", path),
+            None => std::env::remove_var("PATH"),
+        }
+    }
+
+    let run = run_result.expect("run_plan");
+    let result = &run.results[0];
+    assert_eq!(result.status, SubAgentStatus::Blocked);
+    assert!(
+        result
+            .notes
+            .iter()
+            .any(|note| note.contains("workspace writes are not authorized")),
+        "expected a workspace-write authorization block: {:?}",
+        result.notes
+    );
+    assert!(
+        !marker.exists(),
+        "coding-agent process must not launch when workspace writes are unauthorized"
     );
 }
 

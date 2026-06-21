@@ -104,6 +104,27 @@ pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate a command against the check-command allowlist, then run it with a
+/// timeout. This is the single safe entry point for running an arbitrary
+/// project-supplied command (project checks *and* a step's `verify_command`):
+/// it rejects shell metacharacters and non-allowlisted binaries before any
+/// process is spawned, so no caller can smuggle a raw `sh -c` payload past the
+/// security model. A validation failure returns a `failed` result carrying the
+/// reason rather than spawning anything.
+pub fn run_validated_check(command: &str, cwd: &Path, timeout_secs: u64) -> CheckCommandResult {
+    match is_allowed_check_command(command) {
+        Ok(()) => run_shell_command_with_timeout(command, cwd, timeout_secs),
+        Err(err) => CheckCommandResult {
+            command: command.to_string(),
+            status: "failed".to_string(),
+            exit_code: None,
+            duration_ms: 0,
+            stdout: String::new(),
+            stderr: format!("Validation Error: {err}"),
+        },
+    }
+}
+
 pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
     init::init_home()?;
 
@@ -139,17 +160,7 @@ pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
     let mut results = Vec::new();
 
     for check in &project.checks {
-        let result = match is_allowed_check_command(check) {
-            Ok(_) => run_shell_command(check, &project.path),
-            Err(err) => CheckCommandResult {
-                command: check.to_string(),
-                status: "failed".to_string(),
-                exit_code: None,
-                duration_ms: 0,
-                stdout: String::new(),
-                stderr: format!("Validation Error: {err}"),
-            },
-        };
+        let result = run_validated_check(check, &project.path, 120);
 
         writeln!(log, "==============================")?;
         writeln!(log, "Command: {}", result.command)?;
@@ -234,10 +245,6 @@ Task: `{}`
         summary_file,
         summary,
     })
-}
-
-fn run_shell_command(command: &str, cwd: &Path) -> CheckCommandResult {
-    run_shell_command_with_timeout(command, cwd, 120)
 }
 
 fn run_shell_command_with_timeout(
@@ -462,6 +469,33 @@ mod tests {
 
         assert_eq!(result.status, "passed");
         assert!(result.stdout.contains("hello world"));
+    }
+
+    #[test]
+    fn run_validated_check_runs_allowlisted_command() {
+        let cwd = env::current_dir().unwrap();
+        // `npm` is allowlisted; `npm --version` is a fast, side-effect-free probe.
+        let result = run_validated_check("npm --version", &cwd, 30);
+        assert_eq!(result.status, "passed", "stderr: {}", result.stderr);
+    }
+
+    #[test]
+    fn run_validated_check_rejects_shell_metacharacters_without_spawning() {
+        let cwd = env::current_dir().unwrap();
+        // A chained command must be rejected by the allowlist, not handed to a shell.
+        let result = run_validated_check("cargo test; rm -rf /", &cwd, 5);
+        assert_eq!(result.status, "failed");
+        assert_eq!(result.exit_code, None);
+        assert_eq!(result.duration_ms, 0, "no process should have been spawned");
+        assert!(result.stderr.contains("Validation Error"));
+    }
+
+    #[test]
+    fn run_validated_check_rejects_non_allowlisted_binary() {
+        let cwd = env::current_dir().unwrap();
+        let result = run_validated_check("rm -rf /tmp/whatever", &cwd, 5);
+        assert_eq!(result.status, "failed");
+        assert!(result.stderr.contains("not in the allowed list"));
     }
 
     #[test]

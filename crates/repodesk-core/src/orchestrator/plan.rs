@@ -62,28 +62,34 @@ const TEMPLATE: &[StepTemplate] = &[
     },
 ];
 
+/// Whether a single step routes to a paid completion provider. Local runtimes
+/// (ollama, lm_studio, …) are free and return false. This is the per-step
+/// predicate the runner gates on; [`plan_has_paid_provider_step`] is the plan
+/// fold over it.
+pub fn step_uses_paid_provider(step: &SubAgentTask) -> bool {
+    let provider_id = step
+        .resolved_provider_id()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    matches!(
+        step.provider.to_ascii_lowercase().as_str(),
+        "chatgpt" | "gemini"
+    ) || matches!(
+        provider_id.as_str(),
+        "openai_api"
+            | "anthropic_api"
+            | "gemini_api"
+            | "openai"
+            | "chatgpt"
+            | "gpt"
+            | "anthropic"
+            | "gemini"
+    )
+}
+
 /// Whether any step in the plan routes to a paid completion/manual provider.
 pub fn plan_has_paid_provider_step(plan: &OrchestrationPlan) -> bool {
-    plan.steps.iter().any(|step| {
-        let provider_id = step
-            .resolved_provider_id()
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        matches!(
-            step.provider.to_ascii_lowercase().as_str(),
-            "chatgpt" | "gemini"
-        ) || matches!(
-            provider_id.as_str(),
-            "openai_api"
-                | "anthropic_api"
-                | "gemini_api"
-                | "openai"
-                | "chatgpt"
-                | "gpt"
-                | "anthropic"
-                | "gemini"
-        )
-    })
+    plan.steps.iter().any(step_uses_paid_provider)
 }
 
 /// Whether any step in the plan routes to a coding-agent CLI executor.
@@ -275,7 +281,11 @@ pub fn route_steps(
                         depends_on: template.depends_on.iter().map(|d| d.to_string()).collect(),
                         budget_tokens: DEFAULT_STEP_BUDGET,
                         allow_write: template.allow_write,
-                        verify_command: if template.allow_write { verify_command.clone() } else { None },
+                        verify_command: if template.allow_write {
+                            verify_command.clone()
+                        } else {
+                            None
+                        },
                     };
                 }
             }
@@ -318,7 +328,11 @@ pub fn route_steps(
                 depends_on: template.depends_on.iter().map(|d| d.to_string()).collect(),
                 budget_tokens: DEFAULT_STEP_BUDGET,
                 allow_write: template.allow_write,
-                verify_command: if template.allow_write { verify_command.clone() } else { None },
+                verify_command: if template.allow_write {
+                    verify_command.clone()
+                } else {
+                    None
+                },
             }
         })
         .collect()
@@ -349,7 +363,14 @@ pub fn build_plan(
         project: project.name,
         task_id: task.config.id,
         goal,
-        steps: route_steps(&caps, &budget, &bias, override_provider, override_model, task.config.verify_command),
+        steps: route_steps(
+            &caps,
+            &budget,
+            &bias,
+            override_provider,
+            override_model,
+            task.config.verify_command,
+        ),
     })
 }
 

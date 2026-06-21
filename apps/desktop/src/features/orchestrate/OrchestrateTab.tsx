@@ -741,6 +741,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       goal,
       dryRun,
       maxCost: parsedMaxCost(),
+      approvePaid,
       approveCodingAgents,
       overrideProvider,
       overrideModel,
