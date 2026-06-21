@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { installMockIpc, recordedCommands } from "./mock-ipc";
-import { onboardedFixtures } from "./fixtures";
+import { onboardedFixtures, firstRunFixtures, reviewFixtures } from "./fixtures";
 
 // The golden path through the redesigned Work tab: the app lands on Work, the
 // six-phase rail reflects the backend progression, the single primary CTA and
@@ -52,6 +52,17 @@ test.describe("work tab golden path (onboarded)", () => {
     expect(commands).toContain("work_set_execution_mode");
   });
 
+  test("Execute phase runs the agent inline with the approval gates", async ({ page }) => {
+    // Agent-run mode surfaces the ExecutionAuthorization gates on the card.
+    await expect(page.getByText(/Approve coding-agent CLIs/)).toBeVisible();
+    await expect(page.getByText(/Approve paid providers/)).toBeVisible();
+
+    // The primary CTA launches the orchestrator run inline (no advanced panel).
+    await page.locator(".work-cta-row .primary-cta").click();
+    const commands = await recordedCommands(page);
+    expect(commands).toContain("orchestrate_run");
+  });
+
   test("advanced orchestrator details stay collapsed until disclosed", async ({ page }) => {
     const disclosure = page.getByRole("button", { name: /Advanced orchestrator details/ });
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
@@ -64,13 +75,49 @@ test.describe("work tab golden path (onboarded)", () => {
     for (const tab of ["Work", "Changes", "History", "Settings"]) {
       await expect(nav.getByRole("button", { name: new RegExp(`^${tab}`) })).toBeVisible();
     }
-    // Changes and History are container surfaces with a segmented sub-nav.
+    // Changes is one unified surface: a workspace summary header + segmented views.
     await nav.getByRole("button", { name: /^Changes/ }).click();
+    await expect(page.locator(".changes-summary")).toBeVisible();
+    await expect(page.locator(".changes-summary").getByText("feat/n2-e2e")).toBeVisible();
     await expect(page.locator(".subnav")).toBeVisible();
     await expect(page.getByText("This view crashed")).toHaveCount(0);
 
     await nav.getByRole("button", { name: /^History/ }).click();
+    await expect(page.locator(".changes-summary")).toBeVisible();
     await expect(page.locator(".subnav")).toBeVisible();
     await expect(page.getByText("This view crashed")).toHaveCount(0);
+  });
+});
+
+test.describe("work tab review (commit visibility + memory)", () => {
+  test("Review shows what changed and the proposed memory", async ({ page }) => {
+    await installMockIpc(page, reviewFixtures);
+    await page.goto("/");
+    await expect(page.locator(".phase-rail .phase-current")).toContainText("Review");
+
+    // Commit visibility: the changed file and its diff are right here.
+    await expect(page.getByText("What changed")).toBeVisible();
+    await expect(page.getByText(/src\/app\.ts/).first()).toBeVisible();
+
+    // Memory: the run's proposed capture, acceptable inline (= add to memory).
+    await expect(page.getByText("Add to memory")).toBeVisible();
+    await expect(page.getByText(/Remember the auth rate-limit/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Accept" }).first()).toBeVisible();
+
+    const commands = await recordedCommands(page);
+    expect(commands).toContain("orchestrate_run_diffs");
+    expect(commands).toContain("memory_proposals_list");
+  });
+});
+
+test.describe("work tab scope onboarding (first run)", () => {
+  test("Scope phase onboards from the Work tab itself", async ({ page }) => {
+    await installMockIpc(page, firstRunFixtures);
+    await page.goto("/");
+    // Work is the default home even with no project; Scope is the live phase.
+    const rail = page.locator(".phase-rail");
+    await expect(rail.locator(".phase-current")).toContainText("Scope");
+    // Onboarding starts right here — no detour to the legacy Workflow surface.
+    await expect(page.getByRole("button", { name: "Connect a project" })).toBeVisible();
   });
 });

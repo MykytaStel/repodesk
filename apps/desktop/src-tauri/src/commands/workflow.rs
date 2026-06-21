@@ -179,6 +179,12 @@ fn map_phase_signals(
                 .any(|step| !step.changed_files.is_empty())
         })
         .unwrap_or(false);
+    // Real artifact-backed signals (not proxied off smart-context).
+    let cost_estimated = artifact_status("token_estimate").exists;
+    // Baseline checks are checks that ran *before* any execution; once a run
+    // exists, a checks summary belongs to the final Verify phase instead.
+    let baseline_checks_ran = artifact_status("checks_summary").exists && latest.is_none();
+
     // Worktree-aware: count both the run's recorded changeset and live edits.
     let has_changes = run_produced_changes || git.is_dirty;
     // Reviewed when the user acked this run's changeset (or staged it directly),
@@ -196,8 +202,8 @@ fn map_phase_signals(
         context_ok: wf.context_ok,
         safety_ok: wf.safety_ok,
         route_ready: wf.smart_context_ok,
-        cost_estimated: wf.smart_context_ok,
-        baseline_checks_ran: false,
+        cost_estimated,
+        baseline_checks_ran,
         execution_started,
         execution_succeeded,
         has_changes,

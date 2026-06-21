@@ -321,7 +321,11 @@ pub enum WorkflowCommand {
     Plan,
     Show,
     /// Print the six-phase progression (Scope → … → Finish) for the active task.
-    Phase,
+    Phase {
+        /// Record a transition for the latest run: `reviewed` or `committed`.
+        #[arg(long)]
+        mark: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]

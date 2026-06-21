@@ -16,7 +16,6 @@ export const TAB_IDS: readonly TabId[] = [
   "changes",
   "history",
   "dashboard",
-  "workflow",
   "tokens",
   "models",
   "code",

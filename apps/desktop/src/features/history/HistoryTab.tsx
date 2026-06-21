@@ -17,7 +17,13 @@ const VIEWS: { id: HistoryView; label: string }[] = [
 export function HistoryTab() {
   const [view, setView] = useState<HistoryView>("outcomes");
   return (
-    <div className="subnav-host">
+    <div className="subnav-host history-tab">
+      <div className="changes-summary">
+        <div>
+          <p className="eyebrow">History</p>
+          <strong>What this task produced & what RepoDesk learned</strong>
+        </div>
+      </div>
       <div className="subnav" role="tablist" aria-label="History views">
         {VIEWS.map((item) => (
           <button

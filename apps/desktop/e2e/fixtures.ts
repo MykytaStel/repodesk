@@ -314,3 +314,81 @@ export const firstRunFixtures: CommandFixtures = {
   action_history: [],
   routing_snapshot: null,
 };
+
+/** Onboarded workspace paused at the Review phase: a completed run with a
+ * changed file, its diff, and a pending memory proposal. */
+export const reviewFixtures: CommandFixtures = {
+  ...onboardedFixtures,
+  work_phase_state: {
+    current: "review",
+    complete: false,
+    execution_mode: "agent_run",
+    cta: { phase: "review", label: "Review diff", action_id: null },
+    phases: [
+      { phase: "scope", status: "done", title: "Scope", summary: "Project, task, and goal are set" },
+      { phase: "prepare", status: "done", title: "Prepare", summary: "Context is built, scanned, and routed" },
+      { phase: "execute", status: "done", title: "Execute", summary: "Agent run completed" },
+      { phase: "review", status: "in_progress", title: "Review", summary: "Review changed files and accept or reject" },
+      { phase: "verify", status: "locked", title: "Verify", summary: "Run final project checks and verification" },
+      { phase: "finish", status: "locked", title: "Finish", summary: "Stage, commit, and close the task" },
+    ],
+  },
+  orchestrate_status: {
+    run_id: "run-20260101-000000-1-0",
+    project: "RepoDesk",
+    task_id: "task-n2-e2e",
+    goal: "Wire N2 E2E smoke",
+    status: "Completed",
+    dry_run: false,
+    started_at: "2026-06-21T10:00:00Z",
+    finished_at: "2026-06-21T10:01:00Z",
+    results: [
+      {
+        task_id: "implement",
+        agent: "codex_cli",
+        provider: "codex_cli",
+        model: "",
+        status: "Ok",
+        output: "",
+        input_tokens: 100,
+        output_tokens: 200,
+        cost_units: 0,
+        captured_proposals: 1,
+        changed_files: ["src/app.ts"],
+        notes: [],
+      },
+    ],
+    total_input_tokens: 100,
+    total_output_tokens: 200,
+    total_cost_units: 0,
+  },
+  orchestrate_run_diffs: [
+    {
+      task_id: "implement",
+      provider: "codex_cli",
+      model: "",
+      changed_files: ["src/app.ts"],
+      diff_path: null,
+      diff: "diff --git a/src/app.ts b/src/app.ts\n@@ -1,2 +1,3 @@\n context\n+new line\n",
+      exists: true,
+      truncated: false,
+      warnings: [],
+    },
+  ],
+  memory_proposals_list: [
+    {
+      id: 1,
+      created_at: "2026-06-21T10:01:00Z",
+      project: "RepoDesk",
+      task_id: "task-n2-e2e",
+      kind: "capture",
+      status: "pending",
+      payload: {
+        rationale: "Captured from the run output.",
+        agent: "codex_cli",
+        source_ids: [],
+        proposed: { content: "Remember the auth rate-limit approach", category: "general", tags: [], source: "run", agent: "codex_cli" },
+      },
+    },
+  ],
+};

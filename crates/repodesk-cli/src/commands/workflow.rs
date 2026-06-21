@@ -94,7 +94,26 @@ pub fn handle_workflow_command(command: WorkflowCommand) -> Result<()> {
         WorkflowCommand::Show => {
             print!("{}", read_or_create_workflow_plan()?);
         }
-        WorkflowCommand::Phase => {
+        WorkflowCommand::Phase { mark } => {
+            if let Some(mark) = mark {
+                let run_id = repodesk_core::orchestrator::load_latest_run()?
+                    .filter(|run| !run.dry_run)
+                    .map(|run| run.run_id)
+                    .ok_or_else(|| anyhow::anyhow!("no orchestration run for the active task"))?;
+                match mark.as_str() {
+                    "reviewed" => {
+                        repodesk_core::workflow::mark_reviewed(&run_id)?;
+                    }
+                    "committed" => {
+                        repodesk_core::workflow::mark_committed(&run_id)?;
+                    }
+                    other => {
+                        return Err(anyhow::anyhow!(
+                            "unknown --mark '{other}' (expected 'reviewed' or 'committed')"
+                        ));
+                    }
+                }
+            }
             let mode = repodesk_core::workflow::load_phase_state()
                 .map(|state| state.execution_mode)
                 .unwrap_or_default();

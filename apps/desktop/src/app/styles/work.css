@@ -121,6 +121,176 @@
   border-color: var(--accent-border);
 }
 
+.work-tab .phase-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.work-tab .phase-actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.work-tab .approval-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.work-tab .commit-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+.work-tab .link-cta {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  text-decoration: underline;
+}
+
+.work-tab .link-cta:hover {
+  color: var(--text);
+}
+
+.work-tab .work-error {
+  margin-top: var(--space-3);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+/* Review panel — diffs + memory proposals. */
+.review-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.review-block h4 {
+  margin: 0 0 var(--space-2);
+}
+
+.review-file {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.review-file summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.review-diff {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  background: var(--code-bg);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  overflow-x: auto;
+  max-height: 320px;
+}
+
+.proposal-list {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.proposal-item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.proposal-kind {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.proposal-text {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+}
+
+.add-note-row {
+  align-items: stretch;
+}
+
+.commit-files {
+  margin-bottom: var(--space-1);
+}
+
+.commit-file-list {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Shared summary header for the unified Changes/History surfaces. */
+.changes-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  flex-wrap: wrap;
+}
+
+.changes-summary .eyebrow {
+  margin: 0 0 var(--space-1);
+}
+
+.changes-pill {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  border: 1px solid var(--border);
+}
+
+.changes-pill.dirty {
+  color: var(--warning);
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.changes-pill.clean {
+  color: var(--success);
+  border-color: var(--success-border);
+  background: var(--success-soft);
+}
+
 /* Segmented sub-nav shared by the Changes and History container tabs. */
 .subnav-host .subnav {
   display: flex;
