@@ -8,7 +8,7 @@ import { codeChangedFiles } from "../../shared/utils/helpers";
 import { TaskSwitcher } from "../workflow/TaskSwitcher";
 import { PromptsPanel } from "../workflow/PromptsPanel";
 import { ReviewPanel } from "./ReviewPanel";
-import type { PhaseProgress, PhaseStatus, ExecutionPreview } from "../../shared/api/orchestrate";
+import type { Phase, PhaseProgress, PhaseStatus, ExecutionPreview } from "../../shared/api/orchestrate";
 import type { TabId } from "../../shared/types/api";
 import { ChevronIcon } from "../../app/NavIcons";
 
@@ -20,6 +20,52 @@ const OrchestrateTab = lazy(() =>
 );
 
 const PHASE_KEY = ["work", "phase-state"] as const;
+
+type PhaseBriefInfo = {
+  input: string;
+  action: string;
+  output: string;
+  next: string;
+};
+
+const PHASE_BRIEFS: Record<Phase, PhaseBriefInfo> = {
+  scope: {
+    input: "Project + one active task.",
+    action: "RepoDesk locks the work to this repository and task.",
+    output: "A bounded task record.",
+    next: "Prepare builds the context pack.",
+  },
+  prepare: {
+    input: "Task, git state, configured memory, and safety rules.",
+    action: "RepoDesk builds bounded context, scans it, and routes the task.",
+    output: "Context pack + route/check receipts.",
+    next: "Execute can hand this packet to an agent.",
+  },
+  execute: {
+    input: "Task goal, bounded context, memory slice, route, and approvals.",
+    action: "RepoDesk launches the selected agent/executor with that packet.",
+    output: "Run receipt, changed files, diff, and memory proposals.",
+    next: "Review decides whether those changes enter the active checkout.",
+  },
+  review: {
+    input: "Agent run receipt, diff, changed files, and proposed memory.",
+    action: "You accept or reject the exact changeset.",
+    output: "Accepted files are staged; rejected files are discarded or left isolated.",
+    next: "Verify runs project checks against the reviewed tree.",
+  },
+  verify: {
+    input: "Reviewed/staged changeset and the run receipt.",
+    action: "RepoDesk runs the configured verification checks.",
+    output: "Proof receipt bound to the current tree.",
+    next: "Finish commits only the reviewed staged changes.",
+  },
+  finish: {
+    input: "Verified staged files and your commit message.",
+    action: "RepoDesk commits the reviewed changeset only.",
+    output: "A git commit and closed task receipt.",
+    next: "History/Outcomes keep the run evidence.",
+  },
+};
 
 function PhaseStatusIcon({ status }: { status: PhaseStatus }) {
   switch (status) {
@@ -63,6 +109,9 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const [approveCodingAgents, setApproveCodingAgents] = useState(false);
   const [approvePaid, setApprovePaid] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
+  // Manual-handoff return-import: an optional pasted unified diff (empty = import
+  // whatever the human already changed in the working tree).
+  const [importPatch, setImportPatch] = useState("");
 
   const phase = useQuery({
     queryKey: PHASE_KEY,
@@ -128,6 +177,17 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     },
   });
 
+  // Manual handoff: import the external agent's result (pasted diff or the
+  // already-applied working-tree changes) as run evidence → advances to Review.
+  const importManual = useMutation({
+    mutationFn: (patch: string | null) => api.workImportManualChanges(patch),
+    onSuccess: (next) => {
+      setImportPatch("");
+      setPhase(next);
+      refreshAll();
+    },
+  });
+
   // Finish: the bounded commit (server commits only the reviewed, staged index
   // and writes the finish receipt). No manual "mark committed".
   const commit = useMutation({
@@ -164,6 +224,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     runAgent.isPending ||
     review.isPending ||
     verify.isPending ||
+    importManual.isPending ||
     commit.isPending;
 
   // An agent run can't launch until the approvals the preview says it needs are
@@ -212,6 +273,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     (runAgent.error as Error | null)?.message ??
     (review.error as Error | null)?.message ??
     (verify.error as Error | null)?.message ??
+    (importManual.error as Error | null)?.message ??
     (commit.error as Error | null)?.message ??
     null;
 
@@ -245,6 +307,15 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           ))}
         </ol>
 
+        <PhaseBrief
+          phase={progress.current}
+          ctaLabel={progress.cta.label}
+          isAgentRun={isAgentRun}
+          preview={preview}
+          changedCount={changedCount}
+          busy={busy}
+        />
+
         {/* Scope onboarding — connect a project, then create the task inline so
             the whole flow starts here (no separate onboarding surface). */}
         {progress.current === "scope" && (
@@ -277,8 +348,8 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                 onClick={() => setMode.mutate("agent_run")}
               />
               <ModeButton
-                label="Manual handoff (experimental)"
-                hint="Preview only — generates a context pack; no return-import yet"
+                label="Manual handoff"
+                hint="Generate a context pack, run it in an external agent, then import the result"
                 active={!isAgentRun}
                 onClick={() => setMode.mutate("manual_handoff")}
               />
@@ -324,20 +395,53 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                 </label>
               </div>
             ) : (
-              // Manual handoff: generate the pack and continue in an external
-              // agent. This mode is a preview — RepoDesk can't yet import the
-              // returned changes as run evidence, so the six-phase flow won't
-              // auto-advance past Execute until you switch back to an agent run.
+              // Manual handoff: generate the pack, run it in an external agent,
+              // then import the result back as run evidence so the six-phase flow
+              // advances to Review. The import is secret-scanned before it counts.
               <div className="phase-controls">
                 <div className="notice">
-                  <strong>Experimental — preview only.</strong>
+                  <strong>Manual handoff</strong>
                   <ol className="manual-steps">
                     <li>Generate the context pack below.</li>
                     <li>Continue the work in your external agent.</li>
-                    <li>Import / confirm the returned changes — <em>not implemented yet</em>.</li>
+                    <li>Import the returned changes to review and commit them here.</li>
                   </ol>
                 </div>
                 <PromptsPanel />
+                <div className="manual-import">
+                  <label htmlFor="manual-import-patch" className="eyebrow">
+                    Import result
+                  </label>
+                  <textarea
+                    id="manual-import-patch"
+                    className="manual-import-input"
+                    placeholder="Paste a unified diff (git diff) here — or leave empty to import the changes you already applied in the working tree."
+                    value={importPatch}
+                    onChange={(e) => setImportPatch(e.target.value)}
+                    rows={6}
+                  />
+                  <div className="phase-actions">
+                    <button
+                      className="secondary-cta"
+                      onClick={() => importManual.mutate(importPatch)}
+                      disabled={importManual.isPending || !importPatch.trim()}
+                    >
+                      Import pasted diff → Review
+                    </button>
+                    <button
+                      className="secondary-cta"
+                      onClick={() => importManual.mutate(null)}
+                      disabled={importManual.isPending}
+                    >
+                      Import working-tree changes → Review
+                    </button>
+                  </div>
+                  {importManual.error && (
+                    <p className="notice danger">
+                      {(importManual.error as Error).message}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </>
@@ -412,6 +516,9 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           {executeBlocked && (
             <span className="muted">Grant the required approvals above to launch.</span>
           )}
+          {runAgent.isPending && (
+            <span className="pill warn">Launching isolated agent run</span>
+          )}
         </div>
 
         {mutationError && <p className="work-error">{mutationError}</p>}
@@ -435,6 +542,60 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           </Suspense>
         )}
       </section>
+    </div>
+  );
+}
+
+function PhaseBrief({
+  phase,
+  ctaLabel,
+  isAgentRun,
+  preview,
+  changedCount,
+  busy,
+}: {
+  phase: Phase;
+  ctaLabel: string;
+  isAgentRun: boolean;
+  preview: ExecutionPreview | null;
+  changedCount: number;
+  busy: boolean;
+}) {
+  const brief = PHASE_BRIEFS[phase];
+  const executeDetail =
+    phase === "execute"
+      ? isAgentRun
+        ? preview
+          ? `${preview.steps.length} step${preview.steps.length === 1 ? "" : "s"} routed; ${
+              preview.isolated_workspace ? "isolated worktree" : "active checkout"
+            }; ${preview.expected_writes ? "writes expected" : "read-only"}`
+          : "Agent route is still loading."
+        : "Manual handoff builds a context pack only; RepoDesk cannot import the result yet."
+      : phase === "review"
+        ? `${changedCount} changed file${changedCount === 1 ? "" : "s"} from the latest run.`
+        : brief.output;
+
+  return (
+    <div className="phase-brief" aria-label="Current phase consequence">
+      <div className="phase-brief-head">
+        <span className={`pill ${busy ? "warn" : "accent"}`}>{busy ? "Running" : ctaLabel}</span>
+        <strong>{phase === "execute" && isAgentRun ? "Agent handoff" : "Current step"}</strong>
+      </div>
+      <div className="phase-brief-grid">
+        <BriefCell label="Input" value={brief.input} />
+        <BriefCell label="RepoDesk does" value={brief.action} />
+        <BriefCell label="Result" value={executeDetail} />
+        <BriefCell label="Then" value={brief.next} />
+      </div>
+    </div>
+  );
+}
+
+function BriefCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="phase-brief-cell">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   );
 }
@@ -501,6 +662,21 @@ function ExecutionPreviewPanel({
           {preview.total_estimated_cost_units.toFixed(2)} {preview.currency_label}
         </dd>
       </dl>
+
+      <div className="agent-packet">
+        <div>
+          <span>Sent to agent</span>
+          <strong>Goal + bounded context + memory slice + step instruction + token budget</strong>
+        </div>
+        <div>
+          <span>Not sent</span>
+          <strong>Repo-wide raw file dump; content must pass context and secret gates first</strong>
+        </div>
+        <div>
+          <span>Comes back</span>
+          <strong>Run receipt, changed-file list, diff path, notes, and memory proposals</strong>
+        </div>
+      </div>
 
       {preview.steps.length > 1 && (
         <ul className="exec-preview-steps">

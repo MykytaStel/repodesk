@@ -21,9 +21,14 @@ const SystemTab = lazy(() => import("../features/system/SystemTab").then((m) => 
 const DebugTab = lazy(() => import("../features/debug/DebugTab").then((m) => ({ default: m.DebugTab })));
 const AuditTab = lazy(() => import("../features/audit/AuditTab").then((m) => ({ default: m.AuditTab })));
 const PlaybooksTab = lazy(() => import("../features/playbooks/PlaybooksTab").then((m) => ({ default: m.PlaybooksTab })));
+const ModelsCostTab = lazy(() => import("../features/models-cost/ModelsCostTab").then((m) => ({ default: m.ModelsCostTab })));
 
 export type TabGroup = "Work" | "AI" | "System";
-export type TabTier = "primary" | "more";
+// `primary` — the daily spine in the sidebar; `more` — depth/diagnostics in the
+// collapsible groups; `hidden` — surfaces fully absorbed into a primary tab
+// (Git/Code→Changes, Outcomes/Memory/Audit→History, Tokens/Models→Models & Cost).
+// Hidden tabs stay routable for deep-links and ⌘K but never render in the rail.
+export type TabTier = "primary" | "more" | "hidden";
 
 export interface AppTab {
   id: TabId;
@@ -38,30 +43,32 @@ export interface AppTab {
 // Ordered primary-first so ⌘1..9 jump to the everyday surfaces. Each tab's icon
 // is rendered by `TabIcon` (NavIcons.tsx), keyed by id.
 export const APP_TABS: AppTab[] = [
-  // Primary spine — the four surfaces that carry the daily flow.
+  // Primary spine — the five surfaces that carry the daily flow.
   { id: "work", title: "Work", subtitle: "Home · Scope → Finish", group: "Work", tier: "primary" },
   { id: "changes", title: "Changes", subtitle: "Diffs, files & review", group: "Work", tier: "primary" },
   { id: "history", title: "History", subtitle: "Runs, memory & audit", group: "AI", tier: "primary" },
+  { id: "models-cost", title: "Models & Cost", subtitle: "Reachable models + spend", group: "AI", tier: "primary" },
   { id: "settings", title: "Settings", subtitle: "Providers & keys", group: "System", tier: "primary" },
-  // Advanced — depth & diagnostics, grouped and collapsible. The merged surfaces
-  // (Git/Code → Changes, Outcomes/Memory/Audit → History) still live here as
-  // direct links for power users and ⌘K, but are not part of the primary spine.
+  // Advanced — depth & diagnostics, grouped and collapsible.
   { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },
-  { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "more" },
-  { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "more" },
   { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to sub-agents", group: "AI", tier: "more" },
-  { id: "memory", title: "Memory", subtitle: "Context agents remember", group: "AI", tier: "more" },
-  { id: "models", title: "Models", subtitle: "Runtime health", group: "AI", tier: "more" },
-  { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI", tier: "more" },
-  { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI", tier: "more" },
   { id: "playbooks", title: "Playbooks", subtitle: "Team recipes", group: "AI", tier: "more" },
-  { id: "audit", title: "Audit", subtitle: "Enterprise trail", group: "System", tier: "more" },
   { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System", tier: "more" },
   { id: "debug", title: "Debug", subtitle: "Traces", group: "System", tier: "more" },
+  // Hidden — absorbed into a primary surface; reachable via ⌘K + deep-links only.
+  { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "hidden" },
+  { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "hidden" },
+  { id: "memory", title: "Memory", subtitle: "Context agents remember", group: "AI", tier: "hidden" },
+  { id: "models", title: "Models", subtitle: "Runtime health", group: "AI", tier: "hidden" },
+  { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI", tier: "hidden" },
+  { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI", tier: "hidden" },
+  { id: "audit", title: "Audit", subtitle: "Enterprise trail", group: "System", tier: "hidden" },
 ];
 
 export const PRIMARY_TABS = APP_TABS.filter((tab) => tab.tier === "primary");
 export const MORE_TABS = APP_TABS.filter((tab) => tab.tier === "more");
+// Everything the sidebar offers (rail + groups); excludes hidden/absorbed tabs.
+export const NAV_TABS = APP_TABS.filter((tab) => tab.tier !== "hidden");
 
 export const TAB_GROUP_ORDER: TabGroup[] = ["Work", "AI", "System"];
 
@@ -73,7 +80,7 @@ export function renderAppTab({
 }: {
   activeTab: TabId;
   economyMode: EconomyMode;
-  setActiveTab: (tab: TabId) => void;
+  setActiveTab: (tab: TabId, detail?: string) => void;
   setEconomyMode: (mode: EconomyMode) => void;
 }) {
   switch (activeTab) {
@@ -83,6 +90,8 @@ export function renderAppTab({
       return <ChangesTab />;
     case "history":
       return <HistoryTab />;
+    case "models-cost":
+      return <ModelsCostTab setActiveTab={setActiveTab} />;
     case "dashboard":
       return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
     case "tokens":
@@ -108,7 +117,7 @@ export function renderAppTab({
     case "audit":
       return <AuditTab />;
     case "playbooks":
-      return <PlaybooksTab />;
+      return <PlaybooksTab setActiveTab={setActiveTab} />;
     default:
       return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
   }

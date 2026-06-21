@@ -4,7 +4,7 @@ export type Command = {
   id: string;
   label: string;
   hint?: string;
-  run: () => void;
+  run: () => void | Promise<void>;
 };
 
 /** Spotlight-style fuzzy command palette (opened with ⌘K / Ctrl-K). */
@@ -57,7 +57,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
   const choose = (index: number) => {
     const cmd = filtered[index];
     if (cmd) {
-      cmd.run();
+      void cmd.run();
       onClose();
     }
   };

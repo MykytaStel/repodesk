@@ -447,6 +447,12 @@ export async function workReview(runId: string, action: ReviewAction): Promise<P
 }
 
 /** Run final verification and record a receipt bound to the current run/tree. */
+/** Import a manual-handoff result (a pasted unified diff, or the changes already
+ * applied in the working tree) as run evidence so the flow advances to Review. */
+export async function workImportManualChanges(patch?: string | null): Promise<PhaseProgress> {
+  return invoke("work_import_manual_changes", { patch: patch ?? null });
+}
+
 export async function workVerify(): Promise<PhaseProgress> {
   return invoke("work_verify");
 }

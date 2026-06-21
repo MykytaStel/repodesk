@@ -34,24 +34,14 @@ test.describe("daily loop (onboarded)", () => {
   test("Work is the home surface with the phase rail", async ({ page }) => {
     await expect(tabButton(page, "Work")).toHaveClass(/active/);
     await expect(page.locator(".phase-rail .phase-chip")).toHaveCount(6);
+    await expect(page.getByText("Agent handoff")).toBeVisible();
+    await expect(page.getByText("Sent to agent")).toBeVisible();
+    await expect(page.getByText("Comes back")).toBeVisible();
   });
 
   test("navigates every tab without crashing", async ({ page }) => {
-    const primaryTabs = ["Work", "Changes", "History", "Settings"];
-    const moreTabs = [
-      "Dashboard",
-      "Git",
-      "Code",
-      "Orchestrate",
-      "Memory",
-      "Models",
-      "Tokens",
-      "Outcomes",
-      "Playbooks",
-      "Audit",
-      "System Registry",
-      "Debug",
-    ];
+    const primaryTabs = ["Work", "Changes", "History", "Models & Cost", "Settings"];
+    const moreTabs = ["Dashboard", "Orchestrate", "Playbooks", "System Registry", "Debug"];
     for (const tab of primaryTabs) {
       await tabButton(page, tab).click();
       await expect(page.locator(".app-shell")).toBeVisible();
@@ -86,8 +76,8 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("Models tab guides setup with human status and fixes", async ({ page }) => {
-    await openGroup(page, "AI");
-    await tabButton(page, "Models").click();
+    // Models is now the default "Runtime health" view inside the Models & Cost surface.
+    await tabButton(page, "Models & Cost").click();
     await expect(page.getByRole("heading", { name: /Ready for AI/ })).toBeVisible();
     await expect(page.getByText(/need.* attention/i)).toBeVisible();
     await expect(page.getByText("Ready", { exact: true }).first()).toBeVisible();
@@ -113,6 +103,30 @@ test.describe("daily loop (onboarded)", () => {
     await expect(page.getByRole("button", { name: /my-api/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Open from folder/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Connect with details/ })).toBeVisible();
+  });
+
+  test("playbook shortcuts navigate to real work surfaces with feedback", async ({ page }) => {
+    await openGroup(page, "AI");
+    await tabButton(page, "Playbooks").click();
+    await expect(page.getByRole("heading", { name: "Workflow shortcuts" })).toBeVisible();
+    await expect(page.getByText("Authoring planned")).toBeVisible();
+    await expect(page.getByText("No hidden run").first()).toBeVisible();
+    await expect(page.getByText("Visible result").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Open Changes" }).click();
+
+    await expect(tabButton(page, "Changes")).toHaveClass(/active/);
+    await expect(page.getByText("Active view")).toBeVisible();
+    await expect(page.getByText("Security Hotspot Review: Opened Changes for security review.")).toBeVisible();
+  });
+
+  test("Memory shows what becomes agent context", async ({ page }) => {
+    // Memory is now a subnav view inside the History surface.
+    await tabButton(page, "History").click();
+    await page.getByRole("tab", { name: "Memory" }).click();
+    await expect(page.getByRole("heading", { name: "What becomes agent context" })).toBeVisible();
+    await expect(page.getByText("Memory pipeline")).toBeVisible();
+    await expect(page.getByText("Agent slice")).toBeVisible();
   });
 
   test("frontend actually issued the daily-loop commands through IPC", async ({ page }) => {

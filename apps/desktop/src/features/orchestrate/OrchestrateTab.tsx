@@ -5,6 +5,8 @@ import {
   planHasCodingAgentStep,
   planHasPaidStep,
   stepIsApprovalGated,
+  stepIsCodingAgent,
+  stepIsPaid,
   type ExecutorAvailability,
   type CheckProof,
   type LoopRun,
@@ -80,7 +82,12 @@ function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
                 <span>{executor}</span>
                 {provider && provider !== executor ? <span>{provider}</span> : null}
                 <span>{step.model ?? "default model"}</span>
+                <span>{formatNumber(step.budget_tokens)} tokens</span>
               </div>
+              <details className="orchestrate-step-instruction">
+                <summary>Agent instruction</summary>
+                <p>{step.instruction}</p>
+              </details>
               <p className="orchestrate-step-rule">
                 {step.allow_write ? <strong>Writes permitted</strong> : "Read-only"}.
                 {step.depends_on.length > 0 && ` Depends on: ${step.depends_on.join(", ")}.`}
@@ -94,6 +101,68 @@ function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
         for your OK before running them. The rest run automatically.
       </p>
     </section>
+  );
+}
+
+function RunPipelinePanel({
+  plan,
+  approvePaid,
+  approveCodingAgents,
+}: {
+  plan: OrchestrationPlan | null;
+  approvePaid: boolean;
+  approveCodingAgents: boolean;
+}) {
+  const stepCount = plan?.steps.length ?? 0;
+  const codingCount = plan?.steps.filter(stepIsCodingAgent).length ?? 0;
+  const paidCount = plan?.steps.filter(stepIsPaid).length ?? 0;
+  const writeCount = plan?.steps.filter((step) => step.allow_write).length ?? 0;
+  const approvalState =
+    (codingCount > 0 && !approveCodingAgents) || (paidCount > 0 && !approvePaid)
+      ? "will pause"
+      : "ready";
+
+  return (
+    <div className="orchestrate-run-map" aria-label="Orchestrator run pipeline">
+      <RunMapStep
+        label="1. Plan"
+        value={stepCount > 0 ? `${stepCount} routed step${stepCount === 1 ? "" : "s"}` : "preview needed"}
+        detail="Goal becomes ordered sub-agent steps with executor, model, budget, and write permission."
+      />
+      <RunMapStep
+        label="2. Approval"
+        value={approvalState}
+        detail={`${codingCount} CLI agent step${codingCount === 1 ? "" : "s"}, ${paidCount} paid step${paidCount === 1 ? "" : "s"}.`}
+      />
+      <RunMapStep
+        label="3. Execute"
+        value={writeCount > 0 ? "isolated writes" : "read-only"}
+        detail="Coding-agent steps run in managed worktrees; read-only steps only return notes."
+      />
+      <RunMapStep
+        label="4. Review"
+        value="diff + proof"
+        detail="RepoDesk shows changed files, captured diff, verification proof, and memory proposals."
+      />
+    </div>
+  );
+}
+
+function RunMapStep({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="orchestrate-run-step">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
+    </div>
   );
 }
 
@@ -884,6 +953,12 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
             </div>
           );
         })()}
+
+        <RunPipelinePanel
+          plan={orchestrate.plan.data ?? null}
+          approvePaid={approvePaid}
+          approveCodingAgents={approveCodingAgents}
+        />
 
         <div className="button-row orchestrate-action-row">
           <button className="ghost-button" onClick={() => void handlePreview()} disabled={busy}>

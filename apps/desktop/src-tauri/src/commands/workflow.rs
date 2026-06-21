@@ -202,6 +202,22 @@ pub async fn work_review(run_id: String, action: String) -> Result<PhaseProgress
     Ok(current_progress())
 }
 
+/// Import the result of a manual handoff (a pasted unified diff, or the changes
+/// the human already applied in the working tree) as run evidence, so the Work
+/// flow can advance Execute → Review. The import is secret-scanned before it is
+/// recorded; a blocking finding refuses it and leaves the tree untouched-as-run.
+#[tauri::command]
+pub async fn work_import_manual_changes(
+    patch: Option<String>,
+) -> Result<PhaseProgress, ErrorPayload> {
+    let source = match patch {
+        Some(text) if !text.trim().is_empty() => orchestrator::ManualImportSource::Patch(text),
+        _ => orchestrator::ManualImportSource::Worktree,
+    };
+    orchestrator::import_manual_changes(source).map_err(ErrorPayload::from)?;
+    Ok(current_progress())
+}
+
 /// Run final verification and record a receipt bound to the current run, HEAD,
 /// staged index tree, and reviewed changeset (Verify → done while fresh).
 #[tauri::command]

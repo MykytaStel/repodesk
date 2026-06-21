@@ -11,6 +11,7 @@
 
 pub mod auto_loop;
 pub mod context;
+pub mod manual_import;
 pub mod plan;
 pub mod preview;
 pub mod review;
@@ -18,6 +19,7 @@ pub mod runner;
 pub mod types;
 
 pub use auto_loop::{LoopIteration, LoopOptions, LoopRun, LoopStatus, run_loop};
+pub use manual_import::{ManualImport, ManualImportSource, import_manual_changes};
 pub use plan::{
     available_capacities, build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step,
     plan_has_paid_step, route_steps, step_uses_paid_provider,

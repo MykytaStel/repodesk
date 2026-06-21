@@ -116,6 +116,14 @@ const ICONS: Record<TabId, ReactNode> = {
       <circle cx="9" cy="18" r="2" />
     </>
   ),
+  "models-cost": (
+    <>
+      <rect x="3" y="6" width="10" height="10" rx="2" />
+      <rect x="6" y="9" width="4" height="4" rx="0.5" />
+      <circle cx="17" cy="15" r="4" />
+      <path d="M17 13.2v3.6M15.7 14h2.1a.9.9 0 0 1 0 1.8h-1.6a.9.9 0 0 0 0 1.8h2.1" />
+    </>
+  ),
   // Work group.
   dashboard: (
     <>

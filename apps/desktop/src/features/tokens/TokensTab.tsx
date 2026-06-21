@@ -1,17 +1,36 @@
 import React from "react";
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { formatNumber, formatCost, statusTone, MetricCard, UsageRows, Sparkline, EmptyState, ActorBadge } from "../../shared/ui/SharedComponents";
+import { queryKeys } from "../../shared/api/queries";
 import { useTokens } from "./useTokens";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { ArtifactViewerModal } from "../../shared/ui/ArtifactViewerModal";
 
 interface TokensTabProps {}
 
 export function TokensTab({}: TokensTabProps) {
+  const queryClient = useQueryClient();
   const { tokens, fileTokenEstimates, costTrend, loadEstimates, logTokenUsage, saveIgnoreRules } = useTokens();
   const { projectConfig } = useWorkspace();
   const [tokenLogForm, setTokenLogForm] = useState({ provider: "manual", model: "", inputTokens: "0", outputTokens: "0", category: "general", notes: "" });
-  const isBusy = false;
-  const refreshAll = () => {};
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<string | null>(null);
+  const [viewingArtifact, setViewingArtifact] = useState<string | null>(null);
+  const isBusy = refreshing;
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.tokens.usage }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tokens.estimates }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tokens.costTrend }),
+      ]);
+      setLastRefresh(new Date().toLocaleTimeString());
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const handleToggleIgnore = async (path: string) => {
     if (!projectConfig) return;
@@ -36,8 +55,14 @@ export function TokensTab({}: TokensTabProps) {
         <h1>{formatNumber(tokens?.totals.total_tokens)} total tokens logged.</h1>
         <p className="lead">Track active artifact estimates, manual usage, and planning cost before sending context to local or paid models.</p>
         <div className="button-row">
-          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh tokens</button>
+          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>
+            {refreshing ? "Refreshing..." : "Refresh tokens"}
+          </button>
         </div>
+        <p className="muted refresh-note">
+          Refresh re-reads the usage ledger, active artifact estimates, and 14-day cost trend.
+          {lastRefresh ? ` Last refreshed ${lastRefresh}.` : ""}
+        </p>
       </section>
 
       <div className="card-row">
@@ -128,6 +153,13 @@ export function TokensTab({}: TokensTabProps) {
               <div className="row-meta">
                 <span className={`pill ${statusTone(artifact.status)}`}>{artifact.status}</span>
                 <strong>{artifact.exists ? formatNumber(artifact.estimated_tokens) : "-"}</strong>
+                <button 
+                  className="tiny-button" 
+                  disabled={!artifact.exists} 
+                  onClick={() => setViewingArtifact(artifact.kind)}
+                >
+                  View
+                </button>
               </div>
             </div>
           ))}
@@ -219,6 +251,12 @@ export function TokensTab({}: TokensTabProps) {
           <label className="span-2">Notes<textarea rows={3} value={tokenLogForm.notes} onChange={(event) => setTokenLogForm({ ...tokenLogForm, notes: event.target.value })} /></label>
         </div>
       </section>
+
+      <ArtifactViewerModal 
+        isOpen={!!viewingArtifact} 
+        kind={viewingArtifact || ""} 
+        onClose={() => setViewingArtifact(null)} 
+      />
     </div>
   );
 }

@@ -117,9 +117,9 @@ export function DashboardTab({
           <div>
             <p className="eyebrow">RepoPilot review</p>
             <h2>{rp && rp.health_score != null ? `Health ${rp.health_score}` : "Code review findings"}</h2>
-            <p className="muted" style={{ marginTop: 4, fontSize: 13 }}>Local static analysis of your current diff to surface security, performance, or logic issues before committing.</p>
+            <p className="muted" style={{ marginTop: 4, fontSize: 13 }}>Local static analysis of your current diff. View logs in the Terminal.</p>
           </div>
-          <button className="tiny-button" disabled={rpLoading} onClick={() => void runRepopilot()}>{rpLoading ? "Reviewing…" : "Run review"}</button>
+          <button className="tiny-button" disabled={rpLoading} onClick={() => void runRepopilot()}>{rpLoading ? "Running (see Terminal)…" : "Run review"}</button>
         </div>
         {!rp ? (
           <p className="muted">Run a local RepoPilot review of the current diff to surface High/Critical findings before committing.</p>
@@ -156,23 +156,54 @@ export function DashboardTab({
     );
   }
 
-  function renderRoiPanel() {
+
+
+  function renderWelcomeOnboarding() {
     return (
-      <section className="panel wide-panel">
-        <div className="panel-title-row">
-          <div>
-            <p className="eyebrow">Enterprise Telemetry</p>
-            <h2>ROI & Impact</h2>
-            <p className="muted" style={{ marginTop: 4, fontSize: 13 }}>Estimated business impact based on AI usage, tasks completed, and local tokens saved.</p>
+      <section className="hero-panel wide-panel" style={{ padding: "32px" }}>
+        <p className="eyebrow" style={{ marginBottom: "8px", color: "var(--accent-primary)" }}>Getting Started</p>
+        <h1 style={{ fontSize: "2rem", marginBottom: "16px" }}>Welcome to RepoDesk.</h1>
+        <p className="lead" style={{ fontSize: "1.1rem", marginBottom: "32px", maxWidth: "600px" }}>
+          Your local-first AI operations cockpit. Safely run autonomous agents (like Claude or Codex) on your codebase without leaking secrets or blowing your budget.
+        </p>
+        
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
+            <div style={{ background: "var(--bg-card)", borderRadius: "50%", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", border: "1px solid var(--border)", flexShrink: 0 }}>1</div>
+            <div>
+              <h3 style={{ margin: "0 0 4px 0", fontSize: "1.1rem" }}>Connect a Project</h3>
+              <p className="muted" style={{ margin: 0, marginBottom: "8px", maxWidth: "500px" }}>Tell RepoDesk which local folder to manage.</p>
+              <button className="secondary-cta" onClick={() => setActiveTab("settings")}>Go to Settings</button>
+            </div>
+          </div>
+          
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
+            <div style={{ background: "var(--bg-card)", borderRadius: "50%", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", border: "1px solid var(--border)", flexShrink: 0 }}>2</div>
+            <div>
+              <h3 style={{ margin: "0 0 4px 0", fontSize: "1.1rem" }}>Add API Keys</h3>
+              <p className="muted" style={{ margin: 0, marginBottom: "8px", maxWidth: "500px" }}>Bring your own keys. They stay securely in your local OS keychain.</p>
+              <button className="secondary-cta" onClick={() => setActiveTab("settings")}>Configure Providers</button>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "16px" }}>
+            <div style={{ background: "var(--bg-card)", borderRadius: "50%", width: "32px", height: "32px", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", border: "1px solid var(--border)", flexShrink: 0 }}>3</div>
+            <div>
+              <h3 style={{ margin: "0 0 4px 0", fontSize: "1.1rem" }}>Create a Task & Let the Agent Work</h3>
+              <p className="muted" style={{ margin: 0, marginBottom: "8px", maxWidth: "500px" }}>Describe what you want the AI to do. RepoDesk will build a safe, bounded context pack, run the AI, and let you review exactly what changed before committing.</p>
+              <button className="primary-cta" onClick={() => setActiveTab("work")}>Open Work Flow</button>
+            </div>
           </div>
         </div>
-        <div className="route-summary-grid">
-          <div><span>Hours Saved</span><strong>~24h</strong></div>
-          <div><span>Local vs Cloud Cost Savings</span><strong className="text-ok">$142.50</strong></div>
-          <div><span>Security Issues Blocked</span><strong>12</strong></div>
-          <div><span>Tasks Completed</span><strong>8</strong></div>
-        </div>
       </section>
+    );
+  }
+
+  if (!hasProject && !isLoadingWorkspace) {
+    return (
+      <div className="content-grid dashboard-grid">
+        {renderWelcomeOnboarding()}
+      </div>
     );
   }
 
@@ -197,8 +228,6 @@ export function DashboardTab({
       {renderBestRoutePanel()}
 
       {renderRepopilotPanel()}
-
-      {renderRoiPanel()}
 
       <EconomyControl mode={economyMode} setMode={setEconomyMode} isBusy={isBusy} />
 

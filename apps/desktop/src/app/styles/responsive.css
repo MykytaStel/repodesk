@@ -1,11 +1,21 @@
 @media (max-width: 1180px) {
   :root { --sidebar-w: 220px; }
   .main-area { padding: var(--space-5) var(--space-4) var(--space-6); }
-  .topbar { grid-template-columns: 1fr; }
+  .topbar,
+  .shell-feedback {
+    grid-template-columns: 1fr;
+  }
+  .shell-feedback { margin-top: calc(var(--space-5) * -0.45); }
   .two-column-grid { grid-template-columns: 1fr; }
   .route-summary-grid,
   .route-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .work-tab .phase-brief-grid,
+  .work-tab .agent-packet,
+  .playbook-route,
+  .memory-flow-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -42,6 +52,27 @@
   .settings-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+  .shell-feedback {
+    margin-top: calc(var(--space-4) * -0.5);
+  }
+  .shell-feedback-view,
+  .shell-feedback-last,
+  .playbook-card {
+    align-items: flex-start;
+    grid-template-columns: 1fr;
+  }
+  .playbook-card-actions {
+    justify-items: start;
+  }
+  .work-tab .phase-brief-grid,
+  .work-tab .agent-packet,
+  .playbook-route,
+  .memory-flow-grid {
+    grid-template-columns: 1fr;
+  }
+  .shell-feedback-last {
+    flex-direction: column;
   }
   .span-2 { grid-column: span 1; }
   h1 { font-size: 24px; }

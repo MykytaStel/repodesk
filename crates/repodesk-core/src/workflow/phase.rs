@@ -206,15 +206,21 @@ pub fn derive_signals(evidence: &Evidence) -> PhaseSignals {
     let verification = receipt.and_then(|r| r.verification.as_ref());
     let finish = receipt.and_then(|r| r.finish.as_ref());
 
-    // A run receipt only ever belongs to an Agent run; a Manual handoff never
-    // produces one, so it can never derive execution success from a stale run.
-    let agent_run = evidence.mode == ExecutionMode::AgentRun;
-    let execution_started = agent_run && receipt.is_some();
+    // A receipt is honored only when it was produced for the *current* execution
+    // mode: an agent-run receipt can't satisfy a manual handoff, and a manual
+    // import can't satisfy an agent run. This keeps the original invariant (a
+    // stale run from the other mode never advances the flow) while letting a
+    // manual-handoff import — which now writes a `ManualHandoff` receipt — count
+    // as real execution evidence.
+    let mode_matches = receipt
+        .map(|r| r.execution_mode == evidence.mode)
+        .unwrap_or(false);
+    let execution_started = mode_matches;
     let rejected = review
         .map(|r| r.decision == ReviewDecision::Rejected)
         .unwrap_or(false);
     let execution_succeeded =
-        agent_run && execution.map(|e| e.succeeded()).unwrap_or(false) && !rejected;
+        mode_matches && execution.map(|e| e.succeeded()).unwrap_or(false) && !rejected;
 
     // The reviewable changeset is exactly the run's recorded files.
     let run_digest = execution.and_then(|e| e.changeset_digest.clone());
@@ -778,6 +784,33 @@ mod tests {
             derive_progress(&signals, ExecutionMode::AgentRun).current,
             Phase::Execute
         );
+    }
+
+    #[test]
+    fn manual_import_receipt_advances_manual_mode_to_review() {
+        // A manual handoff that has been imported writes a ManualHandoff receipt
+        // with a changeset; in Manual mode it counts as real execution evidence,
+        // so the flow advances to Review just like an agent run.
+        let mut receipt = run_receipt("m1", SubAgentStatus::Ok, &["src/a.rs"]);
+        receipt.execution_mode = ExecutionMode::ManualHandoff;
+        let ev = evidence(receipt, ExecutionMode::ManualHandoff);
+        let signals = derive_signals(&ev);
+        assert!(signals.execution_succeeded);
+        assert!(signals.has_changes);
+        assert!(!signals.changes_reviewed);
+        assert_eq!(
+            derive_progress(&signals, ExecutionMode::ManualHandoff).current,
+            Phase::Review
+        );
+    }
+
+    #[test]
+    fn agent_receipt_never_satisfies_manual_mode_after_mode_switch() {
+        // An agent-run receipt must not advance Manual mode even with the new
+        // mode-matching gate — switching to Manual can't inherit an agent run.
+        let receipt = run_receipt("r1", SubAgentStatus::Ok, &["src/a.rs"]);
+        let ev = evidence(receipt, ExecutionMode::ManualHandoff);
+        assert!(!derive_signals(&ev).execution_succeeded);
     }
 
     #[test]

@@ -8,7 +8,8 @@ import { MemoryHero, NoProjectMemoryState } from "./MemoryHero";
 import { MemoryMetrics } from "./MemoryMetrics";
 import { ReviewQueue } from "./ReviewQueue";
 import { type Category, type EntryStatusFilter } from "./constants";
-import { buildEntriesById, filterEntries, getMemoryStats, parseTags } from "./utils";
+import { buildEntriesById, filterEntries, getMemoryStats, parseTags, type MemoryStats } from "./utils";
+import type { BrainPreview } from "../../shared/api/memory";
 
 export function MemoryTab() {
   const memory = useMemory();
@@ -71,6 +72,8 @@ export function MemoryTab() {
 
       <MemoryMetrics stats={stats} />
 
+      <MemoryFlowPanel stats={stats} preview={memory.preview} />
+
       <BrainPreviewPanel preview={memory.preview} loading={memory.previewLoading} />
 
       <CapturePanel
@@ -132,6 +135,68 @@ export function MemoryTab() {
           })
         }
       />
+    </div>
+  );
+}
+
+function MemoryFlowPanel({
+  stats,
+  preview,
+}: {
+  stats: MemoryStats;
+  preview: BrainPreview | null;
+}) {
+  const included = preview ? `${preview.included}/${preview.total_active}` : "0/0";
+  const dropped = preview && preview.excluded > 0 ? `${preview.excluded} dropped by budget` : "within budget";
+  return (
+    <section className="panel wide-panel memory-flow">
+      <div className="panel-title-row compact">
+        <div>
+          <p className="eyebrow">Memory pipeline</p>
+          <h2>What becomes agent context</h2>
+        </div>
+        <span className="pill">{included} injected</span>
+      </div>
+      <div className="memory-flow-grid">
+        <MemoryFlowStep
+          label="Sources"
+          value={`${stats.activeCount} active entries`}
+          detail="Manual notes, accepted proposals, pinned decisions, and prior run captures."
+        />
+        <MemoryFlowStep
+          label="Review queue"
+          value={`${stats.pendingCount} pending`}
+          detail="Captured text waits here until you accept, reject, or reconcile it."
+        />
+        <MemoryFlowStep
+          label="Brain file"
+          value={`${stats.pinnedCount} pinned`}
+          detail="Rebuild memory.md writes the curated project memory file."
+        />
+        <MemoryFlowStep
+          label="Agent slice"
+          value={dropped}
+          detail="Pinned, relevant, and recent entries are packed into the context sent to agents."
+        />
+      </div>
+    </section>
+  );
+}
+
+function MemoryFlowStep({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="memory-flow-step">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <p>{detail}</p>
     </div>
   );
 }

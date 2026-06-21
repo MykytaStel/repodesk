@@ -1,10 +1,30 @@
 import React from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { statusTone } from "../../shared/ui/SharedComponents";
+import { queryKeys } from "../../shared/api/queries";
 import { useSystem } from "./useSystem";
 
 export function SystemTab() {
-  const { systemAgents, systemCapabilities, systemPeripherals, systemModules, isLoading: isBusy } = useSystem();
-  const refreshAll = () => {};
+  const queryClient = useQueryClient();
+  const { systemAgents, systemCapabilities, systemPeripherals, systemModules, isLoading } = useSystem();
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefresh, setLastRefresh] = useState<string | null>(null);
+  const isBusy = isLoading || refreshing;
+  const refreshAll = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.system.agents }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.system.capabilities }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.system.peripherals }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.system.modules }),
+      ]);
+      setLastRefresh(new Date().toLocaleTimeString());
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   return (
     <div className="content-grid">
@@ -13,8 +33,14 @@ export function SystemTab() {
         <h1>Agent skills & context boundaries</h1>
         <p className="lead">RepoDesk restricts what local or paid models can do using explicit system tools. MCP tools are managed here.</p>
         <div className="button-row">
-          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh system</button>
+          <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>
+            {refreshing ? "Refreshing..." : "Refresh system"}
+          </button>
         </div>
+        <p className="muted refresh-note">
+          Refresh re-reads agent definitions, capability boundaries, peripherals, and brain modules.
+          {lastRefresh ? ` Last refreshed ${lastRefresh}.` : ""}
+        </p>
       </section>
       <section className="panel wide-panel">
         <div className="panel-title-row"><div><p className="eyebrow">Available</p><h2>Agents</h2></div></div>

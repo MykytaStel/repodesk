@@ -530,7 +530,7 @@ fn is_safe_relative(path: &str) -> bool {
         .any(|component| matches!(component, std::path::Component::ParentDir))
 }
 
-fn is_git_repo(project_path: &Path) -> bool {
+pub(crate) fn is_git_repo(project_path: &Path) -> bool {
     git_ok(project_path, &["rev-parse", "--is-inside-work-tree"])
 }
 
@@ -559,7 +559,11 @@ fn git_capture_owned(project_path: &Path, args: &[String]) -> RepoDeskResult<Str
     }
 }
 
-fn git_apply_stdin(project_path: &Path, args: &[&str], stdin: &str) -> RepoDeskResult<()> {
+pub(crate) fn git_apply_stdin(
+    project_path: &Path,
+    args: &[&str],
+    stdin: &str,
+) -> RepoDeskResult<()> {
     let mut child = Command::new("git")
         .args(args)
         .current_dir(project_path)

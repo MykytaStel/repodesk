@@ -84,11 +84,15 @@ test.describe("work tab golden path (onboarded)", () => {
     await expect(disclosure).toHaveAttribute("aria-expanded", "true");
   });
 
-  test("primary nav is collapsed to Work / Changes / History / Settings", async ({ page }) => {
+  test("primary nav is collapsed to Work / Changes / History / Models & Cost / Settings", async ({ page }) => {
     const nav = page.locator(".nav-list .nav-group").first();
-    for (const tab of ["Work", "Changes", "History", "Settings"]) {
+    for (const tab of ["Work", "Changes", "History", "Models & Cost", "Settings"]) {
       await expect(nav.getByRole("button", { name: new RegExp(`^${tab}`) })).toBeVisible();
     }
+    // Models & Cost merges runtime health + usage/cost behind one subnav.
+    await nav.getByRole("button", { name: /^Models & Cost/ }).click();
+    await expect(page.locator(".subnav")).toBeVisible();
+    await expect(page.getByText("This view crashed")).toHaveCount(0);
     // Changes is one unified surface: a workspace summary header above a single
     // changed-files list + preview pane (no segmented Git/Code subnav).
     await nav.getByRole("button", { name: /^Changes/ }).click();

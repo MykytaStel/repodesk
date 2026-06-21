@@ -295,6 +295,7 @@ pub fn run() {
             commands::work_phase_state,
             commands::work_set_execution_mode,
             commands::work_review,
+            commands::work_import_manual_changes,
             commands::work_verify,
             commands::read_artifact,
             commands::agent_context_pack,
