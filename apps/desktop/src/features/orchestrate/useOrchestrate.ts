@@ -86,6 +86,7 @@ export function useOrchestrate() {
       api.orchestrateReview(v.runId, v.action),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.state });
       queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.worktrees });
     },
   });
@@ -97,6 +98,13 @@ export function useOrchestrate() {
   const checkProof = useMutation({
     mutationFn: (v: { runId: string; runChecks: boolean }) =>
       api.orchestrateCheckProof(v.runId, v.runChecks),
+    onSuccess: (_data, variables) => {
+      if (!variables.runChecks) return;
+      queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.state });
+      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.history });
+      queryClient.invalidateQueries({ queryKey: queryKeys.orchestrate.timeline });
+    },
   });
 
   const cleanupWorktree = useMutation({

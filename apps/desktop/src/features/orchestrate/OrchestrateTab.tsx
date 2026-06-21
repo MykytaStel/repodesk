@@ -50,30 +50,42 @@ function StatusBadge({ status }: { status: SubAgentStatus }) {
 
 function PlanPanel({ plan }: { plan: OrchestrationPlan }) {
   return (
-    <section className="panel wide-panel">
-      <p className="eyebrow">Plan</p>
-      <h2 style={{ marginTop: 4 }}>{plan.goal}</h2>
-      <div className="timeline" style={{ marginTop: 16 }}>
+    <section className="panel wide-panel orchestrate-plan">
+      <div className="panel-title-row compact">
+        <div>
+          <p className="eyebrow">Plan</p>
+          <h2>{plan.goal}</h2>
+        </div>
+        <span className="pill neutral">
+          {plan.steps.length} step{plan.steps.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="orchestrate-plan-grid">
         {plan.steps.map((step, index) => {
           const executor = step.executor_id ?? step.agent;
           const provider = step.provider_id ?? step.provider;
           const gated = stepIsApprovalGated(step);
           return (
-            <div key={step.id} className="timeline-step neutral">
-              <span>{index + 1}</span>
-              <strong>
-                {step.id} — {step.title}
-              </strong>
-              <small>{executor}{provider && provider !== executor ? ` → ${provider}` : ""} / {step.model ?? "default model"}</small>
-              <div className="button-row" style={{ margin: "8px 0 0", gap: 6 }}>
-                <ActorBadge mode={gated ? "manual" : "auto"} />
-                {gated && <span className="pill warn">Approval-gated</span>}
+            <article key={step.id} className={`orchestrate-step-card ${gated ? "gated" : "auto"}`}>
+              <div className="orchestrate-step-head">
+                <span className="orchestrate-step-index">{index + 1}</span>
+                <div className="orchestrate-step-pills">
+                  <span className={`pill ${gated ? "warn" : "ok"}`}>{gated ? "Approval" : "Auto"}</span>
+                  {step.allow_write && <span className="pill warn">Writes</span>}
+                </div>
               </div>
-              <p style={{ marginTop: 8 }}>
-                {step.allow_write ? <strong style={{ color: "var(--warning)" }}>Writes permitted</strong> : "Read-only"}.
+              <h3>{step.title}</h3>
+              <p className="orchestrate-step-id">{step.id}</p>
+              <div className="orchestrate-step-meta">
+                <span>{executor}</span>
+                {provider && provider !== executor ? <span>{provider}</span> : null}
+                <span>{step.model ?? "default model"}</span>
+              </div>
+              <p className="orchestrate-step-rule">
+                {step.allow_write ? <strong>Writes permitted</strong> : "Read-only"}.
                 {step.depends_on.length > 0 && ` Depends on: ${step.depends_on.join(", ")}.`}
               </p>
-            </div>
+            </article>
           );
         })}
       </div>
@@ -325,6 +337,7 @@ function ReviewCenter({
   onRunChecks,
   onReview,
   reviewing,
+  acceptingAndVerifying,
   reviewResult,
 }: {
   run: OrchestrationRun;
@@ -336,6 +349,7 @@ function ReviewCenter({
   onRunChecks: () => void;
   onReview: (action: ReviewAction) => void;
   reviewing?: boolean;
+  acceptingAndVerifying?: boolean;
   reviewResult?: RunReview | null;
 }) {
   const changedCount = run.results.reduce((sum, result) => sum + (result.changed_files?.length ?? 0), 0);
@@ -371,8 +385,8 @@ function ReviewCenter({
 
       {isolated && (
         <div className="notice warn" style={{ marginTop: 12 }}>
-          Changes are still in isolated worktrees. Active-checkout checks do not include them until you accept;
-          rely on step verification notes first, then run full checks after applying.
+          Changes are still in isolated worktrees. Accept applies and stages them in the active checkout,
+          then RepoDesk runs full active-checkout checks before you commit.
         </div>
       )}
 
@@ -383,10 +397,14 @@ function ReviewCenter({
         <button className="tiny-button" onClick={onRunChecks} disabled={proofLoading}>
           {proofLoading ? "Running..." : "Run active-checkout checks"}
         </button>
-        <button className="primary-button" onClick={() => onReview("accept")} disabled={reviewing}>
-          {reviewing ? "Reviewing..." : `Accept ${changedCount} change${changedCount === 1 ? "" : "s"}`}
+        <button className="primary-button" onClick={() => onReview("accept")} disabled={reviewing || acceptingAndVerifying || proofLoading}>
+          {reviewing
+            ? "Accepting..."
+            : acceptingAndVerifying
+              ? "Running checks..."
+              : `Accept & run checks (${changedCount})`}
         </button>
-        <button className="ghost-button" onClick={() => onReview("reject")} disabled={reviewing}>
+        <button className="ghost-button" onClick={() => onReview("reject")} disabled={reviewing || acceptingAndVerifying}>
           Reject changes
         </button>
       </div>
@@ -396,6 +414,7 @@ function ReviewCenter({
           {reviewResult.action === "accept" ? "Accepted" : "Reviewed"}{" "}
           {reviewResult.processed.map((file) => `${file.path} (${file.outcome})`).join(", ") || "nothing"}
           {reviewResult.warnings.length > 0 ? ` — ${reviewResult.warnings.join("; ")}` : ""}
+          {reviewResult.action === "accept" && acceptingAndVerifying ? " Checks are running now." : ""}
         </div>
       )}
 
@@ -610,6 +629,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const [targetModelCombo, setTargetModelCombo] = useState<string>("auto");
   const [selectedRun, setSelectedRun] = useState<OrchestrationRun | null>(null);
   const [reviewResult, setReviewResult] = useState<RunReview | null>(null);
+  const [acceptingAndVerifying, setAcceptingAndVerifying] = useState(false);
   const [cleaningWorkspace, setCleaningWorkspace] = useState<string | null>(null);
 
   const busy = orchestrate.plan.isPending || orchestrate.run.isPending || orchestrate.loop.isPending;
@@ -635,11 +655,18 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
 
   async function handleReview(action: ReviewAction) {
     if (!currentRun) return;
+    setAcceptingAndVerifying(false);
     try {
       const result = await orchestrate.review.mutateAsync({ runId: currentRun.run_id, action });
       setReviewResult(result);
+      if (action === "accept") {
+        setAcceptingAndVerifying(true);
+        await orchestrate.checkProof.mutateAsync({ runId: currentRun.run_id, runChecks: true });
+      }
     } catch {
       // surfaced via orchestrate.review.error / the Error panel
+    } finally {
+      if (action === "accept") setAcceptingAndVerifying(false);
     }
   }
 
@@ -749,80 +776,80 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           human-reviewable memory proposals. Preview the plan and cost before running.
         </p>
 
-        <div className="settings-grid" style={{ marginTop: 16, background: "var(--neutral-soft)", padding: 16, borderRadius: 8 }}>
-          <label style={{ marginBottom: 16, display: "block" }}>
+        <div className="orchestrate-control-panel">
+          <label className="orchestrate-field orchestrate-goal-field">
             Goal override
             <textarea
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
               placeholder="Leave empty to default to the active task title"
               rows={2}
-              style={{ width: "100%", marginTop: 8 }}
             />
           </label>
-          
-          <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16, display: "grid" }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-              Target Model
-              <select
-                value={targetModelCombo}
-                onChange={(e) => setTargetModelCombo(e.target.value)}
-                style={{ width: "100%" }}
-              >
-                <option value="auto">Adaptive Router (Auto)</option>
-                {models?.providers.map((provider) => {
-                  // Fallback for CLI/local providers with no models
-                  if (provider.models.length === 0) {
-                     return <option key={provider.id} value={`${provider.id}::`}>{provider.label}</option>;
-                  }
-                  return (
-                    <optgroup key={provider.id} label={provider.label}>
-                      {provider.models.map((m) => (
-                        <option key={`${provider.id}::${m.id}`} value={`${provider.id}::${m.id}`}>
-                          {m.id}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
-              </select>
+
+          <label className="orchestrate-field">
+            Target model
+            <select
+              value={targetModelCombo}
+              onChange={(e) => setTargetModelCombo(e.target.value)}
+            >
+              <option value="auto">Adaptive Router (Auto)</option>
+              {models?.providers.map((provider) => {
+                // Fallback for CLI/local providers with no models
+                if (provider.models.length === 0) {
+                  return <option key={provider.id} value={`${provider.id}::`}>{provider.label}</option>;
+                }
+                return (
+                  <optgroup key={provider.id} label={provider.label}>
+                    {provider.models.map((m) => (
+                      <option key={`${provider.id}::${m.id}`} value={`${provider.id}::${m.id}`}>
+                        {m.id}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+          </label>
+
+          <div className="orchestrate-limit-grid">
+            <label className="orchestrate-field">
+              Max cost
+              <input
+                value={maxCost}
+                onChange={(e) => setMaxCost(e.target.value)}
+                placeholder="No limit"
+                inputMode="decimal"
+              />
             </label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                Max Cost (Units)
-                <input
-                  value={maxCost}
-                  onChange={(e) => setMaxCost(e.target.value)}
-                  placeholder="No limit"
-                  inputMode="decimal"
-                  style={{ width: "100%" }}
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                Max Loop Attempts
-                <input
-                  value={maxIterations}
-                  onChange={(e) => setMaxIterations(e.target.value)}
-                  inputMode="numeric"
-                  style={{ width: "100%" }}
-                />
-              </label>
-            </div>
+            <label className="orchestrate-field">
+              Loop attempts
+              <input
+                value={maxIterations}
+                onChange={(e) => setMaxIterations(e.target.value)}
+                inputMode="numeric"
+              />
+            </label>
           </div>
-          
-          <div style={{ display: "flex", gap: 24, marginTop: 16 }}>
-            <label className="toggle-row" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, cursor: "pointer" }}>
-              <input type="checkbox" checked={approvePaid} onChange={(e) => setApprovePaid(e.target.checked)} style={{ margin: 0, width: "auto" }} />
-              <span style={{ fontSize: 14 }}>Auto-approve paid steps</span>
+
+          <div className="orchestrate-approval-grid">
+            <label className={`orchestrate-approval-card ${approvePaid ? "selected" : ""}`}>
+              <input type="checkbox" checked={approvePaid} onChange={(e) => setApprovePaid(e.target.checked)} />
+              <span>
+                <strong>Paid steps</strong>
+                <small>Auto-approve token-spending providers.</small>
+              </span>
             </label>
-            <label className="toggle-row" style={{ display: "flex", flexDirection: "row", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <label className={`orchestrate-approval-card ${approveCodingAgents ? "selected" : ""}`}>
               <input
                 type="checkbox"
                 checked={approveCodingAgents}
                 onChange={(e) => setApproveCodingAgents(e.target.checked)}
-                style={{ margin: 0, width: "auto" }}
               />
-              <span style={{ fontSize: 14 }}>Auto-approve CLI agents</span>
+              <span>
+                <strong>CLI agents</strong>
+                <small>Auto-approve local coding-agent processes.</small>
+              </span>
             </label>
           </div>
         </div>
@@ -844,9 +871,9 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           const gatedCount = previewed.steps.filter(stepIsApprovalGated).length;
           const autoCount = previewed.steps.length - gatedCount;
           return (
-            <div className={`notice ${willPause ? "warn" : "ok"}`} style={{ marginTop: 16 }}>
+            <div className={`notice orchestrate-run-notice ${willPause ? "warn" : "ok"}`}>
               <strong>What runs without asking</strong>
-              <p style={{ margin: "4px 0 0" }}>
+              <p>
                 RepoDesk will run <strong>{autoCount}</strong> step{autoCount === 1 ? "" : "s"} automatically.
                 {gatedCount > 0 && willPause &&
                   ` It will pause for your approval on ${gatedCount} paid/agent step${gatedCount === 1 ? "" : "s"} before spending money or launching a CLI agent.`}
@@ -858,7 +885,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           );
         })()}
 
-        <div className="button-row" style={{ marginTop: 16, gap: 12 }}>
+        <div className="button-row orchestrate-action-row">
           <button className="ghost-button" onClick={() => void handlePreview()} disabled={busy}>
             {orchestrate.plan.isPending ? "Building..." : "Preview plan"}
           </button>
@@ -868,11 +895,11 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           <button className="primary-button" onClick={() => void handleRun(false)} disabled={busy}>
             {orchestrate.run.isPending ? "Running..." : "Run single step"}
           </button>
-          <button className="primary-button" style={{ background: "var(--accent)" }} onClick={() => void handleLoop(false)} disabled={busy}>
+          <button className="primary-button" onClick={() => void handleLoop(false)} disabled={busy}>
             {orchestrate.loop.isPending ? "Looping..." : "Run autonomous loop"}
           </button>
         </div>
-        <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+        <p className="muted orchestrate-run-note">
           <strong>Run single step</strong>: one pass, then you review the result.
           {" "}<strong>Run autonomous loop</strong>: retries up to {Number(maxIterations) || 3} time{(Number(maxIterations) || 3) === 1 ? "" : "s"}, stopping at your cost ceiling or any guardrail.
         </p>
@@ -913,6 +940,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
           onRunChecks={() => void handleRunChecksForCurrentRun()}
           onReview={(action) => void handleReview(action)}
           reviewing={orchestrate.review.isPending}
+          acceptingAndVerifying={acceptingAndVerifying}
           reviewResult={reviewResult?.run_id === currentRun.run_id ? reviewResult : null}
         />
       )}

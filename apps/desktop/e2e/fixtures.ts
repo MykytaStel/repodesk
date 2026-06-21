@@ -191,6 +191,13 @@ export const onboardedFixtures: CommandFixtures = {
       warnings: [],
     },
   ],
+  orchestrate_review: {
+    run_id: "run-20260616-101500",
+    action: "accept",
+    project: "RepoDesk",
+    processed: [{ path: "src/app.ts", outcome: "applied and staged" }],
+    warnings: [],
+  },
   orchestrate_check_proof: {
     run_id: "run-20260616-101500",
     ran_checks: false,

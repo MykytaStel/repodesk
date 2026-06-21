@@ -148,8 +148,14 @@ test.describe("daily loop (onboarded)", () => {
     await expect(page.getByText("verify passed").first()).toBeVisible();
     await expect(page.getByText("src/app.ts").first()).toBeVisible();
     await expect(page.locator(".diff-add").getByText("+new line")).toBeVisible();
-    await expect(page.getByRole("button", { name: /Accept 1 change/ })).toBeVisible();
+    const commandsBeforeAccept = await recordedCommands(page);
+    const checksBeforeAccept = commandsBeforeAccept.filter((command) => command === "orchestrate_check_proof").length;
+    await page.getByRole("button", { name: /Accept & run checks \(1\)/ }).click();
+    await expect(page.getByText("Accepted src/app.ts (applied and staged)").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Reject changes" })).toBeVisible();
+    const commandsAfterAccept = await recordedCommands(page);
+    expect(commandsAfterAccept).toContain("orchestrate_review");
+    expect(commandsAfterAccept.filter((command) => command === "orchestrate_check_proof").length).toBeGreaterThan(checksBeforeAccept);
   });
 });
 
