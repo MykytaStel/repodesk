@@ -9,7 +9,6 @@ const WorkTab = lazy(() => import("../features/work/WorkTab").then((m) => ({ def
 const ChangesTab = lazy(() => import("../features/changes/ChangesTab").then((m) => ({ default: m.ChangesTab })));
 const HistoryTab = lazy(() => import("../features/history/HistoryTab").then((m) => ({ default: m.HistoryTab })));
 const DashboardTab = lazy(() => import("../features/dashboard/DashboardTab").then((m) => ({ default: m.DashboardTab })));
-const WorkflowTab = lazy(() => import("../features/workflow/WorkflowTab").then((m) => ({ default: m.WorkflowTab })));
 const TokensTab = lazy(() => import("../features/tokens/TokensTab").then((m) => ({ default: m.TokensTab })));
 const ModelsTab = lazy(() => import("../features/models/ModelsTab").then((m) => ({ default: m.ModelsTab })));
 const CodeTab = lazy(() => import("../features/code/CodeTab").then((m) => ({ default: m.CodeTab })));
@@ -46,7 +45,6 @@ export const APP_TABS: AppTab[] = [
   // Advanced — depth & diagnostics, collapsed by default. The merged surfaces
   // (Git/Code → Changes, Outcomes/Memory/Audit → History) still live here as
   // direct links for power users and ⌘K, but are not part of the primary spine.
-  { id: "workflow", title: "Workflow", subtitle: "Classic · 8 steps", group: "Work", tier: "more" },
   { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },
   { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "more" },
   { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "more" },
@@ -86,8 +84,6 @@ export function renderAppTab({
       return <HistoryTab />;
     case "dashboard":
       return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
-    case "workflow":
-      return <WorkflowTab economyMode={economyMode} setActiveTab={setActiveTab} />;
     case "tokens":
       return <TokensTab />;
     case "models":

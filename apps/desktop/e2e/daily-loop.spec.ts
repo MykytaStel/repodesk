@@ -1,16 +1,9 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { installMockIpc, recordedCommands } from "./mock-ipc";
 import { onboardedFixtures } from "./fixtures";
 
-// The classic Workflow surface lives under Advanced; Work is the default home.
-async function openWorkflow(page: Page) {
-  const nav = page.locator(".nav-list");
-  await nav.getByRole("button", { name: /^Advanced/ }).click();
-  await nav.getByRole("button", { name: /^Workflow/ }).click();
-}
-
-// Drives the daily loop on a fully onboarded workspace. The default surface is
-// Work; the classic 8-step Workflow remains available under Advanced.
+// Drives the daily loop on a fully onboarded workspace. Work is the default home
+// and carries the six-phase task flow end to end.
 test.describe("daily loop (onboarded)", () => {
   test.beforeEach(async ({ page }) => {
     await installMockIpc(page, onboardedFixtures);
@@ -31,33 +24,10 @@ test.describe("daily loop (onboarded)", () => {
     await expect(page.locator(".phase-rail .phase-chip")).toHaveCount(6);
   });
 
-  test("classic workflow home still shows commit readiness and route", async ({ page }) => {
-    await openWorkflow(page);
-    await expect(page.getByRole("heading", { level: 1, name: "Build smart context" })).toBeVisible();
-    await expect(page.getByText("All checks passed — safe to commit")).toBeVisible();
-    await expect(page.getByText("Ready to commit")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "ollama / llama3" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Build bounded context" })).toBeEnabled();
-  });
-
-  test("classic workflow journey stepper remains legible", async ({ page }) => {
-    await openWorkflow(page);
-    await expect(page.getByRole("heading", { name: "One task, eight steps" })).toBeVisible();
-    const track = page.locator(".journey-track");
-    await expect(track.locator(".journey-node")).toHaveCount(8);
-    await expect(track.locator(".journey-node.current")).toContainText("Smart Context");
-    await expect(track.locator(".journey-tag")).toHaveCount(8);
-    await expect(track.getByText("Auto", { exact: true }).first()).toBeVisible();
-    await expect(track.getByText("You", { exact: true }).first()).toBeVisible();
-    await expect(page.locator(".journey-detail").getByText("RepoDesk does this")).toBeVisible();
-    await expect(page.locator(".cta-preview")).toContainText("This runs");
-    await expect(page.locator(".cta-preview")).toContainText("Smart Context");
-  });
-
   test("navigates every tab without crashing", async ({ page }) => {
     const nav = page.locator(".nav-list");
     const primaryTabs = ["Work", "Changes", "History", "Settings"];
-    const moreTabs = ["Workflow", "Dashboard", "Git", "Code", "Orchestrate", "Memory", "Models", "Tokens", "System Registry", "Debug"];
+    const moreTabs = ["Dashboard", "Git", "Code", "Orchestrate", "Memory", "Models", "Tokens", "System Registry", "Debug"];
     for (const tab of primaryTabs) {
       await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
       await expect(page.locator(".app-shell")).toBeVisible();
@@ -71,21 +41,6 @@ test.describe("daily loop (onboarded)", () => {
       await expect(page.getByText("This view crashed")).toHaveCount(0);
       await expect(page.getByText("Something went wrong")).toHaveCount(0);
     }
-  });
-
-  test("classic workflow hero next-step CTA reports its result", async ({ page }) => {
-    await openWorkflow(page);
-    await page.getByRole("button", { name: "Build bounded context" }).click();
-    await expect(page.locator(".journey-detail").getByText(/Smart Context done\./)).toBeVisible();
-  });
-
-  test("classic workflow journey step can be run from its card", async ({ page }) => {
-    await openWorkflow(page);
-    const detail = page.locator(".journey-detail");
-    const runBtn = detail.getByRole("button", { name: /^Run Smart Context/ });
-    await expect(runBtn).toBeVisible();
-    await runBtn.click();
-    await expect(detail.getByText(/Smart Context done\./)).toBeVisible();
   });
 
   test("Models tab guides setup with human status and fixes", async ({ page }) => {
@@ -120,12 +75,10 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("frontend actually issued the daily-loop commands through IPC", async ({ page }) => {
-    await openWorkflow(page);
-    await expect(page.getByText("All checks passed — safe to commit")).toBeVisible();
+    await expect(page.locator(".phase-rail .phase-chip")).toHaveCount(6);
     const commands = await recordedCommands(page);
     expect(commands).toContain("desktop_snapshot");
     expect(commands).toContain("work_phase_state");
-    expect(commands).toContain("product_workflow_state");
     expect(commands).toContain("git_workspace_snapshot");
     expect(commands).toContain("model_health_snapshot");
   });
@@ -148,26 +101,5 @@ test.describe("daily loop (onboarded)", () => {
     const commandsAfterAccept = await recordedCommands(page);
     expect(commandsAfterAccept).toContain("orchestrate_review");
     expect(commandsAfterAccept.filter((command) => command === "orchestrate_check_proof").length).toBeGreaterThan(checksBeforeAccept);
-  });
-});
-
-test.describe("finish line (prompts ready)", () => {
-  test("classic workflow guides the hand-off and commit", async ({ page }) => {
-    await installMockIpc(page, {
-      ...onboardedFixtures,
-      product_workflow_state: { ...(onboardedFixtures.product_workflow_state as object), prompts_ok: true },
-    });
-    await page.goto("/");
-    await openWorkflow(page);
-    await expect(page.getByRole("heading", { name: "Hand off & complete the task" })).toBeVisible();
-    await expect(page.getByText(/assembled your prompt/)).toBeVisible();
-    await expect(page.getByText(/Copy the prompt/)).toBeVisible();
-    await expect(page.getByRole("button", { name: /Show the prompt/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Open Memory/ })).toBeVisible();
-    await expect(page.locator("#generated-prompts")).toBeVisible();
-    await expect(page.getByText(/Built locally from your bounded context/)).toBeVisible();
-    await page.getByRole("button", { name: "Context Pack" }).click();
-    await expect(page.getByText("RepoDesk Agent Context Pack")).toBeVisible();
-    await expect(page.getByText("Operating Rules For The Agent")).toBeVisible();
   });
 });

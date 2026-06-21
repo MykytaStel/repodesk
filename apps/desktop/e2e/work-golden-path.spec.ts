@@ -75,11 +75,12 @@ test.describe("work tab golden path (onboarded)", () => {
     for (const tab of ["Work", "Changes", "History", "Settings"]) {
       await expect(nav.getByRole("button", { name: new RegExp(`^${tab}`) })).toBeVisible();
     }
-    // Changes is one unified surface: a workspace summary header + segmented views.
+    // Changes is one unified surface: a workspace summary header above a single
+    // changed-files list + preview pane (no segmented Git/Code subnav).
     await nav.getByRole("button", { name: /^Changes/ }).click();
     await expect(page.locator(".changes-summary")).toBeVisible();
     await expect(page.locator(".changes-summary").getByText("feat/n2-e2e")).toBeVisible();
-    await expect(page.locator(".subnav")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Changed files" })).toBeVisible();
     await expect(page.getByText("This view crashed")).toHaveCount(0);
 
     await nav.getByRole("button", { name: /^History/ }).click();
