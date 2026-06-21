@@ -145,6 +145,90 @@ pub fn commit_ready_changes(message: String) -> Result<CommandResult, String> {
     })
 }
 
+use repodesk_core::git_workspace::GitWorkspaceSnapshot;
+use repodesk_core::orchestrator::{self, OrchestrationRun, RunStatus};
+use repodesk_core::workflow::{
+    ExecutionMode, PhaseProgress, PhaseSignals, derive_progress, load_phase_state,
+    set_execution_mode,
+};
+
+/// Map the desktop's observable state onto the core phase signals.
+///
+/// Scope/Prepare come straight from the workflow engine's `*_ok` flags. The
+/// post-execution phases (Execute → Finish) are a first-approximation read of
+/// the latest orchestration run plus live git state; the isolated-worktree
+/// review nuance (changes that live in a worktree until accepted) is refined as
+/// the Work tab wires the accept/commit transitions.
+fn map_phase_signals(
+    wf: &ProductWorkflowState,
+    latest: Option<&OrchestrationRun>,
+    git: &GitWorkspaceSnapshot,
+) -> PhaseSignals {
+    let execution_started = latest.map(|run| !run.dry_run).unwrap_or(false);
+    let execution_succeeded = latest
+        .map(|run| !run.dry_run && matches!(run.status, RunStatus::Completed | RunStatus::Partial))
+        .unwrap_or(false);
+    // Changes to review are the live working-tree edits (an accepted changeset is
+    // applied/staged into the active tree); a run that wrote only inside its
+    // isolated worktree surfaces here once those changes are applied.
+    let has_changes = git.is_dirty;
+    let changes_reviewed = !has_changes || git.staged_count > 0;
+    let committed =
+        execution_succeeded && !git.is_dirty && wf.commit_readiness.status == "nothing_to_commit";
+
+    PhaseSignals {
+        project_ok: wf.project_ok,
+        task_ok: wf.task_ok,
+        goal_defined: wf.task_ok,
+        context_ok: wf.context_ok,
+        safety_ok: wf.safety_ok,
+        route_ready: wf.smart_context_ok,
+        cost_estimated: wf.smart_context_ok,
+        baseline_checks_ran: false,
+        execution_started,
+        execution_succeeded,
+        has_changes,
+        changes_reviewed,
+        final_checks_ok: wf.checks_ok,
+        committed,
+    }
+}
+
+fn current_phase_signals() -> PhaseSignals {
+    let wf = build_product_workflow_state();
+    let latest = orchestrator::load_latest_run().ok().flatten();
+    let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
+    map_phase_signals(&wf, latest.as_ref(), &git)
+}
+
+/// The current six-phase progression for the active task: derived phase
+/// statuses, the single actionable phase, the one primary CTA, and the chosen
+/// execution mode. This is the Work tab's source of truth.
+#[tauri::command]
+pub async fn work_phase_state() -> Result<PhaseProgress, ErrorPayload> {
+    let mode = load_phase_state()
+        .map(|state| state.execution_mode)
+        .unwrap_or_default();
+    Ok(derive_progress(&current_phase_signals(), mode))
+}
+
+/// Persist the Execute-phase mode (Agent run vs Manual handoff) and return the
+/// refreshed progression.
+#[tauri::command]
+pub async fn work_set_execution_mode(mode: String) -> Result<PhaseProgress, ErrorPayload> {
+    let mode = match mode.as_str() {
+        "agent_run" => ExecutionMode::AgentRun,
+        "manual_handoff" => ExecutionMode::ManualHandoff,
+        other => {
+            return Err(ErrorPayload::configuration(format!(
+                "unknown execution mode '{other}'"
+            )));
+        }
+    };
+    set_execution_mode(mode)?;
+    Ok(derive_progress(&current_phase_signals(), mode))
+}
+
 pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
     if let Ok(cache) = WORKFLOW_CACHE.lock()
         && let Some((ref state, ref last_updated)) = *cache

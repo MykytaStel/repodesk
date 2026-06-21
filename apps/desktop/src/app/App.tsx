@@ -195,7 +195,7 @@ export default function App() {
             <ProjectSwitcher projectName={projectName} onConnectProject={() => setActiveTab("settings")} />
           </div>
           <div className="status-strip">
-            <StatusBox label="Task" value={taskTitle} ok={hasTask} hint={hasTask ? "Active task — open the workflow" : "No active task — create one"} onClick={() => setActiveTab("workflow")} />
+            <StatusBox label="Task" value={taskTitle} ok={hasTask} hint={hasTask ? "Active task — open the work flow" : "No active task — create one"} onClick={() => setActiveTab("work")} />
             <StatusBox label="Git" value={dirty ? `${dirtyCount} changes` : "Clean"} ok={!dirty} hint={dirty ? "Uncommitted changes — review the diff" : "Working tree clean"} onClick={() => setActiveTab("git")} />
             <StatusBox label="Tokens" value={formatNumber(tokens?.totals.total_tokens)} ok={Boolean(tokens)} hint="Token usage & cost" onClick={() => setActiveTab("tokens")} />
             <StatusBox label="Models" value={`${workingProviders}/${models?.providers.length ?? 0} working`} ok={workingProviders > 0} hint={workingProviders > 0 ? "Reachable models — open runtime health" : "No reachable models — configure providers"} onClick={() => setActiveTab(workingProviders > 0 ? "models" : "settings")} />

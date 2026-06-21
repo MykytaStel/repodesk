@@ -320,6 +320,8 @@ pub enum WorkflowCommand {
     Next,
     Plan,
     Show,
+    /// Print the six-phase progression (Scope → … → Finish) for the active task.
+    Phase,
 }
 
 #[derive(Debug, Subcommand)]

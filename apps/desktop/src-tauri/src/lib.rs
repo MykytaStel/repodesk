@@ -292,6 +292,8 @@ pub fn run() {
             ai_discovery_commands::ai_discovery_scan,
             commands::desktop_snapshot,
             commands::product_workflow_state,
+            commands::work_phase_state,
+            commands::work_set_execution_mode,
             commands::read_artifact,
             commands::agent_context_pack,
             commands::desktop_actions,

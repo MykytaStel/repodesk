@@ -94,7 +94,93 @@ pub fn handle_workflow_command(command: WorkflowCommand) -> Result<()> {
         WorkflowCommand::Show => {
             print!("{}", read_or_create_workflow_plan()?);
         }
+        WorkflowCommand::Phase => {
+            let mode = repodesk_core::workflow::load_phase_state()
+                .map(|state| state.execution_mode)
+                .unwrap_or_default();
+            let progress =
+                repodesk_core::workflow::derive_progress(&gather_cli_phase_signals(), mode);
+            print!("{}", format_phase_progress(&progress));
+        }
     }
 
     Ok(())
+}
+
+/// Gather the phase signals from core services (parallel to the desktop's
+/// mapping, but computed directly rather than from `ProductWorkflowState`).
+fn gather_cli_phase_signals() -> repodesk_core::workflow::PhaseSignals {
+    use repodesk_core::orchestrator::{self, RunStatus};
+    use repodesk_core::safety::SafetyLevel;
+
+    let project_ok = get_active_project().is_ok();
+    let task = show_active_task().ok();
+    let run_dir = task.as_ref().map(|t| t.config.run_dir.clone());
+    let exists = |name: &str| {
+        run_dir
+            .as_ref()
+            .map(|dir| dir.join(name).exists())
+            .unwrap_or(false)
+    };
+
+    let checks_preview = run_dir
+        .as_ref()
+        .and_then(|dir| std::fs::read_to_string(dir.join("checks-summary.md")).ok());
+    let final_checks_ok = exists("checks-summary.md")
+        && repodesk_core::workflow::checks_passed(checks_preview.as_deref()) != Some(false);
+
+    let git = repodesk_core::git_workspace::build_git_workspace_snapshot();
+    let latest = orchestrator::load_latest_run().ok().flatten();
+    let execution_started = latest.as_ref().map(|run| !run.dry_run).unwrap_or(false);
+    let execution_succeeded = latest
+        .as_ref()
+        .map(|run| !run.dry_run && matches!(run.status, RunStatus::Completed | RunStatus::Partial))
+        .unwrap_or(false);
+    let has_changes = git.is_dirty;
+
+    repodesk_core::workflow::PhaseSignals {
+        project_ok,
+        task_ok: task.is_some(),
+        goal_defined: task.is_some(),
+        context_ok: exists("context.md"),
+        safety_ok: scan_active_context()
+            .map(|report| report.level != SafetyLevel::Block)
+            .unwrap_or(true),
+        route_ready: exists("smart-context.md"),
+        cost_estimated: exists("token-estimate.txt"),
+        baseline_checks_ran: false,
+        execution_started,
+        execution_succeeded,
+        has_changes,
+        changes_reviewed: !has_changes || git.staged_count > 0,
+        final_checks_ok,
+        committed: execution_succeeded && !git.is_dirty,
+    }
+}
+
+fn format_phase_progress(progress: &repodesk_core::workflow::PhaseProgress) -> String {
+    use repodesk_core::workflow::PhaseStatus;
+    let mut out = String::from("Task phases:\n");
+    for view in &progress.phases {
+        let marker = match view.status {
+            PhaseStatus::Done => "[x]",
+            PhaseStatus::InProgress => "[~]",
+            PhaseStatus::Available => "[>]",
+            PhaseStatus::Locked => "[ ]",
+        };
+        let cursor = if view.phase == progress.current {
+            " ←"
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            "  {marker} {} — {}{cursor}\n",
+            view.title, view.summary
+        ));
+    }
+    out.push_str(&format!("\nNext: {}\n", progress.cta.label));
+    if progress.complete {
+        out.push_str("All phases complete.\n");
+    }
+    out
 }

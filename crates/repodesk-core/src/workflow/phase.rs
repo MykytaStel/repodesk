@@ -208,7 +208,10 @@ pub fn derive_progress(signals: &PhaseSignals, mode: ExecutionMode) -> PhaseProg
         .copied()
         .find(|phase| !signals.is_done(*phase))
         .unwrap_or(Phase::Finish);
-    let complete = signals.is_done(Phase::Finish);
+    // Complete means every phase is done *in sequence* — not merely that
+    // `is_done(Finish)` happens to hold (a later gate can be vacuously satisfied,
+    // e.g. a clean tree, while an earlier phase like Review is still pending).
+    let complete = Phase::ALL.iter().all(|phase| signals.is_done(*phase));
 
     let phases = Phase::ALL
         .iter()
@@ -465,6 +468,28 @@ mod tests {
         // Review is skipped (done); Verify already ok → current is Finish.
         assert!(signals.is_done(Phase::Review));
         assert_eq!(progress.current, Phase::Finish);
+    }
+
+    #[test]
+    fn later_vacuous_gate_does_not_mark_complete_while_review_pending() {
+        // Changes exist and are unreviewed, but a clean-tree/commit signal is
+        // (prematurely) set. The flow must rest at Review, not report complete.
+        let signals = PhaseSignals {
+            has_changes: true,
+            changes_reviewed: false,
+            final_checks_ok: true,
+            committed: true,
+            ..full_signals()
+        };
+        let progress = derive_progress(&signals, ExecutionMode::AgentRun);
+        assert!(!progress.complete);
+        assert_eq!(progress.current, Phase::Review);
+        let finish = progress
+            .phases
+            .iter()
+            .find(|p| p.phase == Phase::Finish)
+            .unwrap();
+        assert_eq!(finish.status, PhaseStatus::Locked);
     }
 
     #[test]

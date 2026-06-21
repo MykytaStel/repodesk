@@ -5,6 +5,7 @@ import type { TabId } from "../shared/types/api";
 // Tabs are code-split: only the active tab's chunk is fetched, keeping the
 // initial bundle small. Each feature module exports a named component, so the
 // lazy loader maps it to a default export.
+const WorkTab = lazy(() => import("../features/work/WorkTab").then((m) => ({ default: m.WorkTab })));
 const DashboardTab = lazy(() => import("../features/dashboard/DashboardTab").then((m) => ({ default: m.DashboardTab })));
 const WorkflowTab = lazy(() => import("../features/workflow/WorkflowTab").then((m) => ({ default: m.WorkflowTab })));
 const TokensTab = lazy(() => import("../features/tokens/TokensTab").then((m) => ({ default: m.TokensTab })));
@@ -35,11 +36,12 @@ export interface AppTab {
 // `more` tabs are diagnostics/depth, tucked into a collapsible section.
 // Ordered primary-first so ⌘1..9 jump to the everyday surfaces.
 export const APP_TABS: AppTab[] = [
-  { id: "workflow", title: "Workflow", subtitle: "Home · your 8 steps", group: "Work", tier: "primary" },
+  { id: "work", title: "Work", subtitle: "Home · Scope → Finish", group: "Work", tier: "primary" },
+  { id: "workflow", title: "Workflow", subtitle: "Classic · 8 steps", group: "Work", tier: "more" },
   { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "primary" },
   { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "primary" },
   { id: "memory", title: "Memory", subtitle: "Context agents remember", group: "AI", tier: "primary" },
-  { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to sub-agents", group: "AI", tier: "primary" },
+  { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to sub-agents", group: "AI", tier: "more" },
   { id: "settings", title: "Settings", subtitle: "Providers & keys", group: "System", tier: "primary" },
   // More — depth & diagnostics, collapsed by default.
   { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },
@@ -69,6 +71,8 @@ export function renderAppTab({
   setEconomyMode: (mode: EconomyMode) => void;
 }) {
   switch (activeTab) {
+    case "work":
+      return <WorkTab setActiveTab={setActiveTab} />;
     case "dashboard":
       return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
     case "workflow":

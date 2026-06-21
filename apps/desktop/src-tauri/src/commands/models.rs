@@ -634,7 +634,12 @@ pub async fn start_local_server(provider: String) -> Result<(), String> {
                 return Err("LM Studio launch command returned non-zero status".to_string());
             }
         }
-        _ => return Err(format!("Provider {} does not support local launch", provider)),
+        _ => {
+            return Err(format!(
+                "Provider {} does not support local launch",
+                provider
+            ));
+        }
     }
 
     Ok(())
@@ -664,7 +669,7 @@ pub fn system_model_recommendations() -> Vec<String> {
         recommendations.push(format!("Your system: {} ({}).", os, arch));
         recommendations.push("Recommendation: We suggest trying Ollama first to see how your system handles local LLMs.".to_string());
     }
-    
+
     recommendations.push("General advice: A model with 7B-8B parameters needs about 8GB RAM. Use larger models (14B-32B) only if you have 16GB+ RAM.".to_string());
 
     recommendations

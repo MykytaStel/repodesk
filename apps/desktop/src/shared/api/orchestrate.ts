@@ -365,6 +365,41 @@ export async function orchestrateLoop(args: {
   });
 }
 
+// ── Work phases (the six-phase task progression) ────────────────────────────
+
+export type Phase = "scope" | "prepare" | "execute" | "review" | "verify" | "finish";
+export type PhaseStatus = "locked" | "available" | "in_progress" | "done";
+export type ExecutionMode = "agent_run" | "manual_handoff";
+
+export interface PhaseView {
+  phase: Phase;
+  status: PhaseStatus;
+  title: string;
+  summary: string;
+}
+
+export interface PhaseCta {
+  phase: Phase;
+  label: string;
+  action_id: string | null;
+}
+
+export interface PhaseProgress {
+  phases: PhaseView[];
+  current: Phase;
+  cta: PhaseCta;
+  execution_mode: ExecutionMode;
+  complete: boolean;
+}
+
+export async function workPhaseState(): Promise<PhaseProgress> {
+  return invoke("work_phase_state");
+}
+
+export async function workSetExecutionMode(mode: ExecutionMode): Promise<PhaseProgress> {
+  return invoke("work_set_execution_mode", { mode });
+}
+
 export async function outcomesList(limit?: number): Promise<OutcomeRecord[]> {
   return invoke("outcomes_list", { limit: limit ?? null });
 }
