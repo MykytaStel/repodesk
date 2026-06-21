@@ -16,6 +16,8 @@ import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { queryKeys } from "../../shared/api/queries";
 import { invoke } from "@tauri-apps/api/core";
 import { startLocalServer, refreshModelHealth, type ModelHealthSnapshot, type ProviderHealth } from "../../shared/api/models";
+import { CustomProvidersPanel } from "./CustomProvidersPanel";
+import { ProjectAiImportPanel } from "./ProjectAiImportPanel";
 
 export function SettingsTab() {
   const queryClient = useQueryClient();
@@ -264,6 +266,10 @@ export function SettingsTab() {
           <label className="span-2">Notes<textarea rows={3} value={providerSettings.notes} onChange={(event) => saveSettings({ ...providerSettings, notes: event.target.value })} /></label>
         </div>
       </section>
+
+      <CustomProvidersPanel />
+
+      <ProjectAiImportPanel />
 
       <section className="panel wide-panel">
         <div className="panel-title-row">

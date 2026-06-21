@@ -92,13 +92,14 @@ pub(crate) fn build_default_route_request(
     }
 }
 
-fn cost_agent_for_provider(provider: &str) -> &str {
+fn cost_agent_for_provider(provider: &str) -> String {
     match provider {
-        "openai_api" | "openai" | "chatgpt" => "openai_api",
-        "anthropic_api" | "anthropic" => "anthropic_api",
-        "codex_cli" | "codex" => "codex_cli",
-        "gemini_api" | "gemini" => "gemini_api",
-        _ => "ollama",
+        "openai_api" | "openai" | "chatgpt" => "openai_api".to_string(),
+        "anthropic_api" | "anthropic" => "anthropic_api".to_string(),
+        "codex_cli" | "codex" => "codex_cli".to_string(),
+        "gemini_api" | "gemini" => "gemini_api".to_string(),
+        "ollama" | "lm_studio" | "llamafile" | "localai" => "ollama".to_string(),
+        other => other.to_ascii_lowercase(),
     }
 }
 
@@ -117,9 +118,10 @@ fn estimated_route_cost_units(
         return 0.0;
     }
 
+    let cost_agent = cost_agent_for_provider(provider);
     repodesk_core::usage::cost::estimate_agent_cost(
         cost_config,
-        cost_agent_for_provider(provider),
+        &cost_agent,
         request.estimated_input_tokens,
         request.estimated_output_tokens,
     )
@@ -266,8 +268,13 @@ fn build_routing_capacities(
 ) -> Vec<repodesk_core::routing::ProviderCapacity> {
     let mut capacities = Vec::new();
     let daily_remaining_tokens = tokens.totals.remaining_daily_tokens;
+    let custom_providers =
+        repodesk_core::custom_providers::list_custom_providers().unwrap_or_default();
 
     for provider in &model_health.providers {
+        let custom_provider = custom_providers
+            .iter()
+            .find(|custom| custom.id.eq_ignore_ascii_case(&provider.id));
         let capacity = match provider.id.as_str() {
             "ollama" => Some(route_capacity_from_health(
                 provider,
@@ -323,7 +330,18 @@ fn build_routing_capacities(
                     settings.allow_paid_agents,
                 ))
             }
-            _ => None,
+            _ => custom_provider.map(|custom| {
+                route_capacity_from_health(
+                    provider,
+                    repodesk_core::routing::ProviderKind::Paid,
+                    Some(custom.default_model.clone()).filter(|model| !model.trim().is_empty()),
+                    daily_remaining_tokens,
+                    cost_config,
+                    budget_config,
+                    request,
+                    settings.allow_paid_agents,
+                )
+            }),
         };
 
         if let Some(capacity) = capacity {

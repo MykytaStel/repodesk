@@ -637,3 +637,35 @@ button.status-box:hover {
 .cmdk-item.active, .cmdk-item:hover { background: var(--surface-2); transform: none; box-shadow: none; }
 .cmdk-hint { font-size: 12px; color: var(--muted-2); }
 .cmdk-footer { display: flex; gap: 16px; padding: 9px 14px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted-2); }
+
+/* Global in-flight loader: a thin indeterminate bar across the top of the
+   window, visible while any React Query fetch/mutation is running. */
+.global-loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 2000;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+.global-loader--active {
+  opacity: 1;
+}
+.global-loader-bar {
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2));
+  border-radius: var(--radius-pill);
+  animation: global-loader-slide 1.1s ease-in-out infinite;
+}
+@keyframes global-loader-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .global-loader-bar { animation-duration: 2.2s; }
+}

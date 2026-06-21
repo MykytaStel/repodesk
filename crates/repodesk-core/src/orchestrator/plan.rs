@@ -9,7 +9,9 @@ use crate::api_clients::{ProviderSettings, ThinkingLevel};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::routing::engine::{default_capacities, route_request_with_bias};
-use crate::routing::types::{ProviderCapacity, RouteBias, RouteRequest, TaskKind};
+use crate::routing::types::{
+    ExecutorKind, ProviderCapacity, ProviderKind, QuotaStatus, RouteBias, RouteRequest, TaskKind,
+};
 use crate::tasks::show_active_task;
 use crate::usage::budget::{BudgetConfig, load_budget_config};
 
@@ -130,7 +132,7 @@ fn available_capacities_with(
     let has_gemini = avail.contains(&"gemini_api");
     let has_anthropic = avail.contains(&"anthropic_api");
 
-    default_capacities(budget)
+    let mut caps: Vec<ProviderCapacity> = default_capacities(budget)
         .into_iter()
         .filter_map(|mut capacity| match capacity.provider.as_str() {
             "ollama" | "local" | "lm_studio" | "llamafile" | "localai" | "local_checks" => {
@@ -147,7 +149,50 @@ fn available_capacities_with(
             "manual" => Some(capacity),
             _ => None,
         })
-        .collect()
+        .collect();
+
+    // User-added OpenAI-compatible providers (DeepSeek, Groq, …) are routable
+    // like any cloud completion provider once enabled.
+    for custom in settings.custom.iter().filter(|c| c.enabled) {
+        caps.push(custom_capacity(custom, budget));
+    }
+    caps
+}
+
+/// A routable capacity for a user-added OpenAI-compatible provider — a paid
+/// completion provider keyed by its custom id.
+fn custom_capacity(
+    custom: &crate::custom_providers::CustomProvider,
+    budget: &BudgetConfig,
+) -> ProviderCapacity {
+    let model = if custom.default_model.trim().is_empty() {
+        "custom-model".to_string()
+    } else {
+        custom.default_model.clone()
+    };
+    let auth_status = if custom.has_api_key() || !custom.requires_api_key() {
+        "configured"
+    } else {
+        "auth_missing"
+    };
+    ProviderCapacity {
+        provider: custom.id.clone(),
+        label: custom.label.clone(),
+        kind: ProviderKind::Paid,
+        executor_kind: ExecutorKind::CompletionProvider,
+        executor_id: custom.id.clone(),
+        provider_id: Some(custom.id.clone()),
+        enabled: true,
+        auth_status: auth_status.to_string(),
+        reachability: "unknown".to_string(),
+        models: vec![model.clone()],
+        preferred_model: Some(model),
+        daily_remaining_tokens: budget.daily_hard_limit,
+        estimated_cost_units: 1.0,
+        quota_status: QuotaStatus::Available,
+        paid_agents_allowed: true,
+        max_patch_files: budget.max_files_for_patch_agent,
+    }
 }
 
 /// Find the capacity a manual override names, matching its canonical id against

@@ -497,6 +497,78 @@ fn anthropic_health(settings: &store::ProviderSettings) -> ProviderHealth {
     }
 }
 
+/// Live health + model discovery for a user-added OpenAI-compatible provider,
+/// sending the configured key as a Bearer token (remote vendors require it;
+/// local servers ignore it).
+fn custom_provider_health(
+    provider: &repodesk_core::custom_providers::CustomProvider,
+) -> ProviderHealth {
+    if !provider.enabled {
+        return disabled_provider(&provider.id, &provider.label);
+    }
+    if provider.requires_api_key() && !provider.has_api_key() {
+        return provider_error(
+            &provider.id,
+            &provider.label,
+            "auth_missing",
+            "auth_missing",
+            "Add an API key in Settings to enable live model discovery.".to_string(),
+        );
+    }
+    let url = join_url(&provider.base_url, "/v1/models");
+    let auth = format!("Bearer {}", provider.api_key.trim());
+    let headers: Vec<(&str, &str)> = if provider.api_key.trim().is_empty() {
+        Vec::new()
+    } else {
+        vec![("authorization", auth.as_str())]
+    };
+    match request_json(&url, &headers) {
+        Ok(value) => {
+            let mut models = value
+                .get("data")
+                .and_then(|value| value.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            item.get("id")
+                                .and_then(|value| value.as_str())
+                                .map(|id| model_status(&provider.id, id.to_string(), None))
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if models.is_empty() && !provider.default_model.trim().is_empty() {
+                models.push(model_status(
+                    &provider.id,
+                    provider.default_model.clone(),
+                    Some("configured default model".to_string()),
+                ));
+            }
+            provider_working(&provider.id, &provider.label, "configured", models)
+        }
+        Err(error) => {
+            let reachability = match error.status {
+                Some(401 | 403) => "auth_missing",
+                Some(429) => "rate_limited",
+                _ => "unreachable",
+            };
+            let auth_status = if reachability == "auth_missing" {
+                "auth_missing"
+            } else {
+                "configured"
+            };
+            provider_error(
+                &provider.id,
+                &provider.label,
+                auth_status,
+                reachability,
+                error.summary,
+            )
+        }
+    }
+}
+
 pub(crate) fn model_health_from_settings(
     settings: &store::ProviderSettings,
 ) -> ModelHealthSnapshot {
@@ -533,7 +605,7 @@ pub(crate) fn model_health_from_settings(
         move || anthropic_health(&s)
     });
 
-    let providers = vec![
+    let mut providers = vec![
         t_ollama
             .join()
             .unwrap_or_else(|_| disabled_provider("ollama", "Ollama")),
@@ -555,6 +627,19 @@ pub(crate) fn model_health_from_settings(
             .join()
             .unwrap_or_else(|_| disabled_provider("anthropic_api", "Anthropic API")),
     ];
+
+    // User-added OpenAI-compatible providers, probed in parallel.
+    let custom = repodesk_core::custom_providers::list_custom_providers().unwrap_or_default();
+    let custom_handles: Vec<_> = custom
+        .into_iter()
+        .map(|provider| std::thread::spawn(move || custom_provider_health(&provider)))
+        .collect();
+    for handle in custom_handles {
+        if let Ok(health) = handle.join() {
+            providers.push(health);
+        }
+    }
+
     let mut warnings = Vec::new();
 
     if providers

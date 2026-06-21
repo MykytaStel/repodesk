@@ -16,11 +16,13 @@ pub mod anthropic;
 pub mod gemini;
 pub mod ollama;
 pub mod openai;
+pub mod openai_compat;
 
 pub use anthropic::AnthropicClient;
 pub use gemini::GeminiClient;
 pub use ollama::OllamaClient;
 pub use openai::OpenAiClient;
+pub use openai_compat::OpenAiCompatClient;
 
 /// Boxed, `Send` future returned by provider methods (object-safe, `'static`).
 pub type ProviderFuture<T> = std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send>>;
@@ -157,6 +159,8 @@ pub struct ProviderSettings {
     pub anthropic: ProviderCredential,
     pub openai: ProviderCredential,
     pub gemini: ProviderCredential,
+    /// User-added OpenAI-compatible providers (DeepSeek, Groq, OpenRouter, …).
+    pub custom: Vec<crate::custom_providers::CustomProvider>,
 }
 
 impl ProviderSettings {
@@ -189,6 +193,9 @@ impl ProviderSettings {
                 base_url: env("GEMINI_BASE_URL"),
                 default_model: env("GEMINI_MODEL"),
             },
+            // User-added OpenAI-compatible providers live in their own config
+            // file; load them so both the CLI and desktop can route to them.
+            custom: crate::custom_providers::list_custom_providers().unwrap_or_default(),
         }
     }
 
@@ -223,25 +230,24 @@ pub fn provider_for(
             settings.ollama.base_url.clone(),
             settings.ollama.default_model.clone(),
         ))),
-        // LM Studio serves an OpenAI-compatible API (not Ollama's), so it uses the
-        // OpenAI client pointed at the local endpoint. It ignores auth, but the
-        // client treats a non-empty key as "available", so a placeholder is used
-        // when none is configured.
+        // LM Studio serves an OpenAI-compatible **Chat Completions** API (not the
+        // Responses API and not Ollama's), so it uses the generic chat-completions
+        // client pointed at the local endpoint. Auth is optional for local servers.
         "lm_studio" | "lmstudio" => {
-            let key = settings
+            let key = settings.lm_studio.api_key.clone().unwrap_or_default();
+            let base_url = settings
                 .lm_studio
-                .api_key
+                .base_url
                 .clone()
-                .filter(|k| !k.trim().is_empty())
-                .unwrap_or_else(|| "lm-studio".to_string());
-            let base_url = Some(
-                settings
-                    .lm_studio
-                    .base_url
-                    .clone()
-                    .unwrap_or_else(|| "http://localhost:1234".to_string()),
-            );
-            Ok(Box::new(OpenAiClient::new(key, base_url)))
+                .unwrap_or_else(|| "http://localhost:1234".to_string());
+            let model = settings
+                .lm_studio
+                .default_model
+                .clone()
+                .unwrap_or_else(|| "local-model".to_string());
+            Ok(Box::new(OpenAiCompatClient::new(
+                key, base_url, model, "lm_studio",
+            )))
         }
         "anthropic_api" | "anthropic" => Ok(Box::new(AnthropicClient::new(
             require_key("anthropic", "ANTHROPIC_API_KEY", &settings.anthropic)?,
@@ -265,9 +271,32 @@ pub fn provider_for(
                 "claude is ambiguous here; use anthropic_api for completions or claude_code_cli in the executor layer"
                     .to_string(),
         }),
-        other => Err(RepoDeskError::RoutingFailed {
-            detail: format!("no LLM client is implemented for provider '{other}'"),
-        }),
+        // A user-added OpenAI-compatible provider (DeepSeek, Groq, OpenRouter, …),
+        // dispatched by its configured id to the generic chat-completions client.
+        other => {
+            if let Some(custom) = settings
+                .custom
+                .iter()
+                .find(|c| c.enabled && c.id.eq_ignore_ascii_case(other))
+            {
+                if custom.requires_api_key() && !custom.has_api_key() {
+                    return Err(RepoDeskError::ProviderUnavailable {
+                        provider: custom.id.clone(),
+                        detail: "missing API key for custom OpenAI-compatible provider"
+                            .to_string(),
+                    });
+                }
+                return Ok(Box::new(OpenAiCompatClient::new(
+                    custom.api_key.clone(),
+                    custom.base_url.clone(),
+                    custom.default_model.clone(),
+                    custom.id.clone(),
+                )));
+            }
+            Err(RepoDeskError::RoutingFailed {
+                detail: format!("no LLM client is implemented for provider '{other}'"),
+            })
+        }
     }
 }
 
@@ -383,5 +412,32 @@ mod tests {
         let settings = ProviderSettings::default();
         assert!(provider_for("lm_studio", &settings).is_ok());
         assert!(provider_for("lmstudio", &settings).is_ok());
+    }
+
+    #[test]
+    fn provider_for_custom_requires_key_only_for_remote_urls() {
+        let mut settings = ProviderSettings::default();
+        settings
+            .custom
+            .push(crate::custom_providers::CustomProvider {
+                id: "deepseek".to_string(),
+                label: "DeepSeek".to_string(),
+                base_url: "https://api.deepseek.com".to_string(),
+                api_key: String::new(),
+                default_model: "deepseek-chat".to_string(),
+                enabled: true,
+            });
+        assert!(matches!(
+            provider_for("deepseek", &settings),
+            Err(RepoDeskError::ProviderUnavailable { .. })
+        ));
+
+        settings.custom[0].api_key = "sk-test".to_string();
+        assert!(provider_for("deepseek", &settings).is_ok());
+
+        settings.custom[0].id = "local-openai".to_string();
+        settings.custom[0].base_url = "http://127.0.0.1:8000".to_string();
+        settings.custom[0].api_key = String::new();
+        assert!(provider_for("local-openai", &settings).is_ok());
     }
 }

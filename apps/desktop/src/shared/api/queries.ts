@@ -57,6 +57,9 @@ export const queryKeys = {
     peripherals: ["get_system_peripherals"] as const,
     modules: ["get_system_modules"] as const,
   },
+  projectAi: {
+    scan: (project: string) => ["project_ai_scan", project] as const,
+  },
   memory: {
     list: (project: string) => ["memory_list", project] as const,
     proposals: (project: string) => ["memory_proposals", project] as const,

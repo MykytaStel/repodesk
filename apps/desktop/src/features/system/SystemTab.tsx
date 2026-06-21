@@ -1,9 +1,10 @@
 import React from "react";
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { statusTone } from "../../shared/ui/SharedComponents";
 import { queryKeys } from "../../shared/api/queries";
 import { useSystem } from "./useSystem";
+import { aiDiscoveryScan } from "../../shared/api/discovery";
 
 export function SystemTab() {
   const queryClient = useQueryClient();
@@ -11,6 +12,9 @@ export function SystemTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefresh, setLastRefresh] = useState<string | null>(null);
   const isBusy = isLoading || refreshing;
+  // Machine-level AI discovery scan (on demand).
+  const discovery = useMutation({ mutationFn: aiDiscoveryScan });
+  const report = discovery.data;
   const refreshAll = async () => {
     setRefreshing(true);
     try {
@@ -83,6 +87,64 @@ export function SystemTab() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="panel wide-panel">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Detected on this machine</p>
+            <h2>Installed AI tools</h2>
+          </div>
+          <button className="ghost-button" onClick={() => discovery.mutate()} disabled={discovery.isPending}>
+            {discovery.isPending ? "Scanning…" : report ? "Re-scan" : "Scan system"}
+          </button>
+        </div>
+        <p className="muted">
+          Passive scan of installed CLIs, desktop apps, and localhost endpoints — what AI tooling
+          this machine has. (To import AI files from the connected repo, use Import from project.)
+        </p>
+        {discovery.error && <div className="notice danger">{(discovery.error as Error).message}</div>}
+        {report && (
+          <>
+            <div className="table-list">
+              {report.tools.map((tool) => (
+                <div className="table-row" key={tool.id}>
+                  <div>
+                    <strong>{tool.name}</strong>
+                    <span>{tool.detection}{tool.executable_path ? ` · ${tool.executable_path}` : ""}</span>
+                  </div>
+                  <div className="row-meta">
+                    <span className={`pill ${tool.status === "available" ? "ok" : tool.status === "maybe" ? "warn" : "neutral"}`}>
+                      {tool.status}
+                    </span>
+                    <span className="pill neutral">{tool.category}</span>
+                  </div>
+                </div>
+              ))}
+              {report.endpoints.map((ep) => (
+                <div className="table-row" key={ep.id}>
+                  <div><strong>{ep.name}</strong><span>{ep.url}</span></div>
+                  <div className="row-meta">
+                    <span className={`pill ${ep.status === "available" ? "ok" : "neutral"}`}>{ep.status}</span>
+                    <span className="pill neutral">endpoint</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {report.recommendations.length > 0 && (
+              <div className="route-list ok" style={{ marginTop: 12 }}>
+                <strong>Recommendations</strong>
+                {report.recommendations.map((r, i) => <span key={i}>{r}</span>)}
+              </div>
+            )}
+            {report.warnings.length > 0 && (
+              <div className="route-list danger" style={{ marginTop: 12 }}>
+                <strong>Warnings</strong>
+                {report.warnings.map((w, i) => <span key={i}>{w}</span>)}
+              </div>
+            )}
+          </>
+        )}
       </section>
     </div>
   );

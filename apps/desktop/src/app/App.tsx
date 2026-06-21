@@ -26,6 +26,7 @@ import { BurgerIcon, ChevronIcon, TabIcon } from "./NavIcons";
 import { TerminalPanel } from "../shared/ui/TerminalPanel";
 import { ArtifactViewerModal } from "../shared/ui/ArtifactViewerModal";
 import { AboutModal } from "../shared/ui/AboutModal";
+import { GlobalLoader } from "../shared/ui/GlobalLoader";
 
 const ABOUT_SEEN_KEY = "repodesk.about.seen";
 
@@ -363,6 +364,7 @@ export default function App() {
 
   return (
     <div className={`app-shell${collapsed ? " app-shell--rail" : ""}`}>
+      <GlobalLoader />
       <aside className={`sidebar${collapsed ? " sidebar--collapsed" : ""}`}>
         <div>
           <div className="brand">
