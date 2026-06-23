@@ -20,7 +20,7 @@ jobs:
     name: Gates (fmt, clippy, tests, frontend, secret-scan)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Tauri v2 Linux build dependencies (the desktop crate links WebKitGTK).
       - name: Install Tauri system dependencies
@@ -42,12 +42,12 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: pnpm
@@ -77,15 +77,15 @@ jobs:
     name: E2E smoke (Playwright, mock IPC)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: pnpm
@@ -104,7 +104,7 @@ jobs:
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: apps/desktop/playwright-report/
@@ -114,7 +114,7 @@ jobs:
     name: Supply chain (cargo-deny)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Gates on RustSec vulnerabilities, the license allowlist, and unknown sources
       # (config + rationale in deny.toml). Unmaintained advisories are scoped to our
       # own crates so the unavoidable Tauri/GTK3 ones don't block builds.
@@ -132,13 +132,13 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # Entropy + provider-pattern secret detection, complementing the lightweight
       # value-focused scripts/secret-scan-basic.sh. Config: .gitleaks.toml.
       - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -146,7 +146,7 @@ jobs:
     name: Coverage (report only)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update

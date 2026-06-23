@@ -22,7 +22,7 @@ jobs:
     name: tauri-driver + WebdriverIO smoke
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Tauri + WebDriver system dependencies
         run: |
@@ -46,12 +46,12 @@ jobs:
         run: cargo install tauri-driver --locked
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 9
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: pnpm

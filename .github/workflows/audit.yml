@@ -22,7 +22,7 @@ jobs:
       issues: write
       checks: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run RustSec advisory check
         uses: rustsec/audit-check@v2
         with:
