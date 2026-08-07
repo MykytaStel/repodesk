@@ -3,8 +3,9 @@ use repodesk_core::engineering::{
     EngineeringIntelligence, RunEvidenceSnapshot, WorkItemContractSnapshot, WorkItemContractUpdate,
     derive_change_governance, derive_context_inspector, derive_engineering_intelligence,
     derive_work_item_contract_snapshot, link_active_acceptance_evidence,
-    load_active_run_evidence, read_context_manifest, read_events, read_work_item_contract,
-    record_active_scope_override, save_active_work_item_contract,
+    load_active_run_evidence, load_active_run_evidence_from_events, read_context_manifest,
+    read_events, read_work_item_contract, record_active_scope_override,
+    save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::Serialize;
@@ -25,6 +26,7 @@ pub struct WorkEngineeringSnapshot {
 /// mutations so we do not grow parallel transport plumbing faster than the
 /// domain stabilizes. The normal Work/Inspector polling path stays lightweight;
 /// run evidence is loaded only when `run_evidence_id` is explicitly requested.
+/// All event-backed projections reuse the same ledger read.
 #[tauri::command]
 pub fn work_engineering_intelligence(
     contract_update: Option<WorkItemContractUpdate>,
@@ -63,7 +65,9 @@ pub fn work_engineering_intelligence(
     let work_item_contract = derive_work_item_contract_snapshot(&task, stored_contract, &events);
     let change_governance = derive_change_governance(&task.config.id, &events, &work_item_contract);
     let run_evidence = match run_evidence_id {
-        Some(run_id) => Some(load_active_run_evidence(&run_id).map_err(ErrorPayload::from)?),
+        Some(run_id) => Some(
+            load_active_run_evidence_from_events(&run_id, &events).map_err(ErrorPayload::from)?,
+        ),
         None => None,
     };
 
