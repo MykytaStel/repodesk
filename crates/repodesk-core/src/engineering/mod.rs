@@ -16,9 +16,10 @@ pub use context_compactness::{
     load_context_compactness, record_context_build,
 };
 pub use context_manifest::{
-    CONTEXT_MANIFEST_FILE, CONTEXT_MANIFEST_VERSION, ContextFileEntry,
-    ContextFileExclusionReason, ContextFileReason, ContextFileSelection, ContextFileStatus,
-    ContextManifest, read_context_manifest, select_task_scope_files, write_context_manifest,
+    CONTEXT_MANIFEST_FILE, CONTEXT_MANIFEST_VERSION, ContextChangeCoverage, ContextFileEntry,
+    ContextFileEvidenceReport, ContextFileExclusionReason, ContextFileReason, ContextFileSelection,
+    ContextFileStatus, ContextManifest, derive_context_file_evidence, load_context_file_evidence,
+    read_context_manifest, select_task_scope_files, write_context_manifest,
 };
 pub use domain::{
     ChangeSet, ChangeSetId, ChangeSetStatus, EngineeringDomainError, EngineeringEventId,
