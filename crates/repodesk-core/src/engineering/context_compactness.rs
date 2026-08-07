@@ -12,6 +12,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::engineering::context_manifest::{ContextFileStatus, ContextManifest};
 use crate::engineering::domain::{EvidenceKind, EvidenceRef, WorkItemId};
 use crate::engineering::events::{
     EngineeringEvent, EngineeringEventKind, append_event, read_events,
@@ -32,6 +33,8 @@ pub struct ContextComponentTelemetry {
 pub struct ContextBuildTelemetry<'a> {
     pub context_file: &'a str,
     pub token_estimate_file: &'a str,
+    pub manifest_file: Option<&'a str>,
+    pub manifest: Option<&'a ContextManifest>,
     pub included_tokens: usize,
     pub candidate_tokens: usize,
     pub context_fingerprint: &'a str,
@@ -102,6 +105,29 @@ pub fn record_context_build(
     )
     .with_attribute("components", json!(telemetry.components));
 
+    if let Some(manifest) = telemetry.manifest {
+        let included_files = manifest
+            .entries
+            .iter()
+            .filter(|entry| entry.status == ContextFileStatus::Included)
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+        let excluded_files = manifest
+            .entries
+            .iter()
+            .filter(|entry| entry.status == ContextFileStatus::Excluded)
+            .map(|entry| entry.path.as_str())
+            .collect::<Vec<_>>();
+
+        event = event
+            .with_attribute("context_manifest_version", json!(manifest.version))
+            .with_attribute("included_file_count", json!(manifest.included_files))
+            .with_attribute("excluded_file_count", json!(manifest.excluded_files))
+            .with_attribute("included_file_tokens", json!(manifest.included_file_tokens))
+            .with_attribute("included_files", json!(included_files))
+            .with_attribute("excluded_files", json!(excluded_files));
+    }
+
     if let Ok(evidence) =
         EvidenceRef::try_new(EvidenceKind::Context, telemetry.context_file.to_string())
     {
@@ -111,6 +137,11 @@ pub fn record_context_build(
         EvidenceKind::Other,
         telemetry.token_estimate_file.to_string(),
     ) {
+        event = event.with_evidence(evidence);
+    }
+    if let Some(manifest_file) = telemetry.manifest_file
+        && let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Context, manifest_file.to_string())
+    {
         event = event.with_evidence(evidence);
     }
 
