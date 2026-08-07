@@ -37,7 +37,10 @@ fn changeset_id(run_id: &str) -> RepoDeskResult<ChangeSetId> {
     ChangeSetId::try_new(format!("{run_id}-changeset")).map_err(domain_error)
 }
 
-fn event_for_task(task: &TaskConfig, kind: EngineeringEventKind) -> RepoDeskResult<EngineeringEvent> {
+fn event_for_task(
+    task: &TaskConfig,
+    kind: EngineeringEventKind,
+) -> RepoDeskResult<EngineeringEvent> {
     Ok(EngineeringEvent::new(
         task.project_name.clone(),
         work_item_id(&task.id)?,
@@ -77,11 +80,7 @@ fn run_status_label(status: RunStatus) -> &'static str {
 }
 
 fn result_is_handoff_target(result: &SubAgentResult) -> bool {
-    result.input_tokens > 0
-        && matches!(
-            result.status,
-            SubAgentStatus::Ok | SubAgentStatus::Failed
-        )
+    result.input_tokens > 0 && matches!(result.status, SubAgentStatus::Ok | SubAgentStatus::Failed)
 }
 
 /// Record creation of the RepoDesk 2 Work Item projected from a legacy task.
@@ -109,7 +108,8 @@ pub fn record_context_built(
     if let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Context, context_file.to_string()) {
         event = event.with_evidence(evidence);
     }
-    if let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Other, token_estimate_file.to_string()) {
+    if let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Other, token_estimate_file.to_string())
+    {
         event = event.with_evidence(evidence);
     }
 
@@ -195,7 +195,10 @@ pub fn record_orchestration_run(
         EngineeringEventKind::ExecutionFinished,
     )
     .with_execution(exec_id.clone())
-    .with_attribute("status", Value::String(run_status_label(run.status).to_string()))
+    .with_attribute(
+        "status",
+        Value::String(run_status_label(run.status).to_string()),
+    )
     .with_attribute("dry_run", Value::Bool(run.dry_run))
     .with_attribute("input_tokens", json!(run.total_input_tokens))
     .with_attribute("output_tokens", json!(run.total_output_tokens))
@@ -242,11 +245,8 @@ pub fn record_changeset_reviewed(
 }
 
 pub fn new_verification_id(run_id: &str) -> RepoDeskResult<VerificationId> {
-    VerificationId::try_new(format!(
-        "verify-{run_id}-{}",
-        Utc::now().timestamp_micros()
-    ))
-    .map_err(domain_error)
+    VerificationId::try_new(format!("verify-{run_id}-{}", Utc::now().timestamp_micros()))
+        .map_err(domain_error)
 }
 
 pub fn record_verification_started(
