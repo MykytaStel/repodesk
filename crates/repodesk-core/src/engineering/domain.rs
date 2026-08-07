@@ -106,7 +106,7 @@ impl TryFrom<&TaskConfig> for WorkItem {
     type Error = EngineeringDomainError;
 
     fn try_from(task: &TaskConfig) -> Result<Self, Self::Error> {
-        let state = match task.status {
+        let state = match &task.status {
             TaskStatus::Open => WorkItemState::Open,
             TaskStatus::Closed => WorkItemState::Closed,
         };
@@ -160,8 +160,16 @@ impl WorkerRef {
             }
             _ if matches!(
                 provider_lower.as_str(),
-                "openai" | "openai_api" | "anthropic" | "anthropic_api" | "gemini"
-                    | "gemini_api" | "ollama" | "lm_studio" | "llamafile" | "localai"
+                "openai"
+                    | "openai_api"
+                    | "anthropic"
+                    | "anthropic_api"
+                    | "gemini"
+                    | "gemini_api"
+                    | "ollama"
+                    | "lm_studio"
+                    | "llamafile"
+                    | "localai"
             ) => WorkerKind::Inference,
             _ => WorkerKind::Unknown,
         };
@@ -361,7 +369,7 @@ pub struct EngineeringKnowledge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::orchestrator::types::{SubAgentStatus, SubAgentResult};
+    use crate::orchestrator::types::SubAgentStatus;
     use tempfile::tempdir;
 
     #[test]
@@ -424,7 +432,10 @@ mod tests {
             output_tokens: 5,
             cost_units: 0.0,
             captured_proposals: 0,
-            changed_files: changed_files.iter().map(|path| (*path).to_string()).collect(),
+            changed_files: changed_files
+                .iter()
+                .map(|path| (*path).to_string())
+                .collect(),
             diff_path: diff_path.map(str::to_string),
             workspace: None,
             notes: Vec::new(),
@@ -442,7 +453,10 @@ mod tests {
             dry_run: false,
             started_at: "2026-08-07T10:00:00Z".to_string(),
             finished_at: "2026-08-07T10:01:00Z".to_string(),
-            results: vec![result("codex_cli", &[], None), result("codex_cli", &[], None)],
+            results: vec![
+                result("codex_cli", &[], None),
+                result("codex_cli", &[], None),
+            ],
             total_input_tokens: 20,
             total_output_tokens: 10,
             total_cost_units: 0.1,
@@ -467,7 +481,11 @@ mod tests {
             started_at: "start".to_string(),
             finished_at: "finish".to_string(),
             results: vec![
-                result("codex_cli", &["src/b.rs", "src/a.rs"], Some("diffs/1.patch")),
+                result(
+                    "codex_cli",
+                    &["src/b.rs", "src/a.rs"],
+                    Some("diffs/1.patch"),
+                ),
                 result("codex_cli", &["src/a.rs"], Some("diffs/1.patch")),
             ],
             total_input_tokens: 0,
