@@ -6,6 +6,7 @@
 pub mod domain;
 pub mod events;
 pub mod instrumentation;
+pub mod intelligence;
 
 pub use domain::{
     ChangeSet, ChangeSetId, ChangeSetStatus, EngineeringDomainError, EngineeringEventId,
@@ -16,4 +17,9 @@ pub use domain::{
 pub use events::{
     ENGINEERING_EVENT_LEDGER_FILE, EngineeringEvent, EngineeringEventKind, append_event,
     event_ledger_path, read_events,
+};
+pub use intelligence::{
+    AiUsageIntelligence, ChangeIntelligence, CompletionIntelligence, ContextIntelligence,
+    EngineeringIntelligence, ExecutionIntelligence, IntelligenceRates, VerificationIntelligence,
+    derive_engineering_intelligence, load_engineering_intelligence,
 };

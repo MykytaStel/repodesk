@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::engineering::domain::{
     ChangeSet, ChangeSetId, EvidenceKind, EvidenceRef, ExecutionId, VerificationId, WorkItem,
-    WorkItemId, WorkerRef,
+    WorkItemId, WorkerKind, WorkerRef,
 };
 use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, append_event};
 use crate::errors::{RepoDeskError, RepoDeskResult};
@@ -83,6 +83,17 @@ fn result_is_handoff_target(result: &SubAgentResult) -> bool {
     result.input_tokens > 0 && matches!(result.status, SubAgentStatus::Ok | SubAgentStatus::Failed)
 }
 
+fn execution_mode_label(workers: &BTreeSet<WorkerRef>) -> &'static str {
+    if workers
+        .iter()
+        .any(|worker| worker.kind == WorkerKind::Manual)
+    {
+        "manual"
+    } else {
+        "managed"
+    }
+}
+
 /// Record creation of the RepoDesk 2 Work Item projected from a legacy task.
 pub fn record_work_item_created(task: &TaskConfig) -> RepoDeskResult<()> {
     let work_item = WorkItem::try_from(task).map_err(domain_error)?;
@@ -132,6 +143,7 @@ pub fn record_orchestration_run(
         .iter()
         .map(WorkerRef::from_legacy_result)
         .collect();
+    let execution_mode = execution_mode_label(&workers);
 
     let mut started = EngineeringEvent::new(
         run.project.clone(),
@@ -140,8 +152,10 @@ pub fn record_orchestration_run(
     )
     .with_execution(exec_id.clone())
     .with_attribute("dry_run", Value::Bool(run.dry_run))
+    .with_attribute("execution_mode", Value::String(execution_mode.to_string()))
     .with_attribute("step_count", json!(run.results.len()))
-    .with_attribute("worker_count", json!(workers.len()));
+    .with_attribute("worker_count", json!(workers.len()))
+    .with_attribute("workers", json!(&workers));
     started.occurred_at = parse_event_time(&run.started_at);
     append_for_task(&task, started)?;
 
@@ -200,11 +214,13 @@ pub fn record_orchestration_run(
         Value::String(run_status_label(run.status).to_string()),
     )
     .with_attribute("dry_run", Value::Bool(run.dry_run))
+    .with_attribute("execution_mode", Value::String(execution_mode.to_string()))
     .with_attribute("input_tokens", json!(run.total_input_tokens))
     .with_attribute("output_tokens", json!(run.total_output_tokens))
     .with_attribute("cost_units", json!(run.total_cost_units))
     .with_attribute("result_count", json!(run.results.len()))
-    .with_attribute("worker_count", json!(workers.len()));
+    .with_attribute("worker_count", json!(workers.len()))
+    .with_attribute("workers", json!(&workers));
     finished.occurred_at = parse_event_time(&run.finished_at);
     append_for_task(&task, finished)?;
 
