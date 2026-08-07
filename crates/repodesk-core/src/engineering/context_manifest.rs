@@ -10,8 +10,10 @@ use std::path::{Component, Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, read_events};
 use crate::errors::RepoDeskResult;
 use crate::tokens::estimate_text;
 
@@ -82,6 +84,29 @@ pub struct ContextFileSelection {
     /// Final bounded scoped-file content injected into `context.md`.
     pub rendered: String,
     pub manifest: ContextManifest,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ContextFileEvidenceReport {
+    /// ContextBuilt events that contain concrete included/excluded path lists.
+    pub evidenced_context_builds: usize,
+    /// ChangeSets compared against the context that immediately preceded them.
+    pub compared_changesets: usize,
+    /// Evidence for the latest changeset after the latest evidenced context
+    /// build. A newer context build clears this until another changeset exists.
+    pub latest: Option<ContextChangeCoverage>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextChangeCoverage {
+    pub included_files: Vec<String>,
+    pub excluded_files: Vec<String>,
+    pub changed_files: Vec<String>,
+    pub changed_files_present_in_context: Vec<String>,
+    pub changed_files_missing_from_context: Vec<String>,
+    /// Changed files present in context / changed files. This is evidence about
+    /// the observed changeset, not a claim that every included file was useful.
+    pub change_coverage: Option<f64>,
 }
 
 pub fn select_task_scope_files(
@@ -258,6 +283,69 @@ pub fn read_context_manifest(run_dir: &Path) -> RepoDeskResult<Option<ContextMan
     Ok(Some(serde_json::from_str(&content)?))
 }
 
+pub fn load_context_file_evidence(run_dir: &Path) -> RepoDeskResult<ContextFileEvidenceReport> {
+    let events = read_events(run_dir)?;
+    Ok(derive_context_file_evidence(&events))
+}
+
+pub fn derive_context_file_evidence(events: &[EngineeringEvent]) -> ContextFileEvidenceReport {
+    let mut report = ContextFileEvidenceReport::default();
+    let mut active_context: Option<(Vec<String>, Vec<String>)> = None;
+
+    for event in events {
+        match event.kind {
+            EngineeringEventKind::ContextBuilt => {
+                report.latest = None;
+                let Some(included) = attribute_string_vec(event, "included_files") else {
+                    active_context = None;
+                    continue;
+                };
+                let Some(excluded) = attribute_string_vec(event, "excluded_files") else {
+                    active_context = None;
+                    continue;
+                };
+                report.evidenced_context_builds += 1;
+                active_context = Some((dedup_paths(included), dedup_paths(excluded)));
+            }
+            EngineeringEventKind::ChangeSetCreated => {
+                let Some((included, excluded)) = active_context.as_ref() else {
+                    report.latest = None;
+                    continue;
+                };
+                let Some(changed) = attribute_string_vec(event, "files") else {
+                    report.latest = None;
+                    continue;
+                };
+                let changed = dedup_paths(changed);
+                let included_set = included.iter().cloned().collect::<BTreeSet<_>>();
+                let present = changed
+                    .iter()
+                    .filter(|path| included_set.contains(*path))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                let missing = changed
+                    .iter()
+                    .filter(|path| !included_set.contains(*path))
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                report.compared_changesets += 1;
+                report.latest = Some(ContextChangeCoverage {
+                    included_files: included.clone(),
+                    excluded_files: excluded.clone(),
+                    change_coverage: ratio(present.len(), changed.len()),
+                    changed_files: changed,
+                    changed_files_present_in_context: present,
+                    changed_files_missing_from_context: missing,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    report
+}
+
 fn parse_explicit_scope_paths(task_markdown: &str) -> Vec<String> {
     let mut in_scope = false;
     let mut seen = BTreeSet::new();
@@ -357,6 +445,27 @@ fn append_file_section(output: &mut String, path: &str, content: &str) {
     output.push_str(&format!("### `{path}`\n\n```text\n{content}\n```\n\n"));
 }
 
+fn attribute_string_vec(event: &EngineeringEvent, key: &str) -> Option<Vec<String>> {
+    event
+        .attributes
+        .get(key)
+        .cloned()
+        .and_then(|value: Value| serde_json::from_value(value).ok())
+}
+
+fn dedup_paths(paths: Vec<String>) -> Vec<String> {
+    paths
+        .into_iter()
+        .map(|path| path.replace('\\', "/"))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn ratio(numerator: usize, denominator: usize) -> Option<f64> {
+    (denominator > 0).then_some(numerator as f64 / denominator as f64)
+}
+
 fn sha256_hex(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
@@ -364,7 +473,18 @@ fn sha256_hex(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use tempfile::tempdir;
+
+    use crate::engineering::domain::{ChangeSetId, WorkItemId};
+
+    fn base_event(kind: EngineeringEventKind) -> EngineeringEvent {
+        EngineeringEvent::new(
+            "repodesk",
+            WorkItemId::try_new("task-1").unwrap(),
+            kind,
+        )
+    }
 
     #[test]
     fn scope_parser_only_accepts_explicit_backtick_paths() {
@@ -418,5 +538,41 @@ mod tests {
         write_context_manifest(root.path(), &selection.manifest).unwrap();
         let loaded = read_context_manifest(root.path()).unwrap().unwrap();
         assert_eq!(loaded, selection.manifest);
+    }
+
+    #[test]
+    fn derives_changed_file_coverage_from_preceding_context() {
+        let context = base_event(EngineeringEventKind::ContextBuilt)
+            .with_attribute("included_files", json!(["src/a.rs", "src/b.rs"]))
+            .with_attribute("excluded_files", json!(["src/c.rs"]));
+        let changeset = base_event(EngineeringEventKind::ChangeSetCreated)
+            .with_changeset(ChangeSetId::try_new("changes-1").unwrap())
+            .with_attribute("files", json!(["src/a.rs", "src/c.rs"]));
+
+        let report = derive_context_file_evidence(&[context, changeset]);
+        let latest = report.latest.unwrap();
+
+        assert_eq!(report.evidenced_context_builds, 1);
+        assert_eq!(report.compared_changesets, 1);
+        assert_eq!(latest.changed_files_present_in_context, vec!["src/a.rs"]);
+        assert_eq!(latest.changed_files_missing_from_context, vec!["src/c.rs"]);
+        assert_eq!(latest.change_coverage, Some(0.5));
+    }
+
+    #[test]
+    fn newer_context_invalidates_stale_changeset_coverage() {
+        let context = base_event(EngineeringEventKind::ContextBuilt)
+            .with_attribute("included_files", json!(["src/a.rs"]))
+            .with_attribute("excluded_files", json!([]));
+        let changeset = base_event(EngineeringEventKind::ChangeSetCreated)
+            .with_changeset(ChangeSetId::try_new("changes-1").unwrap())
+            .with_attribute("files", json!(["src/a.rs"]));
+        let rebuilt = base_event(EngineeringEventKind::ContextBuilt)
+            .with_attribute("included_files", json!(["src/b.rs"]))
+            .with_attribute("excluded_files", json!([]));
+
+        let report = derive_context_file_evidence(&[context, changeset, rebuilt]);
+        assert_eq!(report.compared_changesets, 1);
+        assert_eq!(report.latest, None);
     }
 }
