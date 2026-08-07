@@ -206,14 +206,104 @@ export type WorkItemContractSnapshot = {
   compliance: ScopeComplianceReport;
 };
 
+export type WorkerKind =
+  | "human"
+  | "coding_agent"
+  | "inference"
+  | "check_runner"
+  | "script"
+  | "ci"
+  | "manual"
+  | "unknown";
+
+export type WorkerRef = {
+  kind: WorkerKind;
+  id: string;
+  provider: string | null;
+  model: string | null;
+};
+
+export type ChangeFileScopeState = "allowed" | "out_of_scope" | "protected" | "ungoverned";
+
+export type ChangeFileGovernance = {
+  path: string;
+  scope_state: ChangeFileScopeState;
+};
+
+export type ChangeOrigin = {
+  execution_id: string | null;
+  execution_mode: string | null;
+  workers: WorkerRef[];
+};
+
+export type ChangeReviewState = "proposed" | "accepted" | "rejected";
+export type ChangeVerificationState = "not_run" | "running" | "passed" | "failed";
+
+export type ChangeVerificationEvidence = {
+  state: ChangeVerificationState;
+  verification_id: string | null;
+  command_count: number;
+  evidence: Array<{ kind: string; locator: string }>;
+  error: string | null;
+};
+
+export type ScopeOverrideEvidence = {
+  event_id: string;
+  reason: string;
+  occurred_at: string;
+};
+
+export type CommitGateState =
+  | "no_change_set"
+  | "scope_violation"
+  | "needs_review"
+  | "rejected"
+  | "verification_required"
+  | "verification_running"
+  | "verification_failed"
+  | "ready"
+  | "committed";
+
+export type CommitGate = {
+  state: CommitGateState;
+  ready: boolean;
+  blockers: string[];
+  warnings: string[];
+};
+
+export type ChangeGovernanceSnapshot = {
+  work_item_id: string;
+  changeset_id: string | null;
+  origin: ChangeOrigin;
+  files: ChangeFileGovernance[];
+  scope_status: ScopeComplianceStatus;
+  review_state: ChangeReviewState;
+  verification: ChangeVerificationEvidence;
+  scope_override: ScopeOverrideEvidence | null;
+  committed: boolean;
+  commit_sha: string | null;
+  gate: CommitGate;
+};
+
 export type WorkEngineeringSnapshot = {
   intelligence: EngineeringIntelligence;
   context_inspector: ContextInspectorReport;
   work_item_contract: WorkItemContractSnapshot;
+  change_governance: ChangeGovernanceSnapshot;
 };
 
+async function invokeWorkEngineering(input?: {
+  contractUpdate?: WorkItemContractUpdate | null;
+  scopeOverrideReason?: string | null;
+}): Promise<WorkEngineeringSnapshot> {
+  return invoke("work_engineering_intelligence", {
+    contractUpdate: input?.contractUpdate ?? null,
+    scopeOverrideReason: input?.scopeOverrideReason ?? null,
+  });
+}
+
 export async function workEngineeringSnapshot(): Promise<WorkEngineeringSnapshot> {
-  return invoke("work_engineering_intelligence", { contractUpdate: null });
+  return invokeWorkEngineering();
 }
 
 export async function workEngineeringIntelligence(): Promise<EngineeringIntelligence> {
@@ -227,9 +317,9 @@ export async function workContextInspector(): Promise<ContextInspectorReport> {
 export async function saveWorkItemContract(
   update: WorkItemContractUpdate,
 ): Promise<WorkItemContractSnapshot> {
-  return (
-    await invoke<WorkEngineeringSnapshot>("work_engineering_intelligence", {
-      contractUpdate: update,
-    })
-  ).work_item_contract;
+  return (await invokeWorkEngineering({ contractUpdate: update })).work_item_contract;
+}
+
+export async function recordScopeOverride(reason: string): Promise<ChangeGovernanceSnapshot> {
+  return (await invokeWorkEngineering({ scopeOverrideReason: reason })).change_governance;
 }
