@@ -89,6 +89,17 @@ pub struct RunEvidenceSnapshot {
 }
 
 pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnapshot> {
+    let task = show_active_task()?;
+    let events = read_events(&task.config.run_dir)?;
+    load_active_run_evidence_from_events(run_id, &events)
+}
+
+/// Variant for aggregate desktop snapshots that already replayed the task ledger.
+/// This keeps selected-run polling at one engineering-event read per refresh.
+pub fn load_active_run_evidence_from_events(
+    run_id: &str,
+    events: &[EngineeringEvent],
+) -> RepoDeskResult<RunEvidenceSnapshot> {
     validate_run_id(run_id)?;
     let task = show_active_task()?;
     let run = load_run(run_id)?.ok_or_else(|| {
@@ -102,7 +113,6 @@ pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnaps
         ));
     }
 
-    let events = read_events(&task.config.run_dir)?;
     let receipt = load_receipt_for_run(run_id)?;
     let verification_fresh = match receipt.as_ref() {
         Some(receipt) => active_verification_is_fresh(receipt)?,
@@ -126,7 +136,7 @@ pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnaps
     Ok(derive_run_evidence(
         &run,
         receipt.as_ref(),
-        &events,
+        events,
         acceptance,
         verification_fresh,
     ))
