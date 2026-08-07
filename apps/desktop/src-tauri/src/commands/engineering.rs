@@ -47,7 +47,8 @@ pub fn work_engineering_intelligence(
         (None, None) => {}
         _ => {
             return Err(ErrorPayload::configuration(
-                "Acceptance evidence requires both criterion id and verification command",
+                "Acceptance evidence requires both criterion id and verification command"
+                    .to_string(),
             ));
         }
     }
