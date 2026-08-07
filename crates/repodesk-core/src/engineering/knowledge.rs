@@ -4,7 +4,7 @@
 //! local to one repository, reviewable by a human, provenance-aware, and only
 //! become eligible for agent context after they are explicitly accepted.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,6 +19,7 @@ use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, append_
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
+use crate::security::scan_text_for_secrets;
 use crate::tasks::show_active_task;
 use crate::tokens::estimate_text;
 use crate::workflow::load_receipt;
@@ -26,6 +27,7 @@ use crate::workflow::load_receipt;
 pub const ENGINEERING_KNOWLEDGE_FILE: &str = "engineering-knowledge.json";
 pub const ENGINEERING_KNOWLEDGE_VERSION: u32 = 1;
 const MAX_RECORDS: usize = 512;
+const MAX_CONTEXT_CANDIDATES: usize = 96;
 const MAX_TITLE_CHARS: usize = 120;
 const MAX_CONTENT_CHARS: usize = 4_000;
 const MAX_CONTEXT_RECORD_CHARS: usize = 1_200;
@@ -73,6 +75,16 @@ pub enum EngineeringKnowledgeStatus {
     Candidate,
     Accepted,
     Archived,
+}
+
+impl EngineeringKnowledgeStatus {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Candidate => "candidate",
+            Self::Accepted => "accepted",
+            Self::Archived => "archived",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,21 +201,27 @@ pub fn propose_active_engineering_knowledge(
     };
     store.records.push(record.clone());
     write_store(&store)?;
-    record_knowledge_event(EngineeringEventKind::KnowledgeProposed, &record);
+    record_knowledge_event(EngineeringEventKind::KnowledgeProposed, &record, None);
     Ok(snapshot_from_store(store))
 }
 
 /// Turn a successful command from the fresh canonical VerificationReceipt into
 /// a reviewable knowledge candidate. The command is re-read from the receipt;
 /// the caller cannot manufacture verification provenance.
-pub fn capture_active_verified_command(command: &str) -> RepoDeskResult<EngineeringKnowledgeSnapshot> {
+pub fn capture_active_verified_command(
+    command: &str,
+) -> RepoDeskResult<EngineeringKnowledgeSnapshot> {
     let project = get_active_project()?;
     let task = show_active_task()?;
     if task.config.project_name != project.name {
-        return Err(RepoDeskError::Api("Active Work Item does not belong to the active project".into()));
+        return Err(RepoDeskError::Api(
+            "Active Work Item does not belong to the active project".into(),
+        ));
     }
     let receipt = load_receipt()?.ok_or_else(|| {
-        RepoDeskError::Api("No canonical verification receipt exists for the active Work Item".into())
+        RepoDeskError::Api(
+            "No canonical verification receipt exists for the active Work Item".into(),
+        )
     })?;
     if !active_verification_is_fresh(&receipt)? {
         return Err(RepoDeskError::Api(
@@ -213,12 +231,14 @@ pub fn capture_active_verified_command(command: &str) -> RepoDeskResult<Engineer
     let verification = receipt.verification.as_ref().ok_or_else(|| {
         RepoDeskError::Api("No verification receipt exists for the active Work Item".into())
     })?;
-    let requested = command.trim();
+    let requested = normalize_text("verification command", command, MAX_CONTENT_CHARS)?;
     let check = verification
         .commands
         .iter()
         .find(|check| check.command == requested)
-        .ok_or_else(|| RepoDeskError::Api("Command is not part of the current VerificationReceipt".into()))?;
+        .ok_or_else(|| {
+            RepoDeskError::Api("Command is not part of the current VerificationReceipt".into())
+        })?;
     if !check.success {
         return Err(RepoDeskError::Api(
             "Only successful verification commands can become reusable project knowledge".into(),
@@ -241,14 +261,14 @@ pub fn capture_active_verified_command(command: &str) -> RepoDeskResult<Engineer
         receipt_path.display().to_string(),
     )
     .map_err(|error| RepoDeskError::Api(error.to_string()))?;
-    let title = verification_title(requested);
+    let title = verification_title(&requested);
     let now = Utc::now();
     let record = EngineeringKnowledgeRecord {
-        id: new_knowledge_id(&project.name, &title, requested)?,
+        id: new_knowledge_id(&project.name, &title, &requested)?,
         project: project.name.clone(),
         category: EngineeringKnowledgeCategory::Testing,
         title,
-        content: requested.to_string(),
+        content: requested,
         status: EngineeringKnowledgeStatus::Candidate,
         origin: EngineeringKnowledgeOrigin::Verification,
         source_work_item_id: WorkItemId::try_new(task.config.id.clone()).ok(),
@@ -258,28 +278,20 @@ pub fn capture_active_verified_command(command: &str) -> RepoDeskResult<Engineer
     };
     store.records.push(record.clone());
     write_store(&store)?;
-    record_knowledge_event(EngineeringEventKind::KnowledgeProposed, &record);
+    record_knowledge_event(EngineeringEventKind::KnowledgeProposed, &record, None);
     Ok(snapshot_from_store(store))
 }
 
 pub fn accept_active_engineering_knowledge(
     knowledge_id: &str,
 ) -> RepoDeskResult<EngineeringKnowledgeSnapshot> {
-    set_active_knowledge_status(
-        knowledge_id,
-        EngineeringKnowledgeStatus::Accepted,
-        EngineeringEventKind::KnowledgeAccepted,
-    )
+    set_active_knowledge_status(knowledge_id, EngineeringKnowledgeStatus::Accepted)
 }
 
 pub fn archive_active_engineering_knowledge(
     knowledge_id: &str,
 ) -> RepoDeskResult<EngineeringKnowledgeSnapshot> {
-    set_active_knowledge_status(
-        knowledge_id,
-        EngineeringKnowledgeStatus::Archived,
-        EngineeringEventKind::KnowledgeRejected,
-    )
+    set_active_knowledge_status(knowledge_id, EngineeringKnowledgeStatus::Archived)
 }
 
 /// Build a deterministic, bounded slice of accepted Project Knowledge for an
@@ -304,36 +316,43 @@ pub fn engineering_knowledge_context(
             .then_with(|| right.updated_at.cmp(&left.updated_at))
             .then_with(|| left.id.as_str().cmp(right.id.as_str()))
     });
+    accepted.truncate(MAX_CONTEXT_CANDIDATES);
 
     let candidate_markdown = render_records(&accepted);
     let candidate_tokens = estimate_text(&candidate_markdown).estimated_tokens;
     let mut blocks = Vec::new();
     let mut included_ids = Vec::new();
+    let mut running_tokens = 0usize;
 
     for record in accepted {
         let block = render_record(record);
-        let proposed = if blocks.is_empty() {
-            block.clone()
-        } else {
-            format!("{}\n\n{}", blocks.join("\n\n"), block)
-        };
-        let tokens = estimate_text(&proposed).estimated_tokens;
-        if tokens <= budget_tokens {
+        let block_tokens = estimate_text(&block).estimated_tokens;
+        let separator_tokens = usize::from(!blocks.is_empty());
+        let proposed_tokens = running_tokens
+            .saturating_add(separator_tokens)
+            .saturating_add(block_tokens);
+
+        if proposed_tokens <= budget_tokens {
+            running_tokens = proposed_tokens;
             blocks.push(block);
             included_ids.push(record.id.to_string());
             continue;
         }
+
         if blocks.is_empty() && budget_tokens > 0 {
             let chars = (budget_tokens.saturating_mul(4)).min(MAX_CONTEXT_RECORD_CHARS);
             let trimmed = block.chars().take(chars).collect::<String>();
-            blocks.push(format!("{trimmed}\n[RepoDesk: knowledge trimmed for context budget]"));
+            blocks.push(format!(
+                "{trimmed}\n[RepoDesk: knowledge trimmed for context budget]"
+            ));
             included_ids.push(record.id.to_string());
         }
         break;
     }
 
     let markdown = if blocks.is_empty() {
-        "No accepted Engineering Knowledge matched the current project context.".to_string()
+        "No accepted Engineering Knowledge is available within the current context budget."
+            .to_string()
     } else {
         blocks.join("\n\n")
     };
@@ -380,7 +399,9 @@ fn snapshot_from_store(mut store: EngineeringKnowledgeStore) -> EngineeringKnowl
     }
 }
 
-fn verified_command_suggestions(store: &EngineeringKnowledgeStore) -> Vec<EngineeringKnowledgeSuggestion> {
+fn verified_command_suggestions(
+    store: &EngineeringKnowledgeStore,
+) -> Vec<EngineeringKnowledgeSuggestion> {
     let Ok(task) = show_active_task() else {
         return Vec::new();
     };
@@ -407,6 +428,7 @@ fn verified_command_suggestions(store: &EngineeringKnowledgeStore) -> Vec<Engine
         .commands
         .iter()
         .filter(|check| check.success)
+        .filter(|check| scan_text_for_secrets(&check.command).is_empty())
         .filter(|check| {
             !store.records.iter().any(|record| {
                 record.category == EngineeringKnowledgeCategory::Testing
@@ -426,8 +448,7 @@ fn verified_command_suggestions(store: &EngineeringKnowledgeStore) -> Vec<Engine
 
 fn set_active_knowledge_status(
     knowledge_id: &str,
-    status: EngineeringKnowledgeStatus,
-    event_kind: EngineeringEventKind,
+    target: EngineeringKnowledgeStatus,
 ) -> RepoDeskResult<EngineeringKnowledgeSnapshot> {
     let project = get_active_project()?;
     let mut store = read_store(&project.name)?;
@@ -436,11 +457,35 @@ fn set_active_knowledge_status(
         .iter_mut()
         .find(|record| record.id.as_str() == knowledge_id)
         .ok_or_else(|| RepoDeskError::Api("Engineering Knowledge record not found".into()))?;
-    record.status = status;
+
+    let previous = record.status;
+    let event_kind = match (previous, target) {
+        (EngineeringKnowledgeStatus::Candidate, EngineeringKnowledgeStatus::Accepted) => {
+            EngineeringEventKind::KnowledgeAccepted
+        }
+        (EngineeringKnowledgeStatus::Candidate, EngineeringKnowledgeStatus::Archived) => {
+            EngineeringEventKind::KnowledgeRejected
+        }
+        (EngineeringKnowledgeStatus::Accepted, EngineeringKnowledgeStatus::Archived) => {
+            EngineeringEventKind::KnowledgeArchived
+        }
+        (current, requested) if current == requested => {
+            return Ok(snapshot_from_store(store));
+        }
+        _ => {
+            return Err(RepoDeskError::Api(format!(
+                "Invalid Engineering Knowledge transition: {} -> {}",
+                previous.label(),
+                target.label()
+            )));
+        }
+    };
+
+    record.status = target;
     record.updated_at = Utc::now();
     let changed = record.clone();
     write_store(&store)?;
-    record_knowledge_event(event_kind, &changed);
+    record_knowledge_event(event_kind, &changed, Some(previous));
     Ok(snapshot_from_store(store))
 }
 
@@ -455,15 +500,42 @@ fn read_store(project_name: &str) -> RepoDeskResult<EngineeringKnowledgeStore> {
     }
     let content = fs::read_to_string(&path)?;
     let store: EngineeringKnowledgeStore = serde_json::from_str(&content)?;
+    validate_store(project_name, &store)?;
+    Ok(store)
+}
+
+fn validate_store(project_name: &str, store: &EngineeringKnowledgeStore) -> RepoDeskResult<()> {
     if store.version != ENGINEERING_KNOWLEDGE_VERSION || store.project != project_name {
         return Err(RepoDeskError::Api(
             "Engineering Knowledge artifact version/project mismatch".into(),
         ));
     }
-    Ok(store)
+    if store.records.len() > MAX_RECORDS {
+        return Err(RepoDeskError::Api(format!(
+            "Engineering Knowledge artifact exceeds the {MAX_RECORDS}-record limit"
+        )));
+    }
+
+    let mut ids = HashSet::with_capacity(store.records.len());
+    for record in &store.records {
+        if record.project != project_name {
+            return Err(RepoDeskError::Api(
+                "Engineering Knowledge record belongs to another project".into(),
+            ));
+        }
+        if !ids.insert(record.id.as_str()) {
+            return Err(RepoDeskError::Api(
+                "Engineering Knowledge artifact contains duplicate ids".into(),
+            ));
+        }
+        validate_persisted_text("knowledge title", &record.title, MAX_TITLE_CHARS)?;
+        validate_persisted_text("knowledge content", &record.content, MAX_CONTENT_CHARS)?;
+    }
+    Ok(())
 }
 
 fn write_store(store: &EngineeringKnowledgeStore) -> RepoDeskResult<PathBuf> {
+    validate_store(&store.project, store)?;
     let path = engineering_knowledge_path(&store.project)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -473,7 +545,11 @@ fn write_store(store: &EngineeringKnowledgeStore) -> RepoDeskResult<PathBuf> {
     Ok(path)
 }
 
-fn record_knowledge_event(kind: EngineeringEventKind, record: &EngineeringKnowledgeRecord) {
+fn record_knowledge_event(
+    kind: EngineeringEventKind,
+    record: &EngineeringKnowledgeRecord,
+    previous_status: Option<EngineeringKnowledgeStatus>,
+) {
     let Ok(task) = show_active_task() else {
         return;
     };
@@ -486,9 +562,17 @@ fn record_knowledge_event(kind: EngineeringEventKind, record: &EngineeringKnowle
     let mut event = EngineeringEvent::new(record.project.clone(), work_item_id, kind)
         .with_attribute("knowledge_id", Value::String(record.id.to_string()))
         .with_attribute("category", Value::String(record.category.label().to_string()))
-        .with_attribute("origin", json!(record.origin));
+        .with_attribute("origin", json!(record.origin))
+        .with_attribute("status", Value::String(record.status.label().to_string()));
+    if let Some(previous_status) = previous_status {
+        event = event.with_attribute(
+            "previous_status",
+            Value::String(previous_status.label().to_string()),
+        );
+    }
     if let Ok(path) = engineering_knowledge_path(&record.project)
-        && let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Knowledge, path.display().to_string())
+        && let Ok(evidence) =
+            EvidenceRef::try_new(EvidenceKind::Knowledge, path.display().to_string())
     {
         event = event.with_evidence(evidence);
     }
@@ -507,17 +591,38 @@ fn ensure_capacity(store: &EngineeringKnowledgeStore) -> RepoDeskResult<()> {
 
 fn normalize_text(label: &str, value: &str, max_chars: usize) -> RepoDeskResult<String> {
     let value = value.trim();
-    if value.is_empty() || value.chars().count() > max_chars || value.contains('\0') {
-        return Err(RepoDeskError::Api(format!("{label} is empty, too long, or invalid")));
-    }
+    validate_persisted_text(label, value, max_chars)?;
     Ok(value.to_string())
 }
 
-fn new_knowledge_id(project: &str, title: &str, content: &str) -> RepoDeskResult<EngineeringKnowledgeId> {
+fn validate_persisted_text(label: &str, value: &str, max_chars: usize) -> RepoDeskResult<()> {
+    if value.is_empty() || value.chars().count() > max_chars || value.contains('\0') {
+        return Err(RepoDeskError::Api(format!(
+            "{label} is empty, too long, or invalid"
+        )));
+    }
+    let secret_kinds = scan_text_for_secrets(value);
+    if !secret_kinds.is_empty() {
+        return Err(RepoDeskError::Api(format!(
+            "{label} contains secret-like material ({}) and cannot enter Project Knowledge",
+            secret_kinds.join(", ")
+        )));
+    }
+    Ok(())
+}
+
+fn new_knowledge_id(
+    project: &str,
+    title: &str,
+    content: &str,
+) -> RepoDeskResult<EngineeringKnowledgeId> {
     let now = Utc::now().timestamp_micros();
     let digest = Sha256::digest(format!("{project}\n{title}\n{content}\n{now}").as_bytes());
-    EngineeringKnowledgeId::try_new(format!("knowledge-{now}-{}", &hex::encode(digest)[..10]))
-        .map_err(|error| RepoDeskError::Api(error.to_string()))
+    EngineeringKnowledgeId::try_new(format!(
+        "knowledge-{now}-{}",
+        &hex::encode(digest)[..10]
+    ))
+    .map_err(|error| RepoDeskError::Api(error.to_string()))
 }
 
 fn stable_suggestion_id(work_item_id: &str, command: &str) -> String {
@@ -676,5 +781,35 @@ mod tests {
     fn generated_ids_are_valid_domain_ids() {
         let id = new_knowledge_id("repodesk", "Title", "Content").unwrap();
         assert!(id.as_str().starts_with("knowledge-"));
+    }
+
+    #[test]
+    fn secret_like_knowledge_is_rejected_before_persistence() {
+        let error = normalize_text(
+            "knowledge content",
+            "api_key = abcdefghijklmnopqrstuvwxyz123456",
+            MAX_CONTENT_CHARS,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("secret-like material"));
+    }
+
+    #[test]
+    fn corrupted_store_rejects_duplicate_ids() {
+        let first = record(
+            "knowledge-1",
+            EngineeringKnowledgeCategory::Convention,
+            "First",
+            "Use typed errors.",
+            EngineeringKnowledgeStatus::Accepted,
+        );
+        let mut second = first.clone();
+        second.title = "Second".into();
+        let store = EngineeringKnowledgeStore {
+            version: ENGINEERING_KNOWLEDGE_VERSION,
+            project: "repodesk".into(),
+            records: vec![first, second],
+        };
+        assert!(validate_store("repodesk", &store).is_err());
     }
 }
