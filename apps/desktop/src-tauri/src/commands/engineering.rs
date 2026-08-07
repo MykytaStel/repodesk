@@ -1,9 +1,10 @@
 use repodesk_core::engineering::{
-    ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
-    WorkItemContractSnapshot, WorkItemContractUpdate, derive_change_governance,
-    derive_context_inspector, derive_engineering_intelligence, derive_work_item_contract_snapshot,
-    read_context_manifest, read_events, read_work_item_contract, record_active_scope_override,
-    save_active_work_item_contract,
+    AcceptanceEvidenceReport, ChangeGovernanceSnapshot, ContextInspectorReport,
+    EngineeringIntelligence, RunEvidenceSnapshot, WorkItemContractSnapshot, WorkItemContractUpdate,
+    derive_change_governance, derive_context_inspector, derive_engineering_intelligence,
+    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
+    load_active_run_evidence, read_context_manifest, read_events, read_work_item_contract,
+    record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::Serialize;
@@ -55,4 +56,23 @@ pub fn work_engineering_intelligence(
         work_item_contract,
         change_governance,
     })
+}
+
+/// Evidence-first detail for one persisted orchestration run of the active Work
+/// Item. Canonical receipts win when available; historical event data is a
+/// labeled fallback rather than fabricated proof.
+#[tauri::command]
+pub fn run_evidence_snapshot(run_id: String) -> Result<RunEvidenceSnapshot, ErrorPayload> {
+    load_active_run_evidence(&run_id).map_err(ErrorPayload::from)
+}
+
+/// Link one Engineering Contract acceptance criterion to a concrete command in
+/// the current canonical VerificationReceipt. The pass/fail value always comes
+/// from that receipt, never from the frontend.
+#[tauri::command]
+pub fn acceptance_evidence_link(
+    criterion_id: String,
+    command: String,
+) -> Result<AcceptanceEvidenceReport, ErrorPayload> {
+    link_active_acceptance_evidence(&criterion_id, &command).map_err(ErrorPayload::from)
 }
