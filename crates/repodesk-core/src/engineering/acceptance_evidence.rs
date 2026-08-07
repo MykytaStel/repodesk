@@ -3,10 +3,11 @@
 //! A criterion is never marked proven from agent prose or a heuristic. v0 only
 //! accepts an explicit link to a command from the canonical VerificationReceipt.
 //! That link becomes stale when the run, reviewed changeset, verification
-//! receipt, HEAD, or staged index tree changes.
+//! receipt, or verified code tree changes.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -80,7 +81,11 @@ pub fn acceptance_evidence_path(run_dir: &Path) -> PathBuf {
 }
 
 pub fn criterion_id(criterion: &str) -> String {
-    let normalized = criterion.trim().split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = criterion
+        .trim()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let digest = Sha256::digest(normalized.as_bytes());
     hex::encode(digest)[..16].to_string()
 }
@@ -94,29 +99,60 @@ pub fn read_acceptance_evidence(run_dir: &Path) -> RepoDeskResult<Option<Accepta
     Ok(Some(serde_json::from_str(&content)?))
 }
 
-/// True when the verification receipt still describes the current reviewed
-/// tree. This deliberately does not require `success`: a failed command is
-/// still valid negative evidence for an acceptance criterion.
+/// True when the verification receipt still describes the exact code tree it
+/// proved. Before commit this is the current HEAD + staged index tree. After a
+/// RepoDesk bounded commit, HEAD necessarily changes, so the proof follows the
+/// resulting commit only when that commit's tree is exactly the verified index
+/// tree. This deliberately does not require overall verification success: a
+/// failed command is still valid negative evidence for an acceptance criterion.
 pub fn active_verification_is_fresh(receipt: &TaskRunReceipt) -> RepoDeskResult<bool> {
     let Some(verification) = receipt.verification.as_ref() else {
         return Ok(false);
     };
+    if verification.run_id != receipt.run_id {
+        return Ok(false);
+    }
+
+    let digest = receipt
+        .execution
+        .changeset_digest
+        .clone()
+        .unwrap_or_else(|| changeset_digest(&[]));
+    if verification.changeset_digest != digest {
+        return Ok(false);
+    }
+
     let project_path = get_active_project()?.path;
+    if let Some(finish) = receipt.finish.as_ref() {
+        if finish.run_id != receipt.run_id {
+            return Ok(false);
+        }
+        let committed_tree = commit_tree_sha(&project_path, &finish.commit_sha);
+        return Ok(committed_tree.as_deref() == Some(verification.index_tree_sha.as_str()));
+    }
+
     let Some(head) = head_sha(&project_path) else {
         return Ok(false);
     };
     let Some(tree) = index_tree_sha(&project_path) else {
         return Ok(false);
     };
-    let digest = receipt
-        .execution
-        .changeset_digest
-        .clone()
-        .unwrap_or_else(|| changeset_digest(&[]));
-    Ok(verification.run_id == receipt.run_id
-        && verification.head_sha == head
-        && verification.index_tree_sha == tree
-        && verification.changeset_digest == digest)
+    Ok(verification.head_sha == head && verification.index_tree_sha == tree)
+}
+
+fn commit_tree_sha(project_path: &Path, commit_sha: &str) -> Option<String> {
+    let revision = format!("{commit_sha}^{{tree}}");
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(project_path)
+        .args(["rev-parse", "--verify", revision.as_str()])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!value.is_empty()).then_some(value)
 }
 
 pub fn load_active_acceptance_evidence() -> RepoDeskResult<AcceptanceEvidenceReport> {
@@ -143,7 +179,9 @@ pub fn link_active_acceptance_evidence(
 ) -> RepoDeskResult<AcceptanceEvidenceReport> {
     let task = show_active_task()?;
     let contract = read_work_item_contract(&task.config.run_dir)?.ok_or_else(|| {
-        RepoDeskError::Api("Configure an Engineering Contract before linking acceptance evidence".into())
+        RepoDeskError::Api(
+            "Configure an Engineering Contract before linking acceptance evidence".into(),
+        )
     })?;
     let receipt = load_receipt()?.ok_or_else(|| {
         RepoDeskError::Api("No canonical run receipt exists for the active Work Item".into())
@@ -166,7 +204,9 @@ pub fn link_active_acceptance_evidence(
 
     let command = requested_command.trim();
     if command.is_empty() || command.chars().count() > MAX_COMMAND_CHARS || command.contains('\0') {
-        return Err(RepoDeskError::Api("Verification command is empty or invalid".into()));
+        return Err(RepoDeskError::Api(
+            "Verification command is empty or invalid".into(),
+        ));
     }
     let check = verification
         .commands
@@ -294,7 +334,7 @@ fn derive_criterion(
         return stale_unproven(id, criterion, binding, "criterion text changed");
     }
     let Some(receipt) = receipt else {
-        return stale_unproven(id, criterion, binding, "current run receipt is unavailable");
+        return stale_unproven(id, criterion, binding, "canonical run receipt is unavailable");
     };
     if binding.run_id != receipt.run_id {
         return stale_unproven(id, criterion, binding, "evidence belongs to another run");
@@ -314,14 +354,19 @@ fn derive_criterion(
         return stale_unproven(id, criterion, binding, "verification was replaced or rerun");
     }
     if !verification_fresh {
-        return stale_unproven(id, criterion, binding, "HEAD or staged index changed after verification");
+        return stale_unproven(id, criterion, binding, "verified code tree no longer matches");
     }
     let Some(check) = verification
         .commands
         .iter()
         .find(|check| check.command == binding.command)
     else {
-        return stale_unproven(id, criterion, binding, "linked command is absent from verification");
+        return stale_unproven(
+            id,
+            criterion,
+            binding,
+            "linked command is absent from verification",
+        );
     };
 
     AcceptanceCriterionEvidence {
@@ -490,7 +535,10 @@ mod tests {
             true,
         );
         assert_eq!(report.proven, 1);
-        assert_eq!(report.criteria[0].status, AcceptanceCriterionStatus::Proven);
+        assert_eq!(
+            report.criteria[0].status,
+            AcceptanceCriterionStatus::Proven
+        );
     }
 
     #[test]
