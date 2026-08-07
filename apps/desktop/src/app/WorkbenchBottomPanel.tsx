@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { callCommand, debugEmitter, type DebugEventDetail } from "../shared/api/queries";
 import { formatNumber } from "../shared/utils/helpers";
+import { InteractiveTerminal } from "./InteractiveTerminal";
 
 interface ActionRunResult {
   id: string;
@@ -36,6 +37,8 @@ interface WorkbenchBottomPanelProps {
   onClose: () => void;
 }
 
+const MAX_PANEL_LOGS = 300;
+
 function formatOutput(text: string): string {
   if (!text) return "";
   try {
@@ -45,7 +48,7 @@ function formatOutput(text: string): string {
   }
 }
 
-function LogRow({ log, terminalMode = false }: { log: LogEntry; terminalMode?: boolean }) {
+function LogRow({ log }: { log: LogEntry }) {
   return (
     <div className={`bottom-panel-log ${log.status === "error" ? " error" : ""}`}>
       <div className="bottom-panel-log-head">
@@ -57,9 +60,7 @@ function LogRow({ log, terminalMode = false }: { log: LogEntry; terminalMode?: b
         {log.durationMs !== undefined ? <small>{formatNumber(log.durationMs)}ms</small> : null}
       </div>
       {log.command ? <code className="bottom-panel-command">$ {log.command}</code> : null}
-      {terminalMode && log.stdout ? <pre>{formatOutput(log.stdout)}</pre> : null}
-      {terminalMode && log.stderr ? <pre className="error-output">{formatOutput(log.stderr)}</pre> : null}
-      {!terminalMode && log.status === "error" && log.stderr ? <p>{formatOutput(log.stderr)}</p> : null}
+      {log.status === "error" && log.stderr ? <p>{formatOutput(log.stderr)}</p> : null}
     </div>
   );
 }
@@ -83,7 +84,7 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
           stderr: action.result.stderr,
           source: "action",
         }));
-        setLogs(historyLogs);
+        setLogs(historyLogs.slice(-MAX_PANEL_LOGS));
       })
       .catch(() => {
         // Output is auxiliary shell evidence. A missing history should not break the workspace.
@@ -93,36 +94,41 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
   useEffect(() => {
     const onDebug = (event: Event) => {
       const detail = (event as CustomEvent<DebugEventDetail>).detail;
-      setLogs((current) => [
-        ...current,
-        {
-          id: `debug-${detail.id}`,
-          timestamp: detail.timestamp,
-          title: detail.command,
-          status: detail.status,
-          durationMs: detail.durationMs,
-          stdout: detail.preview,
-          stderr: detail.error,
-          source: "debug",
-        },
-      ]);
+      setLogs((current) => {
+        const next = [
+          ...current,
+          {
+            id: `debug-${detail.id}`,
+            timestamp: detail.timestamp,
+            title: detail.command,
+            status: detail.status,
+            durationMs: detail.durationMs,
+            stdout: detail.preview,
+            stderr: detail.error,
+            source: "debug" as const,
+          },
+        ];
+        return next.slice(-MAX_PANEL_LOGS);
+      });
     };
     debugEmitter.addEventListener("debug-command", onDebug);
     return () => debugEmitter.removeEventListener("debug-command", onDebug);
   }, []);
 
   useEffect(() => {
-    if (open && scrollRef.current) {
+    if (open && activeTab !== "terminal" && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs, open, activeTab]);
 
   const problems = useMemo(() => logs.filter((log) => log.status === "error"), [logs]);
 
-  if (!open) return null;
-
   return (
-    <section className="workbench-bottom-panel" aria-label="Workbench bottom panel">
+    <section
+      className={`workbench-bottom-panel${open ? "" : " hidden"}`}
+      aria-label="Workbench bottom panel"
+      aria-hidden={!open}
+    >
       <header className="bottom-panel-tabs">
         <div className="bottom-panel-tab-list" role="tablist" aria-label="Bottom panel views">
           <button type="button" className={activeTab === "problems" ? "active" : ""} onClick={() => setActiveTab("problems")}>
@@ -136,36 +142,31 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
           </button>
         </div>
         <div className="bottom-panel-actions">
-          <button type="button" onClick={() => setLogs([])}>Clear</button>
+          {activeTab !== "terminal" ? <button type="button" onClick={() => setLogs([])}>Clear</button> : null}
           <button type="button" onClick={onClose} aria-label="Close bottom panel">×</button>
         </div>
       </header>
 
-      <div className="bottom-panel-content" ref={scrollRef}>
-        {activeTab === "problems" ? (
-          problems.length === 0 ? (
-            <div className="bottom-panel-empty">
-              <strong>No runtime problems captured.</strong>
-              <span>Compiler, linter and LSP diagnostics will join this surface in the Problems slice.</span>
-            </div>
-          ) : (
-            problems.map((log) => <LogRow key={log.id} log={log} />)
-          )
-        ) : activeTab === "output" ? (
-          logs.length === 0 ? (
+      {activeTab !== "terminal" ? (
+        <div className="bottom-panel-content" ref={scrollRef}>
+          {activeTab === "problems" ? (
+            problems.length === 0 ? (
+              <div className="bottom-panel-empty">
+                <strong>No runtime problems captured.</strong>
+                <span>Compiler, linter and LSP diagnostics will join this surface in the Problems slice.</span>
+              </div>
+            ) : (
+              problems.map((log) => <LogRow key={log.id} log={log} />)
+            )
+          ) : logs.length === 0 ? (
             <div className="bottom-panel-empty"><strong>No output yet.</strong><span>RepoDesk actions and API activity will appear here.</span></div>
           ) : (
             logs.map((log) => <LogRow key={log.id} log={log} />)
-          )
-        ) : logs.length === 0 ? (
-          <div className="bottom-panel-empty">
-            <strong>No command transcript yet.</strong>
-            <span>This is read-only execution evidence in RD2-07; interactive terminal/task runner comes in its dedicated slice.</span>
-          </div>
-        ) : (
-          logs.filter((log) => log.command || log.stdout || log.stderr).map((log) => <LogRow key={log.id} log={log} terminalMode />)
-        )}
-      </div>
+          )}
+        </div>
+      ) : null}
+
+      <InteractiveTerminal active={open && activeTab === "terminal"} />
     </section>
   );
 }
