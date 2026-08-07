@@ -4,6 +4,7 @@
 //! models adapt into these types until later migration slices move call sites.
 
 pub mod algorithmic_profile;
+pub mod change_governance;
 pub mod context_compactness;
 pub mod context_inspector;
 pub mod context_manifest;
@@ -18,6 +19,12 @@ pub use algorithmic_profile::{
     AlgorithmicProfileReport, AlgorithmicSignals, AlgorithmicSymbolKind, AnalysisConfidence,
     ComplexityClass, ComplexityHint, MAX_ALGORITHM_SOURCE_BYTES, analyze_rust_file,
     analyze_rust_source,
+};
+pub use change_governance::{
+    ChangeFileGovernance, ChangeFileScopeState, ChangeGovernanceSnapshot, ChangeOrigin,
+    ChangeReviewState, ChangeVerificationEvidence, ChangeVerificationState, CommitGate,
+    CommitGateState, ScopeOverrideEvidence, derive_change_governance, load_active_change_governance,
+    load_change_governance, record_active_scope_override,
 };
 pub use context_compactness::{
     ContextBuildCompactness, ContextBuildTelemetry, ContextCompactnessReport,
