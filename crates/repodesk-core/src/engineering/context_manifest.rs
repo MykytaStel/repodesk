@@ -20,6 +20,7 @@ pub const CONTEXT_MANIFEST_VERSION: u32 = 1;
 pub const DEFAULT_MAX_SCOPED_FILES: usize = 12;
 pub const DEFAULT_SCOPED_FILE_BUDGET_CHARS: usize = 24_000;
 pub const DEFAULT_PER_FILE_BUDGET_CHARS: usize = 8_000;
+pub const DEFAULT_MAX_SCOPED_FILE_BYTES: u64 = 512_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -39,11 +40,13 @@ pub enum ContextFileStatus {
 pub enum ContextFileExclusionReason {
     InvalidPath,
     Ignored,
+    Sensitive,
     Missing,
     NotFile,
     OutsideProject,
     ReadError,
     FileLimit,
+    TooLarge,
     BudgetExceeded,
 }
 
@@ -73,6 +76,10 @@ pub struct ContextManifest {
 
 #[derive(Debug, Clone)]
 pub struct ContextFileSelection {
+    /// Eligible scoped-file content before per-file and aggregate context
+    /// trimming. Used only to keep Context Compactness semantics honest.
+    pub candidate_rendered: String,
+    /// Final bounded scoped-file content injected into `context.md`.
     pub rendered: String,
     pub manifest: ContextManifest,
 }
@@ -87,6 +94,7 @@ pub fn select_task_scope_files(
     let scoped_paths = parse_explicit_scope_paths(task_markdown);
     let canonical_root = fs::canonicalize(project_root).ok();
     let mut entries = Vec::with_capacity(scoped_paths.len());
+    let mut candidate_rendered = String::new();
     let mut rendered = String::new();
     let mut included_files = 0usize;
     let mut excluded_files = 0usize;
@@ -118,6 +126,13 @@ pub fn select_task_scope_files(
             entries.push(entry);
             continue;
         };
+
+        if is_sensitive_path(&relative) {
+            entry.exclusion_reason = Some(ContextFileExclusionReason::Sensitive);
+            excluded_files += 1;
+            entries.push(entry);
+            continue;
+        }
 
         if is_ignored(&relative, ignore_rules) {
             entry.exclusion_reason = Some(ContextFileExclusionReason::Ignored);
@@ -156,6 +171,19 @@ pub fn select_task_scope_files(
             continue;
         }
 
+        let Ok(metadata) = fs::metadata(&canonical_file) else {
+            entry.exclusion_reason = Some(ContextFileExclusionReason::ReadError);
+            excluded_files += 1;
+            entries.push(entry);
+            continue;
+        };
+        if metadata.len() > DEFAULT_MAX_SCOPED_FILE_BYTES {
+            entry.exclusion_reason = Some(ContextFileExclusionReason::TooLarge);
+            excluded_files += 1;
+            entries.push(entry);
+            continue;
+        }
+
         let Ok(candidate) = fs::read_to_string(&canonical_file) else {
             entry.exclusion_reason = Some(ContextFileExclusionReason::ReadError);
             excluded_files += 1;
@@ -164,6 +192,7 @@ pub fn select_task_scope_files(
         };
         let candidate_tokens = estimate_text(&candidate).estimated_tokens;
         entry.candidate_tokens = Some(candidate_tokens);
+        append_file_section(&mut candidate_rendered, &path, &candidate);
 
         if remaining_chars == 0 {
             entry.exclusion_reason = Some(ContextFileExclusionReason::BudgetExceeded);
@@ -174,8 +203,8 @@ pub fn select_task_scope_files(
 
         let file_budget = DEFAULT_PER_FILE_BUDGET_CHARS.min(remaining_chars);
         let included = trim_file_for_context(&candidate, file_budget);
-        let included_chars = included.chars().count().min(file_budget);
-        remaining_chars = remaining_chars.saturating_sub(included_chars);
+        let consumed_chars = candidate.chars().count().min(file_budget);
+        remaining_chars = remaining_chars.saturating_sub(consumed_chars);
         let included_tokens = estimate_text(&included).estimated_tokens;
 
         entry.status = ContextFileStatus::Included;
@@ -185,18 +214,20 @@ pub fn select_task_scope_files(
         included_files += 1;
         included_file_tokens = included_file_tokens.saturating_add(included_tokens);
 
-        rendered.push_str(&format!(
-            "### `{}`\n\n```text\n{}\n```\n\n",
-            path, included
-        ));
+        append_file_section(&mut rendered, &path, &included);
         entries.push(entry);
     }
 
+    if candidate_rendered.is_empty() {
+        candidate_rendered
+            .push_str("No explicit repository files were eligible from task scope.\n");
+    }
     if rendered.is_empty() {
         rendered.push_str("No explicit repository files were included from task scope.\n");
     }
 
     ContextFileSelection {
+        candidate_rendered,
         rendered,
         manifest: ContextManifest {
             version: CONTEXT_MANIFEST_VERSION,
@@ -276,6 +307,24 @@ fn validate_relative_repo_path(value: &str) -> Option<PathBuf> {
     (!normalized.as_os_str().is_empty()).then_some(normalized)
 }
 
+fn is_sensitive_path(path: &Path) -> bool {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    file_name == ".env"
+        || file_name.starts_with(".env.")
+        || matches!(file_name.as_str(), "id_rsa" | "id_ed25519" | "credentials")
+        || file_name.ends_with(".pem")
+        || file_name.ends_with(".key")
+        || normalized
+            .split('/')
+            .any(|component| matches!(component, ".ssh" | ".gnupg"))
+}
+
 fn is_ignored(path: &Path, rules: &[String]) -> bool {
     let normalized = path.to_string_lossy().replace('\\', "/");
 
@@ -304,6 +353,10 @@ fn trim_file_for_context(value: &str, max_chars: usize) -> String {
     format!("{trimmed}\n\n[RepoDesk: scoped file trimmed for context budget]")
 }
 
+fn append_file_section(output: &mut String, path: &str, content: &str) {
+    output.push_str(&format!("### `{path}`\n\n```text\n{content}\n```\n\n"));
+}
+
 fn sha256_hex(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
@@ -328,8 +381,9 @@ mod tests {
         fs::create_dir_all(root.path().join("src")).unwrap();
         fs::write(root.path().join("src/lib.rs"), "pub fn answer() -> u8 { 42 }\n").unwrap();
         fs::write(root.path().join("secret.log"), "do not include").unwrap();
+        fs::write(root.path().join(".env"), "TOKEN=secret").unwrap();
 
-        let markdown = "## Scope\n- `src/lib.rs`\n- `missing.rs`\n- `secret.log`\n- `../escape.rs`\n";
+        let markdown = "## Scope\n- `src/lib.rs`\n- `missing.rs`\n- `secret.log`\n- `.env`\n- `../escape.rs`\n";
         let selection = select_task_scope_files(
             "repodesk",
             "task-1",
@@ -339,12 +393,17 @@ mod tests {
         );
 
         assert_eq!(selection.manifest.included_files, 1);
-        assert_eq!(selection.manifest.excluded_files, 3);
+        assert_eq!(selection.manifest.excluded_files, 4);
         assert!(selection.rendered.contains("src/lib.rs"));
         assert!(selection.rendered.contains("pub fn answer"));
+        assert!(!selection.candidate_rendered.contains("TOKEN=secret"));
         assert!(selection.manifest.entries.iter().any(|entry| {
             entry.path == "secret.log"
                 && entry.exclusion_reason == Some(ContextFileExclusionReason::Ignored)
+        }));
+        assert!(selection.manifest.entries.iter().any(|entry| {
+            entry.path == ".env"
+                && entry.exclusion_reason == Some(ContextFileExclusionReason::Sensitive)
         }));
         assert!(selection.manifest.entries.iter().any(|entry| {
             entry.path == "../escape.rs"
