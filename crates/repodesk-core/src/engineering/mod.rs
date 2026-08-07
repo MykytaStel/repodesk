@@ -70,6 +70,7 @@ pub use intelligence::{
 pub use run_evidence::{
     RunCommitEvidence, RunContextEvidence, RunEvidenceSnapshot, RunReviewEvidence,
     RunVerificationEvidence, RunWorkerEvidence, derive_run_evidence, load_active_run_evidence,
+    load_active_run_evidence_from_events,
 };
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
