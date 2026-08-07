@@ -3,6 +3,7 @@
 //! Keep this layer independent from frontend concerns. Legacy task/orchestrator
 //! models adapt into these types until later migration slices move call sites.
 
+pub mod acceptance_evidence;
 pub mod algorithmic_profile;
 pub mod change_governance;
 pub mod commit_policy;
@@ -13,8 +14,15 @@ pub mod domain;
 pub mod events;
 pub mod instrumentation;
 pub mod intelligence;
+pub mod run_evidence;
 pub mod work_item_contract;
 
+pub use acceptance_evidence::{
+    ACCEPTANCE_EVIDENCE_FILE, ACCEPTANCE_EVIDENCE_VERSION, AcceptanceCriterionEvidence,
+    AcceptanceCriterionStatus, AcceptanceEvidenceBinding, AcceptanceEvidenceReport,
+    AcceptanceEvidenceStore, acceptance_evidence_path, criterion_id, derive_acceptance_evidence,
+    link_active_acceptance_evidence, load_active_acceptance_evidence, read_acceptance_evidence,
+};
 pub use algorithmic_profile::{
     AlgorithmicEvidence, AlgorithmicEvidenceKind, AlgorithmicProfile, AlgorithmicProfileError,
     AlgorithmicProfileReport, AlgorithmicSignals, AlgorithmicSymbolKind, AnalysisConfidence,
@@ -58,6 +66,11 @@ pub use intelligence::{
     AiUsageIntelligence, ChangeIntelligence, CompletionIntelligence, ContextIntelligence,
     EngineeringIntelligence, ExecutionIntelligence, IntelligenceRates, VerificationIntelligence,
     derive_engineering_intelligence, load_engineering_intelligence,
+};
+pub use run_evidence::{
+    RunCommitEvidence, RunContextEvidence, RunEvidenceSnapshot, RunReviewEvidence,
+    RunVerificationEvidence, RunWorkerEvidence, derive_run_evidence, load_active_run_evidence,
+    load_active_run_evidence_from_events,
 };
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
