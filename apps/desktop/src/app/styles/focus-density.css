@@ -1,0 +1,91 @@
+/* Visual hierarchy reset -------------------------------------------------------
+   Primary engineering screens should read like an IDE, not a dashboard of
+   equally elevated cards. Feature CSS can still opt into stronger emphasis,
+   but the default inside the workbench is flat, dense and separator-driven. */
+
+.ide-surface-scroll .content-grid {
+  gap: 10px;
+}
+
+.ide-surface-scroll .card,
+.ide-surface-scroll .check-card,
+.ide-surface-scroll .snippet-card,
+.ide-surface-scroll .model-row,
+.ide-surface-scroll .table-row,
+.ide-surface-scroll .file-row,
+.ide-surface-scroll .toggle-row,
+.ide-surface-scroll .metric {
+  border-radius: 6px;
+  background: var(--surface);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+.ide-surface-scroll .card:hover,
+.ide-surface-scroll .check-card:hover,
+.ide-surface-scroll .snippet-card:hover,
+.ide-surface-scroll .table-row:hover,
+.ide-surface-scroll .model-row:hover,
+.ide-surface-scroll .metric:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+  box-shadow: none;
+}
+
+.ide-surface-scroll .panel,
+.ide-surface-scroll .wide-panel,
+.ide-surface-scroll .hero-panel {
+  border-radius: 7px;
+  background: var(--surface);
+}
+
+.ide-surface-scroll .eyebrow {
+  letter-spacing: .08em;
+}
+
+.ide-surface-scroll .pill {
+  min-height: 22px;
+  padding: 2px 7px;
+  font-size: 9px;
+  letter-spacing: .045em;
+}
+
+.ide-surface-scroll .button-row {
+  gap: 6px;
+}
+
+.ide-surface-scroll .tiny-button {
+  min-height: 26px;
+}
+
+/* Lists are allowed to visually merge into a single surface. A border between
+   rows carries less cognitive weight than a separate card per item. */
+.ide-surface-scroll .table-list > .table-row,
+.ide-surface-scroll .file-list > .file-row {
+  margin: 0;
+}
+
+.ide-surface-scroll .table-list > .table-row + .table-row,
+.ide-surface-scroll .file-list > .file-row + .file-row {
+  margin-top: 4px;
+}
+
+/* Hero copy is useful for empty/setup states, but routine primary screens should
+   not start with a large marketing-style block. */
+.work-surface-v2 .lead,
+.subnav-host .lead {
+  max-width: 760px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Keep status color semantic rather than decorative: only state, errors and the
+   current action get strong color. */
+.ide-surface-scroll .muted {
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .ide-surface-scroll .content-grid { gap: 8px; }
+}
