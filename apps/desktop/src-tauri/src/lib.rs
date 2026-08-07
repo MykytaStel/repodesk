@@ -293,6 +293,7 @@ pub fn run() {
             commands::desktop_snapshot,
             commands::product_workflow_state,
             commands::work_phase_state,
+            commands::work_engineering_intelligence,
             commands::work_set_execution_mode,
             commands::work_review,
             commands::work_import_manual_changes,
