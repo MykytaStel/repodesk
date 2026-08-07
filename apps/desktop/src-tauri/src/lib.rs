@@ -7,6 +7,7 @@ pub mod ai_discovery_commands {
 
 pub mod commands;
 mod store;
+mod terminal;
 
 mod git_workspace_commands {
     #[tauri::command]
@@ -229,6 +230,7 @@ use tauri_plugin_global_shortcut::ShortcutState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(terminal::TerminalManager::default())
         // Auto-updater: enabled with a real signing key + GitHub Releases endpoint
         // (see tauri.conf.json plugins.updater). The plugin only verifies/installs
         // signed update bundles; it is not triggered automatically on launch.
@@ -285,6 +287,11 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            terminal::terminal_create,
+            terminal::terminal_list,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_kill,
             code_workbench_commands::read_code_file,
             code_workbench_commands::code_workbench_snapshot,
             git_workspace_commands::git_workspace_snapshot,
