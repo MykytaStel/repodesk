@@ -136,8 +136,9 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
 }
 
 /// Commit **only** the already-staged, reviewed changeset — never `git add -A`.
-/// Refuses unless the run was accepted and verification is still fresh, and
-/// refuses if the index holds any path outside the reviewed set.
+/// Refuses unless the exact run changeset was accepted, its Engineering Contract
+/// policy allows those reviewed paths (or has a current explicit override), and
+/// verification is still fresh against the current HEAD/index/digest.
 pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let message = message.trim();
     if message.is_empty() {
@@ -158,6 +159,8 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let run_digest = receipt.execution.changeset_digest.clone();
 
     // 1. The run's changeset must have been accepted (this run, this digest).
+    // This canonical receipt remains authoritative even if optional engineering
+    // telemetry could not be appended.
     let review = receipt
         .review
         .as_ref()
@@ -169,7 +172,19 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         })?;
     let reviewed: HashSet<&str> = review.reviewed_paths.iter().map(String::as_str).collect();
 
-    // 2. Verification must still be valid against the current tree.
+    // 2. Apply RepoDesk 2 Engineering Contract policy to the exact canonical
+    // reviewed path set. Tasks without a typed contract keep the legacy commit
+    // flow; a real scope violation requires an explicit current HumanOverride.
+    let scope_policy = crate::engineering::load_active_commit_scope_policy(
+        &receipt.run_id,
+        &review.reviewed_paths,
+    )?;
+    if let Some(detail) = scope_policy.blocker_message() {
+        return Err(RepoDeskError::RoutingFailed { detail });
+    }
+
+    // 3. Verification must still be valid against the current tree. This is the
+    // hard freshness proof: event-ledger "passed" telemetry alone is never enough.
     let head = head_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "active project is not a git repository with a commit".to_string(),
     })?;
@@ -191,7 +206,7 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         });
     }
 
-    // 3. The index must hold exactly the reviewed changeset — no stray files.
+    // 4. The index must hold exactly the reviewed changeset — no stray files.
     let staged = staged_paths(&project_path);
     if staged.is_empty() {
         return Err(RepoDeskError::RoutingFailed {
@@ -214,7 +229,7 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         });
     }
 
-    // 4. Commit the existing index (no `git add`), then record the finish.
+    // 5. Commit the existing index (no `git add`), then record the finish.
     let output = Command::new("git")
         .arg("-C")
         .arg(&project_path)

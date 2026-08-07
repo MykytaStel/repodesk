@@ -5,6 +5,7 @@
 
 pub mod algorithmic_profile;
 pub mod change_governance;
+pub mod commit_policy;
 pub mod context_compactness;
 pub mod context_inspector;
 pub mod context_manifest;
@@ -25,6 +26,9 @@ pub use change_governance::{
     ChangeReviewState, ChangeVerificationEvidence, ChangeVerificationState, CommitGate,
     CommitGateState, ScopeOverrideEvidence, derive_change_governance,
     load_active_change_governance, load_change_governance, record_active_scope_override,
+};
+pub use commit_policy::{
+    CommitScopePolicyDecision, derive_commit_scope_policy, load_active_commit_scope_policy,
 };
 pub use context_compactness::{
     ContextBuildCompactness, ContextBuildTelemetry, ContextCompactnessReport,
