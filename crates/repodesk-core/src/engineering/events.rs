@@ -196,13 +196,10 @@ mod tests {
         )
         .with_attribute("title", Value::String("Typed domain".to_string()));
 
-        let second = EngineeringEvent::new(
-            "repodesk",
-            work_item_id,
-            EngineeringEventKind::ContextBuilt,
-        )
-        .with_evidence(EvidenceRef::try_new(EvidenceKind::Context, "context.md").unwrap())
-        .with_attribute("tokens", Value::from(1200));
+        let second =
+            EngineeringEvent::new("repodesk", work_item_id, EngineeringEventKind::ContextBuilt)
+                .with_evidence(EvidenceRef::try_new(EvidenceKind::Context, "context.md").unwrap())
+                .with_attribute("tokens", Value::from(1200));
 
         let path = append_event(dir.path(), &first).unwrap();
         append_event(dir.path(), &second).unwrap();
