@@ -84,7 +84,10 @@ fn result_is_handoff_target(result: &SubAgentResult) -> bool {
 }
 
 fn execution_mode_label(workers: &BTreeSet<WorkerRef>) -> &'static str {
-    if workers.iter().any(|worker| worker.kind == WorkerKind::Manual) {
+    if workers
+        .iter()
+        .any(|worker| worker.kind == WorkerKind::Manual)
+    {
         "manual"
     } else {
         "managed"
