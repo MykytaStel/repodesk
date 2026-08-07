@@ -1,0 +1,150 @@
+/* Interactive terminal ------------------------------------------------------
+   Kept intentionally flat and dense: the terminal should feel like a tool,
+   not another dashboard card. xterm owns its scrollback/rendering buffer. */
+
+.workbench-bottom-panel.hidden {
+  display: none;
+}
+
+.interactive-terminal {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: none;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.interactive-terminal.active {
+  display: flex;
+}
+
+.interactive-terminal-toolbar {
+  min-height: 30px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-3);
+}
+
+.interactive-terminal-meta,
+.interactive-terminal-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.interactive-terminal-meta strong,
+.interactive-terminal-meta span,
+.interactive-terminal-meta small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interactive-terminal-meta strong {
+  font-size: 11px;
+  color: var(--text);
+  text-transform: capitalize;
+}
+
+.interactive-terminal-meta span {
+  max-width: min(44vw, 560px);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.interactive-terminal-meta small {
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.terminal-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.terminal-status-dot.starting {
+  background: var(--warning);
+}
+
+.terminal-status-dot.running {
+  background: var(--success);
+}
+
+.terminal-status-dot.exited,
+.terminal-status-dot.error {
+  background: var(--danger);
+}
+
+.interactive-terminal-actions button {
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.interactive-terminal-actions button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--neutral-soft);
+  color: var(--text);
+  transform: none;
+  box-shadow: none;
+}
+
+.interactive-terminal-actions button:disabled {
+  opacity: .45;
+}
+
+.interactive-terminal-error {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--danger-border);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 10px;
+}
+
+.interactive-terminal-host {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  padding: 6px 8px 8px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.interactive-terminal-host .xterm {
+  height: 100%;
+}
+
+.interactive-terminal-host .xterm-viewport {
+  scrollbar-width: thin;
+}
+
+@media (max-width: 820px) {
+  .interactive-terminal-meta small {
+    display: none;
+  }
+
+  .interactive-terminal-meta span {
+    max-width: 42vw;
+  }
+}
