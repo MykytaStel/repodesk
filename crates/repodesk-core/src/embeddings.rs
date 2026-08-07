@@ -36,10 +36,9 @@ impl EmbeddingProvider for OllamaEmbeddingProvider {
             .send_json(request)
             .map_err(|e| RepoDeskError::Api(format!("Ollama embedding request failed: {e}")))?;
 
-        let resp: OllamaEmbeddingResponse = response
-            .into_body()
-            .read_json()
-            .map_err(|e| RepoDeskError::Api(format!("Failed to parse Ollama embedding response: {e}")))?;
+        let resp: OllamaEmbeddingResponse = response.into_body().read_json().map_err(|e| {
+            RepoDeskError::Api(format!("Failed to parse Ollama embedding response: {e}"))
+        })?;
 
         Ok(resp.embedding)
     }

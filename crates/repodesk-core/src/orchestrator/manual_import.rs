@@ -161,6 +161,11 @@ pub fn import_manual_changes(source: ManualImportSource) -> RepoDeskResult<Manua
     persist_run(&task.config.run_dir, &run)?;
     write_manual_receipt(&project.path, &run)?;
 
+    // Manual/external-agent work must live in the same engineering history as
+    // managed agent runs. There is no internal dependency plan, so handoffs are
+    // omitted while execution/change telemetry is still captured.
+    let _ = crate::engineering::instrumentation::record_orchestration_run(None, &run);
+
     Ok(ManualImport {
         run_id,
         changed_files,

@@ -109,7 +109,7 @@ pub fn search_similar(
 
         let embedding = blob_to_vec(&blob);
         let score = cosine_similarity(query_embedding, &embedding);
-        
+
         results.push(SearchResult {
             file_path,
             chunk_index,
@@ -119,7 +119,11 @@ pub fn search_similar(
     }
 
     // Sort descending by score
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
 
     Ok(results)

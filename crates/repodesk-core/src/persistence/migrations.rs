@@ -200,7 +200,7 @@ fn migrate_to_v3(conn: &Connection) -> RepoDeskResult<()> {
     Ok(())
 }
 
-/// Migration 4 — RAG document embeddings. This table stores the chunked text and 
+/// Migration 4 — RAG document embeddings. This table stores the chunked text and
 /// its vector embedding blob for local semantic search against project files.
 fn migrate_to_v4(conn: &Connection) -> RepoDeskResult<()> {
     conn.execute(
@@ -336,7 +336,9 @@ mod tests {
 
         // v4: project_embeddings table exists.
         let emb_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM project_embeddings", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM project_embeddings", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(emb_count, 0);
     }

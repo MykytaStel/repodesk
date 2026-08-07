@@ -170,7 +170,10 @@ impl WorkerRef {
                     | "lm_studio"
                     | "llamafile"
                     | "localai"
-            ) => WorkerKind::Inference,
+            ) =>
+            {
+                WorkerKind::Inference
+            }
             _ => WorkerKind::Unknown,
         };
 

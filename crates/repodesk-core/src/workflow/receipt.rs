@@ -167,13 +167,53 @@ pub fn load_receipt() -> RepoDeskResult<Option<TaskRunReceipt>> {
         .and_then(|content| serde_json::from_str(&content).ok()))
 }
 
+fn review_changed(previous: Option<&TaskRunReceipt>, current: &TaskRunReceipt) -> bool {
+    let previous_review = previous
+        .filter(|receipt| receipt.run_id == current.run_id)
+        .and_then(|receipt| receipt.review.as_ref());
+    let current_review = current.review.as_ref();
+
+    match (previous_review, current_review) {
+        (None, Some(_)) => true,
+        (Some(previous), Some(current)) => {
+            previous.run_id != current.run_id
+                || previous.decision != current.decision
+                || previous.reviewed_paths != current.reviewed_paths
+                || previous.changeset_digest != current.changeset_digest
+                || previous.index_tree_after_accept != current.index_tree_after_accept
+        }
+        _ => false,
+    }
+}
+
 /// Persist the run receipt for the active task.
 pub fn save_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
+    let previous = load_receipt().ok().flatten();
+    let should_record_review = review_changed(previous.as_ref(), receipt);
+
     let path = receipt_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&path, serde_json::to_string_pretty(receipt)?)?;
+
+    if should_record_review
+        && let Some(review) = receipt.review.as_ref()
+        && let Ok(task) = show_active_task()
+    {
+        let decision = match review.decision {
+            ReviewDecision::Accepted => "accepted",
+            ReviewDecision::Rejected => "rejected",
+        };
+        let _ = crate::engineering::instrumentation::record_changeset_reviewed(
+            &task.config,
+            &review.run_id,
+            decision,
+            &review.reviewed_paths,
+            &review.changeset_digest,
+        );
+    }
+
     Ok(())
 }
 

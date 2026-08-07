@@ -8,6 +8,7 @@ use std::process::Command;
 
 use chrono::Utc;
 
+use crate::engineering::instrumentation::VerificationFinishedTelemetry;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::receipt::{
@@ -41,6 +42,7 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
         detail: "no run to verify — run the agent first".to_string(),
     })?;
     let project_path = active_project_path()?;
+    let task = crate::tasks::show_active_task()?.config;
 
     let head = head_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "active project is not a git repository with a commit".to_string(),
@@ -56,7 +58,40 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
         .clone()
         .unwrap_or_else(|| super::receipt::changeset_digest(&[]));
 
-    let result = crate::checks::run_checks()?;
+    // Only an invocation that reached the actual check runner is a verification
+    // attempt. Preconditions above can block Verify without polluting attempt
+    // metrics with an unmatched `VerificationStarted` event.
+    let verification_id =
+        crate::engineering::instrumentation::new_verification_id(&receipt.run_id).ok();
+    if let Some(id) = verification_id.clone() {
+        let _ = crate::engineering::instrumentation::record_verification_started(
+            &task,
+            &receipt.run_id,
+            id,
+        );
+    }
+
+    let result = match crate::checks::run_checks() {
+        Ok(result) => result,
+        Err(error) => {
+            if let Some(id) = verification_id {
+                let error_text = error.to_string();
+                let _ = crate::engineering::instrumentation::record_verification_finished(
+                    &task,
+                    &receipt.run_id,
+                    id,
+                    VerificationFinishedTelemetry {
+                        success: false,
+                        command_count: 0,
+                        summary_path: None,
+                        log_path: None,
+                        error: Some(&error_text),
+                    },
+                );
+            }
+            return Err(error);
+        }
+    };
     let commands: Vec<CheckReceipt> = result
         .commands
         .iter()
@@ -81,6 +116,21 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     // A re-verification supersedes any prior finish for this run.
     receipt.finish = None;
     save_receipt(&receipt)?;
+
+    if let Some(id) = verification_id {
+        let _ = crate::engineering::instrumentation::record_verification_finished(
+            &task,
+            &receipt.run_id,
+            id,
+            VerificationFinishedTelemetry {
+                success,
+                command_count: commands.len(),
+                summary_path: result.summary_file.to_str(),
+                log_path: result.log_file.to_str(),
+                error: None,
+            },
+        );
+    }
 
     Ok(VerificationOutcome { success, commands })
 }
@@ -194,6 +244,15 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         finished_at: Utc::now().to_rfc3339(),
     });
     save_receipt(&receipt)?;
+
+    if let Ok(task) = crate::tasks::show_active_task() {
+        let _ = crate::engineering::instrumentation::record_commit_created(
+            &task.config,
+            &receipt.run_id,
+            &commit_sha,
+            &staged,
+        );
+    }
 
     Ok(CommitOutcome {
         commit_sha,
