@@ -16,9 +16,7 @@ use crate::engineering::work_item_contract::{WorkItemContract, read_work_item_co
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::projects::get_active_project;
 use crate::tasks::{TaskInfo, show_active_task};
-use crate::workflow::{
-    TaskRunReceipt, changeset_digest, head_sha, index_tree_sha, load_receipt,
-};
+use crate::workflow::{TaskRunReceipt, changeset_digest, head_sha, index_tree_sha, load_receipt};
 
 pub const ACCEPTANCE_EVIDENCE_FILE: &str = "acceptance-evidence.json";
 pub const ACCEPTANCE_EVIDENCE_VERSION: u32 = 1;
@@ -96,8 +94,9 @@ pub fn read_acceptance_evidence(run_dir: &Path) -> RepoDeskResult<Option<Accepta
     Ok(Some(serde_json::from_str(&content)?))
 }
 
-/// The same freshness invariant used by bounded commit: successful verification
-/// must still match current HEAD, staged index tree, and reviewed changeset.
+/// True when the verification receipt still describes the current reviewed
+/// tree. This deliberately does not require `success`: a failed command is
+/// still valid negative evidence for an acceptance criterion.
 pub fn active_verification_is_fresh(receipt: &TaskRunReceipt) -> RepoDeskResult<bool> {
     let Some(verification) = receipt.verification.as_ref() else {
         return Ok(false);
@@ -114,7 +113,10 @@ pub fn active_verification_is_fresh(receipt: &TaskRunReceipt) -> RepoDeskResult<
         .changeset_digest
         .clone()
         .unwrap_or_else(|| changeset_digest(&[]));
-    Ok(verification.run_id == receipt.run_id && verification.valid_for(&head, &tree, &digest))
+    Ok(verification.run_id == receipt.run_id
+        && verification.head_sha == head
+        && verification.index_tree_sha == tree
+        && verification.changeset_digest == digest)
 }
 
 pub fn load_active_acceptance_evidence() -> RepoDeskResult<AcceptanceEvidenceReport> {
@@ -387,9 +389,7 @@ mod tests {
     use super::*;
     use crate::orchestrator::RunStatus;
     use crate::tasks::{TaskConfig, TaskStatus};
-    use crate::workflow::{
-        CheckReceipt, ExecutionMode, ExecutionReceipt, VerificationReceipt,
-    };
+    use crate::workflow::{CheckReceipt, ExecutionMode, ExecutionReceipt, VerificationReceipt};
 
     fn task() -> TaskInfo {
         let now = Utc::now();
