@@ -42,6 +42,7 @@ pub enum EngineeringEventKind {
     KnowledgeProposed,
     KnowledgeAccepted,
     KnowledgeRejected,
+    KnowledgeArchived,
     HumanOverride,
 }
 
