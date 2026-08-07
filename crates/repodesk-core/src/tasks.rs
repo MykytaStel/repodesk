@@ -84,6 +84,10 @@ pub fn create_task(input: NewTaskInput) -> RepoDeskResult<TaskInfo> {
     let active_task_file = active_task_file_for_project(&paths, &project.name);
     fs::write(active_task_file, format!("{id}\n"))?;
 
+    // Engineering telemetry is deliberately best-effort: task creation stays
+    // successful even when the optional append-only ledger cannot be written.
+    let _ = crate::engineering::instrumentation::record_work_item_created(&config);
+
     Ok(TaskInfo {
         config,
         task_file,
