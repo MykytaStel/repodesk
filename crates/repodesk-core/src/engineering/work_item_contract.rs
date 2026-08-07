@@ -143,18 +143,30 @@ pub fn load_work_item_contract_snapshot(
     task: &TaskInfo,
 ) -> RepoDeskResult<WorkItemContractSnapshot> {
     let stored = read_work_item_contract(&task.config.run_dir)?;
+    let events = read_events(&task.config.run_dir)?;
+    Ok(derive_work_item_contract_snapshot(task, stored, &events))
+}
+
+/// Pure contract projection for aggregate engineering snapshots that already
+/// replayed the task ledger. Keeping this pure prevents each IDE panel from
+/// reopening the same JSONL file independently.
+pub fn derive_work_item_contract_snapshot(
+    task: &TaskInfo,
+    stored: Option<WorkItemContract>,
+    events: &[EngineeringEvent],
+) -> WorkItemContractSnapshot {
     let configured = stored.is_some();
     let contract = stored.unwrap_or_else(|| empty_contract(task));
     let readiness = readiness(&contract);
-    let changed_files = latest_changeset_files(&task.config.run_dir)?;
+    let changed_files = latest_changeset_files(events);
     let compliance = derive_scope_compliance(&contract, &changed_files, configured);
 
-    Ok(WorkItemContractSnapshot {
+    WorkItemContractSnapshot {
         configured,
         contract,
         readiness,
         compliance,
-    })
+    }
 }
 
 pub fn derive_scope_compliance(
@@ -366,8 +378,7 @@ fn path_matches_rule(path: &str, rule: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
-fn latest_changeset_files(run_dir: &Path) -> RepoDeskResult<Vec<String>> {
-    let events = read_events(run_dir)?;
+fn latest_changeset_files(events: &[EngineeringEvent]) -> Vec<String> {
     for event in events.iter().rev() {
         if event.kind != EngineeringEventKind::ChangeSetCreated {
             continue;
@@ -375,13 +386,13 @@ fn latest_changeset_files(run_dir: &Path) -> RepoDeskResult<Vec<String>> {
         let Some(files) = event.attributes.get("files").and_then(Value::as_array) else {
             continue;
         };
-        return Ok(files
+        return files
             .iter()
             .filter_map(Value::as_str)
             .map(str::to_string)
-            .collect());
+            .collect();
     }
-    Ok(Vec::new())
+    Vec::new()
 }
 
 #[cfg(test)]
