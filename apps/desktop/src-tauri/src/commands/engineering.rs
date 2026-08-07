@@ -1,7 +1,8 @@
 use repodesk_core::engineering::{
-    ContextInspectorReport, EngineeringIntelligence, WorkItemContractSnapshot,
-    WorkItemContractUpdate, load_context_inspector, load_engineering_intelligence,
-    load_work_item_contract_snapshot, save_active_work_item_contract,
+    ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
+    WorkItemContractSnapshot, WorkItemContractUpdate, load_active_change_governance,
+    load_context_inspector, load_engineering_intelligence, load_work_item_contract_snapshot,
+    record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::Serialize;
@@ -39,4 +40,21 @@ pub fn work_engineering_intelligence(
         context_inspector,
         work_item_contract,
     })
+}
+
+/// Latest ChangeSet governance replay for the active Work Item. This is a
+/// read-only projection over the engineering ledger and Work Item Contract.
+#[tauri::command]
+pub fn work_change_governance() -> Result<ChangeGovernanceSnapshot, ErrorPayload> {
+    load_active_change_governance().map_err(ErrorPayload::from)
+}
+
+/// Record an explicit one-ChangeSet human exception for a contract violation.
+/// Core validates that the current gate is a scope violation; the UI cannot
+/// manufacture an override for an unrelated or already-safe ChangeSet.
+#[tauri::command]
+pub fn work_record_scope_override(
+    reason: String,
+) -> Result<ChangeGovernanceSnapshot, ErrorPayload> {
+    record_active_scope_override(&reason).map_err(ErrorPayload::from)
 }
