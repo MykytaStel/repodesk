@@ -43,16 +43,6 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     let project_path = active_project_path()?;
     let task = crate::tasks::show_active_task()?.config;
 
-    let verification_id =
-        crate::engineering::instrumentation::new_verification_id(&receipt.run_id).ok();
-    if let Some(id) = verification_id.clone() {
-        let _ = crate::engineering::instrumentation::record_verification_started(
-            &task,
-            &receipt.run_id,
-            id,
-        );
-    }
-
     let head = head_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "active project is not a git repository with a commit".to_string(),
     })?;
@@ -66,6 +56,19 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
         .changeset_digest
         .clone()
         .unwrap_or_else(|| super::receipt::changeset_digest(&[]));
+
+    // Only an invocation that reached the actual check runner is a verification
+    // attempt. Preconditions above can block Verify without polluting attempt
+    // metrics with an unmatched `VerificationStarted` event.
+    let verification_id =
+        crate::engineering::instrumentation::new_verification_id(&receipt.run_id).ok();
+    if let Some(id) = verification_id.clone() {
+        let _ = crate::engineering::instrumentation::record_verification_started(
+            &task,
+            &receipt.run_id,
+            id,
+        );
+    }
 
     let result = match crate::checks::run_checks() {
         Ok(result) => result,
