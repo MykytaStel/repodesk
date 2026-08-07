@@ -214,17 +214,17 @@ pub fn analyze_rust_file(
         )));
     }
 
-    let canonical_root = fs::canonicalize(project_root).map_err(|error| {
-        AlgorithmicProfileError::Read {
+    let canonical_root =
+        fs::canonicalize(project_root).map_err(|error| AlgorithmicProfileError::Read {
             path: project_root.display().to_string(),
             message: error.to_string(),
-        }
-    })?;
+        })?;
     let candidate = canonical_root.join(&relative);
-    let canonical_file = fs::canonicalize(&candidate).map_err(|error| AlgorithmicProfileError::Read {
-        path: relative_path.to_string(),
-        message: error.to_string(),
-    })?;
+    let canonical_file =
+        fs::canonicalize(&candidate).map_err(|error| AlgorithmicProfileError::Read {
+            path: relative_path.to_string(),
+            message: error.to_string(),
+        })?;
 
     if !canonical_file.starts_with(&canonical_root) {
         return Err(AlgorithmicProfileError::OutsideProject(
@@ -232,10 +232,11 @@ pub fn analyze_rust_file(
         ));
     }
 
-    let metadata = fs::metadata(&canonical_file).map_err(|error| AlgorithmicProfileError::Read {
-        path: relative_path.to_string(),
-        message: error.to_string(),
-    })?;
+    let metadata =
+        fs::metadata(&canonical_file).map_err(|error| AlgorithmicProfileError::Read {
+            path: relative_path.to_string(),
+            message: error.to_string(),
+        })?;
     if !metadata.is_file() {
         return Err(AlgorithmicProfileError::InvalidPath(
             relative_path.to_string(),
@@ -249,17 +250,21 @@ pub fn analyze_rust_file(
         });
     }
 
-    let source = fs::read_to_string(&canonical_file).map_err(|error| AlgorithmicProfileError::Read {
-        path: relative_path.to_string(),
-        message: error.to_string(),
-    })?;
+    let source =
+        fs::read_to_string(&canonical_file).map_err(|error| AlgorithmicProfileError::Read {
+            path: relative_path.to_string(),
+            message: error.to_string(),
+        })?;
 
     analyze_rust_source(relative_path.to_string(), &source)
 }
 
 fn validate_rust_relative_path(value: &str) -> Result<PathBuf, AlgorithmicProfileError> {
     let path = Path::new(value);
-    if value.trim().is_empty() || path.is_absolute() || path.extension().and_then(|ext| ext.to_str()) != Some("rs") {
+    if value.trim().is_empty()
+        || path.is_absolute()
+        || path.extension().and_then(|ext| ext.to_str()) != Some("rs")
+    {
         return Err(AlgorithmicProfileError::InvalidPath(value.to_string()));
     }
 
@@ -471,8 +476,7 @@ impl<'ast> Visit<'ast> for FunctionBodyVisitor {
         }
         if ITERATOR_SCAN_METHODS.contains(&method.as_str()) {
             recognized = true;
-            self.signals.iterator_scan_calls =
-                self.signals.iterator_scan_calls.saturating_add(1);
+            self.signals.iterator_scan_calls = self.signals.iterator_scan_calls.saturating_add(1);
             if self.loop_depth > 0 {
                 self.signals.scan_calls_inside_loop =
                     self.signals.scan_calls_inside_loop.saturating_add(1);
@@ -519,7 +523,10 @@ impl<'ast> Visit<'ast> for FunctionBodyVisitor {
 
         if recursive {
             self.signals.recursive_calls = self.signals.recursive_calls.saturating_add(1);
-        } else if path.as_ref().is_some_and(|segments| is_allocation_function(segments)) {
+        } else if path
+            .as_ref()
+            .is_some_and(|segments| is_allocation_function(segments))
+        {
             self.signals.allocation_like_calls =
                 self.signals.allocation_like_calls.saturating_add(1);
         } else {
@@ -556,19 +563,67 @@ impl<'ast> Visit<'ast> for FunctionBodyVisitor {
     }
 }
 
-const SORT_METHODS: &[&str] = &["sort", "sort_by", "sort_by_key", "sort_unstable", "sort_unstable_by", "sort_unstable_by_key"];
-const LOGARITHMIC_SEARCH_METHODS: &[&str] = &["binary_search", "binary_search_by", "binary_search_by_key", "partition_point"];
+const SORT_METHODS: &[&str] = &[
+    "sort",
+    "sort_by",
+    "sort_by_key",
+    "sort_unstable",
+    "sort_unstable_by",
+    "sort_unstable_by_key",
+];
+const LOGARITHMIC_SEARCH_METHODS: &[&str] = &[
+    "binary_search",
+    "binary_search_by",
+    "binary_search_by_key",
+    "partition_point",
+];
 const ITERATOR_SCAN_METHODS: &[&str] = &[
-    "all", "any", "collect", "contains", "count", "find", "find_map", "fold", "for_each",
-    "max", "max_by", "max_by_key", "min", "min_by", "min_by_key", "position", "product",
-    "rfind", "rposition", "sum",
+    "all",
+    "any",
+    "collect",
+    "contains",
+    "count",
+    "find",
+    "find_map",
+    "fold",
+    "for_each",
+    "max",
+    "max_by",
+    "max_by_key",
+    "min",
+    "min_by",
+    "min_by_key",
+    "position",
+    "product",
+    "rfind",
+    "rposition",
+    "sum",
 ];
 const ALLOCATING_METHODS: &[&str] = &["collect", "to_owned", "to_string", "to_vec"];
-const COLLECTION_GROWTH_METHODS: &[&str] = &["extend", "extend_from_slice", "insert", "push", "push_str"];
+const COLLECTION_GROWTH_METHODS: &[&str] =
+    &["extend", "extend_from_slice", "insert", "push", "push_str"];
 const CONSTANTISH_METHODS: &[&str] = &[
-    "as_deref", "as_mut", "as_ref", "borrow", "capacity", "clone", "copied", "expect",
-    "first", "get", "get_mut", "is_empty", "is_none", "is_ok", "is_some", "last", "len",
-    "ok", "unwrap", "unwrap_or", "unwrap_or_default",
+    "as_deref",
+    "as_mut",
+    "as_ref",
+    "borrow",
+    "capacity",
+    "clone",
+    "copied",
+    "expect",
+    "first",
+    "get",
+    "get_mut",
+    "is_empty",
+    "is_none",
+    "is_ok",
+    "is_some",
+    "last",
+    "len",
+    "ok",
+    "unwrap",
+    "unwrap_or",
+    "unwrap_or_default",
 ];
 const ALLOCATING_MACROS: &[&str] = &["format", "vec"];
 
@@ -626,40 +681,68 @@ fn infer_time_complexity(
 
     if signals.recursive_calls > 0 {
         warnings.push("Explicit recursion detected, but v0 cannot prove the recurrence relation or termination behavior.".to_string());
-        return (ComplexityHint::unknown(), AnalysisConfidence::Low, assumptions, warnings);
+        return (
+            ComplexityHint::unknown(),
+            AnalysisConfidence::Low,
+            assumptions,
+            warnings,
+        );
     }
 
     if signals.sort_calls_inside_loop > 0 {
         warnings.push("A sort-like call occurs inside a loop; v0 does not collapse this into an unsupported simple Big-O class.".to_string());
-        return (ComplexityHint::unknown(), AnalysisConfidence::Low, assumptions, warnings);
+        return (
+            ComplexityHint::unknown(),
+            AnalysisConfidence::Low,
+            assumptions,
+            warnings,
+        );
     }
 
     if signals.scan_calls_inside_loop > 0 {
         warnings.push("A scan-like method occurs inside a loop. Receiver types are unresolved, so a nested traversal cost cannot be proven.".to_string());
-        return (ComplexityHint::unknown(), AnalysisConfidence::Low, assumptions, warnings);
+        return (
+            ComplexityHint::unknown(),
+            AnalysisConfidence::Low,
+            assumptions,
+            warnings,
+        );
     }
 
     let (hint, mut confidence) = if signals.max_loop_nesting >= 3 {
-        assumptions.push("Nested explicit loops are assumed to scale with comparable input size n.".to_string());
+        assumptions.push(
+            "Nested explicit loops are assumed to scale with comparable input size n.".to_string(),
+        );
         (
             ComplexityHint::polynomial(signals.max_loop_nesting),
             AnalysisConfidence::Medium,
         )
     } else if signals.max_loop_nesting == 2 {
-        assumptions.push("Both explicit loop bounds are assumed to scale with comparable input size n.".to_string());
+        assumptions.push(
+            "Both explicit loop bounds are assumed to scale with comparable input size n."
+                .to_string(),
+        );
         (ComplexityHint::quadratic(), AnalysisConfidence::Medium)
     } else if signals.sort_calls > 0 {
         assumptions.push("sort-like methods are assumed to have standard-library comparison-sort behavior on input-sized collections.".to_string());
         (ComplexityHint::linearithmic(), AnalysisConfidence::Medium)
     } else if signals.max_loop_nesting == 1 || signals.iterator_scan_calls > 0 {
-        assumptions.push("The explicit traversal or scan-like operation is assumed to scale with input size n.".to_string());
+        assumptions.push(
+            "The explicit traversal or scan-like operation is assumed to scale with input size n."
+                .to_string(),
+        );
         (ComplexityHint::linear(), AnalysisConfidence::Medium)
     } else if signals.logarithmic_search_calls > 0 {
         assumptions.push("binary-search-like methods are assumed to operate on an input-sized ordered collection.".to_string());
         (ComplexityHint::logarithmic(), AnalysisConfidence::Medium)
     } else if opaque {
         warnings.push("No explicit scaling structure was proven and unresolved calls/macros/closures may hide work.".to_string());
-        return (ComplexityHint::unknown(), AnalysisConfidence::Low, assumptions, warnings);
+        return (
+            ComplexityHint::unknown(),
+            AnalysisConfidence::Low,
+            assumptions,
+            warnings,
+        );
     } else {
         (ComplexityHint::constant(), AnalysisConfidence::High)
     };
@@ -693,21 +776,44 @@ fn infer_space_complexity(
     }
 
     if signals.iterator_scan_calls > 0 && signals.allocation_like_calls > 0 {
-        assumptions.push("A collect/to_vec-like allocation is assumed to retain traversal-sized output.".to_string());
-        return (ComplexityHint::linear(), AnalysisConfidence::Low, assumptions, warnings);
+        assumptions.push(
+            "A collect/to_vec-like allocation is assumed to retain traversal-sized output."
+                .to_string(),
+        );
+        return (
+            ComplexityHint::linear(),
+            AnalysisConfidence::Low,
+            assumptions,
+            warnings,
+        );
     }
 
     if signals.allocation_like_calls > 0 || signals.collection_growth_calls > 0 {
         warnings.push("Allocation-like operations are present, but v0 cannot prove whether retained allocation size scales with input.".to_string());
-        return (ComplexityHint::unknown(), AnalysisConfidence::Low, assumptions, warnings);
+        return (
+            ComplexityHint::unknown(),
+            AnalysisConfidence::Low,
+            assumptions,
+            warnings,
+        );
     }
 
     if opaque {
         warnings.push("Unresolved calls/macros/closures may allocate memory, so constant auxiliary space cannot be claimed.".to_string());
-        return (ComplexityHint::unknown(), AnalysisConfidence::Low, assumptions, warnings);
+        return (
+            ComplexityHint::unknown(),
+            AnalysisConfidence::Low,
+            assumptions,
+            warnings,
+        );
     }
 
-    (ComplexityHint::constant(), AnalysisConfidence::High, assumptions, warnings)
+    (
+        ComplexityHint::constant(),
+        AnalysisConfidence::High,
+        assumptions,
+        warnings,
+    )
 }
 
 fn build_evidence(signals: &AlgorithmicSignals) -> Vec<AlgorithmicEvidence> {
@@ -722,7 +828,10 @@ fn build_evidence(signals: &AlgorithmicSignals) -> Vec<AlgorithmicEvidence> {
         evidence.push(AlgorithmicEvidence {
             kind: AlgorithmicEvidenceKind::NestedLoop,
             count: signals.max_loop_nesting,
-            detail: format!("maximum explicit loop nesting depth is {}", signals.max_loop_nesting),
+            detail: format!(
+                "maximum explicit loop nesting depth is {}",
+                signals.max_loop_nesting
+            ),
         });
     }
     push_evidence(
@@ -825,15 +934,24 @@ mod tests {
 
     #[test]
     fn constant_function_is_only_claimed_without_opaque_calls() {
-        let report = profile("fn answer(x: u64) -> u64 { let y = x + 1; y * 2 }", "answer");
+        let report = profile(
+            "fn answer(x: u64) -> u64 { let y = x + 1; y * 2 }",
+            "answer",
+        );
         assert_eq!(report.time_complexity_hint.class, ComplexityClass::Constant);
-        assert_eq!(report.space_complexity_hint.class, ComplexityClass::Constant);
+        assert_eq!(
+            report.space_complexity_hint.class,
+            ComplexityClass::Constant
+        );
         assert_eq!(report.confidence, AnalysisConfidence::High);
     }
 
     #[test]
     fn explicit_single_loop_is_linear_hint() {
-        let report = profile("fn sum(xs: &[u64]) -> u64 { let mut s = 0; for x in xs { s += *x; } s }", "sum");
+        let report = profile(
+            "fn sum(xs: &[u64]) -> u64 { let mut s = 0; for x in xs { s += *x; } s }",
+            "sum",
+        );
         assert_eq!(report.time_complexity_hint.class, ComplexityClass::Linear);
         assert_eq!(report.signals.loop_count, 1);
         assert_eq!(report.signals.max_loop_nesting, 1);
@@ -841,21 +959,33 @@ mod tests {
 
     #[test]
     fn nested_explicit_loops_are_quadratic_hint() {
-        let report = profile("fn pairs(xs: &[u8]) { for _a in xs { for _b in xs {} } }", "pairs");
-        assert_eq!(report.time_complexity_hint.class, ComplexityClass::Quadratic);
+        let report = profile(
+            "fn pairs(xs: &[u8]) { for _a in xs { for _b in xs {} } }",
+            "pairs",
+        );
+        assert_eq!(
+            report.time_complexity_hint.class,
+            ComplexityClass::Quadratic
+        );
         assert_eq!(report.signals.max_loop_nesting, 2);
     }
 
     #[test]
     fn sort_is_linearithmic_structural_hint() {
         let report = profile("fn order(xs: &mut [u8]) { xs.sort_unstable(); }", "order");
-        assert_eq!(report.time_complexity_hint.class, ComplexityClass::Linearithmic);
+        assert_eq!(
+            report.time_complexity_hint.class,
+            ComplexityClass::Linearithmic
+        );
         assert_eq!(report.signals.sort_calls, 1);
     }
 
     #[test]
     fn recursion_prefers_unknown_over_fake_big_o() {
-        let report = profile("fn recurse(n: u64) -> u64 { if n == 0 { 0 } else { recurse(n - 1) } }", "recurse");
+        let report = profile(
+            "fn recurse(n: u64) -> u64 { if n == 0 { 0 } else { recurse(n - 1) } }",
+            "recurse",
+        );
         assert_eq!(report.time_complexity_hint.class, ComplexityClass::Unknown);
         assert_eq!(report.signals.recursive_calls, 1);
         assert_eq!(report.confidence, AnalysisConfidence::Low);
@@ -863,7 +993,10 @@ mod tests {
 
     #[test]
     fn potential_scan_inside_loop_is_unknown_without_type_resolution() {
-        let report = profile("fn overlap(xs: &[u8], ys: &[u8]) -> bool { for x in xs { if ys.contains(x) { return true; } } false }", "overlap");
+        let report = profile(
+            "fn overlap(xs: &[u8], ys: &[u8]) -> bool { for x in xs { if ys.contains(x) { return true; } } false }",
+            "overlap",
+        );
         assert_eq!(report.time_complexity_hint.class, ComplexityClass::Unknown);
         assert_eq!(report.signals.scan_calls_inside_loop, 1);
         assert!(!report.warnings.is_empty());
@@ -871,7 +1004,10 @@ mod tests {
 
     #[test]
     fn collection_growth_in_loop_is_linear_space_hint() {
-        let report = profile("fn copy(xs: &[u8]) -> Vec<u8> { let mut out = Vec::new(); for x in xs { out.push(*x); } out }", "copy");
+        let report = profile(
+            "fn copy(xs: &[u8]) -> Vec<u8> { let mut out = Vec::new(); for x in xs { out.push(*x); } out }",
+            "copy",
+        );
         assert_eq!(report.space_complexity_hint.class, ComplexityClass::Linear);
         assert_eq!(report.signals.collection_growth_calls_inside_loop, 1);
     }
@@ -884,8 +1020,18 @@ mod tests {
         )
         .unwrap();
 
-        assert!(report.profiles.iter().any(|profile| profile.symbol == "Store::len_twice"));
-        assert!(report.profiles.iter().any(|profile| profile.symbol == "Scan::scan"));
+        assert!(
+            report
+                .profiles
+                .iter()
+                .any(|profile| profile.symbol == "Store::len_twice")
+        );
+        assert!(
+            report
+                .profiles
+                .iter()
+                .any(|profile| profile.symbol == "Scan::scan")
+        );
     }
 
     #[test]
