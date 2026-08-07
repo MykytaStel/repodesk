@@ -239,11 +239,13 @@ export type ChangeOrigin = {
 export type ChangeReviewState = "proposed" | "accepted" | "rejected";
 export type ChangeVerificationState = "not_run" | "running" | "passed" | "failed";
 
+export type EvidenceRef = { kind: string; locator: string };
+
 export type ChangeVerificationEvidence = {
   state: ChangeVerificationState;
   verification_id: string | null;
   command_count: number;
-  evidence: Array<{ kind: string; locator: string }>;
+  evidence: EvidenceRef[];
   error: string | null;
 };
 
@@ -285,20 +287,116 @@ export type ChangeGovernanceSnapshot = {
   gate: CommitGate;
 };
 
+export type AcceptanceCriterionStatus = "unproven" | "proven" | "failed";
+
+export type AcceptanceCriterionEvidence = {
+  criterion_id: string;
+  criterion: string;
+  status: AcceptanceCriterionStatus;
+  command: string | null;
+  run_id: string | null;
+  linked_at: string | null;
+  stale: boolean;
+  stale_reason: string | null;
+};
+
+export type AcceptanceEvidenceReport = {
+  configured: boolean;
+  work_item_id: string;
+  current_run_id: string | null;
+  criteria: AcceptanceCriterionEvidence[];
+  proven: number;
+  failed: number;
+  unproven: number;
+};
+
+export type VerificationCommandEvidence = {
+  command: string;
+  success: boolean;
+};
+
+export type RunWorkerEvidence = {
+  step_id: string;
+  agent: string;
+  provider: string;
+  model: string;
+  status: "ok" | "skipped" | "blocked" | "failed";
+  changed_files: string[];
+  input_tokens: number;
+  output_tokens: number;
+  cost_units: number;
+};
+
+export type RunContextEvidence = {
+  estimated_tokens: number | null;
+  evidence: EvidenceRef[];
+  source: string;
+};
+
+export type RunReviewEvidence = {
+  state: string;
+  reviewed_paths: string[];
+  source: string;
+};
+
+export type RunVerificationEvidence = {
+  state: string;
+  verification_id: string | null;
+  commands: VerificationCommandEvidence[];
+  evidence: EvidenceRef[];
+  verified_at: string | null;
+  source: string;
+};
+
+export type RunCommitEvidence = {
+  committed: boolean;
+  commit_sha: string | null;
+  committed_paths: string[];
+  source: string;
+};
+
+export type RunEvidenceSnapshot = {
+  run_id: string;
+  project: string;
+  work_item_id: string;
+  goal: string;
+  status: "completed" | "partial" | "failed" | "dry_run";
+  dry_run: boolean;
+  started_at: string;
+  finished_at: string;
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost_units: number;
+  workers: RunWorkerEvidence[];
+  changed_files: string[];
+  context: RunContextEvidence;
+  review: RunReviewEvidence;
+  verification: RunVerificationEvidence;
+  commit: RunCommitEvidence;
+  acceptance: AcceptanceEvidenceReport;
+};
+
 export type WorkEngineeringSnapshot = {
   intelligence: EngineeringIntelligence;
   context_inspector: ContextInspectorReport;
   work_item_contract: WorkItemContractSnapshot;
   change_governance: ChangeGovernanceSnapshot;
+  run_evidence: RunEvidenceSnapshot | null;
 };
 
 async function invokeWorkEngineering(input?: {
   contractUpdate?: WorkItemContractUpdate | null;
   scopeOverrideReason?: string | null;
+  runEvidenceId?: string | null;
+  acceptanceCriterionId?: string | null;
+  acceptanceCommand?: string | null;
 }): Promise<WorkEngineeringSnapshot> {
   return invoke("work_engineering_intelligence", {
     contractUpdate: input?.contractUpdate ?? null,
     scopeOverrideReason: input?.scopeOverrideReason ?? null,
+    runEvidenceId: input?.runEvidenceId ?? null,
+    acceptanceCriterionId: input?.acceptanceCriterionId ?? null,
+    acceptanceCommand: input?.acceptanceCommand ?? null,
   });
 }
 
@@ -322,4 +420,24 @@ export async function saveWorkItemContract(
 
 export async function recordScopeOverride(reason: string): Promise<ChangeGovernanceSnapshot> {
   return (await invokeWorkEngineering({ scopeOverrideReason: reason })).change_governance;
+}
+
+export async function runEvidenceSnapshot(runId: string): Promise<RunEvidenceSnapshot> {
+  const snapshot = await invokeWorkEngineering({ runEvidenceId: runId });
+  if (!snapshot.run_evidence) throw new Error(`Run evidence unavailable for ${runId}`);
+  return snapshot.run_evidence;
+}
+
+export async function linkAcceptanceEvidence(
+  runId: string,
+  criterionId: string,
+  command: string,
+): Promise<RunEvidenceSnapshot> {
+  const snapshot = await invokeWorkEngineering({
+    runEvidenceId: runId,
+    acceptanceCriterionId: criterionId,
+    acceptanceCommand: command,
+  });
+  if (!snapshot.run_evidence) throw new Error(`Run evidence unavailable for ${runId}`);
+  return snapshot.run_evidence;
 }
