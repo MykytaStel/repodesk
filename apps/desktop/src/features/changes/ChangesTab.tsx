@@ -1,29 +1,58 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useGit } from "../git/useGit";
 import { useCode } from "../code/useCode";
 import { FindingRow, HealthTrend } from "../code/CodeFindings";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { ActorBadge, EmptyState, stringifyPreview } from "../../shared/ui/SharedComponents";
 import { callCommand, queryKeys } from "../../shared/api/queries";
+import {
+  WORK_ENGINEERING_SNAPSHOT_KEY,
+  workEngineeringSnapshot,
+  type ChangeFileScopeState,
+} from "../../shared/api/engineering";
+import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { listFromRecord } from "../../shared/utils/helpers";
 import type { FileFindings } from "../../shared/api/repopilot";
+import { ChangeGovernancePanel } from "./ChangeGovernancePanel";
 
-// "Changes" is the single surface between an agent's output and a commit: one
-// changed-files list (git status + RepoPilot findings) feeding one preview pane
-// (diff or full file) with inline findings — no segmented Git/Code detour.
+// "Changes" is the evidence surface between produced code and a commit. Git
+// state still drives what is physically present in the checkout; the engineering
+// ledger adds provenance, scope, review and verification without pretending an
+// unrecorded working-tree edit belongs to the latest agent ChangeSet.
 type FileStatus = "staged" | "modified" | "untracked";
 const STATUS_META: Record<FileStatus, { label: string; tone: string }> = {
   staged: { label: "Staged", tone: "ok" },
   modified: { label: "Modified", tone: "warn" },
   untracked: { label: "New", tone: "" },
 };
+
 type ViewMode = "diff" | "file";
+
+function scopeMeta(state: ChangeFileScopeState): { label: string; tone: string } {
+  switch (state) {
+    case "allowed":
+      return { label: "In scope", tone: "ok" };
+    case "out_of_scope":
+      return { label: "Out of scope", tone: "danger" };
+    case "protected":
+      return { label: "Protected", tone: "danger" };
+    case "ungoverned":
+      return { label: "Ungoverned", tone: "warn" };
+  }
+}
 
 export function ChangesTab() {
   const queryClient = useQueryClient();
+  const { hasTask } = useWorkspace();
   const { git, branch, dirty, dirtyCount } = useGit();
   const { changedFiles, report, fileFindings, reviewing, runReview, trend } = useCode();
+  const engineering = useQuery({
+    queryKey: WORK_ENGINEERING_SNAPSHOT_KEY,
+    queryFn: () => workEngineeringSnapshot(),
+    enabled: hasTask,
+    refetchInterval: 4_000,
+  });
 
   const [selectedFile, setSelectedFile] = useState("");
   const [preview, setPreview] = useState("");
@@ -34,6 +63,7 @@ export function ChangesTab() {
   const staged = listFromRecord(git, ["staged", "staged_files"]);
   const unstaged = listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"]);
   const untracked = listFromRecord(git, ["untracked", "untracked_files"]);
+  const governance = engineering.data?.change_governance ?? null;
 
   const statusOf = (file: string): FileStatus | null =>
     staged.includes(file)
@@ -49,6 +79,12 @@ export function ChangesTab() {
     for (const group of fileFindings) map.set(group.file, group);
     return map;
   }, [fileFindings]);
+
+  const governanceByFile = useMemo(() => {
+    const map = new Map<string, ChangeFileScopeState>();
+    for (const file of governance?.files ?? []) map.set(file.path, file.scope_state);
+    return map;
+  }, [governance]);
 
   // One list: every file touched in the working tree or flagged by RepoPilot,
   // worst findings first, then alphabetical.
@@ -98,7 +134,10 @@ export function ChangesTab() {
     }
   }, [rows.length, report, reviewing, runReview]);
 
-  const refreshWorkspace = () => queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
+  const refreshWorkspace = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
+    void queryClient.invalidateQueries({ queryKey: WORK_ENGINEERING_SNAPSHOT_KEY });
+  };
   const selectedGroup = selectedFile ? findingsByFile.get(selectedFile) : undefined;
   const counts = report?.counts;
 
@@ -120,6 +159,19 @@ export function ChangesTab() {
           <ActorBadge mode="auto" />
         </div>
       </div>
+
+      {hasTask ? (
+        <ChangeGovernancePanel
+          governance={governance}
+          loading={engineering.isLoading}
+          error={engineering.isError ? engineering.error : null}
+        />
+      ) : (
+        <div className="change-evidence-message">
+          <strong>No active Work Item</strong>
+          <span>Git changes are visible, but RepoDesk cannot attribute or govern them until a Work Item is active.</span>
+        </div>
+      )}
 
       {report?.error ? (
         <div className="notice danger">{report.error}</div>
@@ -148,6 +200,10 @@ export function ChangesTab() {
                 const status = statusOf(file);
                 const group = findingsByFile.get(file);
                 const active = file === selectedFile;
+                const scope = governanceByFile.get(file);
+                const physicallyChanged = status != null || changedFiles.includes(file);
+                const unattributed = physicallyChanged && governance?.changeset_id != null && scope == null;
+                const scopeBadge = scope ? scopeMeta(scope) : null;
                 return (
                   <button
                     key={file}
@@ -156,6 +212,8 @@ export function ChangesTab() {
                   >
                     <code>{file}</code>
                     <span className="file-badges">
+                      {scopeBadge ? <span className={`pill ${scopeBadge.tone}`}>{scopeBadge.label}</span> : null}
+                      {unattributed ? <span className="pill warn">Unattributed</span> : null}
                       {status && <span className={`pill ${STATUS_META[status].tone}`}>{STATUS_META[status].label}</span>}
                       {group && group.blocking > 0 && <span className="pill danger">{group.blocking}</span>}
                       {group && <span className="pill">{group.total}</span>}
