@@ -15,11 +15,18 @@ pub struct WorkEngineeringSnapshot {
     pub work_item_contract: WorkItemContractSnapshot,
 }
 
-/// Deterministic, task-local engineering read model. The desktop receives the
-/// factual intelligence, context evidence, and Work Item contract in one IPC
-/// call; React never replays the event ledger itself.
+/// Deterministic, task-local engineering read model. During the RepoDesk 2
+/// migration this registered IPC command also accepts an optional typed contract
+/// update so the UI can persist the new domain artifact without adding another
+/// parallel desktop execution surface. Validation and persistence remain in core.
 #[tauri::command]
-pub fn work_engineering_intelligence() -> Result<WorkEngineeringSnapshot, ErrorPayload> {
+pub fn work_engineering_intelligence(
+    contract_update: Option<WorkItemContractUpdate>,
+) -> Result<WorkEngineeringSnapshot, ErrorPayload> {
+    if let Some(update) = contract_update {
+        save_active_work_item_contract(update).map_err(ErrorPayload::from)?;
+    }
+
     let task = show_active_task().map_err(ErrorPayload::from)?;
     let intelligence =
         load_engineering_intelligence(&task.config.run_dir).map_err(ErrorPayload::from)?;
@@ -33,11 +40,4 @@ pub fn work_engineering_intelligence() -> Result<WorkEngineeringSnapshot, ErrorP
         context_inspector,
         work_item_contract,
     })
-}
-
-#[tauri::command]
-pub fn work_item_contract_save(
-    input: WorkItemContractUpdate,
-) -> Result<WorkItemContractSnapshot, ErrorPayload> {
-    save_active_work_item_contract(input).map_err(ErrorPayload::from)
 }
