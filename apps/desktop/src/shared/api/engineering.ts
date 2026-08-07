@@ -212,12 +212,8 @@ export type WorkEngineeringSnapshot = {
   work_item_contract: WorkItemContractSnapshot;
 };
 
-export async function workEngineeringSnapshot(
-  contractUpdate?: WorkItemContractUpdate,
-): Promise<WorkEngineeringSnapshot> {
-  return invoke("work_engineering_intelligence", {
-    contractUpdate: contractUpdate ?? null,
-  });
+export async function workEngineeringSnapshot(): Promise<WorkEngineeringSnapshot> {
+  return invoke("work_engineering_intelligence", { contractUpdate: null });
 }
 
 export async function workEngineeringIntelligence(): Promise<EngineeringIntelligence> {
@@ -231,5 +227,9 @@ export async function workContextInspector(): Promise<ContextInspectorReport> {
 export async function saveWorkItemContract(
   update: WorkItemContractUpdate,
 ): Promise<WorkItemContractSnapshot> {
-  return (await workEngineeringSnapshot(update)).work_item_contract;
+  return (
+    await invoke<WorkEngineeringSnapshot>("work_engineering_intelligence", {
+      contractUpdate: update,
+    })
+  ).work_item_contract;
 }
