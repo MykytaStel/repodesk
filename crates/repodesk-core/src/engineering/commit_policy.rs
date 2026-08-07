@@ -41,10 +41,7 @@ impl CommitScopePolicyDecision {
             ));
         }
         if !self.protected_files.is_empty() {
-            details.push(format!(
-                "protected: {}",
-                self.protected_files.join(", ")
-            ));
+            details.push(format!("protected: {}", self.protected_files.join(", ")));
         }
 
         Some(format!(
@@ -194,19 +191,18 @@ mod tests {
         )
         .with_changeset(ChangeSetId::try_new(changeset_id).unwrap())
         .with_attribute("override_kind", Value::String("scope_violation".into()))
-        .with_attribute("reason", Value::String("Required cross-scope update".into()));
+        .with_attribute(
+            "reason",
+            Value::String("Required cross-scope update".into()),
+        );
         event.occurred_at = at;
         event
     }
 
     #[test]
     fn unconfigured_contract_keeps_legacy_commit_path_available() {
-        let decision = derive_commit_scope_policy(
-            None,
-            &["README.md".into()],
-            &[],
-            "run-1-changeset",
-        );
+        let decision =
+            derive_commit_scope_policy(None, &["README.md".into()], &[], "run-1-changeset");
         assert!(decision.allowed);
         assert_eq!(decision.status, ScopeComplianceStatus::Unconfigured);
     }
