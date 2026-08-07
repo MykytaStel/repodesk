@@ -109,7 +109,12 @@ pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnaps
         None => false,
     };
     let contract = read_work_item_contract(&task.config.run_dir)?;
-    let store = read_acceptance_evidence(&task.config.run_dir)?;
+    // Acceptance bindings are Work Item-local, but a historical run must never
+    // inherit a newer run's link merely because the criterion id is identical.
+    let store = read_acceptance_evidence(&task.config.run_dir)?.map(|mut store| {
+        store.bindings.retain(|binding| binding.run_id == run_id);
+        store
+    });
     let acceptance = derive_acceptance_evidence(
         &task,
         contract.as_ref(),
@@ -123,6 +128,7 @@ pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnaps
         receipt.as_ref(),
         &events,
         acceptance,
+        verification_fresh,
     ))
 }
 
@@ -131,6 +137,7 @@ pub fn derive_run_evidence(
     receipt: Option<&TaskRunReceipt>,
     events: &[EngineeringEvent],
     acceptance: AcceptanceEvidenceReport,
+    verification_fresh: bool,
 ) -> RunEvidenceSnapshot {
     let workers = run
         .results
@@ -171,7 +178,7 @@ pub fn derive_run_evidence(
         changed_files,
         context: derive_context(events, &run.run_id),
         review: derive_review(receipt, events, &run.run_id),
-        verification: derive_verification(receipt, events, &run.run_id),
+        verification: derive_verification(receipt, events, &run.run_id, verification_fresh),
         commit: derive_commit(receipt, events, &run.run_id),
         acceptance,
     }
@@ -254,10 +261,18 @@ fn derive_verification(
     receipt: Option<&TaskRunReceipt>,
     events: &[EngineeringEvent],
     run_id: &str,
+    verification_fresh: bool,
 ) -> RunVerificationEvidence {
     if let Some(verification) = receipt.and_then(|receipt| receipt.verification.as_ref()) {
+        let state = if !verification_fresh {
+            "stale"
+        } else if verification.success {
+            "passed"
+        } else {
+            "failed"
+        };
         return RunVerificationEvidence {
-            state: if verification.success { "passed" } else { "failed" }.into(),
+            state: state.into(),
             verification_id: None,
             commands: verification.commands.clone(),
             evidence: Vec::new(),
