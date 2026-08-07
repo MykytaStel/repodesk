@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 import type { TabId } from "../shared/types/api";
 
-// Distinct stroke icons (lucide-style) so the rail is scannable and every glyph
-// actually renders — the previous unicode symbols looked alike or fell back to
-// tofu in the system font.
+// Distinct stroke icons (lucide-style) keep the activity rail scannable without
+// adding another icon dependency to the desktop bundle.
 function Svg({ children }: { children: ReactNode }) {
   return (
     <svg
@@ -22,13 +21,41 @@ function Svg({ children }: { children: ReactNode }) {
   );
 }
 
-/** Three even lines — the sidebar collapse toggle. */
 export function BurgerIcon() {
   return (
     <Svg>
       <line x1="4" y1="7" x2="20" y2="7" />
       <line x1="4" y1="12" x2="20" y2="12" />
       <line x1="4" y1="17" x2="20" y2="17" />
+    </Svg>
+  );
+}
+
+export function CommandIcon() {
+  return (
+    <Svg>
+      <path d="M9 7V5a2 2 0 1 0-2 2h10a2 2 0 1 0-2-2v14a2 2 0 1 0 2-2H7a2 2 0 1 0 2 2z" />
+    </Svg>
+  );
+}
+
+export function InspectorIcon() {
+  return (
+    <Svg>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M15 4v16" />
+      <path d="M17.5 8h1" />
+      <path d="M17.5 12h1" />
+    </Svg>
+  );
+}
+
+export function PanelBottomIcon() {
+  return (
+    <Svg>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 14h18" />
+      <path d="m9 17 2-1.5L9 14" />
     </Svg>
   );
 }
@@ -86,11 +113,16 @@ export function ExternalLinkIcon() {
 }
 
 const ICONS: Record<TabId, ReactNode> = {
-  // Primary spine.
   work: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <line x1="9" y1="4" x2="9" y2="20" />
+    </>
+  ),
+  code: (
+    <>
+      <path d="M9 8l-4 4 4 4" />
+      <path d="M15 8l4 4-4 4" />
     </>
   ),
   changes: (
@@ -104,6 +136,12 @@ const ICONS: Record<TabId, ReactNode> = {
       <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
       <path d="M3 4v4h4" />
       <path d="M12 8v4l3 2" />
+    </>
+  ),
+  projects: (
+    <>
+      <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z" />
+      <path d="M8 11h8M8 14h5" />
     </>
   ),
   settings: (
@@ -124,7 +162,6 @@ const ICONS: Record<TabId, ReactNode> = {
       <path d="M17 13.2v3.6M15.7 14h2.1a.9.9 0 0 1 0 1.8h-1.6a.9.9 0 0 0 0 1.8h2.1" />
     </>
   ),
-  // Work group.
   dashboard: (
     <>
       <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -142,13 +179,6 @@ const ICONS: Record<TabId, ReactNode> = {
       <path d="M18 10.5c0 4-6 1.5-6 5.5" />
     </>
   ),
-  code: (
-    <>
-      <path d="M9 8l-4 4 4 4" />
-      <path d="M15 8l4 4-4 4" />
-    </>
-  ),
-  // AI group.
   orchestrate: (
     <>
       <circle cx="6" cy="12" r="2.5" />
@@ -191,7 +221,6 @@ const ICONS: Record<TabId, ReactNode> = {
       <path d="M19 16H7a2 2 0 0 0-2 2" />
     </>
   ),
-  // System group.
   audit: (
     <>
       <path d="M12 3l8 3v6c0 4.6-3.3 7.8-8 9-4.7-1.2-8-4.4-8-9V6z" />
@@ -214,7 +243,6 @@ const ICONS: Record<TabId, ReactNode> = {
   ),
 };
 
-/** The icon for a tab, by id. */
 export function TabIcon({ id }: { id: TabId }) {
   return <Svg>{ICONS[id] ?? <circle cx="12" cy="12" r="8" />}</Svg>;
 }

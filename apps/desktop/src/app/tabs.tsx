@@ -2,12 +2,13 @@ import { lazy } from "react";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import type { TabId } from "../shared/types/api";
 
-// Tabs are code-split: only the active tab's chunk is fetched, keeping the
-// initial bundle small. Each feature module exports a named component, so the
-// lazy loader maps it to a default export.
+// Tabs remain code-split. RD2-07 changes the shell hierarchy, not feature ownership:
+// Work/Code/Changes/Runs/Projects become primary IDE surfaces while deeper tools
+// stay routable from the contextual sidebar and command palette.
 const WorkSurface = lazy(() => import("../features/work/WorkSurface").then((m) => ({ default: m.WorkSurface })));
 const ChangesTab = lazy(() => import("../features/changes/ChangesTab").then((m) => ({ default: m.ChangesTab })));
 const HistoryTab = lazy(() => import("../features/history/HistoryTab").then((m) => ({ default: m.HistoryTab })));
+const ProjectsTab = lazy(() => import("../features/projects/ProjectsTab").then((m) => ({ default: m.ProjectsTab })));
 const DashboardTab = lazy(() => import("../features/dashboard/DashboardTab").then((m) => ({ default: m.DashboardTab })));
 const TokensTab = lazy(() => import("../features/tokens/TokensTab").then((m) => ({ default: m.TokensTab })));
 const ModelsTab = lazy(() => import("../features/models/ModelsTab").then((m) => ({ default: m.ModelsTab })));
@@ -24,10 +25,6 @@ const PlaybooksTab = lazy(() => import("../features/playbooks/PlaybooksTab").the
 const ModelsCostTab = lazy(() => import("../features/models-cost/ModelsCostTab").then((m) => ({ default: m.ModelsCostTab })));
 
 export type TabGroup = "Work" | "AI" | "System";
-// `primary` — the daily spine in the sidebar; `more` — depth/diagnostics in the
-// collapsible groups; `hidden` — surfaces fully absorbed into a primary tab
-// (Git/Code→Changes, Outcomes/Memory/Audit→History, Tokens/Models→Models & Cost).
-// Hidden tabs stay routable for deep-links and ⌘K but never render in the rail.
 export type TabTier = "primary" | "more" | "hidden";
 
 export interface AppTab {
@@ -38,38 +35,35 @@ export interface AppTab {
   tier: TabTier;
 }
 
-// Primary tabs are the daily spine (kept short so the app leads the user);
-// `more` tabs are diagnostics/depth, tucked into collapsible group sections.
-// Ordered primary-first so ⌘1..9 jump to the everyday surfaces. Each tab's icon
-// is rendered by `TabIcon` (NavIcons.tsx), keyed by id.
 export const APP_TABS: AppTab[] = [
-  // Primary spine — the five surfaces that carry the daily flow.
-  { id: "work", title: "Work", subtitle: "Home · Scope → Finish", group: "Work", tier: "primary" },
-  { id: "changes", title: "Changes", subtitle: "Diffs, files & review", group: "Work", tier: "primary" },
-  { id: "history", title: "History", subtitle: "Runs, memory & audit", group: "AI", tier: "primary" },
-  { id: "models-cost", title: "Models & Cost", subtitle: "Reachable models + spend", group: "AI", tier: "primary" },
-  { id: "settings", title: "Settings", subtitle: "Providers & keys", group: "System", tier: "primary" },
-  // Advanced — depth & diagnostics, grouped and collapsible.
+  // IDE activity rail — stable primary engineering surfaces.
+  { id: "work", title: "Work", subtitle: "Work Item · Scope → Finish", group: "Work", tier: "primary" },
+  { id: "code", title: "Code", subtitle: "Files, findings & analysis", group: "Work", tier: "primary" },
+  { id: "changes", title: "Changes", subtitle: "Diffs, review & git delta", group: "Work", tier: "primary" },
+  { id: "history", title: "Runs", subtitle: "Executions, evidence & history", group: "AI", tier: "primary" },
+  { id: "projects", title: "Projects", subtitle: "Repository workspaces", group: "System", tier: "primary" },
+
+  // Contextual tools — available beside the active workspace surface.
   { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },
-  { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to sub-agents", group: "AI", tier: "more" },
-  { id: "playbooks", title: "Playbooks", subtitle: "Team recipes", group: "AI", tier: "more" },
+  { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "more" },
+  { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to workers", group: "AI", tier: "more" },
+  { id: "playbooks", title: "Playbooks", subtitle: "Engineering recipes", group: "AI", tier: "more" },
+  { id: "models-cost", title: "Models & Cost", subtitle: "Runtime health + spend", group: "AI", tier: "more" },
+  { id: "settings", title: "Settings", subtitle: "Providers, keys & policy", group: "System", tier: "more" },
   { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System", tier: "more" },
   { id: "debug", title: "Debug", subtitle: "Traces", group: "System", tier: "more" },
-  // Hidden — absorbed into a primary surface; reachable via ⌘K + deep-links only.
-  { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "hidden" },
-  { id: "code", title: "Code", subtitle: "Changed files + review", group: "Work", tier: "hidden" },
-  { id: "memory", title: "Memory", subtitle: "Context agents remember", group: "AI", tier: "hidden" },
+
+  // Deep surfaces remain routable for command palette/deep-links.
+  { id: "memory", title: "Memory", subtitle: "Engineering knowledge", group: "AI", tier: "hidden" },
   { id: "models", title: "Models", subtitle: "Runtime health", group: "AI", tier: "hidden" },
   { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI", tier: "hidden" },
-  { id: "outcomes", title: "Outcomes", subtitle: "What it learned", group: "AI", tier: "hidden" },
-  { id: "audit", title: "Audit", subtitle: "Enterprise trail", group: "System", tier: "hidden" },
+  { id: "outcomes", title: "Outcomes", subtitle: "What executions learned", group: "AI", tier: "hidden" },
+  { id: "audit", title: "Audit", subtitle: "Engineering trail", group: "System", tier: "hidden" },
 ];
 
 export const PRIMARY_TABS = APP_TABS.filter((tab) => tab.tier === "primary");
 export const MORE_TABS = APP_TABS.filter((tab) => tab.tier === "more");
-// Everything the sidebar offers (rail + groups); excludes hidden/absorbed tabs.
 export const NAV_TABS = APP_TABS.filter((tab) => tab.tier !== "hidden");
-
 export const TAB_GROUP_ORDER: TabGroup[] = ["Work", "AI", "System"];
 
 export function renderAppTab({
@@ -86,10 +80,14 @@ export function renderAppTab({
   switch (activeTab) {
     case "work":
       return <WorkSurface setActiveTab={setActiveTab} />;
+    case "code":
+      return <CodeTab />;
     case "changes":
       return <ChangesTab />;
     case "history":
       return <HistoryTab />;
+    case "projects":
+      return <ProjectsTab setActiveTab={setActiveTab} />;
     case "models-cost":
       return <ModelsCostTab setActiveTab={setActiveTab} />;
     case "dashboard":
@@ -98,8 +96,6 @@ export function renderAppTab({
       return <TokensTab />;
     case "models":
       return <ModelsTab setActiveTab={setActiveTab} />;
-    case "code":
-      return <CodeTab />;
     case "git":
       return <GitTab />;
     case "memory":
@@ -119,6 +115,6 @@ export function renderAppTab({
     case "playbooks":
       return <PlaybooksTab setActiveTab={setActiveTab} />;
     default:
-      return <DashboardTab setActiveTab={setActiveTab} economyMode={economyMode} setEconomyMode={setEconomyMode} />;
+      return <WorkSurface setActiveTab={setActiveTab} />;
   }
 }

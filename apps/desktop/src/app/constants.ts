@@ -6,6 +6,8 @@ export const STORAGE_KEYS = {
   economyMode: "repodesk.economyMode",
   theme: "repodesk.theme",
   sidebarCollapsed: "repodesk.sidebarCollapsed",
+  inspectorOpen: "repodesk.inspectorOpen",
+  bottomPanelOpen: "repodesk.bottomPanelOpen",
 } as const;
 
 export const DEFAULT_ACTIVE_TAB: TabId = "work";
@@ -14,17 +16,19 @@ export const DEFAULT_THEME: Theme = "system";
 
 export const TAB_IDS: readonly TabId[] = [
   "work",
+  "code",
   "changes",
   "history",
+  "projects",
   "dashboard",
   "tokens",
   "models",
-  "code",
   "git",
   "memory",
   "orchestrate",
   "outcomes",
   "playbooks",
+  "models-cost",
   "audit",
   "settings",
   "system",
