@@ -87,7 +87,11 @@ fn receipt() -> TaskRunReceipt {
         review: Some(ReviewReceipt {
             run_id: "run-1".into(),
             decision: ReviewDecision::Accepted,
-            reviewed_paths: vec!["src/lib.rs".into(), "src/shared.rs".into(), "tests/evidence.rs".into()],
+            reviewed_paths: vec![
+                "src/lib.rs".into(),
+                "src/shared.rs".into(),
+                "tests/evidence.rs".into(),
+            ],
             changeset_digest: "digest".into(),
             index_tree_after_accept: Some("tree".into()),
         }),
@@ -106,7 +110,11 @@ fn receipt() -> TaskRunReceipt {
         finish: Some(FinishReceipt {
             run_id: "run-1".into(),
             commit_sha: "abc123".into(),
-            committed_paths: vec!["src/lib.rs".into(), "src/shared.rs".into(), "tests/evidence.rs".into()],
+            committed_paths: vec![
+                "src/lib.rs".into(),
+                "src/shared.rs".into(),
+                "tests/evidence.rs".into(),
+            ],
             finished_at: "2026-08-07T18:03:00Z".into(),
         }),
     }
@@ -125,13 +133,29 @@ fn run_evidence_deduplicates_changed_files_and_prefers_receipt() {
         .attributes
         .insert("decision".into(), serde_json::Value::String("rejected".into()));
 
-    let snapshot = derive_run_evidence(&run(), Some(&receipt()), &[misleading_review], acceptance());
+    let snapshot = derive_run_evidence(
+        &run(),
+        Some(&receipt()),
+        &[misleading_review],
+        acceptance(),
+        true,
+    );
 
-    assert_eq!(snapshot.changed_files, vec!["src/lib.rs", "src/shared.rs", "tests/evidence.rs"]);
+    assert_eq!(
+        snapshot.changed_files,
+        vec!["src/lib.rs", "src/shared.rs", "tests/evidence.rs"]
+    );
     assert_eq!(snapshot.review.state, "accepted");
     assert_eq!(snapshot.review.source, "task_run_receipt");
     assert_eq!(snapshot.verification.state, "passed");
     assert_eq!(snapshot.verification.commands.len(), 1);
     assert!(snapshot.commit.committed);
     assert_eq!(snapshot.commit.commit_sha.as_deref(), Some("abc123"));
+}
+
+#[test]
+fn canonical_verification_is_labeled_stale_when_tree_moved() {
+    let snapshot = derive_run_evidence(&run(), Some(&receipt()), &[], acceptance(), false);
+    assert_eq!(snapshot.verification.state, "stale");
+    assert_eq!(snapshot.verification.source, "task_run_receipt");
 }
