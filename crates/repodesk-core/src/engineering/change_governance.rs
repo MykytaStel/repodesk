@@ -172,21 +172,25 @@ pub fn record_active_scope_override(reason: &str) -> RepoDeskResult<ChangeGovern
     .with_attribute("reason", Value::String(reason))
     .with_attribute(
         "out_of_scope_files",
-        json!(current
-            .files
-            .iter()
-            .filter(|file| file.scope_state == ChangeFileScopeState::OutOfScope)
-            .map(|file| file.path.clone())
-            .collect::<Vec<_>>()),
+        json!(
+            current
+                .files
+                .iter()
+                .filter(|file| file.scope_state == ChangeFileScopeState::OutOfScope)
+                .map(|file| file.path.clone())
+                .collect::<Vec<_>>()
+        ),
     )
     .with_attribute(
         "protected_files",
-        json!(current
-            .files
-            .iter()
-            .filter(|file| file.scope_state == ChangeFileScopeState::Protected)
-            .map(|file| file.path.clone())
-            .collect::<Vec<_>>()),
+        json!(
+            current
+                .files
+                .iter()
+                .filter(|file| file.scope_state == ChangeFileScopeState::Protected)
+                .map(|file| file.path.clone())
+                .collect::<Vec<_>>()
+        ),
     );
 
     if let Some(execution_id) = current.origin.execution_id {
@@ -230,8 +234,14 @@ pub fn derive_change_governance(
         };
     };
 
-    let changeset_id = changeset_event.changeset_id.as_ref().map(ToString::to_string);
-    let execution_id = changeset_event.execution_id.as_ref().map(ToString::to_string);
+    let changeset_id = changeset_event
+        .changeset_id
+        .as_ref()
+        .map(ToString::to_string);
+    let execution_id = changeset_event
+        .execution_id
+        .as_ref()
+        .map(ToString::to_string);
     let changed_files = string_array_attribute(changeset_event, "files");
     let origin = derive_origin(events, changeset_event.execution_id.as_ref());
     let files = classify_files(&changed_files, contract);
@@ -534,7 +544,8 @@ fn derive_gate(
                 warnings,
             };
         }
-        warnings.push("Scope violation explicitly overridden by a human for this ChangeSet.".into());
+        warnings
+            .push("Scope violation explicitly overridden by a human for this ChangeSet.".into());
     }
 
     if review_state != ChangeReviewState::Accepted {
@@ -620,11 +631,7 @@ mod tests {
     };
 
     fn event(kind: EngineeringEventKind) -> EngineeringEvent {
-        EngineeringEvent::new(
-            "repodesk",
-            WorkItemId::try_new("task-1").unwrap(),
-            kind,
-        )
+        EngineeringEvent::new("repodesk", WorkItemId::try_new("task-1").unwrap(), kind)
     }
 
     fn contract(status: ScopeComplianceStatus) -> WorkItemContractSnapshot {
@@ -698,7 +705,10 @@ mod tests {
             event(EngineeringEventKind::HumanOverride)
                 .with_changeset(changeset)
                 .with_attribute("override_kind", Value::String("scope_violation".into()))
-                .with_attribute("reason", Value::String("Required documentation update".into())),
+                .with_attribute(
+                    "reason",
+                    Value::String("Required documentation update".into()),
+                ),
         );
         let report = derive_change_governance(
             "task-1",

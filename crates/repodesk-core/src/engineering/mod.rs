@@ -23,8 +23,8 @@ pub use algorithmic_profile::{
 pub use change_governance::{
     ChangeFileGovernance, ChangeFileScopeState, ChangeGovernanceSnapshot, ChangeOrigin,
     ChangeReviewState, ChangeVerificationEvidence, ChangeVerificationState, CommitGate,
-    CommitGateState, ScopeOverrideEvidence, derive_change_governance, load_active_change_governance,
-    load_change_governance, record_active_scope_override,
+    CommitGateState, ScopeOverrideEvidence, derive_change_governance,
+    load_active_change_governance, load_change_governance, record_active_scope_override,
 };
 pub use context_compactness::{
     ContextBuildCompactness, ContextBuildTelemetry, ContextCompactnessReport,
