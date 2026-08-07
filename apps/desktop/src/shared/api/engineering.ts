@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export const WORK_ENGINEERING_SNAPSHOT_KEY = ["work", "engineering-snapshot"] as const;
+
 export type ExecutionIntelligence = {
   attempts: number;
   finished: number;
@@ -74,6 +76,103 @@ export type EngineeringIntelligence = {
   rates: IntelligenceRates;
 };
 
-export async function workEngineeringIntelligence(): Promise<EngineeringIntelligence> {
+export type ContextFileReason = "task_scope";
+export type ContextFileStatus = "included" | "excluded";
+export type ContextFileExclusionReason =
+  | "invalid_path"
+  | "ignored"
+  | "sensitive"
+  | "missing"
+  | "not_file"
+  | "outside_project"
+  | "read_error"
+  | "file_limit"
+  | "too_large"
+  | "budget_exceeded";
+
+export type ContextFileEntry = {
+  path: string;
+  reason: ContextFileReason;
+  status: ContextFileStatus;
+  exclusion_reason: ContextFileExclusionReason | null;
+  candidate_tokens: number | null;
+  included_tokens: number | null;
+  trimmed: boolean;
+  fingerprint: string | null;
+};
+
+export type ContextManifest = {
+  version: number;
+  project: string;
+  work_item_id: string;
+  generated_at: string;
+  included_files: number;
+  excluded_files: number;
+  included_file_tokens: number;
+  entries: ContextFileEntry[];
+};
+
+export type ContextComponentCompactness = {
+  name: string;
+  candidate_tokens: number;
+  included_tokens: number;
+  trimmed: boolean;
+  reused_from_previous_build: boolean;
+};
+
+export type ContextBuildCompactness = {
+  candidate_tokens: number;
+  included_tokens: number;
+  compacted_tokens: number;
+  compactness_ratio: number | null;
+  repeated_tokens: number | null;
+  repeated_context_ratio: number | null;
+  components: ContextComponentCompactness[];
+};
+
+export type ContextCompactnessReport = {
+  builds: number;
+  measured_builds: number;
+  total_candidate_tokens: number;
+  total_included_tokens: number;
+  total_compacted_tokens: number;
+  latest: ContextBuildCompactness | null;
+};
+
+export type ContextChangeCoverage = {
+  included_files: string[];
+  excluded_files: string[];
+  changed_files: string[];
+  changed_files_present_in_context: string[];
+  changed_files_missing_from_context: string[];
+  change_coverage: number | null;
+};
+
+export type ContextFileEvidenceReport = {
+  evidenced_context_builds: number;
+  compared_changesets: number;
+  latest: ContextChangeCoverage | null;
+};
+
+export type ContextInspectorReport = {
+  manifest: ContextManifest | null;
+  compactness: ContextCompactnessReport;
+  file_evidence: ContextFileEvidenceReport;
+};
+
+export type WorkEngineeringSnapshot = {
+  intelligence: EngineeringIntelligence;
+  context_inspector: ContextInspectorReport;
+};
+
+export async function workEngineeringSnapshot(): Promise<WorkEngineeringSnapshot> {
   return invoke("work_engineering_intelligence");
+}
+
+export async function workEngineeringIntelligence(): Promise<EngineeringIntelligence> {
+  return (await workEngineeringSnapshot()).intelligence;
+}
+
+export async function workContextInspector(): Promise<ContextInspectorReport> {
+  return (await workEngineeringSnapshot()).context_inspector;
 }
