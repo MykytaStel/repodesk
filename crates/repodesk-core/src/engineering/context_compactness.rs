@@ -140,8 +140,7 @@ pub fn record_context_build(
         event = event.with_evidence(evidence);
     }
     if let Some(manifest_file) = telemetry.manifest_file
-        && let Ok(evidence) =
-            EvidenceRef::try_new(EvidenceKind::Context, manifest_file.to_string())
+        && let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Context, manifest_file.to_string())
     {
         event = event.with_evidence(evidence);
     }

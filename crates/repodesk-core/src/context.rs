@@ -3,8 +3,8 @@ use std::fs;
 use sha2::{Digest, Sha256};
 
 use crate::engineering::{
-    ContextBuildTelemetry, ContextComponentTelemetry, record_context_build, select_task_scope_files,
-    write_context_manifest,
+    ContextBuildTelemetry, ContextComponentTelemetry, record_context_build,
+    select_task_scope_files, write_context_manifest,
 };
 use crate::errors::RepoDeskResult;
 use crate::git_workspace::run_git_captured as run_git;

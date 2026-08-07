@@ -130,13 +130,21 @@ pub fn select_task_scope_files(
         let mut entry = excluded_entry(path.clone());
 
         if included_files >= DEFAULT_MAX_SCOPED_FILES {
-            exclude(&mut entry, ContextFileExclusionReason::FileLimit, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::FileLimit,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
 
         let Some(relative) = validate_relative_repo_path(&path) else {
-            exclude(&mut entry, ContextFileExclusionReason::InvalidPath, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::InvalidPath,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         };
@@ -152,25 +160,41 @@ pub fn select_task_scope_files(
         }
 
         if is_ignored(&relative, ignore_rules) {
-            exclude(&mut entry, ContextFileExclusionReason::Ignored, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::Ignored,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
 
         let joined = project_root.join(&relative);
         if !joined.exists() {
-            exclude(&mut entry, ContextFileExclusionReason::Missing, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::Missing,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
         if !joined.is_file() {
-            exclude(&mut entry, ContextFileExclusionReason::NotFile, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::NotFile,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
 
         let Ok(canonical_file) = fs::canonicalize(&joined) else {
-            exclude(&mut entry, ContextFileExclusionReason::ReadError, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::ReadError,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         };
@@ -188,18 +212,30 @@ pub fn select_task_scope_files(
         }
 
         let Ok(metadata) = fs::metadata(&canonical_file) else {
-            exclude(&mut entry, ContextFileExclusionReason::ReadError, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::ReadError,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         };
         if metadata.len() > DEFAULT_MAX_SCOPED_FILE_BYTES {
-            exclude(&mut entry, ContextFileExclusionReason::TooLarge, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::TooLarge,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
 
         let Ok(candidate) = fs::read_to_string(&canonical_file) else {
-            exclude(&mut entry, ContextFileExclusionReason::ReadError, &mut excluded_files);
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::ReadError,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         };
@@ -257,7 +293,10 @@ pub fn select_task_scope_files(
     }
 }
 
-pub fn write_context_manifest(run_dir: &Path, manifest: &ContextManifest) -> RepoDeskResult<PathBuf> {
+pub fn write_context_manifest(
+    run_dir: &Path,
+    manifest: &ContextManifest,
+) -> RepoDeskResult<PathBuf> {
     let path = run_dir.join(CONTEXT_MANIFEST_FILE);
     let content = serde_json::to_string_pretty(manifest)?;
     fs::write(&path, content)?;
@@ -421,9 +460,7 @@ fn is_ignored(path: &Path, rules: &[String]) -> bool {
 
         normalized == rule
             || normalized.starts_with(&format!("{rule}/"))
-            || normalized
-                .split('/')
-                .any(|component| component == rule)
+            || normalized.split('/').any(|component| component == rule)
     })
 }
 
@@ -473,11 +510,7 @@ mod tests {
     use crate::engineering::domain::{ChangeSetId, WorkItemId};
 
     fn base_event(kind: EngineeringEventKind) -> EngineeringEvent {
-        EngineeringEvent::new(
-            "repodesk",
-            WorkItemId::try_new("task-1").unwrap(),
-            kind,
-        )
+        EngineeringEvent::new("repodesk", WorkItemId::try_new("task-1").unwrap(), kind)
     }
 
     #[test]
@@ -493,11 +526,15 @@ mod tests {
     fn selector_records_included_and_excluded_evidence() {
         let root = tempdir().unwrap();
         fs::create_dir_all(root.path().join("src")).unwrap();
-        fs::write(root.path().join("src/lib.rs"), "pub fn answer() -> u8 { 42 }\n").unwrap();
-        fs::write(root.path().join("secret.log"), "do not include").unwrap();
+        fs::write(
+            root.path().join("src/lib.rs"),
+            "pub fn answer() -> u8 { 42 }\n",
+        )
+        .unwrap();
+        fs::write(root.path().join("debug.log"), "do not include").unwrap();
         fs::write(root.path().join(".env"), "TOKEN=secret").unwrap();
 
-        let markdown = "## Scope\n- `src/lib.rs`\n- `missing.rs`\n- `secret.log`\n- `.env`\n- `../escape.rs`\n";
+        let markdown = "## Scope\n- `src/lib.rs`\n- `missing.rs`\n- `debug.log`\n- `.env`\n- `../escape.rs`\n";
         let selection = select_task_scope_files(
             "repodesk",
             "task-1",
@@ -512,13 +549,12 @@ mod tests {
         assert!(selection.rendered.contains("pub fn answer"));
         assert!(!selection.candidate_rendered.contains("TOKEN=secret"));
         assert!(selection.manifest.entries.iter().any(|entry| {
-            entry.path == "secret.log"
+            entry.path == "debug.log"
                 && entry.exclusion_reason == Some(ContextFileExclusionReason::Ignored)
         }));
         assert!(selection.manifest.entries.iter().any(|entry| {
             entry.path == ".env"
-                && entry.exclusion_reason
-                    == Some(ContextFileExclusionReason::BlockedBySecurity)
+                && entry.exclusion_reason == Some(ContextFileExclusionReason::BlockedBySecurity)
         }));
         assert!(selection.manifest.entries.iter().any(|entry| {
             entry.path == "../escape.rs"

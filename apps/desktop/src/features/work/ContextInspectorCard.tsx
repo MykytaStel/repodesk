@@ -15,7 +15,7 @@ function exclusionLabel(entry: ContextFileEntry): string {
     const tokens = entry.included_tokens?.toLocaleString() ?? "unknown";
     return `${tokens} tokens${entry.trimmed ? " · trimmed" : ""}`;
   }
-  return entry.exclusion_reason?.replaceAll("_", " ") ?? "excluded";
+  return entry.exclusion_reason?.replace(/_/g, " ") ?? "excluded";
 }
 
 export function ContextInspectorCard() {
