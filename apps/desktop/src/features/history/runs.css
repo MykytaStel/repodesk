@@ -40,10 +40,11 @@
   cursor: pointer;
 }
 
-.run-list-item:hover { background: var(--surface-hover); }
+.run-list-item:hover { background: var(--surface-2); }
 .run-list-item.selected {
   background: var(--surface-2);
-  border-color: var(--border-strong);
+  border-color: var(--border);
+  font-weight: 500;
 }
 
 .run-list-item .run-id,
@@ -131,7 +132,7 @@
   font-size: 11px;
   padding: 3px 6px;
   border-radius: 5px;
-  background: var(--surface-3, rgba(127,127,127,.08));
+  background: var(--surface-2);
 }
 
 .evidence-empty {
