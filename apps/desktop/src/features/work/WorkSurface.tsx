@@ -1,14 +1,12 @@
 import type { TabId } from "../../shared/types/api";
-import { ContextInspectorCard } from "./ContextInspectorCard";
-import { EngineeringIntelligenceCard } from "./EngineeringIntelligenceCard";
+import { WorkItemContractCard } from "./WorkItemContractCard";
 import { WorkTab } from "./WorkTab";
 
 export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => void }) {
   return (
-    <>
+    <div className="work-surface-v2">
+      <WorkItemContractCard />
       <WorkTab setActiveTab={setActiveTab} />
-      <ContextInspectorCard />
-      <EngineeringIntelligenceCard />
-    </>
+    </div>
   );
 }

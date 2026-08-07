@@ -11,6 +11,7 @@ pub mod domain;
 pub mod events;
 pub mod instrumentation;
 pub mod intelligence;
+pub mod work_item_contract;
 
 pub use algorithmic_profile::{
     AlgorithmicEvidence, AlgorithmicEvidenceKind, AlgorithmicProfile, AlgorithmicProfileError,
@@ -46,4 +47,11 @@ pub use intelligence::{
     AiUsageIntelligence, ChangeIntelligence, CompletionIntelligence, ContextIntelligence,
     EngineeringIntelligence, ExecutionIntelligence, IntelligenceRates, VerificationIntelligence,
     derive_engineering_intelligence, load_engineering_intelligence,
+};
+pub use work_item_contract::{
+    ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
+    WORK_ITEM_CONTRACT_VERSION, WorkItemContract, WorkItemContractReadiness,
+    WorkItemContractSnapshot, WorkItemContractUpdate, contract_path, derive_scope_compliance,
+    load_active_work_item_contract, load_work_item_contract_snapshot, read_work_item_contract,
+    save_active_work_item_contract,
 };
