@@ -12,9 +12,6 @@ interface WorkspaceInspectorProps {
   hasTask: boolean;
   dirty: boolean;
   dirtyCount: number;
-  workingProviders: number;
-  providerCount: number;
-  totalTokens: number | null | undefined;
   onNavigate: (tab: TabId, detail?: string) => void;
 }
 
@@ -31,17 +28,19 @@ function InspectorMetric({ label, value, detail }: { label: string; value: strin
 function activeViewHint(activeTab: TabId): string {
   switch (activeTab) {
     case "work":
-      return "Inspect scope, context, execution, verification and completion evidence for the active Work Item.";
+      return "Current Work Item evidence without leaving the focused task canvas.";
     case "code":
-      return "File- and symbol-level selection will extend this inspector. Algorithmic Profile v0 already lives in core.";
+      return "Repository context for the current code view.";
     case "changes":
-      return "Use Changes to review the workspace delta; context coverage below shows whether changed files were prepared for the worker.";
+      return "Scope and verification evidence behind the current changeset.";
     case "history":
-      return "Runs aggregates execution history. This inspector keeps the current Work Item evidence visible while you move through history.";
+      return "Current Work Item state while you inspect historical runs.";
+    case "memory":
+      return "Accepted Project Knowledge can enter future bounded context packs.";
     case "projects":
-      return "Project-level knowledge, rules and repository intelligence will attach to this inspector in later slices.";
+      return "Project-level engineering state and reusable knowledge live here.";
     default:
-      return "This panel is intentionally read-only. Feature-specific inspectors can attach here without moving domain logic into React.";
+      return "Read-only engineering context for the current surface.";
   }
 }
 
@@ -52,22 +51,20 @@ export function WorkspaceInspector({
   hasTask,
   dirty,
   dirtyCount,
-  workingProviders,
-  providerCount,
-  totalTokens,
   onNavigate,
 }: WorkspaceInspectorProps) {
   const snapshot = useQuery({
     queryKey: WORK_ENGINEERING_SNAPSHOT_KEY,
     queryFn: workEngineeringSnapshot,
     enabled: hasTask,
-    refetchInterval: 4_000,
+    refetchInterval: 6_000,
   });
 
   const report = snapshot.data?.intelligence;
   const context = snapshot.data?.context_inspector;
   const manifest = context?.manifest;
   const coverage = context?.file_evidence.latest;
+  const governance = snapshot.data?.change_governance;
 
   return (
     <aside className="workspace-inspector" aria-label="Inspector">
@@ -79,10 +76,12 @@ export function WorkspaceInspector({
         </header>
 
         <section className="inspector-section">
-          <span className="inspector-section-label">Workspace</span>
-          <InspectorMetric label="Project" value={projectName || "Not connected"} detail={dirty ? `${dirtyCount} uncommitted changes` : "Git working tree clean"} />
-          <InspectorMetric label="Models" value={`${workingProviders}/${providerCount}`} detail="reachable providers" />
-          <InspectorMetric label="AI tokens" value={totalTokens == null ? "—" : totalTokens.toLocaleString()} detail="recorded workspace usage" />
+          <span className="inspector-section-label">Repository</span>
+          <InspectorMetric
+            label="Project"
+            value={projectName || "Not connected"}
+            detail={dirty ? `${dirtyCount} uncommitted changes` : "Git working tree clean"}
+          />
         </section>
 
         {!hasTask ? (
@@ -101,31 +100,45 @@ export function WorkspaceInspector({
               <InspectorMetric
                 label="Prepared files"
                 value={manifest ? `${manifest.included_files}` : "—"}
-                detail={manifest ? `${manifest.excluded_files} excluded · ${manifest.included_file_tokens.toLocaleString()} tokens` : "build context to create a manifest"}
+                detail={manifest ? `${manifest.excluded_files} excluded · ${manifest.included_file_tokens.toLocaleString()} tokens` : "Build context to create a manifest"}
               />
               <InspectorMetric
                 label="Change coverage"
                 value={coverage?.change_coverage == null ? "—" : `${Math.round(coverage.change_coverage * 100)}%`}
-                detail={coverage ? `${coverage.changed_files_present_in_context.length}/${coverage.changed_files.length} changed files prepared` : "known after a changeset follows context"}
+                detail={coverage ? `${coverage.changed_files_present_in_context.length}/${coverage.changed_files.length} changed files prepared` : "Known after a changeset follows context"}
               />
             </section>
 
             <section className="inspector-section">
-              <span className="inspector-section-label">Engineering evidence</span>
+              <span className="inspector-section-label">Current gate</span>
               <InspectorMetric
-                label="Execution"
-                value={report ? `${report.execution.completed}/${report.execution.attempts}` : "—"}
-                detail={report ? `${report.execution.unique_workers} workers · ${report.execution.handoffs} handoffs` : "loading evidence"}
+                label="Review"
+                value={governance?.review_state ?? "—"}
+                detail={governance?.changeset_id ? governance.changeset_id : "No current changeset"}
               />
               <InspectorMetric
-                label="Changesets"
-                value={report ? `${report.changes.accepted_changesets} accepted` : "—"}
-                detail={report ? `${report.changes.pending_review_changesets} pending · ${report.changes.rejected_changesets} rejected` : "loading evidence"}
+                label="Verification"
+                value={governance?.verification.state ?? "—"}
+                detail={governance ? `${governance.verification.command_count} recorded commands` : "Loading evidence"}
+              />
+              <InspectorMetric
+                label="Commit"
+                value={governance?.gate.ready ? "Ready" : governance?.gate.state ?? "—"}
+                detail={governance?.gate.blockers[0] ?? (governance?.committed ? "Committed" : "No active blocker")}
+              />
+            </section>
+
+            <section className="inspector-section">
+              <span className="inspector-section-label">History</span>
+              <InspectorMetric
+                label="Executions"
+                value={report ? `${report.execution.completed}/${report.execution.attempts}` : "—"}
+                detail={report ? `${report.execution.unique_workers} workers · ${report.execution.handoffs} handoffs` : "Loading evidence"}
               />
               <InspectorMetric
                 label="Verification"
                 value={report ? `${report.verification.passed}/${report.verification.finished}` : "—"}
-                detail={report ? `${report.verification.failed} failed · ${report.verification.commands_run} commands` : "loading evidence"}
+                detail={report ? `${report.verification.failed} failed across ${report.verification.commands_run} commands` : "Loading evidence"}
               />
             </section>
           </>
@@ -133,7 +146,8 @@ export function WorkspaceInspector({
       </div>
 
       <footer className="workspace-inspector-footer">
-        <button type="button" className="workspace-inspector-action" onClick={() => onNavigate("work", "Opened full Work Item evidence.")}>Full Work evidence</button>
+        <button type="button" className="workspace-inspector-action" onClick={() => onNavigate("memory", "Opened reviewed Project Knowledge.")}>Project Knowledge</button>
+        <button type="button" className="workspace-inspector-action" onClick={() => onNavigate("work", "Opened full Work Item evidence.")}>Open Work</button>
       </footer>
     </aside>
   );
