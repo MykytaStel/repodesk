@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  workEngineeringIntelligence,
+  WORK_ENGINEERING_SNAPSHOT_KEY,
+  workEngineeringSnapshot,
   type EngineeringIntelligence,
 } from "../../shared/api/engineering";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
-
-const INTELLIGENCE_KEY = ["work", "engineering-intelligence"] as const;
 
 function rate(value: number | null): string {
   return value == null ? "—" : `${Math.round(value * 100)}%`;
@@ -43,27 +42,27 @@ function summary(report: EngineeringIntelligence): string {
 
 export function EngineeringIntelligenceCard() {
   const { hasTask } = useWorkspace();
-  const intelligence = useQuery({
-    queryKey: INTELLIGENCE_KEY,
-    queryFn: workEngineeringIntelligence,
+  const snapshot = useQuery({
+    queryKey: WORK_ENGINEERING_SNAPSHOT_KEY,
+    queryFn: workEngineeringSnapshot,
     enabled: hasTask,
     refetchInterval: 4000,
   });
 
   if (!hasTask) return null;
 
-  if (intelligence.isError) {
+  if (snapshot.isError) {
     return (
       <div className="content-grid">
         <section className="panel wide-panel">
           <p className="eyebrow">Engineering Intelligence</p>
-          <p className="notice danger">Could not load task intelligence: {String(intelligence.error)}</p>
+          <p className="notice danger">Could not load task intelligence: {String(snapshot.error)}</p>
         </section>
       </div>
     );
   }
 
-  if (intelligence.isLoading || !intelligence.data) {
+  if (snapshot.isLoading || !snapshot.data) {
     return (
       <div className="content-grid">
         <section className="panel wide-panel">
@@ -74,7 +73,7 @@ export function EngineeringIntelligenceCard() {
     );
   }
 
-  const report = intelligence.data;
+  const report = snapshot.data.intelligence;
   const totalAiTokens = report.ai_usage.input_tokens + report.ai_usage.output_tokens;
   const latestCommit = report.completion.latest_commit_sha?.slice(0, 12) ?? "not committed";
 
