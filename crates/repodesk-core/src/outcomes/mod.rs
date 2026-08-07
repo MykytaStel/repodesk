@@ -10,4 +10,16 @@ pub mod model;
 pub mod store;
 
 pub use model::{OutcomeRecord, ProviderStat, Verdict};
-pub use store::{confirm_outcome, list_outcomes, outcome_stats, record_run, routing_bias};
+pub use store::{confirm_outcome, list_outcomes, outcome_stats, routing_bias};
+
+use crate::errors::RepoDeskResult;
+use crate::orchestrator::types::{OrchestrationPlan, OrchestrationRun};
+
+/// Record engineering execution telemetry first, then preserve the legacy
+/// provider/model outcome ledger. Engineering instrumentation is best-effort and
+/// intentionally includes dry runs; the legacy learning ledger still ignores
+/// dry runs inside `store::record_run`.
+pub fn record_run(plan: &OrchestrationPlan, run: &OrchestrationRun) -> RepoDeskResult<usize> {
+    let _ = crate::engineering::instrumentation::record_orchestration_run(Some(plan), run);
+    store::record_run(plan, run)
+}
