@@ -59,6 +59,6 @@ pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
     WORK_ITEM_CONTRACT_VERSION, WorkItemContract, WorkItemContractReadiness,
     WorkItemContractSnapshot, WorkItemContractUpdate, contract_path, derive_scope_compliance,
-    load_active_work_item_contract, load_work_item_contract_snapshot, read_work_item_contract,
-    save_active_work_item_contract,
+    derive_work_item_contract_snapshot, load_active_work_item_contract,
+    load_work_item_contract_snapshot, read_work_item_contract, save_active_work_item_contract,
 };
