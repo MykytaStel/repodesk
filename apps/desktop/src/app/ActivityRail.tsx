@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { TabId } from "../shared/types/api";
 import type { AppTab } from "./tabs";
 import {
@@ -31,7 +32,7 @@ function RailButton({
   label: string;
   active?: boolean;
   onClick: () => void;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <button
