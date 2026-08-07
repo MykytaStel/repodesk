@@ -128,6 +128,9 @@ function RunEvidenceDetail({
   onLink: (criterionId: string, command: string) => void;
 }) {
   const totalTokens = evidence.total_input_tokens + evidence.total_output_tokens;
+  const verificationIsCurrent = ["passed", "failed"].includes(evidence.verification.state);
+  const linkableCommands = verificationIsCurrent ? evidence.verification.commands : [];
+
   return (
     <div className="run-evidence-detail">
       <div className="run-evidence-header">
@@ -226,6 +229,9 @@ function RunEvidenceDetail({
             {" · "}<span>{evidence.acceptance.unproven} unproven</span>
           </span>
         </div>
+        {evidence.verification.state === "stale" && (
+          <div className="evidence-empty">Re-run verification before linking new acceptance proof.</div>
+        )}
         {!evidence.acceptance.configured ? (
           <div className="evidence-empty">Configure acceptance criteria in the Work Item Engineering Contract.</div>
         ) : evidence.acceptance.criteria.length === 0 ? (
@@ -236,7 +242,7 @@ function RunEvidenceDetail({
               <AcceptanceRow
                 key={criterion.criterion_id}
                 criterion={criterion}
-                commands={evidence.verification.commands}
+                commands={linkableCommands}
                 busy={linking}
                 onLink={onLink}
               />

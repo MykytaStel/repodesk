@@ -334,7 +334,12 @@ fn derive_criterion(
         return stale_unproven(id, criterion, binding, "criterion text changed");
     }
     let Some(receipt) = receipt else {
-        return stale_unproven(id, criterion, binding, "canonical run receipt is unavailable");
+        return stale_unproven(
+            id,
+            criterion,
+            binding,
+            "canonical run receipt is unavailable",
+        );
     };
     if binding.run_id != receipt.run_id {
         return stale_unproven(id, criterion, binding, "evidence belongs to another run");
@@ -348,13 +353,23 @@ fn derive_criterion(
         return stale_unproven(id, criterion, binding, "reviewed changeset changed");
     }
     let Some(verification) = receipt.verification.as_ref() else {
-        return stale_unproven(id, criterion, binding, "verification receipt is unavailable");
+        return stale_unproven(
+            id,
+            criterion,
+            binding,
+            "verification receipt is unavailable",
+        );
     };
     if binding.verification_verified_at != verification.verified_at {
         return stale_unproven(id, criterion, binding, "verification was replaced or rerun");
     }
     if !verification_fresh {
-        return stale_unproven(id, criterion, binding, "verified code tree no longer matches");
+        return stale_unproven(
+            id,
+            criterion,
+            binding,
+            "verified code tree no longer matches",
+        );
     }
     let Some(check) = verification
         .commands
@@ -535,10 +550,7 @@ mod tests {
             true,
         );
         assert_eq!(report.proven, 1);
-        assert_eq!(
-            report.criteria[0].status,
-            AcceptanceCriterionStatus::Proven
-        );
+        assert_eq!(report.criteria[0].status, AcceptanceCriterionStatus::Proven);
     }
 
     #[test]

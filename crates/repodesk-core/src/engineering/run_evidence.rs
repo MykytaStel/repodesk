@@ -349,7 +349,10 @@ fn derive_commit(
     match event {
         Some(event) => RunCommitEvidence {
             committed: true,
-            commit_sha: event.evidence.first().map(|evidence| evidence.locator.clone()),
+            commit_sha: event
+                .evidence
+                .first()
+                .map(|evidence| evidence.locator.clone()),
             committed_paths: string_array(event, "files"),
             source: "engineering_event".into(),
         },

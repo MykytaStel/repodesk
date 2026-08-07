@@ -2,10 +2,9 @@ use repodesk_core::engineering::{
     AcceptanceEvidenceReport, ChangeGovernanceSnapshot, ContextInspectorReport,
     EngineeringIntelligence, RunEvidenceSnapshot, WorkItemContractSnapshot, WorkItemContractUpdate,
     derive_change_governance, derive_context_inspector, derive_engineering_intelligence,
-    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
-    load_active_run_evidence, load_active_run_evidence_from_events, read_context_manifest,
-    read_events, read_work_item_contract, record_active_scope_override,
-    save_active_work_item_contract,
+    derive_work_item_contract_snapshot, link_active_acceptance_evidence, load_active_run_evidence,
+    load_active_run_evidence_from_events, read_context_manifest, read_events,
+    read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::Serialize;
@@ -43,8 +42,7 @@ pub fn work_engineering_intelligence(
     }
     match (acceptance_criterion_id, acceptance_command) {
         (Some(criterion_id), Some(command)) => {
-            link_active_acceptance_evidence(&criterion_id, &command)
-                .map_err(ErrorPayload::from)?;
+            link_active_acceptance_evidence(&criterion_id, &command).map_err(ErrorPayload::from)?;
         }
         (None, None) => {}
         _ => {

@@ -3,9 +3,7 @@ use repodesk_core::engineering::{
     AcceptanceEvidenceReport, EngineeringEvent, EngineeringEventKind, WorkItemId,
     derive_run_evidence,
 };
-use repodesk_core::orchestrator::{
-    OrchestrationRun, RunStatus, SubAgentResult, SubAgentStatus,
-};
+use repodesk_core::orchestrator::{OrchestrationRun, RunStatus, SubAgentResult, SubAgentStatus};
 use repodesk_core::workflow::{
     CheckReceipt, ExecutionMode, ExecutionReceipt, FinishReceipt, ReviewDecision, ReviewReceipt,
     TaskRunReceipt, VerificationReceipt,
@@ -129,9 +127,10 @@ fn run_evidence_deduplicates_changed_files_and_prefers_receipt() {
         EngineeringEventKind::ChangeSetReviewed,
     );
     misleading_review.occurred_at = Utc::now();
-    misleading_review
-        .attributes
-        .insert("decision".into(), serde_json::Value::String("rejected".into()));
+    misleading_review.attributes.insert(
+        "decision".into(),
+        serde_json::Value::String("rejected".into()),
+    );
 
     let snapshot = derive_run_evidence(
         &run(),
