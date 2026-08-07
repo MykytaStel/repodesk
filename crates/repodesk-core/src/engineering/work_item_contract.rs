@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::engineering::domain::WorkItemId;
-use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, append_event, read_events};
+use crate::engineering::events::{
+    EngineeringEvent, EngineeringEventKind, append_event, read_events,
+};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::tasks::{TaskInfo, show_active_task};
 
@@ -113,15 +115,15 @@ pub fn save_active_work_item_contract(
     .with_attribute("contract_version", json!(contract.version))
     .with_attribute("goal_defined", Value::Bool(!contract.goal.is_empty()))
     .with_attribute("allowed_path_count", json!(contract.allowed_paths.len()))
-    .with_attribute("protected_path_count", json!(contract.protected_paths.len()))
+    .with_attribute(
+        "protected_path_count",
+        json!(contract.protected_paths.len()),
+    )
     .with_attribute(
         "acceptance_criteria_count",
         json!(contract.acceptance_criteria.len()),
     )
-    .with_attribute(
-        "contract_file",
-        Value::String(path.display().to_string()),
-    );
+    .with_attribute("contract_file", Value::String(path.display().to_string()));
     let _ = append_event(&task.config.run_dir, &event);
 
     load_work_item_contract_snapshot(&task)
@@ -137,7 +139,9 @@ pub fn read_work_item_contract(run_dir: &Path) -> RepoDeskResult<Option<WorkItem
     Ok(Some(contract))
 }
 
-pub fn load_work_item_contract_snapshot(task: &TaskInfo) -> RepoDeskResult<WorkItemContractSnapshot> {
+pub fn load_work_item_contract_snapshot(
+    task: &TaskInfo,
+) -> RepoDeskResult<WorkItemContractSnapshot> {
     let stored = read_work_item_contract(&task.config.run_dir)?;
     let configured = stored.is_some();
     let contract = stored.unwrap_or_else(|| empty_contract(task));
@@ -248,7 +252,9 @@ fn normalize_update(
 ) -> RepoDeskResult<WorkItemContract> {
     let goal = update.goal.trim().to_string();
     if goal.chars().count() > MAX_GOAL_CHARS || goal.contains('\0') {
-        return Err(RepoDeskError::Api("Work Item goal is too long or invalid".into()));
+        return Err(RepoDeskError::Api(
+            "Work Item goal is too long or invalid".into(),
+        ));
     }
 
     let allowed_paths = normalize_rules(update.allowed_paths, false)?;
@@ -343,14 +349,21 @@ fn normalize_path_rule(value: &str) -> Option<String> {
 }
 
 fn normalize_changed_path(value: &str) -> String {
-    value.trim().replace('\\', "/").trim_matches('/').to_string()
+    value
+        .trim()
+        .replace('\\', "/")
+        .trim_matches('/')
+        .to_string()
 }
 
 fn path_matches_rule(path: &str, rule: &str) -> bool {
     if rule == "." {
         return true;
     }
-    path == rule || path.strip_prefix(rule).is_some_and(|rest| rest.starts_with('/'))
+    path == rule
+        || path
+            .strip_prefix(rule)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 fn latest_changeset_files(run_dir: &Path) -> RepoDeskResult<Vec<String>> {
@@ -420,11 +433,7 @@ mod tests {
 
     #[test]
     fn unconfigured_contract_does_not_claim_compliance() {
-        let report = derive_scope_compliance(
-            &contract(&[], &[]),
-            &["src/lib.rs".into()],
-            false,
-        );
+        let report = derive_scope_compliance(&contract(&[], &[]), &["src/lib.rs".into()], false);
         assert_eq!(report.status, ScopeComplianceStatus::Unconfigured);
     }
 

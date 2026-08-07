@@ -169,9 +169,7 @@ impl TerminalManager {
                             }
                         }
                         Err(error) => {
-                            eprintln!(
-                                "Terminal session {output_session_id} read error: {error}"
-                            );
+                            eprintln!("Terminal session {output_session_id} read error: {error}");
                             break;
                         }
                     }

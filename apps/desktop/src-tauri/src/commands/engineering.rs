@@ -32,8 +32,7 @@ pub fn work_engineering_intelligence(
         load_engineering_intelligence(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let context_inspector =
         load_context_inspector(&task.config.run_dir).map_err(ErrorPayload::from)?;
-    let work_item_contract =
-        load_work_item_contract_snapshot(&task).map_err(ErrorPayload::from)?;
+    let work_item_contract = load_work_item_contract_snapshot(&task).map_err(ErrorPayload::from)?;
 
     Ok(WorkEngineeringSnapshot {
         intelligence,

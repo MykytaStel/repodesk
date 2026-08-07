@@ -141,22 +141,22 @@ export function WorkItemContractCard() {
   });
 
   if (!hasTask) return null;
-  if (snapshot.isLoading || !contractSnapshot) {
-    return (
-      <div className="work-contract-shell">
-        <section className="work-contract-card">
-          <p className="eyebrow">Engineering Contract</p>
-          <span className="muted">Loading bounded Work Item rules…</span>
-        </section>
-      </div>
-    );
-  }
   if (snapshot.isError) {
     return (
       <div className="work-contract-shell">
         <section className="work-contract-card">
           <p className="eyebrow">Engineering Contract</p>
           <span className="notice danger">{errorToMessage(snapshot.error)}</span>
+        </section>
+      </div>
+    );
+  }
+  if (snapshot.isLoading || !contractSnapshot) {
+    return (
+      <div className="work-contract-shell">
+        <section className="work-contract-card">
+          <p className="eyebrow">Engineering Contract</p>
+          <span className="muted">Loading bounded Work Item rules…</span>
         </section>
       </div>
     );
