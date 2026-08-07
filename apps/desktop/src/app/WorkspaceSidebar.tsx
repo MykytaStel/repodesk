@@ -4,12 +4,15 @@ import { ThemeMenu } from "./ThemeMenu";
 import { APP_TABS, type AppTab } from "./tabs";
 import { TabIcon } from "./NavIcons";
 
+// Keep the drawer contextual rather than turning it into a second navigation
+// tree. The command palette remains the escape hatch for advanced/legacy tools.
 const RELATED: Partial<Record<TabId, TabId[]>> = {
-  work: ["dashboard", "orchestrate", "playbooks"],
-  code: ["git", "dashboard"],
+  work: ["memory", "orchestrate"],
+  code: ["git", "memory"],
   changes: ["git", "audit"],
-  history: ["memory", "outcomes", "audit"],
-  projects: ["settings", "models-cost", "system"],
+  history: ["memory", "outcomes"],
+  projects: ["memory", "settings", "models-cost"],
+  memory: ["work", "history"],
 };
 
 interface WorkspaceSidebarProps {
@@ -54,7 +57,7 @@ export function WorkspaceSidebar({
   const explicit = RELATED[activeTab];
   const relatedTabs = (explicit
     ? explicit.map((id) => APP_TABS.find((tab) => tab.id === id)).filter(Boolean)
-    : APP_TABS.filter((tab) => tab.group === activeTabInfo.group && tab.id !== activeTab && tab.tier !== "primary").slice(0, 4)) as AppTab[];
+    : APP_TABS.filter((tab) => tab.group === activeTabInfo.group && tab.id !== activeTab && tab.tier === "more").slice(0, 3)) as AppTab[];
 
   return (
     <aside className="workspace-sidebar" aria-label="Workspace context">
@@ -74,7 +77,7 @@ export function WorkspaceSidebar({
         </section>
 
         <section className="workspace-sidebar-section">
-          <span className="workspace-sidebar-label">Work item</span>
+          <span className="workspace-sidebar-label">Current work</span>
           <button
             type="button"
             className="workspace-context-row"
@@ -83,7 +86,7 @@ export function WorkspaceSidebar({
             <span className={`workspace-context-dot${hasTask ? " ok" : ""}`} />
             <span>
               <strong>{hasTask ? taskTitle : "No active Work Item"}</strong>
-              <small>{hasTask ? "Task context is active" : "Work starts from a bounded task"}</small>
+              <small>{hasTask ? "Bounded engineering task" : "Work starts from a bounded task"}</small>
             </span>
           </button>
           <button
@@ -102,7 +105,7 @@ export function WorkspaceSidebar({
 
         {relatedTabs.length > 0 ? (
           <section className="workspace-sidebar-section">
-            <span className="workspace-sidebar-label">Related tools</span>
+            <span className="workspace-sidebar-label">Related</span>
             <div className="workspace-side-links">
               {relatedTabs.map((tab) => (
                 <RelatedItem key={tab.id} tab={tab} active={activeTab === tab.id} onSelect={() => onNavigate(tab.id)} />
