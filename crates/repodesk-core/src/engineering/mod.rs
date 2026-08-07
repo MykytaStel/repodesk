@@ -16,7 +16,9 @@ pub use context_compactness::{
     ContextComponentCompactness, ContextComponentTelemetry, derive_context_compactness,
     load_context_compactness, record_context_build,
 };
-pub use context_inspector::{ContextInspectorReport, load_context_inspector};
+pub use context_inspector::{
+    ContextInspectorReport, derive_context_inspector, load_context_inspector,
+};
 pub use context_manifest::{
     CONTEXT_MANIFEST_FILE, CONTEXT_MANIFEST_VERSION, ContextChangeCoverage, ContextFileEntry,
     ContextFileEvidenceReport, ContextFileExclusionReason, ContextFileReason, ContextFileSelection,
