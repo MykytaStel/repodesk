@@ -148,6 +148,13 @@ Run dir: `{run_dir}`
     fs::write(&context_file, context)?;
     fs::write(&token_estimate_file, format_estimate(&estimate))?;
 
+    let _ = crate::engineering::instrumentation::record_context_built(
+        &task.config,
+        &context_file.display().to_string(),
+        &token_estimate_file.display().to_string(),
+        estimate.estimated_tokens,
+    );
+
     Ok(ContextBuildResult {
         context_file: context_file.display().to_string(),
         token_estimate_file: token_estimate_file.display().to_string(),
