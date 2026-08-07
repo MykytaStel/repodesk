@@ -1,10 +1,14 @@
 use repodesk_core::engineering::{
     AcceptanceEvidenceReport, ChangeGovernanceSnapshot, ContextInspectorReport,
-    EngineeringIntelligence, RunEvidenceSnapshot, WorkItemContractSnapshot, WorkItemContractUpdate,
-    derive_change_governance, derive_context_inspector, derive_engineering_intelligence,
-    derive_work_item_contract_snapshot, link_active_acceptance_evidence, load_active_run_evidence,
-    load_active_run_evidence_from_events, read_context_manifest, read_events,
-    read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
+    EngineeringIntelligence, EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot,
+    RunEvidenceSnapshot, WorkItemContractSnapshot, WorkItemContractUpdate,
+    accept_active_engineering_knowledge, archive_active_engineering_knowledge,
+    capture_active_verified_command, derive_change_governance, derive_context_inspector,
+    derive_engineering_intelligence, derive_work_item_contract_snapshot,
+    link_active_acceptance_evidence, load_active_engineering_knowledge, load_active_run_evidence,
+    load_active_run_evidence_from_events, propose_active_engineering_knowledge,
+    read_context_manifest, read_events, read_work_item_contract, record_active_scope_override,
+    save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::Serialize;
@@ -76,6 +80,39 @@ pub fn work_engineering_intelligence(
         change_governance,
         run_evidence,
     })
+}
+
+#[tauri::command]
+pub fn engineering_knowledge_snapshot() -> Result<EngineeringKnowledgeSnapshot, ErrorPayload> {
+    load_active_engineering_knowledge().map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn engineering_knowledge_propose(
+    input: EngineeringKnowledgeProposalInput,
+) -> Result<EngineeringKnowledgeSnapshot, ErrorPayload> {
+    propose_active_engineering_knowledge(input).map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn engineering_knowledge_capture_command(
+    command: String,
+) -> Result<EngineeringKnowledgeSnapshot, ErrorPayload> {
+    capture_active_verified_command(&command).map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn engineering_knowledge_accept(
+    knowledge_id: String,
+) -> Result<EngineeringKnowledgeSnapshot, ErrorPayload> {
+    accept_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn engineering_knowledge_archive(
+    knowledge_id: String,
+) -> Result<EngineeringKnowledgeSnapshot, ErrorPayload> {
+    archive_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)
 }
 
 /// Direct helpers retained as a narrow Rust/Tauri boundary for future transport
