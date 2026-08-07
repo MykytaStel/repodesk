@@ -14,6 +14,7 @@ pub mod credentials;
 pub mod custom_providers;
 pub mod desktop;
 pub mod embeddings;
+pub mod engineering;
 pub mod errors;
 pub mod executors;
 pub mod guard;
