@@ -3,6 +3,7 @@
 //! Keep this layer independent from frontend concerns. Legacy task/orchestrator
 //! models adapt into these types until later migration slices move call sites.
 
+pub mod algorithmic_profile;
 pub mod context_compactness;
 pub mod context_inspector;
 pub mod context_manifest;
@@ -11,6 +12,12 @@ pub mod events;
 pub mod instrumentation;
 pub mod intelligence;
 
+pub use algorithmic_profile::{
+    AlgorithmicEvidence, AlgorithmicEvidenceKind, AlgorithmicProfile, AlgorithmicProfileError,
+    AlgorithmicProfileReport, AlgorithmicSignals, AlgorithmicSymbolKind, AnalysisConfidence,
+    ComplexityClass, ComplexityHint, MAX_ALGORITHM_SOURCE_BYTES, analyze_rust_file,
+    analyze_rust_source,
+};
 pub use context_compactness::{
     ContextBuildCompactness, ContextBuildTelemetry, ContextCompactnessReport,
     ContextComponentCompactness, ContextComponentTelemetry, derive_context_compactness,

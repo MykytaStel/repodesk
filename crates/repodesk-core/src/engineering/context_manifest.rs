@@ -534,7 +534,8 @@ mod tests {
         fs::write(root.path().join("debug.log"), "do not include").unwrap();
         fs::write(root.path().join(".env"), "TOKEN=secret").unwrap();
 
-        let markdown = "## Scope\n- `src/lib.rs`\n- `missing.rs`\n- `debug.log`\n- `.env`\n- `../escape.rs`\n";
+        let markdown =
+            "## Scope\n- `src/lib.rs`\n- `missing.rs`\n- `debug.log`\n- `.env`\n- `../escape.rs`\n";
         let selection = select_task_scope_files(
             "repodesk",
             "task-1",
