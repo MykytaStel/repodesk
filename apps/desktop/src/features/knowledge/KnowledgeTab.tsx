@@ -222,7 +222,8 @@ export function KnowledgeTab() {
     queryKey: ENGINEERING_KNOWLEDGE_KEY,
     queryFn: engineeringKnowledgeSnapshot,
     enabled: hasProject,
-    refetchInterval: 8_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   const propose = useMutation({

@@ -561,7 +561,10 @@ fn record_knowledge_event(
     };
     let mut event = EngineeringEvent::new(record.project.clone(), work_item_id, kind)
         .with_attribute("knowledge_id", Value::String(record.id.to_string()))
-        .with_attribute("category", Value::String(record.category.label().to_string()))
+        .with_attribute(
+            "category",
+            Value::String(record.category.label().to_string()),
+        )
         .with_attribute("origin", json!(record.origin))
         .with_attribute("status", Value::String(record.status.label().to_string()));
     if let Some(previous_status) = previous_status {
@@ -618,11 +621,8 @@ fn new_knowledge_id(
 ) -> RepoDeskResult<EngineeringKnowledgeId> {
     let now = Utc::now().timestamp_micros();
     let digest = Sha256::digest(format!("{project}\n{title}\n{content}\n{now}").as_bytes());
-    EngineeringKnowledgeId::try_new(format!(
-        "knowledge-{now}-{}",
-        &hex::encode(digest)[..10]
-    ))
-    .map_err(|error| RepoDeskError::Api(error.to_string()))
+    EngineeringKnowledgeId::try_new(format!("knowledge-{now}-{}", &hex::encode(digest)[..10]))
+        .map_err(|error| RepoDeskError::Api(error.to_string()))
 }
 
 fn stable_suggestion_id(work_item_id: &str, command: &str) -> String {
@@ -660,9 +660,7 @@ fn knowledge_score(record: &EngineeringKnowledgeRecord, query_terms: &BTreeSet<S
     let content = record.content.to_ascii_lowercase();
     let lexical = query_terms
         .iter()
-        .map(|term| {
-            usize::from(title.contains(term)) * 4 + usize::from(content.contains(term))
-        })
+        .map(|term| usize::from(title.contains(term)) * 4 + usize::from(content.contains(term)))
         .sum::<usize>();
     record.category.context_priority() + lexical
 }

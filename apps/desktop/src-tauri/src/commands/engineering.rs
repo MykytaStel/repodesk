@@ -2,12 +2,12 @@ use repodesk_core::engineering::{
     ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
     EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot, RunEvidenceSnapshot,
     WorkItemContractSnapshot, WorkItemContractUpdate, accept_active_engineering_knowledge,
-    archive_active_engineering_knowledge, capture_active_verified_command, derive_change_governance,
-    derive_context_inspector, derive_engineering_intelligence, derive_work_item_contract_snapshot,
-    link_active_acceptance_evidence, load_active_engineering_knowledge,
-    load_active_run_evidence_from_events, propose_active_engineering_knowledge,
-    read_context_manifest, read_events, read_work_item_contract, record_active_scope_override,
-    save_active_work_item_contract,
+    archive_active_engineering_knowledge, capture_active_verified_command,
+    derive_change_governance, derive_context_inspector, derive_engineering_intelligence,
+    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
+    load_active_engineering_knowledge, load_active_run_evidence_from_events,
+    propose_active_engineering_knowledge, read_context_manifest, read_events,
+    read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::{Deserialize, Serialize};
@@ -17,10 +17,18 @@ use super::ErrorPayload;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum EngineeringKnowledgeAction {
-    Propose { input: EngineeringKnowledgeProposalInput },
-    CaptureCommand { command: String },
-    Accept { knowledge_id: String },
-    Archive { knowledge_id: String },
+    Propose {
+        input: EngineeringKnowledgeProposalInput,
+    },
+    CaptureCommand {
+        command: String,
+    },
+    Accept {
+        knowledge_id: String,
+    },
+    Archive {
+        knowledge_id: String,
+    },
 }
 
 #[derive(Debug, Serialize)]
@@ -77,12 +85,12 @@ pub fn work_engineering_intelligence(
         Some(EngineeringKnowledgeAction::CaptureCommand { command }) => {
             Some(capture_active_verified_command(&command).map_err(ErrorPayload::from)?)
         }
-        Some(EngineeringKnowledgeAction::Accept { knowledge_id }) => Some(
-            accept_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?,
-        ),
-        Some(EngineeringKnowledgeAction::Archive { knowledge_id }) => Some(
-            archive_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?,
-        ),
+        Some(EngineeringKnowledgeAction::Accept { knowledge_id }) => {
+            Some(accept_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
+        }
+        Some(EngineeringKnowledgeAction::Archive { knowledge_id }) => {
+            Some(archive_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
+        }
         None => None,
     };
     if include_knowledge.unwrap_or(false) && knowledge.is_none() {
