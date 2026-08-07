@@ -81,7 +81,7 @@ export type ContextFileStatus = "included" | "excluded";
 export type ContextFileExclusionReason =
   | "invalid_path"
   | "ignored"
-  | "sensitive"
+  | "blocked_by_security"
   | "missing"
   | "not_file"
   | "outside_project"
