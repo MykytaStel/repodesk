@@ -385,10 +385,7 @@ fn fold_verifications(
     }
 }
 
-fn fold_commits(
-    commits: &BTreeMap<String, CommitFact>,
-    report: &mut EngineeringIntelligence,
-) {
+fn fold_commits(commits: &BTreeMap<String, CommitFact>, report: &mut EngineeringIntelligence) {
     report.completion.commits = commits.len();
     report.completion.committed = !commits.is_empty();
 
@@ -513,11 +510,7 @@ mod tests {
     };
 
     fn base_event(kind: EngineeringEventKind) -> EngineeringEvent {
-        EngineeringEvent::new(
-            "repodesk",
-            WorkItemId::try_new("task-1").unwrap(),
-            kind,
-        )
+        EngineeringEvent::new("repodesk", WorkItemId::try_new("task-1").unwrap(), kind)
     }
 
     fn worker(kind: WorkerKind, id: &str) -> WorkerRef {
@@ -648,7 +641,10 @@ mod tests {
         assert_eq!(report.verification.commands_run, 2);
         assert!(report.completion.committed);
         assert_eq!(report.completion.commits, 1);
-        assert_eq!(report.completion.latest_commit_sha.as_deref(), Some("abc123"));
+        assert_eq!(
+            report.completion.latest_commit_sha.as_deref(),
+            Some("abc123")
+        );
         assert_eq!(report.rates.execution_completion_rate, Some(0.5));
         assert_eq!(report.rates.changeset_acceptance_rate, Some(0.5));
         assert_eq!(report.rates.verification_pass_rate, Some(1.0));
@@ -693,7 +689,10 @@ mod tests {
         assert_eq!(report.ai_usage.output_tokens, 10);
         assert!((report.ai_usage.cost_units - 0.1).abs() < f64::EPSILON);
         assert_eq!(report.completion.commits, 2);
-        assert_eq!(report.completion.latest_commit_sha.as_deref(), Some("latest"));
+        assert_eq!(
+            report.completion.latest_commit_sha.as_deref(),
+            Some("latest")
+        );
     }
 
     #[test]
