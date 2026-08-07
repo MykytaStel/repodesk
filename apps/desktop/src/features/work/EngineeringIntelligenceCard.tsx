@@ -52,23 +52,23 @@ export function EngineeringIntelligenceCard() {
 
   if (!hasTask) return null;
 
-  if (intelligence.isLoading || !intelligence.data) {
-    return (
-      <div className="content-grid">
-        <section className="panel wide-panel">
-          <p className="eyebrow">Engineering Intelligence</p>
-          <p className="muted">Loading task evidence…</p>
-        </section>
-      </div>
-    );
-  }
-
   if (intelligence.isError) {
     return (
       <div className="content-grid">
         <section className="panel wide-panel">
           <p className="eyebrow">Engineering Intelligence</p>
           <p className="notice danger">Could not load task intelligence: {String(intelligence.error)}</p>
+        </section>
+      </div>
+    );
+  }
+
+  if (intelligence.isLoading || !intelligence.data) {
+    return (
+      <div className="content-grid">
+        <section className="panel wide-panel">
+          <p className="eyebrow">Engineering Intelligence</p>
+          <p className="muted">Loading task evidence…</p>
         </section>
       </div>
     );
