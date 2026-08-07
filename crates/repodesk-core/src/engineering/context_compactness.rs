@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::engineering::domain::{EvidenceKind, EvidenceRef, WorkItemId};
-use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, append_event, read_events};
+use crate::engineering::events::{
+    EngineeringEvent, EngineeringEventKind, append_event, read_events,
+};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::tasks::TaskConfig;
 
@@ -112,7 +114,7 @@ pub fn record_context_build(
         event = event.with_evidence(evidence);
     }
 
-    append_event(&task.run_dir, &event)
+    append_event(&task.run_dir, &event).map(|_| ())
 }
 
 pub fn load_context_compactness(run_dir: &Path) -> RepoDeskResult<ContextCompactnessReport> {
@@ -145,9 +147,7 @@ pub fn derive_context_compactness(events: &[EngineeringEvent]) -> ContextCompact
         report.total_candidate_tokens = report
             .total_candidate_tokens
             .saturating_add(candidate_tokens);
-        report.total_included_tokens = report
-            .total_included_tokens
-            .saturating_add(included_tokens);
+        report.total_included_tokens = report.total_included_tokens.saturating_add(included_tokens);
 
         let compacted_tokens = candidate_tokens.saturating_sub(included_tokens);
         report.total_compacted_tokens = report
@@ -201,7 +201,8 @@ pub fn derive_context_compactness(events: &[EngineeringEvent]) -> ContextCompact
             compacted_tokens,
             compactness_ratio: ratio(included_tokens, candidate_tokens),
             repeated_tokens,
-            repeated_context_ratio: repeated_tokens.and_then(|tokens| ratio(tokens, included_tokens)),
+            repeated_context_ratio: repeated_tokens
+                .and_then(|tokens| ratio(tokens, included_tokens)),
             components: rendered_components,
         });
 
