@@ -7,9 +7,7 @@ use std::thread;
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use portable_pty::{
-    ChildKiller, CommandBuilder, MasterPty, PtySize, PtySystem, native_pty_system,
-};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
@@ -170,7 +168,12 @@ impl TerminalManager {
                                 break;
                             }
                         }
-                        Err(_) => break,
+                        Err(error) => {
+                            eprintln!(
+                                "Terminal session {output_session_id} read error: {error}"
+                            );
+                            break;
+                        }
                     }
                 }
             })
@@ -229,6 +232,12 @@ impl TerminalManager {
             .collect::<Vec<_>>();
         values.sort_by(|a, b| a.session_id.cmp(&b.session_id));
         Ok(values)
+    }
+
+    fn remove(&self, session_id: &str) {
+        if let Ok(mut sessions) = self.inner.sessions.lock() {
+            sessions.remove(session_id);
+        }
     }
 }
 
@@ -300,13 +309,20 @@ pub fn terminal_kill(
     session_id: String,
 ) -> Result<(), String> {
     let session = manager.session(&session_id)?;
-    let mut killer = session
-        .killer
-        .lock()
-        .map_err(|_| "Terminal process handle is unavailable".to_string())?;
-    killer
-        .kill()
-        .map_err(|error| format!("Failed to stop terminal process: {error}"))
+    let result = {
+        let mut killer = session
+            .killer
+            .lock()
+            .map_err(|_| "Terminal process handle is unavailable".to_string())?;
+        killer
+            .kill()
+            .map_err(|error| format!("Failed to stop terminal process: {error}"))
+    };
+    // Drop from the registry immediately so `terminal_list` reflects the kill
+    // right away, instead of waiting on the wait-thread's own removal once
+    // the child process actually exits.
+    manager.remove(&session_id);
+    result
 }
 
 fn active_project_cwd() -> Result<PathBuf, String> {

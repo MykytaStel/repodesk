@@ -77,7 +77,8 @@ export function InteractiveTerminal({ active }: InteractiveTerminalProps) {
   const startSessionRef = useRef<() => Promise<void>>(async () => undefined);
 
   useEffect(() => {
-    if (!active || initializedRef.current || !hostRef.current) return;
+    const host = hostRef.current;
+    if (!active || initializedRef.current || !host) return;
     initializedRef.current = true;
 
     const terminal = new Terminal({
@@ -93,7 +94,7 @@ export function InteractiveTerminal({ active }: InteractiveTerminalProps) {
     });
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
-    terminal.open(hostRef.current);
+    terminal.open(host);
     fitAddon.fit();
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -144,7 +145,7 @@ export function InteractiveTerminal({ active }: InteractiveTerminalProps) {
       if (resizeTimerRef.current !== null) window.clearTimeout(resizeTimerRef.current);
       resizeTimerRef.current = window.setTimeout(sendResize, 50);
     });
-    resizeObserver.observe(hostRef.current);
+    resizeObserver.observe(host);
 
     const themeObserver = new MutationObserver(() => {
       terminal.options.theme = terminalTheme();
@@ -178,30 +179,36 @@ export function InteractiveTerminal({ active }: InteractiveTerminalProps) {
     };
     startSessionRef.current = startSession;
 
-    void Promise.all([
-      listen<TerminalOutputPayload>("terminal-output", (event) => {
-        if (event.payload.session_id !== sessionRef.current?.session_id) return;
-        terminal.write(decodeBase64(event.payload.data));
-      }).then((unlisten) => {
-        outputUnlisten = unlisten;
-      }),
-      listen<TerminalExitPayload>("terminal-exit", (event) => {
-        if (event.payload.session_id !== sessionRef.current?.session_id) return;
-        sessionRef.current = null;
-        setStatus(event.payload.error ? "error" : "exited");
-        setError(event.payload.error);
-        terminal.write(
-          `\r\n\x1b[2m[RepoDesk: shell exited${
-            event.payload.exit_code == null ? "" : ` with code ${event.payload.exit_code}`
-          }]\x1b[0m\r\n`,
-        );
-      }).then((unlisten) => {
-        exitUnlisten = unlisten;
-      }),
-    ]).then(() => startSession());
+    const attachOutput = listen<TerminalOutputPayload>("terminal-output", (event) => {
+      if (event.payload.session_id !== sessionRef.current?.session_id) return;
+      terminal.write(decodeBase64(event.payload.data));
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else outputUnlisten = unlisten;
+    });
+
+    const attachExit = listen<TerminalExitPayload>("terminal-exit", (event) => {
+      if (event.payload.session_id !== sessionRef.current?.session_id) return;
+      sessionRef.current = null;
+      setStatus(event.payload.error ? "error" : "exited");
+      setError(event.payload.error);
+      terminal.write(
+        `\r\n\x1b[2m[RepoDesk: shell exited${
+          event.payload.exit_code == null ? "" : ` with code ${event.payload.exit_code}`
+        }]\x1b[0m\r\n`,
+      );
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else exitUnlisten = unlisten;
+    });
+
+    void Promise.all([attachOutput, attachExit]).then(() => startSession());
 
     cleanupRef.current = () => {
       disposed = true;
+      const current = sessionRef.current;
+      sessionRef.current = null;
+      if (current) void killTerminal(current.session_id).catch(() => undefined);
       dataDisposable.dispose();
       resizeObserver.disconnect();
       themeObserver.disconnect();
