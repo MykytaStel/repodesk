@@ -160,13 +160,64 @@ export type ContextInspectorReport = {
   file_evidence: ContextFileEvidenceReport;
 };
 
+export type ScopeComplianceStatus =
+  | "not_evaluated"
+  | "unconfigured"
+  | "compliant"
+  | "violation";
+
+export type WorkItemContract = {
+  version: number;
+  project: string;
+  work_item_id: string;
+  goal: string;
+  allowed_paths: string[];
+  protected_paths: string[];
+  acceptance_criteria: string[];
+  updated_at: string;
+};
+
+export type WorkItemContractUpdate = {
+  goal: string;
+  allowed_paths: string[];
+  protected_paths: string[];
+  acceptance_criteria: string[];
+};
+
+export type WorkItemContractReadiness = {
+  goal_defined: boolean;
+  scope_defined: boolean;
+  acceptance_defined: boolean;
+  protected_paths_defined: boolean;
+};
+
+export type ScopeComplianceReport = {
+  status: ScopeComplianceStatus;
+  changed_files: string[];
+  allowed_changed_files: string[];
+  out_of_scope_files: string[];
+  protected_changed_files: string[];
+};
+
+export type WorkItemContractSnapshot = {
+  configured: boolean;
+  contract: WorkItemContract;
+  readiness: WorkItemContractReadiness;
+  compliance: ScopeComplianceReport;
+};
+
 export type WorkEngineeringSnapshot = {
   intelligence: EngineeringIntelligence;
   context_inspector: ContextInspectorReport;
+  work_item_contract: WorkItemContractSnapshot;
 };
 
-export async function workEngineeringSnapshot(): Promise<WorkEngineeringSnapshot> {
-  return invoke("work_engineering_intelligence");
+export async function workEngineeringSnapshot(
+  contractUpdate?: WorkItemContractUpdate,
+): Promise<WorkEngineeringSnapshot> {
+  return invoke("work_engineering_intelligence", {
+    contractUpdate: contractUpdate ?? null,
+  });
 }
 
 export async function workEngineeringIntelligence(): Promise<EngineeringIntelligence> {
@@ -175,4 +226,10 @@ export async function workEngineeringIntelligence(): Promise<EngineeringIntellig
 
 export async function workContextInspector(): Promise<ContextInspectorReport> {
   return (await workEngineeringSnapshot()).context_inspector;
+}
+
+export async function saveWorkItemContract(
+  update: WorkItemContractUpdate,
+): Promise<WorkItemContractSnapshot> {
+  return (await workEngineeringSnapshot(update)).work_item_contract;
 }
