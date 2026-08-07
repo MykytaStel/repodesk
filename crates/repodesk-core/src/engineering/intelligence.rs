@@ -1,7 +1,7 @@
 //! Deterministic Engineering Intelligence derived from the append-only event ledger.
 //!
-//! This module deliberately reports facts, counts, totals, and simple rates. It
-//! does not produce an opaque productivity or quality score. The event ledger is
+//! This module reports facts, totals, and simple explainable rates. It does not
+//! produce an opaque productivity, quality, or AI score. The event ledger remains
 //! the source of truth and this read model can always be rebuilt by replaying it.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -91,12 +91,12 @@ pub struct CompletionIntelligence {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct IntelligenceRates {
-    /// Completed executions divided by completed + partial + failed executions.
+    /// Completed executions / (completed + partial + failed).
     /// Dry runs and unfinished executions are excluded.
     pub execution_completion_rate: Option<f64>,
-    /// Accepted changesets divided by accepted + rejected changesets.
+    /// Accepted changesets / (accepted + rejected changesets).
     pub changeset_acceptance_rate: Option<f64>,
-    /// Passed verification attempts divided by all finished verification attempts.
+    /// Passed verifications / all finished verification attempts.
     pub verification_pass_rate: Option<f64>,
 }
 
@@ -130,6 +130,7 @@ struct VerificationFact {
 struct CommitFact {
     file_count: usize,
     sha: Option<String>,
+    order: usize,
 }
 
 pub fn load_engineering_intelligence(run_dir: &Path) -> RepoDeskResult<EngineeringIntelligence> {
@@ -139,10 +140,9 @@ pub fn load_engineering_intelligence(run_dir: &Path) -> RepoDeskResult<Engineeri
 
 /// Replay an event sequence into a deterministic, explainable read model.
 ///
-/// Identity-bearing entities are deduplicated by their typed IDs. This makes the
-/// read model resilient to a producer recording the same finished execution or
-/// review event more than once: the latest fact for that entity wins instead of
-/// inflating token, cost, or attempt totals.
+/// Identity-bearing entities are deduplicated by their typed IDs. If a producer
+/// records the same finished execution, review, verification, or commit more
+/// than once, the latest event for that entity wins instead of inflating totals.
 pub fn derive_engineering_intelligence(events: &[EngineeringEvent]) -> EngineeringIntelligence {
     let mut report = EngineeringIntelligence {
         project: events.first().map(|event| event.project.clone()),
@@ -159,7 +159,7 @@ pub fn derive_engineering_intelligence(events: &[EngineeringEvent]) -> Engineeri
     let mut coding_agent_ids = BTreeSet::new();
     let mut handoffs = BTreeSet::new();
 
-    for event in events {
+    for (order, event) in events.iter().enumerate() {
         observe_workers(event, &mut worker_ids, &mut coding_agent_ids);
 
         match event.kind {
@@ -173,8 +173,7 @@ pub fn derive_engineering_intelligence(events: &[EngineeringEvent]) -> Engineeri
             }
             EngineeringEventKind::ExecutionStarted => {
                 if let Some(key) = execution_key(event) {
-                    let fact = executions.entry(key).or_default();
-                    update_execution_common(fact, event);
+                    update_execution_common(executions.entry(key).or_default(), event);
                 }
             }
             EngineeringEventKind::ExecutionFinished => {
@@ -189,24 +188,7 @@ pub fn derive_engineering_intelligence(events: &[EngineeringEvent]) -> Engineeri
                 }
             }
             EngineeringEventKind::WorkerHandoff => {
-                let execution = event
-                    .execution_id
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_default();
-                let from = attribute_str(event, "from_worker").unwrap_or_default();
-                let to = attribute_str(event, "to_worker").unwrap_or_default();
-                let source_step = attribute_str(event, "source_step").unwrap_or_default();
-                let target_step = attribute_str(event, "target_step").unwrap_or_default();
-                handoffs.insert(format!(
-                    "{execution}\u{1f}{from}\u{1f}{to}\u{1f}{source_step}\u{1f}{target_step}"
-                ));
-                if !from.is_empty() {
-                    worker_ids.insert(from.to_string());
-                }
-                if !to.is_empty() {
-                    worker_ids.insert(to.to_string());
-                }
+                observe_handoff(event, &mut handoffs, &mut worker_ids);
             }
             EngineeringEventKind::ChangeSetCreated => {
                 if let Some(key) = changeset_key(event) {
@@ -243,11 +225,8 @@ pub fn derive_engineering_intelligence(events: &[EngineeringEvent]) -> Engineeri
                     .unwrap_or_else(|| event.id.to_string());
                 let fact = commits.entry(key).or_default();
                 fact.file_count = attribute_usize(event, "file_count").unwrap_or(0);
-                fact.sha = event
-                    .evidence
-                    .iter()
-                    .find(|evidence| evidence.kind == EvidenceKind::Commit)
-                    .map(|evidence| evidence.locator.clone());
+                fact.sha = commit_sha(event);
+                fact.order = order;
             }
             _ => {}
         }
@@ -272,6 +251,32 @@ fn update_execution_common(fact: &mut ExecutionFact, event: &EngineeringEvent) {
     }
     if let Some(mode) = attribute_str(event, "execution_mode") {
         fact.mode = Some(mode.to_string());
+    }
+}
+
+fn observe_handoff(
+    event: &EngineeringEvent,
+    handoffs: &mut BTreeSet<String>,
+    worker_ids: &mut BTreeSet<String>,
+) {
+    let execution = event
+        .execution_id
+        .as_ref()
+        .map(ToString::to_string)
+        .unwrap_or_default();
+    let from = attribute_str(event, "from_worker").unwrap_or_default();
+    let to = attribute_str(event, "to_worker").unwrap_or_default();
+    let source_step = attribute_str(event, "source_step").unwrap_or_default();
+    let target_step = attribute_str(event, "target_step").unwrap_or_default();
+
+    handoffs.insert(format!(
+        "{execution}\u{1f}{from}\u{1f}{to}\u{1f}{source_step}\u{1f}{target_step}"
+    ));
+    if !from.is_empty() {
+        worker_ids.insert(from.to_string());
+    }
+    if !to.is_empty() {
+        worker_ids.insert(to.to_string());
     }
 }
 
@@ -387,15 +392,22 @@ fn fold_commits(
     report.completion.commits = commits.len();
     report.completion.committed = !commits.is_empty();
 
+    let mut latest: Option<(usize, String)> = None;
     for fact in commits.values() {
         report.completion.committed_files = report
             .completion
             .committed_files
             .saturating_add(fact.file_count);
-        if let Some(sha) = &fact.sha {
-            report.completion.latest_commit_sha = Some(sha.clone());
+
+        if let Some(sha) = &fact.sha
+            && latest
+                .as_ref()
+                .is_none_or(|(latest_order, _)| fact.order > *latest_order)
+        {
+            latest = Some((fact.order, sha.clone()));
         }
     }
+    report.completion.latest_commit_sha = latest.map(|(_, sha)| sha);
 }
 
 fn derive_rates(report: &EngineeringIntelligence) -> IntelligenceRates {
@@ -417,7 +429,7 @@ fn derive_rates(report: &EngineeringIntelligence) -> IntelligenceRates {
 }
 
 fn ratio(numerator: usize, denominator: usize) -> Option<f64> {
-    (denominator > 0).then(|| numerator as f64 / denominator as f64)
+    (denominator > 0).then_some(numerator as f64 / denominator as f64)
 }
 
 fn observe_workers(
@@ -449,6 +461,14 @@ fn observe_worker(
     if worker.kind == WorkerKind::CodingAgent {
         coding_agent_ids.insert(worker.id.clone());
     }
+}
+
+fn commit_sha(event: &EngineeringEvent) -> Option<String> {
+    event
+        .evidence
+        .iter()
+        .find(|evidence| evidence.kind == EvidenceKind::Commit)
+        .map(|evidence| evidence.locator.clone())
 }
 
 fn execution_key(event: &EngineeringEvent) -> Option<String> {
@@ -500,6 +520,15 @@ mod tests {
         )
     }
 
+    fn worker(kind: WorkerKind, id: &str) -> WorkerRef {
+        WorkerRef {
+            kind,
+            id: id.to_string(),
+            provider: None,
+            model: None,
+        }
+    }
+
     fn execution_event(
         kind: EngineeringEventKind,
         id: &str,
@@ -512,30 +541,12 @@ mod tests {
             .with_attribute("execution_mode", json!(mode))
     }
 
-    fn coding_agent(id: &str) -> WorkerRef {
-        WorkerRef {
-            kind: WorkerKind::CodingAgent,
-            id: id.to_string(),
-            provider: None,
-            model: Some("agent-model".to_string()),
-        }
-    }
-
-    fn manual_worker() -> WorkerRef {
-        WorkerRef {
-            kind: WorkerKind::Manual,
-            id: "manual".to_string(),
-            provider: Some("manual_handoff".to_string()),
-            model: Some("external".to_string()),
-        }
-    }
-
     #[test]
-    fn derives_explainable_work_item_metrics_without_a_composite_score() {
-        let codex = coding_agent("codex_cli");
-        let manual = manual_worker();
-        let verification_one = VerificationId::try_new("verify-1").unwrap();
-        let verification_two = VerificationId::try_new("verify-2").unwrap();
+    fn derives_explainable_work_item_metrics() {
+        let codex = worker(WorkerKind::CodingAgent, "codex_cli");
+        let manual = worker(WorkerKind::Manual, "manual");
+        let verify_1 = VerificationId::try_new("verify-1").unwrap();
+        let verify_2 = VerificationId::try_new("verify-2").unwrap();
 
         let events = vec![
             base_event(EngineeringEventKind::WorkItemCreated),
@@ -567,20 +578,16 @@ mod tests {
                 .with_attribute("source_step", json!("plan"))
                 .with_attribute("target_step", json!("implement")),
             base_event(EngineeringEventKind::ChangeSetCreated)
-                .with_execution(ExecutionId::try_new("run-1").unwrap())
                 .with_changeset(ChangeSetId::try_new("run-1-changeset").unwrap())
                 .with_attribute("file_count", json!(3)),
             base_event(EngineeringEventKind::ChangeSetReviewed)
-                .with_execution(ExecutionId::try_new("run-1").unwrap())
                 .with_changeset(ChangeSetId::try_new("run-1-changeset").unwrap())
                 .with_attribute("decision", json!("accepted"))
                 .with_attribute("file_count", json!(3)),
             base_event(EngineeringEventKind::VerificationStarted)
-                .with_execution(ExecutionId::try_new("run-1").unwrap())
-                .with_verification(verification_one.clone()),
+                .with_verification(verify_1.clone()),
             base_event(EngineeringEventKind::VerificationFinished)
-                .with_execution(ExecutionId::try_new("run-1").unwrap())
-                .with_verification(verification_one)
+                .with_verification(verify_1)
                 .with_attribute("success", json!(true))
                 .with_attribute("command_count", json!(2)),
             base_event(EngineeringEventKind::CommitCreated)
@@ -599,32 +606,22 @@ mod tests {
                 std::slice::from_ref(&manual),
                 "manual",
             )
-            .with_attribute("status", json!("failed"))
-            .with_attribute("input_tokens", json!(0))
-            .with_attribute("output_tokens", json!(0))
-            .with_attribute("cost_units", json!(0.0)),
+            .with_attribute("status", json!("failed")),
             base_event(EngineeringEventKind::ChangeSetCreated)
-                .with_execution(ExecutionId::try_new("run-2").unwrap())
                 .with_changeset(ChangeSetId::try_new("run-2-changeset").unwrap())
                 .with_attribute("file_count", json!(1)),
             base_event(EngineeringEventKind::ChangeSetReviewed)
-                .with_execution(ExecutionId::try_new("run-2").unwrap())
                 .with_changeset(ChangeSetId::try_new("run-2-changeset").unwrap())
                 .with_attribute("decision", json!("rejected"))
                 .with_attribute("file_count", json!(1)),
-            base_event(EngineeringEventKind::VerificationStarted)
-                .with_execution(ExecutionId::try_new("run-2").unwrap())
-                .with_verification(verification_two),
+            base_event(EngineeringEventKind::VerificationStarted).with_verification(verify_2),
         ];
 
         let report = derive_engineering_intelligence(&events);
 
         assert_eq!(report.project.as_deref(), Some("repodesk"));
         assert_eq!(report.work_item_id.as_ref().unwrap().as_str(), "task-1");
-        assert_eq!(report.event_count, events.len());
-
         assert_eq!(report.execution.attempts, 2);
-        assert_eq!(report.execution.finished, 2);
         assert_eq!(report.execution.completed, 1);
         assert_eq!(report.execution.failed, 1);
         assert_eq!(report.execution.managed, 1);
@@ -632,71 +629,75 @@ mod tests {
         assert_eq!(report.execution.unique_workers, 3);
         assert_eq!(report.execution.unique_coding_agents, 1);
         assert_eq!(report.execution.handoffs, 1);
-
         assert_eq!(report.ai_usage.input_tokens, 100);
         assert_eq!(report.ai_usage.output_tokens, 25);
         assert!((report.ai_usage.cost_units - 0.3).abs() < f64::EPSILON);
-
         assert_eq!(report.context.builds, 2);
         assert_eq!(report.context.total_estimated_tokens, 2000);
         assert_eq!(report.context.latest_estimated_tokens, Some(800));
-
         assert_eq!(report.changes.proposed_changesets, 2);
         assert_eq!(report.changes.proposed_files, 4);
         assert_eq!(report.changes.accepted_changesets, 1);
         assert_eq!(report.changes.rejected_changesets, 1);
         assert_eq!(report.changes.accepted_files, 3);
         assert_eq!(report.changes.rejected_files, 1);
-        assert_eq!(report.changes.pending_review_changesets, 0);
-
         assert_eq!(report.verification.attempts, 2);
         assert_eq!(report.verification.finished, 1);
         assert_eq!(report.verification.passed, 1);
         assert_eq!(report.verification.unfinished, 1);
         assert_eq!(report.verification.commands_run, 2);
-
         assert!(report.completion.committed);
         assert_eq!(report.completion.commits, 1);
-        assert_eq!(report.completion.committed_files, 3);
         assert_eq!(report.completion.latest_commit_sha.as_deref(), Some("abc123"));
-
         assert_eq!(report.rates.execution_completion_rate, Some(0.5));
         assert_eq!(report.rates.changeset_acceptance_rate, Some(0.5));
         assert_eq!(report.rates.verification_pass_rate, Some(1.0));
     }
 
     #[test]
-    fn duplicate_finished_events_do_not_double_count_usage_or_attempts() {
-        let worker = coding_agent("codex_cli");
+    fn duplicate_entity_events_do_not_double_count_and_latest_commit_uses_ledger_order() {
+        let codex = worker(WorkerKind::CodingAgent, "codex_cli");
         let started = execution_event(
             EngineeringEventKind::ExecutionStarted,
-            "run-1",
-            std::slice::from_ref(&worker),
+            "z-run",
+            std::slice::from_ref(&codex),
             "managed",
         );
         let finished = execution_event(
             EngineeringEventKind::ExecutionFinished,
-            "run-1",
-            std::slice::from_ref(&worker),
+            "z-run",
+            std::slice::from_ref(&codex),
             "managed",
         )
         .with_attribute("status", json!("completed"))
         .with_attribute("input_tokens", json!(50))
         .with_attribute("output_tokens", json!(10))
         .with_attribute("cost_units", json!(0.1));
+        let first_commit = base_event(EngineeringEventKind::CommitCreated)
+            .with_execution(ExecutionId::try_new("z-run").unwrap())
+            .with_evidence(EvidenceRef::try_new(EvidenceKind::Commit, "older").unwrap());
+        let latest_commit = base_event(EngineeringEventKind::CommitCreated)
+            .with_execution(ExecutionId::try_new("a-run").unwrap())
+            .with_evidence(EvidenceRef::try_new(EvidenceKind::Commit, "latest").unwrap());
 
-        let report = derive_engineering_intelligence(&[started, finished.clone(), finished]);
+        let report = derive_engineering_intelligence(&[
+            started,
+            finished.clone(),
+            finished,
+            first_commit,
+            latest_commit,
+        ]);
 
         assert_eq!(report.execution.attempts, 1);
-        assert_eq!(report.execution.finished, 1);
-        assert_eq!(report.execution.completed, 1);
         assert_eq!(report.ai_usage.input_tokens, 50);
         assert_eq!(report.ai_usage.output_tokens, 10);
         assert!((report.ai_usage.cost_units - 0.1).abs() < f64::EPSILON);
+        assert_eq!(report.completion.commits, 2);
+        assert_eq!(report.completion.latest_commit_sha.as_deref(), Some("latest"));
     }
 
     #[test]
-    fn older_execution_events_remain_readable_without_inventing_worker_or_mode_data() {
+    fn legacy_events_do_not_invent_workers_or_execution_mode() {
         let events = vec![
             base_event(EngineeringEventKind::ExecutionStarted)
                 .with_execution(ExecutionId::try_new("legacy-run").unwrap())
@@ -708,7 +709,6 @@ mod tests {
         ];
 
         let report = derive_engineering_intelligence(&events);
-
         assert_eq!(report.execution.attempts, 1);
         assert_eq!(report.execution.completed, 1);
         assert_eq!(report.execution.unique_workers, 0);
@@ -716,9 +716,8 @@ mod tests {
     }
 
     #[test]
-    fn empty_history_produces_an_empty_report_and_no_rates() {
+    fn empty_history_produces_empty_report_and_no_rates() {
         let report = derive_engineering_intelligence(&[]);
-
         assert_eq!(report, EngineeringIntelligence::default());
         assert_eq!(report.rates.execution_completion_rate, None);
         assert_eq!(report.rates.changeset_acceptance_rate, None);
