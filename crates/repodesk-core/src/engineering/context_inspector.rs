@@ -8,11 +8,12 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::engineering::context_compactness::{
-    ContextCompactnessReport, load_context_compactness,
+    ContextCompactnessReport, derive_context_compactness,
 };
 use crate::engineering::context_manifest::{
-    ContextFileEvidenceReport, ContextManifest, load_context_file_evidence, read_context_manifest,
+    ContextFileEvidenceReport, ContextManifest, derive_context_file_evidence, read_context_manifest,
 };
+use crate::engineering::events::{EngineeringEvent, read_events};
 use crate::errors::RepoDeskResult;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -22,10 +23,19 @@ pub struct ContextInspectorReport {
     pub file_evidence: ContextFileEvidenceReport,
 }
 
+pub fn derive_context_inspector(
+    events: &[EngineeringEvent],
+    manifest: Option<ContextManifest>,
+) -> ContextInspectorReport {
+    ContextInspectorReport {
+        manifest,
+        compactness: derive_context_compactness(events),
+        file_evidence: derive_context_file_evidence(events),
+    }
+}
+
 pub fn load_context_inspector(run_dir: &Path) -> RepoDeskResult<ContextInspectorReport> {
-    Ok(ContextInspectorReport {
-        manifest: read_context_manifest(run_dir)?,
-        compactness: load_context_compactness(run_dir)?,
-        file_evidence: load_context_file_evidence(run_dir)?,
-    })
+    let events = read_events(run_dir)?;
+    let manifest = read_context_manifest(run_dir)?;
+    Ok(derive_context_inspector(&events, manifest))
 }
