@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::engineering::acceptance_evidence::{
-    AcceptanceEvidenceReport, derive_acceptance_evidence, read_acceptance_evidence,
+    AcceptanceEvidenceReport, active_verification_is_fresh, derive_acceptance_evidence,
+    read_acceptance_evidence,
 };
 use crate::engineering::domain::EvidenceRef;
 use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, read_events};
@@ -18,11 +19,9 @@ use crate::engineering::work_item_contract::read_work_item_contract;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::orchestrator::{OrchestrationRun, RunStatus, SubAgentStatus, load_run};
 use crate::tasks::show_active_task;
-use crate::workflow::{
-    CheckReceipt, ReviewDecision, TaskRunReceipt, load_receipt_for_run,
-};
+use crate::workflow::{CheckReceipt, ReviewDecision, TaskRunReceipt, load_receipt_for_run};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunWorkerEvidence {
     pub step_id: String,
     pub agent: String,
@@ -35,21 +34,21 @@ pub struct RunWorkerEvidence {
     pub cost_units: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunContextEvidence {
     pub estimated_tokens: Option<usize>,
     pub evidence: Vec<EvidenceRef>,
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunReviewEvidence {
     pub state: String,
     pub reviewed_paths: Vec<String>,
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunVerificationEvidence {
     pub state: String,
     pub verification_id: Option<String>,
@@ -59,7 +58,7 @@ pub struct RunVerificationEvidence {
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunCommitEvidence {
     pub committed: bool,
     pub commit_sha: Option<String>,
@@ -67,7 +66,7 @@ pub struct RunCommitEvidence {
     pub source: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RunEvidenceSnapshot {
     pub run_id: String,
     pub project: String,
@@ -92,9 +91,11 @@ pub struct RunEvidenceSnapshot {
 pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnapshot> {
     validate_run_id(run_id)?;
     let task = show_active_task()?;
-    let run = load_run(run_id)?.ok_or_else(|| RepoDeskError::Api(format!(
-        "No persisted run '{run_id}' exists for the active Work Item"
-    )))?;
+    let run = load_run(run_id)?.ok_or_else(|| {
+        RepoDeskError::Api(format!(
+            "No persisted run '{run_id}' exists for the active Work Item"
+        ))
+    })?;
     if run.task_id != task.config.id || run.project != task.config.project_name {
         return Err(RepoDeskError::Api(
             "Persisted run does not belong to the active Work Item".into(),
@@ -103,6 +104,10 @@ pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnaps
 
     let events = read_events(&task.config.run_dir)?;
     let receipt = load_receipt_for_run(run_id)?;
+    let verification_fresh = match receipt.as_ref() {
+        Some(receipt) => active_verification_is_fresh(receipt)?,
+        None => false,
+    };
     let contract = read_work_item_contract(&task.config.run_dir)?;
     let store = read_acceptance_evidence(&task.config.run_dir)?;
     let acceptance = derive_acceptance_evidence(
@@ -110,9 +115,15 @@ pub fn load_active_run_evidence(run_id: &str) -> RepoDeskResult<RunEvidenceSnaps
         contract.as_ref(),
         receipt.as_ref(),
         store.as_ref(),
+        verification_fresh,
     );
 
-    Ok(derive_run_evidence(&run, receipt.as_ref(), &events, acceptance))
+    Ok(derive_run_evidence(
+        &run,
+        receipt.as_ref(),
+        &events,
+        acceptance,
+    ))
 }
 
 pub fn derive_run_evidence(
@@ -171,7 +182,10 @@ fn derive_context(events: &[EngineeringEvent], run_id: &str) -> RunContextEviden
         .iter()
         .find(|event| {
             event.kind == EngineeringEventKind::ExecutionStarted
-                && event.execution_id.as_ref().is_some_and(|id| id.as_str() == run_id)
+                && event
+                    .execution_id
+                    .as_ref()
+                    .is_some_and(|id| id.as_str() == run_id)
         })
         .map(|event| event.occurred_at);
 
@@ -327,12 +341,16 @@ fn matching_events<'a>(
     events: &'a [EngineeringEvent],
     run_id: &'a str,
 ) -> impl Iterator<Item = &'a EngineeringEvent> {
+    let changeset_id = format!("{run_id}-changeset");
     events.iter().rev().filter(move |event| {
-        event.execution_id.as_ref().is_some_and(|id| id.as_str() == run_id)
+        event
+            .execution_id
+            .as_ref()
+            .is_some_and(|id| id.as_str() == run_id)
             || event
                 .changeset_id
                 .as_ref()
-                .is_some_and(|id| id.as_str() == format!("{run_id}-changeset"))
+                .is_some_and(|id| id.as_str() == changeset_id.as_str())
     })
 }
 
