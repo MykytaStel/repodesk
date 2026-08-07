@@ -42,7 +42,7 @@ pub enum ContextFileStatus {
 pub enum ContextFileExclusionReason {
     InvalidPath,
     Ignored,
-    Sensitive,
+    BlockedBySecurity,
     Missing,
     NotFile,
     OutsideProject,
@@ -127,62 +127,50 @@ pub fn select_task_scope_files(
     let mut remaining_chars = DEFAULT_SCOPED_FILE_BUDGET_CHARS;
 
     for path in scoped_paths {
-        let mut entry = ContextFileEntry {
-            path: path.clone(),
-            reason: ContextFileReason::TaskScope,
-            status: ContextFileStatus::Excluded,
-            exclusion_reason: None,
-            candidate_tokens: None,
-            included_tokens: None,
-            trimmed: false,
-            fingerprint: None,
-        };
+        let mut entry = excluded_entry(path.clone());
 
         if included_files >= DEFAULT_MAX_SCOPED_FILES {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::FileLimit);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::FileLimit, &mut excluded_files);
             entries.push(entry);
             continue;
         }
 
         let Some(relative) = validate_relative_repo_path(&path) else {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::InvalidPath);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::InvalidPath, &mut excluded_files);
             entries.push(entry);
             continue;
         };
 
-        if is_sensitive_path(&relative) {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::Sensitive);
-            excluded_files += 1;
+        if crate::security::is_blocked_path(&path).is_some() {
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::BlockedBySecurity,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
 
         if is_ignored(&relative, ignore_rules) {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::Ignored);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::Ignored, &mut excluded_files);
             entries.push(entry);
             continue;
         }
 
         let joined = project_root.join(&relative);
         if !joined.exists() {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::Missing);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::Missing, &mut excluded_files);
             entries.push(entry);
             continue;
         }
         if !joined.is_file() {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::NotFile);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::NotFile, &mut excluded_files);
             entries.push(entry);
             continue;
         }
 
         let Ok(canonical_file) = fs::canonicalize(&joined) else {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::ReadError);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::ReadError, &mut excluded_files);
             entries.push(entry);
             continue;
         };
@@ -190,38 +178,40 @@ pub fn select_task_scope_files(
             .as_ref()
             .is_none_or(|root| !canonical_file.starts_with(root))
         {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::OutsideProject);
-            excluded_files += 1;
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::OutsideProject,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
 
         let Ok(metadata) = fs::metadata(&canonical_file) else {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::ReadError);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::ReadError, &mut excluded_files);
             entries.push(entry);
             continue;
         };
         if metadata.len() > DEFAULT_MAX_SCOPED_FILE_BYTES {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::TooLarge);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::TooLarge, &mut excluded_files);
             entries.push(entry);
             continue;
         }
 
         let Ok(candidate) = fs::read_to_string(&canonical_file) else {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::ReadError);
-            excluded_files += 1;
+            exclude(&mut entry, ContextFileExclusionReason::ReadError, &mut excluded_files);
             entries.push(entry);
             continue;
         };
-        let candidate_tokens = estimate_text(&candidate).estimated_tokens;
-        entry.candidate_tokens = Some(candidate_tokens);
+        entry.candidate_tokens = Some(estimate_text(&candidate).estimated_tokens);
         append_file_section(&mut candidate_rendered, &path, &candidate);
 
         if remaining_chars == 0 {
-            entry.exclusion_reason = Some(ContextFileExclusionReason::BudgetExceeded);
-            excluded_files += 1;
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::BudgetExceeded,
+                &mut excluded_files,
+            );
             entries.push(entry);
             continue;
         }
@@ -346,6 +336,28 @@ pub fn derive_context_file_evidence(events: &[EngineeringEvent]) -> ContextFileE
     report
 }
 
+fn excluded_entry(path: String) -> ContextFileEntry {
+    ContextFileEntry {
+        path,
+        reason: ContextFileReason::TaskScope,
+        status: ContextFileStatus::Excluded,
+        exclusion_reason: None,
+        candidate_tokens: None,
+        included_tokens: None,
+        trimmed: false,
+        fingerprint: None,
+    }
+}
+
+fn exclude(
+    entry: &mut ContextFileEntry,
+    reason: ContextFileExclusionReason,
+    excluded_files: &mut usize,
+) {
+    entry.exclusion_reason = Some(reason);
+    *excluded_files = excluded_files.saturating_add(1);
+}
+
 fn parse_explicit_scope_paths(task_markdown: &str) -> Vec<String> {
     let mut in_scope = false;
     let mut seen = BTreeSet::new();
@@ -393,24 +405,6 @@ fn validate_relative_repo_path(value: &str) -> Option<PathBuf> {
     }
 
     (!normalized.as_os_str().is_empty()).then_some(normalized)
-}
-
-fn is_sensitive_path(path: &Path) -> bool {
-    let normalized = path.to_string_lossy().replace('\\', "/");
-    let file_name = path
-        .file_name()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-
-    file_name == ".env"
-        || file_name.starts_with(".env.")
-        || matches!(file_name.as_str(), "id_rsa" | "id_ed25519" | "credentials")
-        || file_name.ends_with(".pem")
-        || file_name.ends_with(".key")
-        || normalized
-            .split('/')
-            .any(|component| matches!(component, ".ssh" | ".gnupg"))
 }
 
 fn is_ignored(path: &Path, rules: &[String]) -> bool {
@@ -523,7 +517,8 @@ mod tests {
         }));
         assert!(selection.manifest.entries.iter().any(|entry| {
             entry.path == ".env"
-                && entry.exclusion_reason == Some(ContextFileExclusionReason::Sensitive)
+                && entry.exclusion_reason
+                    == Some(ContextFileExclusionReason::BlockedBySecurity)
         }));
         assert!(selection.manifest.entries.iter().any(|entry| {
             entry.path == "../escape.rs"
