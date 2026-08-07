@@ -91,7 +91,7 @@ pub fn work_engineering_intelligence(
 
     let task = match show_active_task() {
         Ok(task) => task,
-        Err(error) if knowledge.is_some() => {
+        Err(_) if knowledge.is_some() => {
             return Ok(WorkEngineeringSnapshot {
                 intelligence: None,
                 context_inspector: None,
