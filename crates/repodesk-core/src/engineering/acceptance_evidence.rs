@@ -2,8 +2,8 @@
 //!
 //! A criterion is never marked proven from agent prose or a heuristic. v0 only
 //! accepts an explicit link to a command from the canonical VerificationReceipt.
-//! That link becomes stale when the run, reviewed changeset, or verification
-//! receipt changes.
+//! That link becomes stale when the run, reviewed changeset, verification
+//! receipt, HEAD, or staged index tree changes.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,8 +14,11 @@ use sha2::{Digest, Sha256};
 
 use crate::engineering::work_item_contract::{WorkItemContract, read_work_item_contract};
 use crate::errors::{RepoDeskError, RepoDeskResult};
+use crate::projects::get_active_project;
 use crate::tasks::{TaskInfo, show_active_task};
-use crate::workflow::{TaskRunReceipt, changeset_digest, load_receipt};
+use crate::workflow::{
+    TaskRunReceipt, changeset_digest, head_sha, index_tree_sha, load_receipt,
+};
 
 pub const ACCEPTANCE_EVIDENCE_FILE: &str = "acceptance-evidence.json";
 pub const ACCEPTANCE_EVIDENCE_VERSION: u32 = 1;
@@ -93,16 +96,42 @@ pub fn read_acceptance_evidence(run_dir: &Path) -> RepoDeskResult<Option<Accepta
     Ok(Some(serde_json::from_str(&content)?))
 }
 
+/// The same freshness invariant used by bounded commit: successful verification
+/// must still match current HEAD, staged index tree, and reviewed changeset.
+pub fn active_verification_is_fresh(receipt: &TaskRunReceipt) -> RepoDeskResult<bool> {
+    let Some(verification) = receipt.verification.as_ref() else {
+        return Ok(false);
+    };
+    let project_path = get_active_project()?.path;
+    let Some(head) = head_sha(&project_path) else {
+        return Ok(false);
+    };
+    let Some(tree) = index_tree_sha(&project_path) else {
+        return Ok(false);
+    };
+    let digest = receipt
+        .execution
+        .changeset_digest
+        .clone()
+        .unwrap_or_else(|| changeset_digest(&[]));
+    Ok(verification.run_id == receipt.run_id && verification.valid_for(&head, &tree, &digest))
+}
+
 pub fn load_active_acceptance_evidence() -> RepoDeskResult<AcceptanceEvidenceReport> {
     let task = show_active_task()?;
     let contract = read_work_item_contract(&task.config.run_dir)?;
     let receipt = load_receipt()?;
+    let fresh = match receipt.as_ref() {
+        Some(receipt) => active_verification_is_fresh(receipt)?,
+        None => false,
+    };
     let store = read_acceptance_evidence(&task.config.run_dir)?;
     Ok(derive_acceptance_evidence(
         &task,
         contract.as_ref(),
         receipt.as_ref(),
         store.as_ref(),
+        fresh,
     ))
 }
 
@@ -117,6 +146,11 @@ pub fn link_active_acceptance_evidence(
     let receipt = load_receipt()?.ok_or_else(|| {
         RepoDeskError::Api("No canonical run receipt exists for the active Work Item".into())
     })?;
+    if !active_verification_is_fresh(&receipt)? {
+        return Err(RepoDeskError::Api(
+            "Verification is missing or stale; verify the current reviewed changeset before linking acceptance evidence".into(),
+        ));
+    }
     let verification = receipt.verification.as_ref().ok_or_else(|| {
         RepoDeskError::Api("Run verification before linking acceptance evidence".into())
     })?;
@@ -189,6 +223,7 @@ pub fn link_active_acceptance_evidence(
         Some(&contract),
         Some(&receipt),
         Some(&store),
+        true,
     ))
 }
 
@@ -197,6 +232,7 @@ pub fn derive_acceptance_evidence(
     contract: Option<&WorkItemContract>,
     receipt: Option<&TaskRunReceipt>,
     store: Option<&AcceptanceEvidenceStore>,
+    verification_fresh: bool,
 ) -> AcceptanceEvidenceReport {
     let Some(contract) = contract else {
         return AcceptanceEvidenceReport {
@@ -213,7 +249,7 @@ pub fn derive_acceptance_evidence(
     let criteria = contract
         .acceptance_criteria
         .iter()
-        .map(|criterion| derive_criterion(criterion, receipt, store))
+        .map(|criterion| derive_criterion(criterion, receipt, store, verification_fresh))
         .collect::<Vec<_>>();
     let proven = criteria
         .iter()
@@ -240,6 +276,7 @@ fn derive_criterion(
     criterion: &str,
     receipt: Option<&TaskRunReceipt>,
     store: Option<&AcceptanceEvidenceStore>,
+    verification_fresh: bool,
 ) -> AcceptanceCriterionEvidence {
     let id = criterion_id(criterion);
     let binding = store
@@ -274,6 +311,9 @@ fn derive_criterion(
     if binding.verification_verified_at != verification.verified_at {
         return stale_unproven(id, criterion, binding, "verification was replaced or rerun");
     }
+    if !verification_fresh {
+        return stale_unproven(id, criterion, binding, "HEAD or staged index changed after verification");
+    }
     let Some(check) = verification
         .commands
         .iter()
@@ -304,14 +344,16 @@ fn stale_unproven(
     binding: &AcceptanceEvidenceBinding,
     reason: &str,
 ) -> AcceptanceCriterionEvidence {
-    unproven(
-        id,
-        criterion,
-        Some(binding.command.clone()),
-        Some(binding.run_id.clone()),
-        true,
-        Some(reason.to_string()),
-    )
+    AcceptanceCriterionEvidence {
+        criterion_id: id,
+        criterion: criterion.to_string(),
+        status: AcceptanceCriterionStatus::Unproven,
+        command: Some(binding.command.clone()),
+        run_id: Some(binding.run_id.clone()),
+        linked_at: Some(binding.linked_at),
+        stale: true,
+        stale_reason: Some(reason.to_string()),
+    }
 }
 
 fn unproven(
@@ -343,9 +385,10 @@ fn write_store(run_dir: &Path, store: &AcceptanceEvidenceStore) -> RepoDeskResul
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::orchestrator::RunStatus;
     use crate::tasks::{TaskConfig, TaskStatus};
     use crate::workflow::{
-        CheckReceipt, ExecutionMode, ExecutionReceipt, RunStatus, VerificationReceipt,
+        CheckReceipt, ExecutionMode, ExecutionReceipt, VerificationReceipt,
     };
 
     fn task() -> TaskInfo {
@@ -407,59 +450,75 @@ mod tests {
         }
     }
 
-    #[test]
-    fn criterion_without_binding_is_unproven() {
-        let report = derive_acceptance_evidence(&task(), Some(&contract()), Some(&receipt(true)), None);
-        assert_eq!(report.unproven, 1);
-        assert_eq!(report.criteria[0].status, AcceptanceCriterionStatus::Unproven);
-    }
-
-    #[test]
-    fn matching_passed_verification_command_is_proven() {
-        let receipt = receipt(true);
-        let binding = AcceptanceEvidenceBinding {
-            criterion_id: criterion_id("Tests pass"),
-            criterion: "Tests pass".into(),
-            run_id: "run-1".into(),
-            changeset_digest: "digest-1".into(),
-            verification_verified_at: "2026-08-07T18:00:00Z".into(),
-            command: "cargo test".into(),
-            success: true,
-            linked_at: Utc::now(),
-        };
-        let store = AcceptanceEvidenceStore {
+    fn store() -> AcceptanceEvidenceStore {
+        AcceptanceEvidenceStore {
             version: 1,
             project: "repodesk".into(),
             work_item_id: "task-1".into(),
-            bindings: vec![binding],
-        };
-        let report = derive_acceptance_evidence(&task(), Some(&contract()), Some(&receipt), Some(&store));
+            bindings: vec![AcceptanceEvidenceBinding {
+                criterion_id: criterion_id("Tests pass"),
+                criterion: "Tests pass".into(),
+                run_id: "run-1".into(),
+                changeset_digest: "digest-1".into(),
+                verification_verified_at: "2026-08-07T18:00:00Z".into(),
+                command: "cargo test".into(),
+                success: true,
+                linked_at: Utc::now(),
+            }],
+        }
+    }
+
+    #[test]
+    fn criterion_without_binding_is_unproven() {
+        let report = derive_acceptance_evidence(
+            &task(),
+            Some(&contract()),
+            Some(&receipt(true)),
+            None,
+            true,
+        );
+        assert_eq!(report.unproven, 1);
+    }
+
+    #[test]
+    fn matching_fresh_passed_command_is_proven() {
+        let report = derive_acceptance_evidence(
+            &task(),
+            Some(&contract()),
+            Some(&receipt(true)),
+            Some(&store()),
+            true,
+        );
         assert_eq!(report.proven, 1);
         assert_eq!(report.criteria[0].status, AcceptanceCriterionStatus::Proven);
     }
 
     #[test]
-    fn replaced_verification_makes_binding_unproven_and_stale() {
-        let mut receipt = receipt(true);
-        receipt.verification.as_mut().unwrap().verified_at = "2026-08-07T19:00:00Z".into();
-        let binding = AcceptanceEvidenceBinding {
-            criterion_id: criterion_id("Tests pass"),
-            criterion: "Tests pass".into(),
-            run_id: "run-1".into(),
-            changeset_digest: "digest-1".into(),
-            verification_verified_at: "2026-08-07T18:00:00Z".into(),
-            command: "cargo test".into(),
-            success: true,
-            linked_at: Utc::now(),
-        };
-        let store = AcceptanceEvidenceStore {
-            version: 1,
-            project: "repodesk".into(),
-            work_item_id: "task-1".into(),
-            bindings: vec![binding],
-        };
-        let report = derive_acceptance_evidence(&task(), Some(&contract()), Some(&receipt), Some(&store));
+    fn stale_tree_makes_prior_proof_unproven() {
+        let report = derive_acceptance_evidence(
+            &task(),
+            Some(&contract()),
+            Some(&receipt(true)),
+            Some(&store()),
+            false,
+        );
         assert_eq!(report.unproven, 1);
         assert!(report.criteria[0].stale);
+    }
+
+    #[test]
+    fn failed_linked_command_is_failed_acceptance() {
+        let mut receipt = receipt(false);
+        let mut store = store();
+        store.bindings[0].success = false;
+        receipt.verification.as_mut().unwrap().success = false;
+        let report = derive_acceptance_evidence(
+            &task(),
+            Some(&contract()),
+            Some(&receipt),
+            Some(&store),
+            true,
+        );
+        assert_eq!(report.failed, 1);
     }
 }
