@@ -5,7 +5,7 @@ import type { TabId } from "../shared/types/api";
 // Tabs are code-split: only the active tab's chunk is fetched, keeping the
 // initial bundle small. Each feature module exports a named component, so the
 // lazy loader maps it to a default export.
-const WorkTab = lazy(() => import("../features/work/WorkTab").then((m) => ({ default: m.WorkTab })));
+const WorkSurface = lazy(() => import("../features/work/WorkSurface").then((m) => ({ default: m.WorkSurface })));
 const ChangesTab = lazy(() => import("../features/changes/ChangesTab").then((m) => ({ default: m.ChangesTab })));
 const HistoryTab = lazy(() => import("../features/history/HistoryTab").then((m) => ({ default: m.HistoryTab })));
 const DashboardTab = lazy(() => import("../features/dashboard/DashboardTab").then((m) => ({ default: m.DashboardTab })));
@@ -85,7 +85,7 @@ export function renderAppTab({
 }) {
   switch (activeTab) {
     case "work":
-      return <WorkTab setActiveTab={setActiveTab} />;
+      return <WorkSurface setActiveTab={setActiveTab} />;
     case "changes":
       return <ChangesTab />;
     case "history":
