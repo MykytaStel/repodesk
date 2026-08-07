@@ -62,30 +62,54 @@ export type EngineeringKnowledgeProposalInput = {
   content: string;
 };
 
+type KnowledgeAction =
+  | { kind: "propose"; input: EngineeringKnowledgeProposalInput }
+  | { kind: "capture_command"; command: string }
+  | { kind: "accept"; knowledge_id: string }
+  | { kind: "archive"; knowledge_id: string };
+
+type KnowledgeTransportResponse = {
+  knowledge: EngineeringKnowledgeSnapshot | null;
+};
+
+async function invokeKnowledge(action?: KnowledgeAction): Promise<EngineeringKnowledgeSnapshot> {
+  const response = await invoke<KnowledgeTransportResponse>("work_engineering_intelligence", {
+    contractUpdate: null,
+    scopeOverrideReason: null,
+    runEvidenceId: null,
+    acceptanceCriterionId: null,
+    acceptanceCommand: null,
+    includeKnowledge: true,
+    knowledgeAction: action ?? null,
+  });
+  if (!response.knowledge) throw new Error("Project Engineering Knowledge is unavailable");
+  return response.knowledge;
+}
+
 export async function engineeringKnowledgeSnapshot(): Promise<EngineeringKnowledgeSnapshot> {
-  return invoke("engineering_knowledge_snapshot");
+  return invokeKnowledge();
 }
 
 export async function proposeEngineeringKnowledge(
   input: EngineeringKnowledgeProposalInput,
 ): Promise<EngineeringKnowledgeSnapshot> {
-  return invoke("engineering_knowledge_propose", { input });
+  return invokeKnowledge({ kind: "propose", input });
 }
 
 export async function captureVerifiedKnowledgeCommand(
   command: string,
 ): Promise<EngineeringKnowledgeSnapshot> {
-  return invoke("engineering_knowledge_capture_command", { command });
+  return invokeKnowledge({ kind: "capture_command", command });
 }
 
 export async function acceptEngineeringKnowledge(
   knowledgeId: string,
 ): Promise<EngineeringKnowledgeSnapshot> {
-  return invoke("engineering_knowledge_accept", { knowledgeId });
+  return invokeKnowledge({ kind: "accept", knowledge_id: knowledgeId });
 }
 
 export async function archiveEngineeringKnowledge(
   knowledgeId: string,
 ): Promise<EngineeringKnowledgeSnapshot> {
-  return invoke("engineering_knowledge_archive", { knowledgeId });
+  return invokeKnowledge({ kind: "archive", knowledge_id: knowledgeId });
 }
