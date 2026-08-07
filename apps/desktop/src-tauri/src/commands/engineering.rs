@@ -14,18 +14,24 @@ pub struct WorkEngineeringSnapshot {
     pub intelligence: EngineeringIntelligence,
     pub context_inspector: ContextInspectorReport,
     pub work_item_contract: WorkItemContractSnapshot,
+    pub change_governance: ChangeGovernanceSnapshot,
 }
 
-/// Deterministic, task-local engineering read model. During the RepoDesk 2
-/// migration this registered IPC command also accepts an optional typed contract
-/// update so the UI can persist the new domain artifact without adding another
-/// parallel desktop execution surface. Validation and persistence remain in core.
+/// Deterministic, task-local engineering aggregate. During the RepoDesk 2
+/// migration this registered IPC command also carries the two typed Work Item
+/// mutations so we do not grow parallel transport plumbing faster than the
+/// domain stabilizes. The frontend still exposes separate read/write functions;
+/// validation, evidence and persistence remain in Rust core.
 #[tauri::command]
 pub fn work_engineering_intelligence(
     contract_update: Option<WorkItemContractUpdate>,
+    scope_override_reason: Option<String>,
 ) -> Result<WorkEngineeringSnapshot, ErrorPayload> {
     if let Some(update) = contract_update {
         save_active_work_item_contract(update).map_err(ErrorPayload::from)?;
+    }
+    if let Some(reason) = scope_override_reason {
+        record_active_scope_override(&reason).map_err(ErrorPayload::from)?;
     }
 
     let task = show_active_task().map_err(ErrorPayload::from)?;
@@ -34,27 +40,12 @@ pub fn work_engineering_intelligence(
     let context_inspector =
         load_context_inspector(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let work_item_contract = load_work_item_contract_snapshot(&task).map_err(ErrorPayload::from)?;
+    let change_governance = load_active_change_governance().map_err(ErrorPayload::from)?;
 
     Ok(WorkEngineeringSnapshot {
         intelligence,
         context_inspector,
         work_item_contract,
+        change_governance,
     })
-}
-
-/// Latest ChangeSet governance replay for the active Work Item. This is a
-/// read-only projection over the engineering ledger and Work Item Contract.
-#[tauri::command]
-pub fn work_change_governance() -> Result<ChangeGovernanceSnapshot, ErrorPayload> {
-    load_active_change_governance().map_err(ErrorPayload::from)
-}
-
-/// Record an explicit one-ChangeSet human exception for a contract violation.
-/// Core validates that the current gate is a scope violation; the UI cannot
-/// manufacture an override for an unrelated or already-safe ChangeSet.
-#[tauri::command]
-pub fn work_record_scope_override(
-    reason: String,
-) -> Result<ChangeGovernanceSnapshot, ErrorPayload> {
-    record_active_scope_override(&reason).map_err(ErrorPayload::from)
 }
