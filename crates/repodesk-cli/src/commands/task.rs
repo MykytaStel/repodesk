@@ -84,7 +84,10 @@ use crate::cli::TaskCommand;
 pub fn handle_task_command(command: TaskCommand) -> Result<()> {
     match command {
         TaskCommand::New { title } => {
-            let task = create_task(NewTaskInput { title, verify_command: None })?;
+            let task = create_task(NewTaskInput {
+                title,
+                verify_command: None,
+            })?;
 
             println!("Task created and set as active:");
             println!("  id: {}", task.config.id);
