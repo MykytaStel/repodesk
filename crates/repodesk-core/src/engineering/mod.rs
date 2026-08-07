@@ -5,6 +5,7 @@
 
 pub mod domain;
 pub mod events;
+pub mod instrumentation;
 
 pub use domain::{
     ChangeSet, ChangeSetId, ChangeSetStatus, EngineeringDomainError, EngineeringEventId,
