@@ -8,6 +8,7 @@ use std::process::Command;
 
 use chrono::Utc;
 
+use crate::engineering::instrumentation::VerificationFinishedTelemetry;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::receipt::{
@@ -79,11 +80,13 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
                     &task,
                     &receipt.run_id,
                     id,
-                    false,
-                    0,
-                    None,
-                    None,
-                    Some(&error_text),
+                    VerificationFinishedTelemetry {
+                        success: false,
+                        command_count: 0,
+                        summary_path: None,
+                        log_path: None,
+                        error: Some(&error_text),
+                    },
                 );
             }
             return Err(error);
@@ -119,11 +122,13 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
             &task,
             &receipt.run_id,
             id,
-            success,
-            commands.len(),
-            result.summary_file.to_str(),
-            result.log_file.to_str(),
-            None,
+            VerificationFinishedTelemetry {
+                success,
+                command_count: commands.len(),
+                summary_path: result.summary_file.to_str(),
+                log_path: result.log_file.to_str(),
+                error: None,
+            },
         );
     }
 
