@@ -261,32 +261,37 @@ pub fn record_verification_started(
     append_for_task(task, event)
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct VerificationFinishedTelemetry<'a> {
+    pub success: bool,
+    pub command_count: usize,
+    pub summary_path: Option<&'a str>,
+    pub log_path: Option<&'a str>,
+    pub error: Option<&'a str>,
+}
+
 pub fn record_verification_finished(
     task: &TaskConfig,
     run_id: &str,
     verification_id: VerificationId,
-    success: bool,
-    command_count: usize,
-    summary_path: Option<&str>,
-    log_path: Option<&str>,
-    error: Option<&str>,
+    telemetry: VerificationFinishedTelemetry<'_>,
 ) -> RepoDeskResult<()> {
     let mut event = event_for_task(task, EngineeringEventKind::VerificationFinished)?
         .with_execution(execution_id(run_id)?)
         .with_changeset(changeset_id(run_id)?)
         .with_verification(verification_id)
-        .with_attribute("success", Value::Bool(success))
-        .with_attribute("command_count", json!(command_count));
+        .with_attribute("success", Value::Bool(telemetry.success))
+        .with_attribute("command_count", json!(telemetry.command_count));
 
-    if let Some(error) = error {
+    if let Some(error) = telemetry.error {
         event = event.with_attribute("error", Value::String(error.to_string()));
     }
-    if let Some(path) = summary_path
+    if let Some(path) = telemetry.summary_path
         && let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Verification, path.to_string())
     {
         event = event.with_evidence(evidence);
     }
-    if let Some(path) = log_path
+    if let Some(path) = telemetry.log_path
         && let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Verification, path.to_string())
     {
         event = event.with_evidence(evidence);
