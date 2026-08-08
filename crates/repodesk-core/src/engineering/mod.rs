@@ -14,14 +14,16 @@ pub mod domain;
 pub mod events;
 pub mod instrumentation;
 pub mod intelligence;
+pub mod knowledge;
 pub mod run_evidence;
 pub mod work_item_contract;
 
 pub use acceptance_evidence::{
     ACCEPTANCE_EVIDENCE_FILE, ACCEPTANCE_EVIDENCE_VERSION, AcceptanceCriterionEvidence,
     AcceptanceCriterionStatus, AcceptanceEvidenceBinding, AcceptanceEvidenceReport,
-    AcceptanceEvidenceStore, acceptance_evidence_path, criterion_id, derive_acceptance_evidence,
-    link_active_acceptance_evidence, load_active_acceptance_evidence, read_acceptance_evidence,
+    AcceptanceEvidenceStore, acceptance_evidence_path, active_verification_is_fresh, criterion_id,
+    derive_acceptance_evidence, link_active_acceptance_evidence, load_active_acceptance_evidence,
+    read_acceptance_evidence,
 };
 pub use algorithmic_profile::{
     AlgorithmicEvidence, AlgorithmicEvidenceKind, AlgorithmicProfile, AlgorithmicProfileError,
@@ -66,6 +68,15 @@ pub use intelligence::{
     AiUsageIntelligence, ChangeIntelligence, CompletionIntelligence, ContextIntelligence,
     EngineeringIntelligence, ExecutionIntelligence, IntelligenceRates, VerificationIntelligence,
     derive_engineering_intelligence, load_engineering_intelligence,
+};
+pub use knowledge::{
+    ENGINEERING_KNOWLEDGE_FILE, ENGINEERING_KNOWLEDGE_VERSION, EngineeringKnowledgeCategory,
+    EngineeringKnowledgeContext, EngineeringKnowledgeCounts, EngineeringKnowledgeOrigin,
+    EngineeringKnowledgeProposalInput, EngineeringKnowledgeRecord, EngineeringKnowledgeSnapshot,
+    EngineeringKnowledgeStatus, EngineeringKnowledgeStore, EngineeringKnowledgeSuggestion,
+    accept_active_engineering_knowledge, archive_active_engineering_knowledge,
+    capture_active_verified_command, engineering_knowledge_context, engineering_knowledge_path,
+    load_active_engineering_knowledge, propose_active_engineering_knowledge,
 };
 pub use run_evidence::{
     RunCommitEvidence, RunContextEvidence, RunEvidenceSnapshot, RunReviewEvidence,

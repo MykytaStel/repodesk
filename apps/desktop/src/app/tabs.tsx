@@ -2,9 +2,9 @@ import { lazy } from "react";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import type { TabId } from "../shared/types/api";
 
-// Tabs remain code-split. RD2-07 changes the shell hierarchy, not feature ownership:
-// Work/Code/Changes/Runs/Projects become primary IDE surfaces while deeper tools
-// stay routable from the contextual sidebar and command palette.
+// Primary surfaces stay intentionally small. Deeper tools remain code-split and
+// are reached through the focus drawer / command palette instead of competing
+// for permanent activity-rail space.
 const WorkSurface = lazy(() => import("../features/work/WorkSurface").then((m) => ({ default: m.WorkSurface })));
 const ChangesTab = lazy(() => import("../features/changes/ChangesTab").then((m) => ({ default: m.ChangesTab })));
 const HistoryTab = lazy(() => import("../features/history/HistoryTab").then((m) => ({ default: m.HistoryTab })));
@@ -14,7 +14,7 @@ const TokensTab = lazy(() => import("../features/tokens/TokensTab").then((m) => 
 const ModelsTab = lazy(() => import("../features/models/ModelsTab").then((m) => ({ default: m.ModelsTab })));
 const CodeTab = lazy(() => import("../features/code/CodeTab").then((m) => ({ default: m.CodeTab })));
 const GitTab = lazy(() => import("../features/git/GitTab").then((m) => ({ default: m.GitTab })));
-const MemoryTab = lazy(() => import("../features/memory/MemoryTab").then((m) => ({ default: m.MemoryTab })));
+const KnowledgeTab = lazy(() => import("../features/knowledge/KnowledgeTab").then((m) => ({ default: m.KnowledgeTab })));
 const OrchestrateTab = lazy(() => import("../features/orchestrate/OrchestrateTab").then((m) => ({ default: m.OrchestrateTab })));
 const OutcomesTab = lazy(() => import("../features/outcomes/OutcomesTab").then((m) => ({ default: m.OutcomesTab })));
 const SettingsTab = lazy(() => import("../features/settings/SettingsTab").then((m) => ({ default: m.SettingsTab })));
@@ -36,25 +36,27 @@ export interface AppTab {
 }
 
 export const APP_TABS: AppTab[] = [
-  // IDE activity rail — stable primary engineering surfaces.
   { id: "work", title: "Work", subtitle: "Work Item · Scope → Finish", group: "Work", tier: "primary" },
   { id: "code", title: "Code", subtitle: "Files, findings & analysis", group: "Work", tier: "primary" },
   { id: "changes", title: "Changes", subtitle: "Diffs, review & git delta", group: "Work", tier: "primary" },
   { id: "history", title: "Runs", subtitle: "Executions, evidence & history", group: "AI", tier: "primary" },
   { id: "projects", title: "Projects", subtitle: "Repository workspaces", group: "System", tier: "primary" },
 
-  // Contextual tools — available beside the active workspace surface.
-  { id: "dashboard", title: "Dashboard", subtitle: "At-a-glance state", group: "Work", tier: "more" },
+  // Contextual tools. `memory` is deliberately retained as a route id for
+  // backwards compatibility while its product meaning migrates to reviewed
+  // Project Engineering Knowledge.
+  { id: "memory", title: "Knowledge", subtitle: "Reviewed project engineering memory", group: "Work", tier: "more" },
   { id: "git", title: "Git", subtitle: "Workspace & diffs", group: "Work", tier: "more" },
   { id: "orchestrate", title: "Orchestrate", subtitle: "Delegate to workers", group: "AI", tier: "more" },
   { id: "playbooks", title: "Playbooks", subtitle: "Engineering recipes", group: "AI", tier: "more" },
   { id: "models-cost", title: "Models & Cost", subtitle: "Runtime health + spend", group: "AI", tier: "more" },
   { id: "settings", title: "Settings", subtitle: "Providers, keys & policy", group: "System", tier: "more" },
   { id: "system", title: "System Registry", subtitle: "Skills & MCP", group: "System", tier: "more" },
-  { id: "debug", title: "Debug", subtitle: "Traces", group: "System", tier: "more" },
 
-  // Deep surfaces remain routable for command palette/deep-links.
-  { id: "memory", title: "Memory", subtitle: "Engineering knowledge", group: "AI", tier: "hidden" },
+  // Legacy/advanced surfaces are command-palette/deep-link destinations, not
+  // persistent navigation. This is part of the focus-first visual reset.
+  { id: "dashboard", title: "Dashboard", subtitle: "Legacy at-a-glance state", group: "Work", tier: "hidden" },
+  { id: "debug", title: "Debug", subtitle: "Traces", group: "System", tier: "hidden" },
   { id: "models", title: "Models", subtitle: "Runtime health", group: "AI", tier: "hidden" },
   { id: "tokens", title: "Tokens", subtitle: "Usage + cost", group: "AI", tier: "hidden" },
   { id: "outcomes", title: "Outcomes", subtitle: "What executions learned", group: "AI", tier: "hidden" },
@@ -99,7 +101,7 @@ export function renderAppTab({
     case "git":
       return <GitTab />;
     case "memory":
-      return <MemoryTab />;
+      return <KnowledgeTab />;
     case "orchestrate":
       return <OrchestrateTab setActiveTab={setActiveTab} />;
     case "outcomes":

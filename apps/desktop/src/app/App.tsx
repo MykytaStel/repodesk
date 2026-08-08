@@ -6,8 +6,6 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import { useGit } from "../features/git/useGit";
-import { useModels } from "../features/models/useModels";
-import { useTokens } from "../features/tokens/useTokens";
 import { callCommand } from "../shared/api/queries";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import type { TabId, Theme } from "../shared/types/api";
@@ -18,7 +16,6 @@ import { GlobalLoader } from "../shared/ui/GlobalLoader";
 import { errorToMessage, StartupSkeleton } from "../shared/ui/SharedComponents";
 import { TabErrorBoundary } from "../shared/ui/TabErrorBoundary";
 import { useToast } from "../shared/ui/Toast";
-import { formatNumber } from "../shared/utils/helpers";
 import { ActivityRail } from "./ActivityRail";
 import { STORAGE_KEYS } from "./constants";
 import { readStoredActiveTab, readStoredEconomyMode, readStoredTheme } from "./storage";
@@ -50,12 +47,12 @@ export default function App() {
   const [viewingArtifact, setViewingArtifact] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("1.0.0");
   const [feedback, setFeedback] = useState<ShellFeedback | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => window.localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) !== "1",
-  );
-  const [inspectorOpen, setInspectorOpen] = useState(
-    () => window.localStorage.getItem(STORAGE_KEYS.inspectorOpen) !== "0",
-  );
+
+  // Focus-first migration: side surfaces are deliberate drawers rather than
+  // persistent columns. We intentionally reset them closed instead of carrying
+  // forward the old shell's "open by default" local-storage behavior.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(
     () => window.localStorage.getItem(STORAGE_KEYS.bottomPanelOpen) === "1",
   );
@@ -71,13 +68,7 @@ export default function App() {
     isLoading: workspaceLoading,
   } = useWorkspace();
   const { dirty, dirtyCount } = useGit();
-  const { models } = useModels();
-  const { tokens } = useTokens();
 
-  const workingProviders =
-    models?.providers?.filter((provider: { reachability?: string }) => provider.reachability === "working").length ?? 0;
-  const providerCount = models?.providers?.length ?? 0;
-  const totalTokens = tokens?.totals.total_tokens;
   const booting = workspaceLoading;
   const activeTabInfo = APP_TABS.find((tab) => tab.id === activeTab) ?? APP_TABS[0];
 
@@ -103,6 +94,7 @@ export default function App() {
     (tabId: TabId, detail?: string) => {
       const tab = APP_TABS.find((item) => item.id === tabId) ?? APP_TABS[0];
       setActiveTab(tab.id);
+      setSidebarOpen(false);
       showFeedback("info", `Opened ${tab.title}`, detail ?? tab.subtitle, { toast: false });
     },
     [showFeedback],
@@ -196,7 +188,6 @@ export default function App() {
     }
   }, [theme]);
 
-  // IDE shortcuts: command palette, primary activity surfaces, sidebar and panel.
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
@@ -223,6 +214,7 @@ export default function App() {
         if (index < PRIMARY_TABS.length) {
           event.preventDefault();
           setActiveTab(PRIMARY_TABS[index].id);
+          setSidebarOpen(false);
         }
       }
     };
@@ -247,13 +239,13 @@ export default function App() {
     const shellCommands: Command[] = [
       {
         id: "shell:sidebar",
-        label: "Toggle workspace sidebar",
+        label: "Toggle workspace drawer",
         hint: "⌘/Ctrl+B",
         run: () => setSidebarOpen((open) => !open),
       },
       {
         id: "shell:inspector",
-        label: "Toggle inspector",
+        label: "Toggle inspector drawer",
         run: () => setInspectorOpen((open) => !open),
       },
       {
@@ -425,33 +417,29 @@ export default function App() {
           </div>
 
           <div className="ide-titlebar-actions">
-            <button type="button" className={`ide-status-chip${dirty ? " warning" : " ok"}`} onClick={() => navigateTo("changes")}>
-              Git {dirty ? dirtyCount : "clean"}
+            {feedback ? (
+              <span className={`ide-context-feedback ${feedback.tone}`} title={feedback.detail}>
+                {feedback.title}
+              </span>
+            ) : null}
+            <button
+              type="button"
+              className={`ide-status-chip${dirty ? " warning" : " ok"}`}
+              onClick={() => navigateTo("changes")}
+            >
+              {dirty ? `${dirtyCount} changes` : "Git clean"}
             </button>
-            <button type="button" className={`ide-status-chip${workingProviders > 0 ? " ok" : " warning"}`} onClick={() => navigateTo("models-cost")}>
-              Models {workingProviders}/{providerCount}
+            <button
+              type="button"
+              className="ide-title-icon-button"
+              onClick={() => setAboutOpen(true)}
+              title="About RepoDesk"
+              aria-label="About RepoDesk"
+            >
+              ?
             </button>
-            <button type="button" className="ide-status-chip" onClick={() => navigateTo("models-cost")}>
-              Tokens {formatNumber(totalTokens)}
-            </button>
-            <button type="button" className={`ide-status-chip${bottomPanelOpen ? " active" : ""}`} onClick={() => setBottomPanelOpen((open) => !open)}>
-              Panel
-            </button>
-            <button type="button" className="ide-title-icon-button" onClick={() => setAboutOpen(true)} title="About RepoDesk" aria-label="About RepoDesk">?</button>
           </div>
         </header>
-
-        <section className={`ide-feedback ${feedback?.tone ?? "neutral"}`} aria-live="polite">
-          <div>
-            <strong>{activeTabInfo.title}</strong>
-            <span>{activeTabInfo.subtitle}</span>
-          </div>
-          <div className="ide-feedback-action">
-            <span>{feedback ? "Last action" : "Ready"}</span>
-            <strong>{feedback?.title ?? "Workspace loaded"}</strong>
-            <small>{feedback?.detail ?? "Select a Work Item or engineering surface."}</small>
-          </div>
-        </section>
 
         <main className="ide-surface-scroll">{renderActiveTab()}</main>
 
@@ -469,9 +457,6 @@ export default function App() {
           hasTask={hasTask}
           dirty={dirty}
           dirtyCount={dirtyCount}
-          workingProviders={workingProviders}
-          providerCount={providerCount}
-          totalTokens={totalTokens}
           onNavigate={navigateTo}
         />
       ) : null}

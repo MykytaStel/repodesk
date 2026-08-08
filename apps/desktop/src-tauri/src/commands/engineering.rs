@@ -1,31 +1,54 @@
 use repodesk_core::engineering::{
-    AcceptanceEvidenceReport, ChangeGovernanceSnapshot, ContextInspectorReport,
-    EngineeringIntelligence, RunEvidenceSnapshot, WorkItemContractSnapshot, WorkItemContractUpdate,
+    ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
+    EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot, RunEvidenceSnapshot,
+    WorkItemContractSnapshot, WorkItemContractUpdate, accept_active_engineering_knowledge,
+    archive_active_engineering_knowledge, capture_active_verified_command,
     derive_change_governance, derive_context_inspector, derive_engineering_intelligence,
-    derive_work_item_contract_snapshot, link_active_acceptance_evidence, load_active_run_evidence,
-    load_active_run_evidence_from_events, read_context_manifest, read_events,
+    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
+    load_active_engineering_knowledge, load_active_run_evidence_from_events,
+    propose_active_engineering_knowledge, read_context_manifest, read_events,
     read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::ErrorPayload;
 
-#[derive(Debug, Serialize)]
-pub struct WorkEngineeringSnapshot {
-    pub intelligence: EngineeringIntelligence,
-    pub context_inspector: ContextInspectorReport,
-    pub work_item_contract: WorkItemContractSnapshot,
-    pub change_governance: ChangeGovernanceSnapshot,
-    pub run_evidence: Option<RunEvidenceSnapshot>,
+#[derive(Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum EngineeringKnowledgeAction {
+    Propose {
+        input: EngineeringKnowledgeProposalInput,
+    },
+    CaptureCommand {
+        command: String,
+    },
+    Accept {
+        knowledge_id: String,
+    },
+    Archive {
+        knowledge_id: String,
+    },
 }
 
-/// Deterministic, task-local engineering aggregate. During the RepoDesk 2
-/// migration this registered IPC command also carries typed Work Item evidence
-/// mutations so we do not grow parallel transport plumbing faster than the
-/// domain stabilizes. The normal Work/Inspector polling path stays lightweight;
-/// run evidence is loaded only when `run_evidence_id` is explicitly requested.
-/// All event-backed projections reuse the same ledger read.
+#[derive(Debug, Serialize)]
+pub struct WorkEngineeringSnapshot {
+    /// Task-local projections are optional only so the same temporary RepoDesk 2
+    /// transport can serve project-level Knowledge when no Work Item is active.
+    /// Normal Work/Changes/Inspector calls still receive every field populated.
+    pub intelligence: Option<EngineeringIntelligence>,
+    pub context_inspector: Option<ContextInspectorReport>,
+    pub work_item_contract: Option<WorkItemContractSnapshot>,
+    pub change_governance: Option<ChangeGovernanceSnapshot>,
+    pub run_evidence: Option<RunEvidenceSnapshot>,
+    pub knowledge: Option<EngineeringKnowledgeSnapshot>,
+}
+
+/// Temporary RepoDesk 2 engineering transport. Task-local Work projections and
+/// project-local Knowledge share one registered IPC boundary while the domain is
+/// still migrating. This deliberately avoids adding five parallel handler
+/// commands. A future transport cleanup can split queries/mutations without
+/// changing the underlying core semantics.
 #[tauri::command]
 pub fn work_engineering_intelligence(
     contract_update: Option<WorkItemContractUpdate>,
@@ -33,6 +56,8 @@ pub fn work_engineering_intelligence(
     run_evidence_id: Option<String>,
     acceptance_criterion_id: Option<String>,
     acceptance_command: Option<String>,
+    include_knowledge: Option<bool>,
+    knowledge_action: Option<EngineeringKnowledgeAction>,
 ) -> Result<WorkEngineeringSnapshot, ErrorPayload> {
     if let Some(update) = contract_update {
         save_active_work_item_contract(update).map_err(ErrorPayload::from)?;
@@ -53,7 +78,40 @@ pub fn work_engineering_intelligence(
         }
     }
 
-    let task = show_active_task().map_err(ErrorPayload::from)?;
+    let mut knowledge = match knowledge_action {
+        Some(EngineeringKnowledgeAction::Propose { input }) => {
+            Some(propose_active_engineering_knowledge(input).map_err(ErrorPayload::from)?)
+        }
+        Some(EngineeringKnowledgeAction::CaptureCommand { command }) => {
+            Some(capture_active_verified_command(&command).map_err(ErrorPayload::from)?)
+        }
+        Some(EngineeringKnowledgeAction::Accept { knowledge_id }) => {
+            Some(accept_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
+        }
+        Some(EngineeringKnowledgeAction::Archive { knowledge_id }) => {
+            Some(archive_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
+        }
+        None => None,
+    };
+    if include_knowledge.unwrap_or(false) && knowledge.is_none() {
+        knowledge = Some(load_active_engineering_knowledge().map_err(ErrorPayload::from)?);
+    }
+
+    let task = match show_active_task() {
+        Ok(task) => task,
+        Err(_) if knowledge.is_some() => {
+            return Ok(WorkEngineeringSnapshot {
+                intelligence: None,
+                context_inspector: None,
+                work_item_contract: None,
+                change_governance: None,
+                run_evidence: None,
+                knowledge,
+            });
+        }
+        Err(error) => return Err(ErrorPayload::from(error)),
+    };
+
     let events = read_events(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let intelligence = derive_engineering_intelligence(&events);
     let manifest = read_context_manifest(&task.config.run_dir).map_err(ErrorPayload::from)?;
@@ -70,24 +128,11 @@ pub fn work_engineering_intelligence(
     };
 
     Ok(WorkEngineeringSnapshot {
-        intelligence,
-        context_inspector,
-        work_item_contract,
-        change_governance,
+        intelligence: Some(intelligence),
+        context_inspector: Some(context_inspector),
+        work_item_contract: Some(work_item_contract),
+        change_governance: Some(change_governance),
         run_evidence,
+        knowledge,
     })
-}
-
-/// Direct helpers retained as a narrow Rust/Tauri boundary for future transport
-/// cleanup. The current desktop UI uses the aggregate command above so adding
-/// Runs does not require another large handler registry edit in this migration.
-pub fn run_evidence_snapshot(run_id: String) -> Result<RunEvidenceSnapshot, ErrorPayload> {
-    load_active_run_evidence(&run_id).map_err(ErrorPayload::from)
-}
-
-pub fn acceptance_evidence_link(
-    criterion_id: String,
-    command: String,
-) -> Result<AcceptanceEvidenceReport, ErrorPayload> {
-    link_active_acceptance_evidence(&criterion_id, &command).map_err(ErrorPayload::from)
 }

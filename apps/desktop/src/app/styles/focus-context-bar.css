@@ -1,0 +1,18 @@
+.ide-context-feedback {
+  max-width: 240px;
+  overflow: hidden;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ide-context-feedback.success { color: var(--success); }
+.ide-context-feedback.error { color: var(--danger); }
+.ide-context-feedback.info { color: var(--muted); }
+
+@media (max-width: 760px) {
+  .ide-context-feedback { display: none; }
+}
