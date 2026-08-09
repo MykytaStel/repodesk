@@ -23,9 +23,8 @@ export function DebugTab() {
   const [backupMsg, setBackupMsg] = useState("");
   const [restorePath, setRestorePath] = useState("");
   const [dataBusy, setDataBusy] = useState(false);
-  const [metricEpoch, setMetricEpoch] = useState(0);
+  const [, setMetricEpoch] = useState(0);
   const runtime = getRuntimeMetricsSnapshot();
-  void metricEpoch;
 
   async function runBackup() {
     setDataBusy(true);
@@ -63,7 +62,7 @@ export function DebugTab() {
         <div className="panel-title-row">
           <div>
             <p className="eyebrow">Runtime</p>
-            <h2>IPC cost since app start</h2>
+            <h2>Instrumented IPC cost</h2>
           </div>
           <button
             className="tiny-button"
@@ -75,13 +74,14 @@ export function DebugTab() {
             Reset
           </button>
         </div>
+        <p className="muted">Covers commands using the shared callCommand transport. Typed direct-invoke APIs will migrate to the same measured transport incrementally.</p>
         <div className="route-summary-grid">
           <div><span>Calls</span><strong>{runtime.total_calls}</strong></div>
           <div><span>Errors</span><strong>{runtime.total_errors}</strong></div>
-          <div><span>Total IPC time</span><strong>{runtime.total_ms.toLocaleString()}ms</strong></div>
+          <div><span>Total time</span><strong>{runtime.total_ms.toLocaleString()}ms</strong></div>
           <div><span>Commands</span><strong>{runtime.tracked_commands}</strong></div>
         </div>
-        <div className="debug-runtime-table" role="table" aria-label="IPC runtime metrics">
+        <div className="debug-runtime-table" role="table" aria-label="Instrumented IPC runtime metrics">
           <div className="debug-runtime-row header" role="row">
             <span>Command</span><span>Calls</span><span>Total</span><span>Max</span><span>Errors</span>
           </div>
@@ -94,7 +94,7 @@ export function DebugTab() {
               <span>{metric.errors}</span>
             </div>
           ))}
-          {runtime.commands.length === 0 ? <p className="muted">No IPC calls recorded yet.</p> : null}
+          {runtime.commands.length === 0 ? <p className="muted">No instrumented IPC calls recorded yet.</p> : null}
         </div>
       </section>
 
