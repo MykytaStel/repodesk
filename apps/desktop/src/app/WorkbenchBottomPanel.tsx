@@ -6,6 +6,10 @@ import {
   subscribeProblems,
 } from "../shared/api/problems";
 import { callCommand, debugEmitter, type DebugEventDetail } from "../shared/api/queries";
+import {
+  BOTTOM_PANEL_TAB_EVENT,
+  type BottomPanelTab,
+} from "../shared/api/workbench";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { formatNumber } from "../shared/utils/helpers";
 import { InteractiveTerminal } from "./InteractiveTerminal";
@@ -27,7 +31,6 @@ interface ActionRunResult {
   };
 }
 
-type PanelTab = "problems" | "tasks" | "output" | "terminal";
 type LogStatus = "success" | "error" | "info" | "running";
 
 interface LogEntry {
@@ -83,12 +86,23 @@ function LogRow({ log }: { log: LogEntry }) {
 
 export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProps) {
   const { projectName } = useWorkspace();
-  const [activeTab, setActiveTab] = useState<PanelTab>("output");
+  const [activeTab, setActiveTab] = useState<BottomPanelTab>("output");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
   const historyProject = useRef<string | null>(projectName ?? null);
   const problemSnapshot = useSyncExternalStore(subscribeProblems, getProblemSnapshot, getProblemSnapshot);
+
+  useEffect(() => {
+    const onTabRequest = (event: Event) => {
+      const tab = (event as CustomEvent<BottomPanelTab>).detail;
+      if (tab === "problems" || tab === "tasks" || tab === "output" || tab === "terminal") {
+        setActiveTab(tab);
+      }
+    };
+    window.addEventListener(BOTTOM_PANEL_TAB_EVENT, onTabRequest);
+    return () => window.removeEventListener(BOTTOM_PANEL_TAB_EVENT, onTabRequest);
+  }, []);
 
   useEffect(() => {
     const nextProject = projectName ?? null;
