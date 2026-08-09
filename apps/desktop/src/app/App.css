@@ -19,3 +19,5 @@
 @import "./styles/focus-context-bar.css";
 @import "./styles/focus-density.css";
 @import "./styles/performance-density-v1.css";
+@import "../features/code/code-editor-polish.css";
+@import "./styles/ide-polish-v1.css";
