@@ -50,7 +50,6 @@ export function LightweightCodeEditor({
   onSave: () => void;
 }) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  const gutterRef = useRef<HTMLPreElement>(null);
   const gutterShellRef = useRef<HTMLDivElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const [findOpen, setFindOpen] = useState(false);
@@ -63,23 +62,12 @@ export function LightweightCodeEditor({
     [lineCount],
   );
 
-  const syncGutter = (editor: HTMLTextAreaElement) => {
-    const scrollTop = editor.scrollTop;
-    const gutter = gutterRef.current;
-    if (gutter) {
-      // The textarea loses vertical viewport space only when the WebView renders
-      // a horizontal scrollbar. Mirror exactly that physical scrollbar height
-      // into the non-visible end of the gutter instead of adding fake source
-      // padding. Both surfaces can then share the same scrollTop 1:1 from the
-      // first line through the absolute end of the file.
-      const horizontalScrollbarHeight = Math.max(0, editor.offsetHeight - editor.clientHeight);
-      const nextPadding = `${horizontalScrollbarHeight}px`;
-      if (gutter.style.paddingBottom !== nextPadding) gutter.style.paddingBottom = nextPadding;
-      gutter.scrollTop = scrollTop;
-    }
-    if (gutterShellRef.current) {
-      gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
-    }
+  const syncScrollGeometry = (editor: HTMLTextAreaElement) => {
+    // The textarea is now the only scroll surface. The gutter is a clipped,
+    // non-scrollable visual layer translated by the textarea's exact scrollTop.
+    // That removes the independent scrollHeight/clamping behaviour that caused
+    // line numbers to stop before the document reached its absolute end.
+    gutterShellRef.current?.style.setProperty("--editor-scroll-top", `${editor.scrollTop}px`);
   };
 
   const applyPendingLocation = (): boolean => {
@@ -94,7 +82,7 @@ export function LightweightCodeEditor({
     setCursor(lineAndColumn(value, offset));
     const targetTop = EDITOR_TOP_PADDING_PX + (location.line - 1) * EDITOR_LINE_HEIGHT_PX;
     editor.scrollTop = Math.max(0, targetTop - editor.clientHeight * 0.32);
-    syncGutter(editor);
+    syncScrollGeometry(editor);
     return true;
   };
 
@@ -102,15 +90,14 @@ export function LightweightCodeEditor({
     setCursor({ line: 1, column: 1 });
     setFindOpen(false);
     setFindQuery("");
-    if (gutterRef.current) gutterRef.current.style.paddingBottom = "0px";
-    if (gutterShellRef.current) gutterShellRef.current.style.setProperty("--editor-scroll-top", "0px");
+    gutterShellRef.current?.style.setProperty("--editor-scroll-top", "0px");
 
     requestAnimationFrame(() => {
       const editor = editorRef.current;
       if (!editor) return;
       if (applyPendingLocation()) return;
       editor.focus();
-      syncGutter(editor);
+      syncScrollGeometry(editor);
     });
   // The opened document owns this transition. Location changes for the same
   // path are handled by the event listener below instead of every keystroke.
@@ -182,7 +169,7 @@ export function LightweightCodeEditor({
   };
 
   const handleScroll = (event: UIEvent<HTMLTextAreaElement>) => {
-    syncGutter(event.currentTarget);
+    syncScrollGeometry(event.currentTarget);
   };
 
   const activeLineStyle = {
@@ -215,7 +202,7 @@ export function LightweightCodeEditor({
 
       <div className="code-editor-body">
         <div ref={gutterShellRef} className="code-editor-gutter-shell" aria-hidden="true">
-          <pre ref={gutterRef} className="code-editor-gutter">{lineNumbers}</pre>
+          <pre className="code-editor-gutter-track">{lineNumbers}</pre>
           <span className="code-editor-active-line-number" style={activeLineStyle}>{cursor.line}</span>
         </div>
         <textarea
