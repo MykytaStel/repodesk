@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -8,7 +7,6 @@ export const debugEmitter = new EventTarget();
 export interface DebugEventDetail {
   id: number;
   command: string;
-  args?: UnknownRecord;
   status: "success" | "error";
   durationMs: number;
   timestamp: string;
@@ -16,10 +14,81 @@ export interface DebugEventDetail {
   error?: string;
 }
 
-function dispatchDebugEvent(detail: DebugEventDetail) {
-  debugEmitter.dispatchEvent(new CustomEvent("debug-command", { detail }));
+const MAX_DEBUG_STRING_CHARS = 2_000;
+const MAX_DEBUG_ARRAY_ITEMS = 16;
+const MAX_DEBUG_OBJECT_KEYS = 24;
+const MAX_DEBUG_DEPTH = 3;
+const SENSITIVE_DEBUG_KEY = /(content|source|prompt|secret|password|authorization|api[_-]?key|token)/i;
+
+let debugPayloadConsumers = 0;
+let debugSequence = 0;
+
+/**
+ * Enable bounded IPC result previews while an explicit Debug consumer is
+ * mounted. Normal product surfaces still receive cheap timing/status events,
+ * but do not pay to serialize command results they never render.
+ */
+export function acquireDebugPayloadCapture(): () => void {
+  debugPayloadConsumers += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    debugPayloadConsumers = Math.max(0, debugPayloadConsumers - 1);
+  };
 }
 
+function truncateDebugString(value: string): string {
+  if (value.length <= MAX_DEBUG_STRING_CHARS) return value;
+  return `${value.slice(0, MAX_DEBUG_STRING_CHARS)}\n… [${value.length - MAX_DEBUG_STRING_CHARS} chars omitted]`;
+}
+
+function summarizeForDebug(value: unknown, depth = 0): unknown {
+  if (value == null || typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "string") return truncateDebugString(value);
+  if (typeof value !== "object") return String(value);
+
+  if (depth >= MAX_DEBUG_DEPTH) {
+    if (Array.isArray(value)) return `[Array(${value.length})]`;
+    return "[Object]";
+  }
+
+  if (Array.isArray(value)) {
+    const items = value.slice(0, MAX_DEBUG_ARRAY_ITEMS).map((item) => summarizeForDebug(item, depth + 1));
+    if (value.length > MAX_DEBUG_ARRAY_ITEMS) {
+      items.push(`… [${value.length - MAX_DEBUG_ARRAY_ITEMS} items omitted]`);
+    }
+    return items;
+  }
+
+  const record = value as UnknownRecord;
+  const keys = Object.keys(record);
+  const summarized: UnknownRecord = {};
+  for (const key of keys.slice(0, MAX_DEBUG_OBJECT_KEYS)) {
+    summarized[key] = SENSITIVE_DEBUG_KEY.test(key)
+      ? "[omitted]"
+      : summarizeForDebug(record[key], depth + 1);
+  }
+  if (keys.length > MAX_DEBUG_OBJECT_KEYS) {
+    summarized.__omitted_keys = keys.length - MAX_DEBUG_OBJECT_KEYS;
+  }
+  return summarized;
+}
+
+function debugPreview(result: unknown): string | undefined {
+  if (debugPayloadConsumers === 0) return undefined;
+  if (typeof result === "string") return truncateDebugString(result);
+  try {
+    return JSON.stringify(summarizeForDebug(result), null, 2);
+  } catch {
+    return "[Debug preview unavailable]";
+  }
+}
+
+function dispatchDebugEvent(detail: Omit<DebugEventDetail, "id">) {
+  debugSequence += 1;
+  debugEmitter.dispatchEvent(new CustomEvent("debug-command", { detail: { ...detail, id: debugSequence } }));
+}
 
 export const queryKeys = {
   workspace: {
@@ -89,25 +158,21 @@ export async function callCommand<T>(command: string, args?: UnknownRecord): Pro
     const result = await invoke<T>(command, args);
     const durationMs = Math.round(performance.now() - started);
     dispatchDebugEvent({
-      id: Date.now() + Math.random(),
       command,
-      args,
       status: "success",
       durationMs,
       timestamp: new Date().toLocaleTimeString(),
-      preview: typeof result === "string" ? result : JSON.stringify(result, null, 2),
+      preview: debugPreview(result),
     });
     return result;
   } catch (error: any) {
     const durationMs = Math.round(performance.now() - started);
     dispatchDebugEvent({
-      id: Date.now() + Math.random(),
       command,
-      args,
       status: "error",
       durationMs,
       timestamp: new Date().toLocaleTimeString(),
-      error: typeof error === "string" ? error : error?.message || String(error),
+      error: typeof error === "string" ? truncateDebugString(error) : truncateDebugString(error?.message || String(error)),
     });
     throw error;
   }
