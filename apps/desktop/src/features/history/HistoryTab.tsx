@@ -270,7 +270,12 @@ function RunEvidenceDetail({
 function RunsWorkspace() {
   const queryClient = useQueryClient();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const runs = useQuery({ queryKey: ["runs", "list"], queryFn: orchestrationRuns, refetchInterval: 5000 });
+  const runs = useQuery({
+    queryKey: ["runs", "list"],
+    queryFn: orchestrationRuns,
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+  });
 
   useEffect(() => {
     const list = runs.data ?? [];
@@ -287,7 +292,8 @@ function RunsWorkspace() {
     queryKey: ["runs", "evidence", selectedRunId],
     queryFn: () => runEvidenceSnapshot(selectedRunId!),
     enabled: Boolean(selectedRunId),
-    refetchInterval: 5000,
+    staleTime: 2_000,
+    refetchOnWindowFocus: true,
   });
 
   const link = useMutation({
@@ -308,12 +314,20 @@ function RunsWorkspace() {
     return <div className="evidence-empty">No persisted execution runs yet. Execute the active Work Item to create evidence.</div>;
   }
 
+  const refresh = () => {
+    void runs.refetch();
+    if (selectedRunId) void detail.refetch();
+  };
+
   return (
     <div className="runs-shell">
       <aside className="runs-list">
         <div className="runs-list-header">
           <strong>Persisted runs</strong>
-          <span className="pill">{list.length}</span>
+          <div className="button-row" style={{ marginTop: 0 }}>
+            <span className="pill">{list.length}</span>
+            <button type="button" className="tiny-button" onClick={refresh}>Refresh</button>
+          </div>
         </div>
         {list.map((run) => (
           <RunListItem
