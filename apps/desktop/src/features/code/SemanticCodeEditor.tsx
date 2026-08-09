@@ -13,9 +13,17 @@ import {
 } from "@codemirror/language";
 import { lintGutter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, RangeSet, type Extension } from "@codemirror/state";
+import {
+  Compartment,
+  EditorState,
+  RangeSet,
+  StateEffect,
+  StateField,
+  type Extension,
+} from "@codemirror/state";
 import {
   EditorView,
+  Decoration,
   GutterMarker,
   drawSelection,
   gutter,
@@ -190,6 +198,72 @@ function offsetForLocation(state: EditorState, line: number, column: number): nu
   return Math.min(target.to, target.from + Math.max(0, column - 1));
 }
 
+function offsetForLspPosition(state: EditorState, line: number, character: number): number {
+  return offsetForLocation(state, line + 1, character + 1);
+}
+
+function wordRangeAt(state: EditorState, offset: number): { from: number; to: number } {
+  const line = state.doc.lineAt(offset);
+  const text = line.text;
+  let from = Math.max(0, offset - line.from);
+  let to = from;
+  while (from > 0 && /[\w$]/.test(text[from - 1])) from -= 1;
+  while (to < text.length && /[\w$]/.test(text[to])) to += 1;
+  return { from: line.from + from, to: line.from + to };
+}
+
+const showNavigationTarget = StateEffect.define<{ from: number; to: number }>();
+const clearNavigationTarget = StateEffect.define<void>();
+
+const navigationTargetField = StateField.define({
+  create: () => Decoration.none,
+  update(decorations, transaction) {
+    let next = decorations.map(transaction.changes);
+    if (transaction.docChanged || transaction.selection) next = Decoration.none;
+    for (const effect of transaction.effects) {
+      if (effect.is(clearNavigationTarget)) next = Decoration.none;
+      if (effect.is(showNavigationTarget)) {
+        const { from, to } = effect.value;
+        const line = transaction.state.doc.lineAt(from);
+        const ranges = [Decoration.line({ class: "cm-navigation-target-line" }).range(line.from)];
+        if (to > from) ranges.push(Decoration.mark({ class: "cm-navigation-target" }).range(from, to));
+        next = Decoration.set(ranges, true);
+      }
+    }
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+const showDefinitionLink = StateEffect.define<{ from: number; to: number }>();
+const clearDefinitionLink = StateEffect.define<void>();
+
+const definitionLinkField = StateField.define({
+  create: () => Decoration.none,
+  update(decorations, transaction) {
+    let next = transaction.docChanged ? Decoration.none : decorations.map(transaction.changes);
+    for (const effect of transaction.effects) {
+      if (effect.is(clearDefinitionLink)) next = Decoration.none;
+      if (effect.is(showDefinitionLink)) {
+        const { from, to } = effect.value;
+        next = to > from
+          ? Decoration.set([Decoration.mark({ class: "cm-definition-link" }).range(from, to)])
+          : Decoration.none;
+      }
+    }
+    return next;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+type DefinitionPreviewState = {
+  markdown: string;
+  left: number;
+  top: number;
+};
+
+const DEFINITION_PREVIEW_DELAY_MS = 120;
+
 function SemanticStrip({ semantic, dirty }: { semantic: SemanticFileState; dirty: boolean }) {
   const visible = Boolean(
     semantic.workItemId
@@ -269,9 +343,12 @@ export function SemanticCodeEditor({
   const dirtyRef = useRef(dirty);
   const savingRef = useRef(saving);
   const suppressChangeRef = useRef(false);
+  const navigationTimerRef = useRef<number | null>(null);
   const definitionAvailableRef = useRef(false);
   const liveActionsRef = useRef<ReturnType<typeof useLiveRustLanguage>["actions"] | null>(null);
+  const modifierDownRef = useRef(false);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const [definitionPreview, setDefinitionPreview] = useState<DefinitionPreviewState | null>(null);
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   dirtyRef.current = dirty;
@@ -307,6 +384,63 @@ export function SemanticCodeEditor({
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    let previewTimer: number | null = null;
+    let lastPointer: { x: number; y: number } | null = null;
+
+    const clearPreview = (view: EditorView | null = viewRef.current) => {
+      if (previewTimer !== null) {
+        window.clearTimeout(previewTimer);
+        previewTimer = null;
+      }
+      liveActionsRef.current?.clearPreview();
+      setDefinitionPreview(null);
+      if (view) view.dispatch({ effects: clearDefinitionLink.of() });
+    };
+
+    const schedulePreview = (view: EditorView, x: number, y: number) => {
+      if (!modifierDownRef.current || !definitionAvailableRef.current) return;
+      if (previewTimer !== null) window.clearTimeout(previewTimer);
+      const offset = view.posAtCoords({ x, y });
+      if (offset === null) {
+        clearPreview(view);
+        return;
+      }
+      previewTimer = window.setTimeout(async () => {
+        previewTimer = null;
+        if (!modifierDownRef.current || viewRef.current !== view) return;
+        const line = view.state.doc.lineAt(offset);
+        const result = await liveActionsRef.current?.previewAt({
+          line: line.number,
+          column: offset - line.from + 1,
+        });
+        if (!result || !modifierDownRef.current || viewRef.current !== view) return;
+
+        const hoverRange = result.hover?.range;
+        const range = hoverRange
+          ? {
+            from: offsetForLspPosition(view.state, hoverRange.start.line, hoverRange.start.character),
+            to: offsetForLspPosition(view.state, hoverRange.end.line, hoverRange.end.character),
+          }
+          : wordRangeAt(view.state, offset);
+        view.dispatch({
+          effects: result.definitions.length > 0
+            ? showDefinitionLink.of(range)
+            : clearDefinitionLink.of(),
+        });
+
+        if (!result.hover?.markdown) {
+          setDefinitionPreview(null);
+          return;
+        }
+        const editor = host.closest<HTMLElement>(".semantic-code-editor");
+        const bounds = editor?.getBoundingClientRect() ?? host.getBoundingClientRect();
+        setDefinitionPreview({
+          markdown: result.hover.markdown,
+          left: Math.max(62, Math.min(bounds.width - 390, x - bounds.left + 14)),
+          top: Math.max(8, Math.min(bounds.height - 170, y - bounds.top + 22)),
+        });
+      }, DEFINITION_PREVIEW_DELAY_MS);
+    };
 
     const state = EditorState.create({
       doc: value,
@@ -334,6 +468,8 @@ export function SemanticCodeEditor({
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         syntaxHighlighting(repodeskHighlight),
         languageExtension(language, path),
+        navigationTargetField,
+        definitionLinkField,
         editorTheme,
         EditorState.tabSize.of(2),
         keymap.of([
@@ -349,6 +485,14 @@ export function SemanticCodeEditor({
           { key: "Shift-F12", run: () => { liveActionsRef.current?.references(); return true; } },
           { key: "Mod-Shift-o", run: () => { liveActionsRef.current?.symbols(); return true; } },
           { key: "Alt-h", run: () => { liveActionsRef.current?.hover(); return true; } },
+          {
+            key: "Escape",
+            run: (view) => {
+              clearPreview(view);
+              liveActionsRef.current?.dismiss();
+              return false;
+            },
+          },
           indentWithTab,
           ...defaultKeymap,
           ...historyKeymap,
@@ -359,10 +503,18 @@ export function SemanticCodeEditor({
             if (event.button !== 0 || !(event.metaKey || event.ctrlKey) || !definitionAvailableRef.current) {
               return false;
             }
+            event.preventDefault();
+            return true;
+          },
+          mouseup(event, view) {
+            if (event.button !== 0 || !(event.metaKey || event.ctrlKey) || !definitionAvailableRef.current) {
+              return false;
+            }
             const offset = view.posAtCoords({ x: event.clientX, y: event.clientY });
             if (offset === null) return false;
             const line = view.state.doc.lineAt(offset);
             event.preventDefault();
+            clearPreview(view);
             view.dispatch({ selection: { anchor: offset } });
             view.focus();
             liveActionsRef.current?.definitionAt({
@@ -370,6 +522,19 @@ export function SemanticCodeEditor({
               column: offset - line.from + 1,
             });
             return true;
+          },
+          mousemove(event, view) {
+            lastPointer = { x: event.clientX, y: event.clientY };
+            if (modifierDownRef.current) {
+              clearPreview(view);
+              schedulePreview(view, event.clientX, event.clientY);
+            }
+            return false;
+          },
+          mouseleave(_event, view) {
+            lastPointer = null;
+            clearPreview(view);
+            return false;
           },
         }),
         EditorView.updateListener.of((update) => {
@@ -388,18 +553,57 @@ export function SemanticCodeEditor({
     const applyPendingLocation = () => {
       const location = consumeCodeWorkspaceLocation(path);
       if (!location) return;
-      const offset = offsetForLocation(view.state, location.line, location.column);
+      const from = offsetForLocation(view.state, location.line, location.column);
+      const rawTo = location.endLine
+        ? offsetForLocation(view.state, location.endLine, location.endColumn ?? location.column)
+        : from;
+      const to = Math.max(from, rawTo);
+      if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
       view.dispatch({
-        selection: { anchor: offset },
-        effects: EditorView.scrollIntoView(offset, { y: "center" }),
+        selection: { anchor: from },
+        effects: [
+          showNavigationTarget.of({ from, to }),
+          EditorView.scrollIntoView(from, { y: "center" }),
+        ],
       });
       view.focus();
+      navigationTimerRef.current = window.setTimeout(() => {
+        navigationTimerRef.current = null;
+        if (viewRef.current === view) view.dispatch({ effects: clearNavigationTarget.of() });
+      }, 1_500);
     };
     requestAnimationFrame(applyPendingLocation);
     window.addEventListener(CODE_OPEN_EVENT, applyPendingLocation);
 
+    const onModifierDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      modifierDownRef.current = true;
+      if (lastPointer) schedulePreview(view, lastPointer.x, lastPointer.y);
+    };
+    const onModifierUp = (event: KeyboardEvent) => {
+      if (event.key !== "Meta" && event.key !== "Control" && (event.metaKey || event.ctrlKey)) return;
+      modifierDownRef.current = false;
+      clearPreview(view);
+    };
+    const onWindowBlur = () => {
+      modifierDownRef.current = false;
+      clearPreview(view);
+    };
+    window.addEventListener("keydown", onModifierDown);
+    window.addEventListener("keyup", onModifierUp);
+    window.addEventListener("blur", onWindowBlur);
+
     return () => {
       window.removeEventListener(CODE_OPEN_EVENT, applyPendingLocation);
+      window.removeEventListener("keydown", onModifierDown);
+      window.removeEventListener("keyup", onModifierUp);
+      window.removeEventListener("blur", onWindowBlur);
+      modifierDownRef.current = false;
+      clearPreview(null);
+      if (navigationTimerRef.current !== null) {
+        window.clearTimeout(navigationTimerRef.current);
+        navigationTimerRef.current = null;
+      }
       viewRef.current = null;
       view.destroy();
     };
@@ -444,6 +648,16 @@ export function SemanticCodeEditor({
     <section className={`semantic-code-editor scope-${semantic.scopeState ?? "none"}`} aria-label={`Editor for ${path}`}>
       <SemanticStrip semantic={semantic} dirty={dirty} />
       {liveLanguage.panel}
+      {definitionPreview ? (
+        <aside
+          className="cm-definition-preview"
+          role="tooltip"
+          style={{ left: definitionPreview.left, top: definitionPreview.top }}
+        >
+          <pre>{definitionPreview.markdown}</pre>
+          <span><kbd>{navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}</kbd> click to open definition</span>
+        </aside>
+      ) : null}
       <div ref={hostRef} className="semantic-code-editor-host" />
       <footer className="code-editor-status semantic-status">
         <span>Ln {cursor.line}, Col {cursor.column}</span>

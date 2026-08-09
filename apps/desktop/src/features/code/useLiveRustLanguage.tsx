@@ -39,6 +39,11 @@ type LanguageKeyEvent = {
 
 type LanguagePosition = { line: number; column: number };
 
+export type LanguageDefinitionPreview = {
+  hover: LanguageHover | null;
+  definitions: LanguageLocation[];
+};
+
 function acquireLanguageServerOwner(): () => void {
   liveEditorOwners += 1;
   if (pendingStop !== null) {
@@ -91,6 +96,8 @@ export function useLiveRustLanguage({
     hover: () => void;
     definition: () => void;
     definitionAt: (position: LanguagePosition) => void;
+    previewAt: (position: LanguagePosition) => Promise<LanguageDefinitionPreview | null>;
+    clearPreview: () => void;
     references: () => void;
     symbols: () => void;
     dismiss: () => void;
@@ -103,6 +110,7 @@ export function useLiveRustLanguage({
   const [panel, setPanel] = useState<LanguagePanel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastSynced = useRef<{ path: string; text: string } | null>(null);
+  const previewRequest = useRef(0);
   const valueRef = useRef(value);
   const cursorRef = useRef(cursor);
   valueRef.current = value;
@@ -222,7 +230,12 @@ export function useLiveRustLanguage({
       const locations = await requestLanguageDefinition(withPosition(position));
       if (locations.length === 1) {
         const target = locations[0];
-        requestCodeWorkspaceOpen(target.path, { line: target.line, column: target.column });
+        requestCodeWorkspaceOpen(target.path, {
+          line: target.line,
+          column: target.column,
+          endLine: target.end_line,
+          endColumn: target.end_column,
+        });
         setPanel(null);
       } else if (locations.length > 1) {
         setPanel({ kind: "locations", title: "Definitions", locations });
@@ -235,6 +248,30 @@ export function useLiveRustLanguage({
       setBusy(false);
     }
   }, [busy, enabled, withPosition]);
+
+  const previewAt = useCallback(async (
+    position: LanguagePosition,
+  ): Promise<LanguageDefinitionPreview | null> => {
+    if (!enabled) return null;
+    const request = ++previewRequest.current;
+    setError(null);
+    try {
+      const input = withPosition(position);
+      const [hover, definitions] = await Promise.all([
+        requestLanguageHover(input),
+        requestLanguageDefinition(input),
+      ]);
+      if (request !== previewRequest.current) return null;
+      return { hover, definitions };
+    } catch (cause) {
+      if (request === previewRequest.current) setError(errorToMessage(cause));
+      return null;
+    }
+  }, [enabled, withPosition]);
+
+  const clearPreview = useCallback(() => {
+    previewRequest.current += 1;
+  }, []);
 
   const runDefinition = useCallback(() => runDefinitionAt(cursorRef.current), [runDefinitionAt]);
 
@@ -267,9 +304,10 @@ export function useLiveRustLanguage({
   }, [busy, enabled, path]);
 
   const dismiss = useCallback(() => {
+    clearPreview();
     setPanel(null);
     setError(null);
-  }, []);
+  }, [clearPreview]);
 
   const handleKeyDown = useCallback((event: LanguageKeyEvent): boolean => {
     if (!enabled) return false;
@@ -333,7 +371,12 @@ export function useLiveRustLanguage({
               type="button"
               key={`${location.path}:${location.line}:${location.column}:${index}`}
               onClick={() => {
-                requestCodeWorkspaceOpen(location.path, { line: location.line, column: location.column });
+                requestCodeWorkspaceOpen(location.path, {
+                  line: location.line,
+                  column: location.column,
+                  endLine: location.end_line,
+                  endColumn: location.end_column,
+                });
                 setPanel(null);
               }}
             >
@@ -352,6 +395,8 @@ export function useLiveRustLanguage({
                 requestCodeWorkspaceOpen(path, {
                   line: symbol.selection_range.start.line + 1,
                   column: symbol.selection_range.start.character + 1,
+                  endLine: symbol.selection_range.end.line + 1,
+                  endColumn: symbol.selection_range.end.character + 1,
                 });
                 setPanel(null);
               }}
@@ -376,6 +421,8 @@ export function useLiveRustLanguage({
       hover: () => { void runHover(); },
       definition: () => { void runDefinition(); },
       definitionAt: (position) => { void runDefinitionAt(position); },
+      previewAt,
+      clearPreview,
       references: () => { void runReferences(); },
       symbols: () => { void runSymbols(); },
       dismiss,

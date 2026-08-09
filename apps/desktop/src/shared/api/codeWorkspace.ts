@@ -52,6 +52,8 @@ export type CodeWorkspaceLocation = {
   path: string;
   line: number;
   column: number;
+  endLine?: number;
+  endColumn?: number;
 };
 
 export async function codeWorkspaceSnapshot(): Promise<CodeWorkspaceSnapshot> {
@@ -77,7 +79,12 @@ export async function saveCodeWorkspaceDocument(input: {
  */
 export function requestCodeWorkspaceOpen(
   path: string,
-  location?: { line?: number | null; column?: number | null },
+  location?: {
+    line?: number | null;
+    column?: number | null;
+    endLine?: number | null;
+    endColumn?: number | null;
+  },
 ): void {
   window.sessionStorage.setItem(CODE_OPEN_REQUEST_KEY, path);
   if (location?.line && location.line > 0) {
@@ -86,6 +93,10 @@ export function requestCodeWorkspaceOpen(
       line: Math.max(1, Math.floor(location.line)),
       column: Math.max(1, Math.floor(location.column ?? 1)),
     };
+    if (location.endLine && location.endLine > 0) {
+      request.endLine = Math.max(request.line, Math.floor(location.endLine));
+      request.endColumn = Math.max(1, Math.floor(location.endColumn ?? request.column));
+    }
     window.sessionStorage.setItem(CODE_LOCATION_REQUEST_KEY, JSON.stringify(request));
   } else {
     window.sessionStorage.removeItem(CODE_LOCATION_REQUEST_KEY);
@@ -106,11 +117,18 @@ export function consumeCodeWorkspaceLocation(path: string): CodeWorkspaceLocatio
     const parsed = JSON.parse(raw) as Partial<CodeWorkspaceLocation>;
     if (parsed.path !== path || typeof parsed.line !== "number") return null;
     window.sessionStorage.removeItem(CODE_LOCATION_REQUEST_KEY);
-    return {
+    const location: CodeWorkspaceLocation = {
       path,
       line: Math.max(1, Math.floor(parsed.line)),
       column: Math.max(1, Math.floor(typeof parsed.column === "number" ? parsed.column : 1)),
     };
+    if (typeof parsed.endLine === "number" && parsed.endLine > 0) {
+      location.endLine = Math.max(location.line, Math.floor(parsed.endLine));
+      location.endColumn = Math.max(1, Math.floor(
+        typeof parsed.endColumn === "number" ? parsed.endColumn : location.column,
+      ));
+    }
+    return location;
   } catch {
     window.sessionStorage.removeItem(CODE_LOCATION_REQUEST_KEY);
     return null;

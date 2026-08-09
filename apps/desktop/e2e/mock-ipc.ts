@@ -14,12 +14,22 @@ import type { CommandFixtures } from "./fixtures";
 export async function installMockIpc(page: Page, fixtures: CommandFixtures): Promise<void> {
   await page.addInitScript((data: CommandFixtures) => {
     const calls: string[] = [];
+    const invocations: Array<{ cmd: string; args: Record<string, unknown> | undefined }> = [];
     (window as unknown as { __repodeskMockCalls: string[] }).__repodeskMockCalls = calls;
+    (window as unknown as { __repodeskMockInvocations: typeof invocations }).__repodeskMockInvocations = invocations;
 
     (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
-      invoke(cmd: string) {
+      invoke(cmd: string, args?: Record<string, unknown>) {
         calls.push(cmd);
-        const value = Object.prototype.hasOwnProperty.call(data, cmd) ? data[cmd] : null;
+        invocations.push({ cmd, args });
+        const action = args?.action;
+        const actionKind = action && typeof action === "object" && "kind" in action
+          ? String((action as { kind: unknown }).kind)
+          : action === null ? "snapshot" : null;
+        const actionKey = actionKind ? `${cmd}:${actionKind}` : null;
+        const value = actionKey && Object.prototype.hasOwnProperty.call(data, actionKey)
+          ? data[actionKey]
+          : Object.prototype.hasOwnProperty.call(data, cmd) ? data[cmd] : null;
         return Promise.resolve(value);
       },
       // Stubs for the event/callback machinery so `@tauri-apps/api/event` and
@@ -40,4 +50,14 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
 /** Reads the ordered list of commands the frontend invoked through the mock. */
 export async function recordedCommands(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as unknown as { __repodeskMockCalls?: string[] }).__repodeskMockCalls ?? []);
+}
+
+export async function recordedInvocations(
+  page: Page,
+): Promise<Array<{ cmd: string; args: Record<string, unknown> | undefined }>> {
+  return page.evaluate(() => (
+    window as unknown as {
+      __repodeskMockInvocations?: Array<{ cmd: string; args: Record<string, unknown> | undefined }>;
+    }
+  ).__repodeskMockInvocations ?? []);
 }
