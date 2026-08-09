@@ -28,6 +28,20 @@ pub enum LanguageServerSource {
     Path,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageServerProfileState {
+    Active,
+    DiscoveryOnly,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LanguageServerInitializationProfile {
+    Default,
+    Taplo,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LanguageServerCapabilities {
     pub diagnostics: bool,
@@ -65,6 +79,9 @@ pub struct LanguageServerDescriptor {
     pub availability: LanguageServerAvailability,
     pub source: Option<LanguageServerSource>,
     pub capabilities: LanguageServerCapabilities,
+    pub profile_state: LanguageServerProfileState,
+    pub initialization_profile: LanguageServerInitializationProfile,
+    pub install_recipe_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +136,9 @@ struct ServerSpec {
     arguments: &'static [&'static str],
     languages: &'static [&'static str],
     project_local: bool,
+    profile_state: LanguageServerProfileState,
+    initialization_profile: LanguageServerInitializationProfile,
+    install_recipe_id: Option<&'static str>,
 }
 
 const SERVER_SPECS: &[ServerSpec] = &[
@@ -129,6 +149,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &[],
         languages: &["rust"],
         project_local: false,
+        profile_state: LanguageServerProfileState::Active,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: Some("rust-analyzer"),
     },
     ServerSpec {
         id: "typescript-language-server",
@@ -137,6 +160,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &["--stdio"],
         languages: &["typescript", "javascript"],
         project_local: true,
+        profile_state: LanguageServerProfileState::Active,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: Some("typescript-language-server"),
     },
     ServerSpec {
         id: "pyright",
@@ -145,6 +171,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &["--stdio"],
         languages: &["python"],
         project_local: true,
+        profile_state: LanguageServerProfileState::DiscoveryOnly,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: None,
     },
     ServerSpec {
         id: "gopls",
@@ -153,6 +182,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &[],
         languages: &["go"],
         project_local: false,
+        profile_state: LanguageServerProfileState::DiscoveryOnly,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: None,
     },
     ServerSpec {
         id: "clangd",
@@ -161,6 +193,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &[],
         languages: &["c", "cpp"],
         project_local: false,
+        profile_state: LanguageServerProfileState::DiscoveryOnly,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: None,
     },
     ServerSpec {
         id: "jdtls",
@@ -169,6 +204,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &[],
         languages: &["java"],
         project_local: false,
+        profile_state: LanguageServerProfileState::DiscoveryOnly,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: None,
     },
     ServerSpec {
         id: "kotlin-language-server",
@@ -177,6 +215,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &[],
         languages: &["kotlin"],
         project_local: false,
+        profile_state: LanguageServerProfileState::DiscoveryOnly,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: None,
     },
     ServerSpec {
         id: "sourcekit-lsp",
@@ -185,6 +226,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &[],
         languages: &["swift"],
         project_local: false,
+        profile_state: LanguageServerProfileState::DiscoveryOnly,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: None,
     },
     ServerSpec {
         id: "bash-language-server",
@@ -193,6 +237,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &["start"],
         languages: &["shell"],
         project_local: true,
+        profile_state: LanguageServerProfileState::DiscoveryOnly,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: None,
     },
     ServerSpec {
         id: "json-language-server",
@@ -201,6 +248,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &["--stdio"],
         languages: &["json"],
         project_local: true,
+        profile_state: LanguageServerProfileState::Active,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: Some("json-language-server"),
     },
     ServerSpec {
         id: "yaml-language-server",
@@ -209,6 +259,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &["--stdio"],
         languages: &["yaml"],
         project_local: true,
+        profile_state: LanguageServerProfileState::Active,
+        initialization_profile: LanguageServerInitializationProfile::Default,
+        install_recipe_id: Some("yaml-language-server"),
     },
     ServerSpec {
         id: "taplo",
@@ -217,6 +270,9 @@ const SERVER_SPECS: &[ServerSpec] = &[
         arguments: &["lsp", "stdio"],
         languages: &["toml"],
         project_local: false,
+        profile_state: LanguageServerProfileState::Active,
+        initialization_profile: LanguageServerInitializationProfile::Taplo,
+        install_recipe_id: Some("taplo"),
     },
 ];
 
@@ -277,6 +333,9 @@ fn descriptor_for(spec: &ServerSpec, project_path: &Path) -> LanguageServerDescr
         },
         source,
         capabilities: LanguageServerCapabilities::full(),
+        profile_state: spec.profile_state,
+        initialization_profile: spec.initialization_profile,
+        install_recipe_id: spec.install_recipe_id.map(str::to_string),
     }
 }
 
@@ -322,6 +381,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn registry_marks_first_wave_profiles_active() {
+        let active = SERVER_SPECS
+            .iter()
+            .filter(|server| server.profile_state == LanguageServerProfileState::Active)
+            .map(|server| server.id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            active,
+            vec![
+                "rust-analyzer",
+                "typescript-language-server",
+                "json-language-server",
+                "yaml-language-server",
+                "taplo",
+            ]
+        );
+
+        let taplo = SERVER_SPECS
+            .iter()
+            .find(|server| server.id == "taplo")
+            .expect("taplo profile");
+        assert_eq!(
+            taplo.initialization_profile,
+            LanguageServerInitializationProfile::Taplo
+        );
+        assert_eq!(taplo.install_recipe_id, Some("taplo"));
+
+        let typescript = SERVER_SPECS
+            .iter()
+            .find(|server| server.id == "typescript-language-server")
+            .expect("typescript profile");
+        assert_eq!(typescript.languages, &["typescript", "javascript"]);
+        assert_eq!(
+            typescript.install_recipe_id,
+            Some("typescript-language-server")
+        );
+
+        let discovery_only = SERVER_SPECS
+            .iter()
+            .filter(|server| server.profile_state == LanguageServerProfileState::DiscoveryOnly)
+            .map(|server| server.id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            discovery_only,
+            vec![
+                "pyright",
+                "gopls",
+                "clangd",
+                "jdtls",
+                "kotlin-language-server",
+                "sourcekit-lsp",
+                "bash-language-server",
+            ]
+        );
+    }
+
+    #[test]
     fn registry_maps_primary_languages_to_expected_servers() {
         let rust = SERVER_SPECS
             .iter()
@@ -347,6 +463,9 @@ mod tests {
             availability: LanguageServerAvailability::Missing,
             source: None,
             capabilities: LanguageServerCapabilities::full(),
+            profile_state: LanguageServerProfileState::Active,
+            initialization_profile: LanguageServerInitializationProfile::Default,
+            install_recipe_id: None,
         };
         let available = LanguageServerDescriptor {
             id: "available".into(),
@@ -357,6 +476,9 @@ mod tests {
             availability: LanguageServerAvailability::Available,
             source: Some(LanguageServerSource::Path),
             capabilities: LanguageServerCapabilities::full(),
+            profile_state: LanguageServerProfileState::Active,
+            initialization_profile: LanguageServerInitializationProfile::Default,
+            install_recipe_id: None,
         };
         let snapshot = LanguageIntelligenceSnapshot {
             project: "demo".into(),
