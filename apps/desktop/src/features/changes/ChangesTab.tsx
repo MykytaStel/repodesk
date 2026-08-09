@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useGit } from "../git/useGit";
 import { useCode } from "../code/useCode";
 import { FindingRow, HealthTrend } from "../code/CodeFindings";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
-import { ActorBadge, EmptyState, stringifyPreview } from "../../shared/ui/SharedComponents";
+import { EmptyState, stringifyPreview } from "../../shared/ui/SharedComponents";
 import { callCommand, queryKeys } from "../../shared/api/queries";
 import { requestCodeWorkspaceOpen } from "../../shared/api/codeWorkspace";
 import {
@@ -18,25 +18,21 @@ import { listFromRecord } from "../../shared/utils/helpers";
 import type { FileFindings } from "../../shared/api/repopilot";
 import { ChangeGovernancePanel } from "./ChangeGovernancePanel";
 
-// "Changes" is the evidence surface between produced code and a commit. Git
-// state still drives what is physically present in the checkout; the engineering
-// ledger adds provenance, scope, review and verification without pretending an
-// unrecorded working-tree edit belongs to the latest agent ChangeSet.
 type FileStatus = "staged" | "modified" | "untracked";
 const STATUS_META: Record<FileStatus, { label: string; tone: string }> = {
-  staged: { label: "Staged", tone: "ok" },
-  modified: { label: "Modified", tone: "warn" },
-  untracked: { label: "New", tone: "" },
+  staged: { label: "S", tone: "ok" },
+  modified: { label: "M", tone: "warn" },
+  untracked: { label: "U", tone: "neutral" },
 };
 
 type ViewMode = "diff" | "file";
 
-function scopeMeta(state: ChangeFileScopeState): { label: string; tone: string } {
+function exceptionalScopeMeta(state: ChangeFileScopeState | undefined): { label: string; tone: string } | null {
   switch (state) {
-    case "allowed": return { label: "In scope", tone: "ok" };
     case "out_of_scope": return { label: "Out of scope", tone: "danger" };
     case "protected": return { label: "Protected", tone: "danger" };
     case "ungoverned": return { label: "Ungoverned", tone: "warn" };
+    default: return null;
   }
 }
 
@@ -48,19 +44,21 @@ export function ChangesTab({
   const queryClient = useQueryClient();
   const { hasTask } = useWorkspace();
   const { git, branch, dirty, dirtyCount } = useGit();
-  const { changedFiles, report, fileFindings, reviewing, runReview, trend } = useCode();
+  const [findingsOpen, setFindingsOpen] = useState(false);
+  const { changedFiles, report, fileFindings, reviewing, runReview, trend } = useCode({ includeHistory: findingsOpen });
   const engineering = useQuery({
     queryKey: WORK_ENGINEERING_SNAPSHOT_KEY,
     queryFn: () => workEngineeringSnapshot(),
     enabled: hasTask,
-    refetchInterval: 4_000,
+    staleTime: 2_000,
+    refetchOnWindowFocus: true,
   });
 
   const [selectedFile, setSelectedFile] = useState("");
   const [preview, setPreview] = useState("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("diff");
-  const autoRan = useRef(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
 
   const staged = listFromRecord(git, ["staged", "staged_files"]);
   const unstaged = listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"]);
@@ -121,13 +119,6 @@ export function ChangesTab({
     if (selectedFile) void loadPreview(selectedFile, viewMode);
   }, [viewMode]);
 
-  useEffect(() => {
-    if (!autoRan.current && rows.length > 0 && !report && !reviewing) {
-      autoRan.current = true;
-      runReview();
-    }
-  }, [rows.length, report, reviewing, runReview]);
-
   const refreshWorkspace = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
     void queryClient.invalidateQueries({ queryKey: WORK_ENGINEERING_SNAPSHOT_KEY });
@@ -140,113 +131,119 @@ export function ChangesTab({
   };
 
   const selectedGroup = selectedFile ? findingsByFile.get(selectedFile) : undefined;
-  const counts = report?.counts;
+  const blocker = governance?.gate.blockers[0] ?? null;
+  const gateLabel = governance?.gate.ready
+    ? "Ready to commit"
+    : governance?.gate.state?.split("_").join(" ") ?? "No ChangeSet";
 
   return (
-    <div className="changes-tab">
-      <div className="changes-summary">
-        <div>
+    <div className="changes-tab changes-focus-layout">
+      <header className="changes-focus-header">
+        <div className="changes-focus-title">
           <p className="eyebrow">Changes</p>
           <strong>{branch}</strong>
+          <span className={dirty ? "warn" : "muted"}>{dirty ? `${dirtyCount} uncommitted` : "Working tree clean"}</span>
         </div>
-        <div className="changes-actions">
-          <span className={`changes-pill ${dirty ? "dirty" : "clean"}`}>
-            {dirty ? `${dirtyCount} uncommitted` : "Working tree clean"}
-          </span>
-          <button className="ghost-button" onClick={refreshWorkspace}>Refresh</button>
-          <button className="primary-button" onClick={() => runReview()} disabled={reviewing}>
-            {reviewing ? "Reviewing…" : report ? "Re-run RepoPilot" : "Run RepoPilot"}
+        <div className="changes-focus-actions">
+          <button className="tiny-button" onClick={refreshWorkspace}>Refresh</button>
+          <button className="tiny-button" onClick={() => setEvidenceOpen((open) => !open)}>
+            Evidence{governance?.gate.ready ? " ✓" : blocker ? " !" : ""}
           </button>
-          <ActorBadge mode="auto" />
+          <button
+            className={`tiny-button${findingsOpen ? " active" : ""}`}
+            onClick={() => {
+              if (!report && !reviewing) runReview();
+              setFindingsOpen((open) => !open);
+            }}
+            disabled={reviewing}
+          >
+            {reviewing ? "Analyzing…" : report ? `Findings ${report.total}` : "Analyze"}
+          </button>
         </div>
-      </div>
+      </header>
 
       {hasTask ? (
+        <div className={`changes-gate-bar${blocker ? " danger" : ""}`}>
+          <span>Commit gate</span>
+          <strong>{gateLabel}</strong>
+          {blocker ? <small>{blocker}</small> : <small>{governance?.changeset_id ?? "No active ChangeSet"}</small>}
+          <button className="link-cta" onClick={() => setEvidenceOpen((open) => !open)}>
+            {evidenceOpen ? "Hide evidence" : "Inspect evidence"}
+          </button>
+        </div>
+      ) : (
+        <div className="changes-gate-bar muted">
+          <span>Governance</span><strong>No active Work Item</strong><small>Git changes are visible but unattributed.</small>
+        </div>
+      )}
+
+      {evidenceOpen && hasTask ? (
         <ChangeGovernancePanel
           governance={governance}
           loading={engineering.isLoading}
           error={engineering.isError ? engineering.error : null}
         />
-      ) : (
-        <div className="change-evidence-message">
-          <strong>No active Work Item</strong>
-          <span>Git changes are visible, but RepoDesk cannot attribute or govern them until a Work Item is active.</span>
-        </div>
-      )}
-
-      {report?.error ? (
-        <div className="notice danger">{report.error}</div>
-      ) : report ? (
-        <div className="changes-counts">
-          <div className="route-summary-grid">
-            <div><span>Critical</span><strong>{counts?.critical ?? 0}</strong></div>
-            <div><span>High</span><strong>{counts?.high ?? 0}</strong></div>
-            <div><span>Medium</span><strong>{counts?.medium ?? 0}</strong></div>
-            <div><span>Low</span><strong>{counts?.low ?? 0}</strong></div>
-          </div>
-          <HealthTrend points={trend} />
-        </div>
       ) : null}
 
-      <div className="content-grid two-column-grid">
-        <div className="left-column">
-          <section className="panel">
-            <div className="panel-title-row compact">
-              <h2>Changed files</h2>
-              <span className="pill">{rows.length}</span>
-            </div>
-            <div className="file-list scroll-area small">
-              {rows.length === 0 && <p className="muted">No changed files. Working tree is clean.</p>}
-              {rows.map((file) => {
-                const status = statusOf(file);
-                const group = findingsByFile.get(file);
-                const active = file === selectedFile;
-                const scope = governanceByFile.get(file);
-                const physicallyChanged = status != null || changedFiles.includes(file);
-                const unattributed = physicallyChanged && governance?.changeset_id != null && scope == null;
-                const scopeBadge = scope ? scopeMeta(scope) : null;
-                return (
-                  <button
-                    key={file}
-                    className={`file-row ${active ? "active" : ""}`}
-                    onClick={() => void loadPreview(file, viewMode)}
-                    onDoubleClick={() => {
-                      requestCodeWorkspaceOpen(file);
-                      setActiveTab("code", `Open ${file} in Code.`);
-                    }}
-                  >
-                    <code>{file}</code>
-                    <span className="file-badges">
-                      {scopeBadge ? <span className={`pill ${scopeBadge.tone}`}>{scopeBadge.label}</span> : null}
-                      {unattributed ? <span className="pill warn">Unattributed</span> : null}
-                      {status && <span className={`pill ${STATUS_META[status].tone}`}>{STATUS_META[status].label}</span>}
-                      {group && group.blocking > 0 && <span className="pill danger">{group.blocking}</span>}
-                      {group && <span className="pill">{group.total}</span>}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        </div>
+      <div className="changes-focus-workspace">
+        <section className="changes-file-pane" aria-label="Changed files">
+          <div className="changes-pane-head">
+            <strong>Files</strong>
+            <span>{rows.length}</span>
+          </div>
+          <div className="file-list scroll-area changes-file-list">
+            {rows.length === 0 ? <p className="muted">No changed files.</p> : null}
+            {rows.map((file) => {
+              const status = statusOf(file);
+              const group = findingsByFile.get(file);
+              const active = file === selectedFile;
+              const scope = governanceByFile.get(file);
+              const exceptionalScope = exceptionalScopeMeta(scope);
+              const physicallyChanged = status != null || changedFiles.includes(file);
+              const unattributed = physicallyChanged && governance?.changeset_id != null && scope == null;
+              return (
+                <button
+                  key={file}
+                  className={`file-row changes-file-row${active ? " active" : ""}`}
+                  onClick={() => void loadPreview(file, viewMode)}
+                  onDoubleClick={() => {
+                    requestCodeWorkspaceOpen(file);
+                    setActiveTab("code", `Open ${file} in Code.`);
+                  }}
+                >
+                  <code>{file}</code>
+                  <span className="file-badges">
+                    {exceptionalScope ? <span className={`pill ${exceptionalScope.tone}`}>{exceptionalScope.label}</span> : null}
+                    {unattributed ? <span className="pill warn">Unattributed</span> : null}
+                    {status ? <span className={`pill ${STATUS_META[status].tone}`}>{STATUS_META[status].label}</span> : null}
+                    {group?.blocking ? <span className="pill danger">{group.blocking}</span> : null}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
-        <div className="right-column">
-          <section className="panel preview-panel">
-            <div className="panel-title-row">
-              <p className="eyebrow">{selectedFile ? "Preview" : "Diff"}</p>
-              {selectedFile && (
-                <div className="preview-controls">
-                  <code>{selectedFile}</code>
-                  <div className="button-row" style={{ marginTop: 0 }}>
-                    <button className="tiny-button ghost-button" onClick={openSelectedInCode}>Open in Code</button>
-                    <button className={`tiny-button ${viewMode === "diff" ? "primary-button" : "ghost-button"}`} onClick={() => setViewMode("diff")}>Diff</button>
-                    <button className={`tiny-button ${viewMode === "file" ? "primary-button" : "ghost-button"}`} onClick={() => setViewMode("file")}>Full File</button>
-                  </div>
-                </div>
-              )}
+        <section className="changes-preview-pane">
+          <div className="changes-pane-head preview">
+            <div className="changes-preview-location">
+              <strong>{selectedFile ? selectedFile.split("/").pop() : "Diff"}</strong>
+              {selectedFile ? <code>{selectedFile}</code> : <span>Select a changed file</span>}
             </div>
+            {selectedFile ? (
+              <div className="changes-preview-actions">
+                <button className="tiny-button" onClick={openSelectedInCode}>Open in Code</button>
+                <div className="changes-view-switch" role="group" aria-label="Changes view">
+                  <button className={`tiny-button${viewMode === "diff" ? " active" : ""}`} onClick={() => setViewMode("diff")}>Diff</button>
+                  <button className={`tiny-button${viewMode === "file" ? " active" : ""}`} onClick={() => setViewMode("file")}>File</button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="changes-preview-content">
             {!selectedFile ? (
-              <EmptyState message={dirty ? "Select a file to view its diff." : "Working tree is clean."} hint="Changed files appear on the left." />
+              <EmptyState message={dirty ? "Select a file to inspect its diff." : "Working tree is clean."} hint="Double-click a file to edit it in Code." />
             ) : previewLoading ? (
               <p className="muted">Loading…</p>
             ) : viewMode === "diff" ? (
@@ -254,15 +251,22 @@ export function ChangesTab({
             ) : (
               <pre className="code-panel scrollable">{preview || "No content."}</pre>
             )}
-          </section>
+          </div>
+        </section>
 
-          <section className="panel">
-            <div className="panel-title-row">
-              <p className="eyebrow">Findings</p>
-              {selectedFile && <strong>{selectedFile}</strong>}
+        {findingsOpen ? (
+          <aside className="changes-findings-drawer" aria-label="RepoPilot findings">
+            <div className="changes-pane-head">
+              <div>
+                <strong>Engineering findings</strong>
+                <span>{report ? `${report.total} in current changes` : "Not analyzed"}</span>
+              </div>
+              <button className="tiny-button" onClick={() => setFindingsOpen(false)}>×</button>
             </div>
+            {report?.error ? <div className="notice danger">{report.error}</div> : null}
+            {report ? <HealthTrend points={trend} /> : null}
             {!report ? (
-              <p className="muted">Run RepoPilot to surface findings inline.</p>
+              <p className="muted">Run Analyze to inspect the current diff.</p>
             ) : selectedGroup ? (
               <ul className="findings-list">
                 {selectedGroup.findings.map((finding, index) => <FindingRow key={index} finding={finding} />)}
@@ -272,20 +276,15 @@ export function ChangesTab({
             ) : fileFindings.length === 0 ? (
               <p className="muted">No findings in the current diff.</p>
             ) : (
-              fileFindings.map((group) => (
-                <div key={group.file} className="finding-group">
-                  <div className="finding-group-head">
-                    <code>{group.file}</code>
-                    {group.blocking > 0 && <span className="pill danger">{group.blocking} blocking</span>}
-                  </div>
-                  <ul className="findings-list">
-                    {group.findings.map((finding, index) => <FindingRow key={index} finding={finding} />)}
-                  </ul>
-                </div>
+              fileFindings.slice(0, 12).map((group) => (
+                <button className="changes-finding-group" key={group.file} onClick={() => void loadPreview(group.file, viewMode)}>
+                  <code>{group.file}</code>
+                  <span>{group.total}</span>
+                </button>
               ))
             )}
-          </section>
-        </div>
+          </aside>
+        ) : null}
       </div>
     </div>
   );

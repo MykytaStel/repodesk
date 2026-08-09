@@ -11,14 +11,17 @@ import {
 
 /** RepoPilot analysis state shared by Changes and compatibility surfaces.
  * Changed files reuse the canonical Git snapshot instead of triggering the old
- * Code-workbench IPC path, avoiding an extra repository/Git read. */
-export function useCode() {
+ * Code-workbench IPC path. Historical trend data is opt-in because most code
+ * surfaces do not need to touch task history just to show the current diff. */
+export function useCode(options?: { includeHistory?: boolean }) {
   const queryClient = useQueryClient();
   const { git, isLoading } = useGit();
+  const includeHistory = options?.includeHistory ?? false;
 
   const { data: history } = useQuery<RepoPilotHistory>({
     queryKey: ["repopilot_history"],
     queryFn: getRepopilotHistory,
+    enabled: includeHistory,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
