@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { CODE_OPEN_EVENT } from "../shared/api/codeWorkspace";
 import type { TabId } from "../shared/types/api";
 import type { AppTab } from "./tabs";
 import {
@@ -61,6 +62,15 @@ export function ActivityRail({
   onToggleBottomPanel,
   onOpenPalette,
 }: ActivityRailProps) {
+  // Diagnostics and other secondary surfaces can request an exact Code location
+  // without coupling themselves to App's route state. The Code workspace still
+  // consumes and validates the one-shot path/location request separately.
+  useEffect(() => {
+    const openCode = () => onSelect("code");
+    window.addEventListener(CODE_OPEN_EVENT, openCode);
+    return () => window.removeEventListener(CODE_OPEN_EVENT, openCode);
+  }, [onSelect]);
+
   return (
     <aside className="activity-rail" aria-label="Primary workspace navigation">
       <div className="activity-rail-top">
