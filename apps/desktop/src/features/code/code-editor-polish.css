@@ -125,6 +125,13 @@
   font-size: 9.5px;
 }
 
+.code-language-service {
+  max-width: min(180px, 24vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .code-find-bar {
   top: 9px;
   right: 16px;
