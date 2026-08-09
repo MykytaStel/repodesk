@@ -81,11 +81,7 @@ pub fn acceptance_evidence_path(run_dir: &Path) -> PathBuf {
 }
 
 pub fn criterion_id(criterion: &str) -> String {
-    let normalized = criterion
-        .trim()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let normalized = criterion.split_whitespace().collect::<Vec<_>>().join(" ");
     let digest = Sha256::digest(normalized.as_bytes());
     hex::encode(digest)[..16].to_string()
 }

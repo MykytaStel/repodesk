@@ -68,8 +68,8 @@ export function ProblemsPanel() {
   if (snapshot.diagnostics.length === 0) {
     return (
       <div className="problems-empty">
-        <strong>No code problems collected.</strong>
-        <span>Run project tasks or Analyze changes. Language-service diagnostics will use this same list when live sessions are enabled.</span>
+        <strong>No code problems.</strong>
+        <span>Rust diagnostics appear live while an .rs file is open. Project tasks and RepoPilot findings use this same list.</span>
       </div>
     );
   }

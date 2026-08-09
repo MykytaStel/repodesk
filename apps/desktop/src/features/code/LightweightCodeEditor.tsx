@@ -7,6 +7,7 @@ import {
   languageServerFor,
 } from "../../shared/api/languageIntelligence";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { useLiveRustLanguage } from "./useLiveRustLanguage";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
@@ -76,6 +77,14 @@ export function LightweightCodeEditor({
     () => languageServerFor(languageIntelligence.data, language),
     [language, languageIntelligence.data],
   );
+  const liveLanguage = useLiveRustLanguage({
+    path,
+    value,
+    language,
+    projectName,
+    server: languageServer,
+    cursor,
+  });
 
   const lineCount = useMemo(() => value.length === 0 ? 1 : value.split("\n").length, [value]);
   const lineNumbers = useMemo(
@@ -201,6 +210,7 @@ export function LightweightCodeEditor({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (liveLanguage.handleKeyDown(event)) return;
     const mod = event.metaKey || event.ctrlKey;
     if (mod && event.key.toLowerCase() === "s") {
       event.preventDefault();
@@ -271,6 +281,16 @@ export function LightweightCodeEditor({
     top: `calc(${EDITOR_TOP_PADDING_PX}px + ${(cursor.line - 1) * EDITOR_LINE_HEIGHT_PX}px - var(--editor-scroll-top, 0px))`,
   } as CSSProperties;
 
+  const languageStatus = languageServer
+    ? language === "rust" && languageServer.availability === "available"
+      ? liveLanguage.statusLabel ?? "RA starting"
+      : `LS ${languageServer.label} ${languageServer.availability === "available" ? "found" : "missing"}`
+    : null;
+  const languageStatusTitle = liveLanguage.statusTitle
+    ?? (languageServer?.availability === "available"
+      ? `${languageServer.label} discovered${languageServer.source === "project_local" ? " in this project" : " on PATH"}.`
+      : languageServer ? `${languageServer.label} is supported but was not found.` : null);
+
   return (
     <section className="code-editor-shell" aria-label={`Editor for ${path}`}>
       {findOpen ? (
@@ -294,6 +314,8 @@ export function LightweightCodeEditor({
           <button type="button" onClick={() => setFindOpen(false)} title="Close find">×</button>
         </div>
       ) : null}
+
+      {liveLanguage.panel}
 
       <div className="code-editor-body">
         <div ref={gutterShellRef} className="code-editor-gutter-shell" aria-label="Line numbers">
@@ -342,14 +364,12 @@ export function LightweightCodeEditor({
       <footer className="code-editor-status">
         <span>Ln {cursor.line}, Col {cursor.column}</span>
         <span>{language}</span>
-        {languageServer ? (
+        {languageStatus ? (
           <span
-            className={`code-language-service ${languageServer.availability}`}
-            title={languageServer.availability === "available"
-              ? `${languageServer.label} discovered${languageServer.source === "project_local" ? " in this project" : " on PATH"}. Live LSP sessions are not started in this slice.`
-              : `${languageServer.label} is supported but was not found.`}
+            className={`code-language-service ${liveLanguage.status?.state ?? languageServer?.availability ?? "missing"}`}
+            title={languageStatusTitle ?? undefined}
           >
-            LS {languageServer.label} {languageServer.availability === "available" ? "found" : "missing"}
+            {languageStatus}
           </span>
         ) : null}
         <span>UTF-8</span>
