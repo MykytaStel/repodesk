@@ -59,7 +59,6 @@ function putMarker(markers: Map<number, GitLineKind>, line: number, kind: GitLin
  */
 export function parseGitLineMarkers(diff: string): GitLineMarker[] {
   const markers = new Map<number, GitLineKind>();
-  let oldLine = 0;
   let newLine = 0;
   let pendingDeletes = 0;
   let inHunk = false;
@@ -71,11 +70,10 @@ export function parseGitLineMarkers(diff: string): GitLineMarker[] {
   };
 
   for (const raw of diff.split(/\r?\n/)) {
-    const hunk = raw.match(/^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/);
+    const hunk = raw.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
     if (hunk) {
       flushDeletes();
-      oldLine = Number(hunk[1]);
-      newLine = Number(hunk[3]);
+      newLine = Number(hunk[1]);
       inHunk = true;
       continue;
     }
@@ -85,7 +83,6 @@ export function parseGitLineMarkers(diff: string): GitLineMarker[] {
     const prefix = raw[0];
     if (prefix === "-") {
       pendingDeletes += 1;
-      oldLine += 1;
       continue;
     }
     if (prefix === "+") {
@@ -97,7 +94,6 @@ export function parseGitLineMarkers(diff: string): GitLineMarker[] {
     }
     if (prefix === " ") {
       flushDeletes();
-      oldLine += 1;
       newLine += 1;
       continue;
     }
