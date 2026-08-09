@@ -1,5 +1,7 @@
+import type { LanguageDiagnostic, LanguageDiagnosticSeverity } from "./languageIntelligence";
+
 export type ProblemSeverity = "error" | "warning" | "info";
-export type ProblemSource = "repopilot" | "check" | "verification";
+export type ProblemSource = "repopilot" | "check" | "verification" | "lsp";
 
 export type ProblemDiagnostic = {
   id: string;
@@ -143,6 +145,27 @@ export function clearProblems(source?: ProblemSource) {
 
 function severityFromText(value: string): ProblemSeverity {
   return value.toLowerCase().startsWith("warn") ? "warning" : "error";
+}
+
+function lspSeverity(severity: LanguageDiagnosticSeverity): ProblemSeverity {
+  if (severity === "error") return "error";
+  if (severity === "warning") return "warning";
+  return "info";
+}
+
+/** Convert zero-based LSP protocol locations at the UI boundary only. */
+export function captureLanguageDiagnostics(items: readonly LanguageDiagnostic[]) {
+  const diagnostics = items.map((item) => diagnostic({
+    source: "lsp",
+    severity: lspSeverity(item.severity),
+    message: boundedMessage(item.message),
+    path: normalizePath(item.path),
+    line: item.range.start.line + 1,
+    column: item.range.start.character + 1,
+    code: item.code,
+    command: item.source || item.server_id,
+  }));
+  replaceProblemSource("lsp", diagnostics.filter((item) => item.path !== null));
 }
 
 /**
