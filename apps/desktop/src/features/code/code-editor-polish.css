@@ -1,0 +1,143 @@
+/* RD2 editor ergonomics ------------------------------------------------------
+   Keep the lightweight editor cheap while making its chrome behave like a real
+   code editor. Exact line metrics avoid font-rounding drift between textarea
+   content and the line-number gutter. */
+
+.code-document-toolbar {
+  min-height: 40px;
+  padding: 0 12px 0 14px;
+  gap: 12px;
+}
+
+.code-document-location {
+  font-size: 10.5px;
+}
+
+.code-document-location code {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+}
+
+.code-document-actions {
+  gap: 8px;
+}
+
+.code-workspace-toolbar {
+  min-height: 40px;
+  padding-inline: 12px;
+}
+
+.code-tab-strip {
+  min-height: 36px;
+}
+
+.code-file-tab-select {
+  min-height: 34px;
+  padding-left: 12px;
+}
+
+.code-editor-body {
+  grid-template-columns: 62px minmax(0, 1fr);
+}
+
+.code-editor-gutter-shell {
+  --editor-scroll-top: 0px;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid var(--border-strong);
+  background: var(--surface-2);
+}
+
+.code-editor-gutter,
+.code-editor-input {
+  box-sizing: border-box;
+  height: 100%;
+  margin: 0;
+  padding-top: 12px;
+  padding-bottom: 28px;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  tab-size: 2;
+}
+
+.code-editor-gutter {
+  width: 100%;
+  padding-right: 13px;
+  padding-left: 6px;
+  overflow: hidden;
+  background: transparent;
+  color: var(--muted-2);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+.code-editor-active-line-number {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 13px;
+  background: color-mix(in srgb, var(--surface-3) 86%, transparent);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  pointer-events: none;
+}
+
+.code-editor-input {
+  width: 100%;
+  min-width: 0;
+  padding-right: 22px;
+  padding-left: 16px;
+  resize: none;
+  overflow: auto;
+  background: var(--bg);
+  color: var(--text);
+  caret-color: var(--accent-2);
+  outline: none;
+  white-space: pre;
+}
+
+.code-editor-status {
+  min-height: 28px;
+  gap: 14px;
+  padding-inline: 14px;
+  font-size: 9.5px;
+}
+
+.code-find-bar {
+  top: 9px;
+  right: 16px;
+}
+
+@media (max-width: 680px) {
+  .code-editor-body {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+
+  .code-editor-gutter,
+  .code-editor-active-line-number {
+    padding-right: 10px;
+  }
+
+  .code-editor-input {
+    padding-left: 12px;
+  }
+}
