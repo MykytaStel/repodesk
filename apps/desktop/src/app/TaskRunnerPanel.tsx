@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   TASK_RUNNER_KEY,
@@ -113,16 +113,27 @@ function TaskRunDetail({ result }: { result: TaskRunResult }) {
   );
 }
 
-export function TaskRunnerPanel({ onOpenProblems }: { onOpenProblems: () => void }) {
+export function TaskRunnerPanel({
+  active,
+  onOpenProblems,
+}: {
+  active: boolean;
+  onOpenProblems: () => void;
+}) {
   const { hasProject, projectName } = useWorkspace();
   const queryClient = useQueryClient();
   const [results, setResults] = useState<Record<string, TaskRunResult>>({});
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
+  useEffect(() => {
+    setResults({});
+    setSelectedTaskId(null);
+  }, [projectName]);
+
   const snapshot = useQuery({
     queryKey: [...TASK_RUNNER_KEY, projectName ?? "none"],
     queryFn: taskRunnerSnapshot,
-    enabled: hasProject,
+    enabled: hasProject && active,
     staleTime: 15_000,
     refetchOnWindowFocus: true,
   });
@@ -149,7 +160,8 @@ export function TaskRunnerPanel({ onOpenProblems }: { onOpenProblems: () => void
       for (const result of batch.results) next[result.task_id] = result;
       setResults(next);
       const firstFailure = batch.results.find((result) => result.status !== "passed");
-      setSelectedTaskId(firstFailure?.task_id ?? batch.results.at(-1)?.task_id ?? null);
+      const last = batch.results.length > 0 ? batch.results[batch.results.length - 1] : null;
+      setSelectedTaskId(firstFailure?.task_id ?? last?.task_id ?? null);
       refreshWorkspaceAfterRun();
     },
   });
