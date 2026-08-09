@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { stringifyPreview } from "../../shared/ui/SharedComponents";
 import { callCommand } from "../../shared/api/queries";
+import { getRuntimeMetricsSnapshot, resetRuntimeMetrics } from "../../shared/api/runtimeMetrics";
 
 import { useDebug } from "./useDebug";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
@@ -22,6 +23,9 @@ export function DebugTab() {
   const [backupMsg, setBackupMsg] = useState("");
   const [restorePath, setRestorePath] = useState("");
   const [dataBusy, setDataBusy] = useState(false);
+  const [metricEpoch, setMetricEpoch] = useState(0);
+  const runtime = getRuntimeMetricsSnapshot();
+  void metricEpoch;
 
   async function runBackup() {
     setDataBusy(true);
@@ -52,8 +56,48 @@ export function DebugTab() {
       <section className="hero-panel wide-panel">
         <p className="eyebrow">Debug</p>
         <h1>{debugEvents.length} command traces.</h1>
-        <p className="lead">Raw state lives here so the product screens stay focused.</p>
+        <p className="lead">Raw state and bounded runtime telemetry live here so product surfaces stay focused.</p>
       </section>
+
+      <section className="panel wide-panel">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Runtime</p>
+            <h2>IPC cost since app start</h2>
+          </div>
+          <button
+            className="tiny-button"
+            onClick={() => {
+              resetRuntimeMetrics();
+              setMetricEpoch((value) => value + 1);
+            }}
+          >
+            Reset
+          </button>
+        </div>
+        <div className="route-summary-grid">
+          <div><span>Calls</span><strong>{runtime.total_calls}</strong></div>
+          <div><span>Errors</span><strong>{runtime.total_errors}</strong></div>
+          <div><span>Total IPC time</span><strong>{runtime.total_ms.toLocaleString()}ms</strong></div>
+          <div><span>Commands</span><strong>{runtime.tracked_commands}</strong></div>
+        </div>
+        <div className="debug-runtime-table" role="table" aria-label="IPC runtime metrics">
+          <div className="debug-runtime-row header" role="row">
+            <span>Command</span><span>Calls</span><span>Total</span><span>Max</span><span>Errors</span>
+          </div>
+          {runtime.commands.slice(0, 12).map((metric) => (
+            <div className="debug-runtime-row" role="row" key={metric.command}>
+              <code>{metric.command}</code>
+              <span>{metric.calls}</span>
+              <span>{metric.total_ms.toLocaleString()}ms</span>
+              <span>{metric.max_ms.toLocaleString()}ms</span>
+              <span>{metric.errors}</span>
+            </div>
+          ))}
+          {runtime.commands.length === 0 ? <p className="muted">No IPC calls recorded yet.</p> : null}
+        </div>
+      </section>
+
       <section className="panel wide-panel">
         <div className="panel-title-row">
           <div><p className="eyebrow">Artifacts</p><h2>Prompt and context viewer</h2></div>
@@ -82,6 +126,7 @@ export function DebugTab() {
           <pre className="code-panel tall">{artifactContent || "Choose an artifact to preview."}</pre>
         )}
       </section>
+
       <section className="panel wide-panel">
         <p className="eyebrow">Command traces</p>
         <div className="debug-list">
@@ -93,6 +138,7 @@ export function DebugTab() {
           ))}
         </div>
       </section>
+
       <section className="panel wide-panel">
         <p className="eyebrow">Local data</p>
         <h2>Backup &amp; restore</h2>
