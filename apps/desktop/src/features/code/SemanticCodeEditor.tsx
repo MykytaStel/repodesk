@@ -13,7 +13,7 @@ import {
 } from "@codemirror/language";
 import { lintGutter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-import { EditorState, RangeSet, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, RangeSet, type Extension } from "@codemirror/state";
 import {
   EditorView,
   GutterMarker,
@@ -37,10 +37,11 @@ import { useLiveRustLanguage } from "./useLiveRustLanguage";
 import { useSemanticCodeState, type GitLineKind, type SemanticFileState } from "./useSemanticCodeState";
 import "./semantic-code-editor.css";
 
-function languageExtension(language: string): Extension {
+function languageExtension(language: string, path: string): Extension {
+  const extension = path.split(".").pop()?.toLowerCase() ?? "";
   if (language === "rust") return rust();
-  if (language === "typescript") return javascript({ typescript: true, jsx: true });
-  if (language === "javascript") return javascript({ jsx: true });
+  if (language === "typescript") return javascript({ typescript: true, jsx: extension === "tsx" });
+  if (language === "javascript") return javascript({ jsx: extension === "jsx" });
   if (language === "json") return json();
   return [];
 }
@@ -135,10 +136,11 @@ const GIT_MARKERS: Record<GitLineKind, GitMarker> = {
   deleted: new GitMarker("deleted"),
 };
 
-function gitGutterExtension(semantic: SemanticFileState): Extension {
+function gitGutterExtension(semantic: SemanticFileState, dirty: boolean): Extension {
   return gutter({
     class: "cm-git-gutter",
     markers(view) {
+      if (dirty) return RangeSet.empty;
       const ranges = semantic.gitLines.flatMap((item) => {
         if (item.line < 1 || item.line > view.state.doc.lines) return [];
         return [GIT_MARKERS[item.kind].range(view.state.doc.line(item.line).from)];
@@ -162,7 +164,7 @@ function codeMirrorDiagnostics(state: EditorState, semantic: SemanticFileState):
     return {
       from,
       to,
-      severity: problem.severity === "info" ? "info" : problem.severity,
+      severity: problem.severity,
       message: problem.message,
       source: problem.command || problem.source,
     };
@@ -254,12 +256,21 @@ export function SemanticCodeEditor({
   const { hasProject, projectName } = useWorkspace();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  const gitCompartmentRef = useRef<Compartment | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const dirtyRef = useRef(dirty);
+  const savingRef = useRef(saving);
+  const suppressChangeRef = useRef(false);
   const liveActionsRef = useRef<ReturnType<typeof useLiveRustLanguage>["actions"] | null>(null);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  dirtyRef.current = dirty;
+  savingRef.current = saving;
+
+  if (!gitCompartmentRef.current) gitCompartmentRef.current = new Compartment();
+  const gitCompartment = gitCompartmentRef.current;
 
   const languageIntelligence = useQuery({
     queryKey: [...LANGUAGE_INTELLIGENCE_KEY, projectName ?? "none"],
@@ -293,7 +304,7 @@ export function SemanticCodeEditor({
       extensions: [
         highlightSpecialChars(),
         history(),
-        gitGutterExtension(semantic),
+        gitCompartment.of(gitGutterExtension(semantic, dirty)),
         lineNumbers(),
         highlightActiveLineGutter(),
         drawSelection(),
@@ -304,7 +315,7 @@ export function SemanticCodeEditor({
         lintGutter(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         syntaxHighlighting(repodeskHighlight),
-        languageExtension(language),
+        languageExtension(language, path),
         editorTheme,
         EditorState.tabSize.of(2),
         keymap.of([
@@ -312,7 +323,7 @@ export function SemanticCodeEditor({
             key: "Mod-s",
             preventDefault: true,
             run: () => {
-              if (dirty && !saving) onSaveRef.current();
+              if (dirtyRef.current && !savingRef.current) onSaveRef.current();
               return true;
             },
           },
@@ -326,7 +337,10 @@ export function SemanticCodeEditor({
           ...searchKeymap,
         ]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+          if (update.docChanged) {
+            if (suppressChangeRef.current) suppressChangeRef.current = false;
+            else onChangeRef.current(update.state.doc.toString());
+          }
           if (update.selectionSet || update.docChanged) setCursor(cursorForState(update.state));
         }),
       ],
@@ -356,16 +370,15 @@ export function SemanticCodeEditor({
   // A document/language transition gets a clean CodeMirror state and history.
   // Semantic state and external content are updated by dedicated effects below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language, path]);
+  }, [gitCompartment, language, path]);
 
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
     if (current === value) return;
-    view.dispatch({
-      changes: { from: 0, to: current.length, insert: value },
-    });
+    suppressChangeRef.current = true;
+    view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
   }, [value]);
 
   useEffect(() => {
@@ -374,49 +387,11 @@ export function SemanticCodeEditor({
     view.dispatch(setDiagnostics(view.state, codeMirrorDiagnostics(view.state, semantic)));
   }, [semantic.problems]);
 
-  // Git line markers and the engineering strip are advisory projections. Rebuild
-  // the editor configuration only when those line markers materially change.
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    // Gutter projection is intentionally hidden while there is an unsaved draft;
-    // its line numbers belong to the on-disk Git delta, not the draft buffer.
-    const gitOnly = gitGutterExtension({ ...semantic, gitLines: dirty ? [] : semantic.gitLines });
-    view.dispatch({ effects: EditorState.reconfigure.of([
-      highlightSpecialChars(),
-      history(),
-      gitOnly,
-      lineNumbers(),
-      highlightActiveLineGutter(),
-      drawSelection(),
-      indentOnInput(),
-      bracketMatching(),
-      highlightActiveLine(),
-      highlightSelectionMatches(),
-      lintGutter(),
-      syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-      syntaxHighlighting(repodeskHighlight),
-      languageExtension(language),
-      editorTheme,
-      EditorState.tabSize.of(2),
-      keymap.of([
-        { key: "Mod-s", preventDefault: true, run: () => { if (dirty && !saving) onSaveRef.current(); return true; } },
-        { key: "F12", run: () => { liveActionsRef.current?.definition(); return true; } },
-        { key: "Shift-F12", run: () => { liveActionsRef.current?.references(); return true; } },
-        { key: "Mod-Shift-o", run: () => { liveActionsRef.current?.symbols(); return true; } },
-        { key: "Alt-h", run: () => { liveActionsRef.current?.hover(); return true; } },
-        indentWithTab,
-        ...defaultKeymap,
-        ...historyKeymap,
-        ...searchKeymap,
-      ]),
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) onChangeRef.current(update.state.doc.toString());
-        if (update.selectionSet || update.docChanged) setCursor(cursorForState(update.state));
-      }),
-    ]) });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, semantic.gitLines]);
+    view.dispatch({ effects: gitCompartment.reconfigure(gitGutterExtension(semantic, dirty)) });
+  }, [dirty, gitCompartment, semantic.gitLines]);
 
   const lineCount = value.length === 0 ? 1 : value.split("\n").length;
   const languageStatus = languageServer
