@@ -14,7 +14,7 @@ use repodesk_core::language_intelligence::{
     LspRange, active_language_intelligence_snapshot, preferred_server_for_language,
 };
 use repodesk_core::projects::get_active_project;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter};
 
@@ -253,7 +253,9 @@ impl LanguageServerManager {
         let snapshot = active_language_intelligence_snapshot().map_err(|error| error.to_string())?;
         let server = preferred_server_for_language(&snapshot, "rust")
             .ok_or_else(|| "No Rust language server is registered".to_string())?;
-        if server.id != "rust-analyzer" || server.availability != LanguageServerAvailability::Available {
+        if server.id != "rust-analyzer"
+            || server.availability != LanguageServerAvailability::Available
+        {
             return Err("rust-analyzer is not available for the active project".into());
         }
 
@@ -329,7 +331,7 @@ impl SessionInner {
             json!({
                 "processId": Value::Null,
                 "clientInfo": { "name": "RepoDesk", "version": "0.1.0" },
-                "rootUri": session.root_uri,
+                "rootUri": session.root_uri.clone(),
                 "capabilities": {
                     "workspace": {
                         "workspaceFolders": true,
@@ -348,8 +350,8 @@ impl SessionInner {
                     }
                 },
                 "workspaceFolders": [{
-                    "uri": session.root_uri,
-                    "name": session.project
+                    "uri": session.root_uri.clone(),
+                    "name": session.project.clone()
                 }]
             }),
             INITIALIZE_TIMEOUT,
@@ -378,7 +380,10 @@ impl SessionInner {
             .state
             .lock()
             .map(|state| (state.state, state.last_error.clone()))
-            .unwrap_or((LanguageServerSessionState::Error, Some("Language server state lock is poisoned".into())));
+            .unwrap_or((
+                LanguageServerSessionState::Error,
+                Some("Language server state lock is poisoned".into()),
+            ));
         let open_documents = self.documents.lock().map(|docs| docs.len()).unwrap_or(0);
         LanguageServerStatus {
             project: self.project.clone(),
@@ -444,6 +449,7 @@ impl SessionInner {
     }
 
     fn close_document(&self, path: &str) -> Result<(), String> {
+        let uri = self.document_uri(path)?;
         let mut documents = self
             .documents
             .lock()
@@ -453,7 +459,7 @@ impl SessionInner {
         }
         self.notify(
             "textDocument/didClose",
-            json!({ "textDocument": { "uri": self.document_uri(path)? } }),
+            json!({ "textDocument": { "uri": uri } }),
         )
     }
 
@@ -496,6 +502,7 @@ impl SessionInner {
                 if let Ok(mut pending) = self.pending.lock() {
                     pending.remove(&id);
                 }
+                let _ = self.notify("$/cancelRequest", json!({ "id": id }));
                 Err(format!("Language server request timed out: {method}"))
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
@@ -615,17 +622,10 @@ fn spawn_stderr_reader(session: Weak<SessionInner>, stderr: impl Read + Send + '
     thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            if let Some(session) = session.upgrade()
-                && let Ok(mut state) = session.state.lock()
-            {
-                state.last_error = Some(truncate_chars(trimmed, MAX_SERVER_ERROR_CHARS));
-            } else {
+            if session.upgrade().is_none() {
                 break;
             }
+            let _ = line;
         }
     });
 }
@@ -649,7 +649,10 @@ fn read_json_rpc_frame(reader: &mut impl BufRead) -> std::io::Result<Option<Valu
     }
 
     let length = content_length.ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, "Missing Content-Length header")
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Missing Content-Length header",
+        )
     })?;
     let mut body = vec![0_u8; length];
     reader.read_exact(&mut body)?;
@@ -682,13 +685,17 @@ fn handle_server_message(session: &Arc<SessionInner>, app: &AppHandle, message: 
         return;
     }
 
-    if let (Some(id), Some(method)) = (message.get("id").cloned(), message.get("method").and_then(Value::as_str)) {
+    if let (Some(id), Some(method)) = (
+        message.get("id").cloned(),
+        message.get("method").and_then(Value::as_str),
+    ) {
         let result = handle_server_request(session, method, message.get("params"));
         let _ = session.respond(id, result);
         return;
     }
 
-    if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
+    if message.get("method").and_then(Value::as_str)
+        == Some("textDocument/publishDiagnostics")
         && let Some(event) = diagnostics_event(session, message.get("params"))
     {
         let _ = app.emit("language-diagnostics", event);
@@ -710,8 +717,8 @@ fn handle_server_request(
             Ok(Value::Array(vec![Value::Null; count]))
         }
         "workspace/workspaceFolders" => Ok(json!([{
-            "uri": session.root_uri,
-            "name": session.project
+            "uri": session.root_uri.clone(),
+            "name": session.project.clone()
         }])),
         "client/registerCapability"
         | "client/unregisterCapability"
@@ -721,10 +728,7 @@ fn handle_server_request(
         | "workspace/codeLens/refresh"
         | "workspace/diagnostic/refresh" => Ok(Value::Null),
         "window/showMessageRequest" => Ok(Value::Null),
-        "workspace/applyEdit" => Ok(json!({
-            "applied": false,
-            "failureReason": "RepoDesk does not allow language servers to mutate the workspace"
-        })),
+        "workspace/applyEdit" => Ok(workspace_edit_rejection()),
         _ => Err(json!({
             "code": -32601,
             "message": format!("RepoDesk does not implement server request: {method}")
@@ -732,7 +736,17 @@ fn handle_server_request(
     }
 }
 
-fn diagnostics_event(session: &SessionInner, params: Option<&Value>) -> Option<LanguageDiagnosticsEvent> {
+fn workspace_edit_rejection() -> Value {
+    json!({
+        "applied": false,
+        "failureReason": "RepoDesk does not allow language servers to mutate the workspace"
+    })
+}
+
+fn diagnostics_event(
+    session: &SessionInner,
+    params: Option<&Value>,
+) -> Option<LanguageDiagnosticsEvent> {
     let params = params?;
     let uri = params.get("uri")?.as_str()?;
     let path = session.relative_path_from_uri(uri)?;
@@ -772,7 +786,10 @@ fn parse_diagnostic(server_id: &str, path: &str, value: &Value) -> Option<Langua
         severity,
         message: truncate_chars(value.get("message")?.as_str()?, MAX_SERVER_ERROR_CHARS),
         code,
-        source: value.get("source").and_then(Value::as_str).map(str::to_string),
+        source: value
+            .get("source")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
@@ -905,8 +922,15 @@ fn collect_symbol(
         .or_else(|| inherited_container.map(str::to_string));
     output.push(LanguageSymbol {
         name: name.to_string(),
-        detail: value.get("detail").and_then(Value::as_str).map(str::to_string),
-        kind: value.get("kind").and_then(Value::as_u64).and_then(|value| u32::try_from(value).ok()).unwrap_or(0),
+        detail: value
+            .get("detail")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        kind: value
+            .get("kind")
+            .and_then(Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .unwrap_or(0),
         range,
         selection_range,
         container_name,
@@ -956,7 +980,9 @@ fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
 fn percent_encode_path(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b':' | b'-' | b'_' | b'.' | b'~') {
+        if byte.is_ascii_alphanumeric()
+            || matches!(byte, b'/' | b':' | b'-' | b'_' | b'.' | b'~')
+        {
             encoded.push(char::from(byte));
         } else {
             encoded.push_str(&format!("%{byte:02X}"));
@@ -1030,13 +1056,15 @@ mod tests {
         let mut frame = format!("Content-Length: {}\r\n\r\n", body.len()).into_bytes();
         frame.extend_from_slice(body);
         let mut reader = BufReader::new(Cursor::new(frame));
-        let parsed = read_json_rpc_frame(&mut reader).expect("frame").expect("message");
+        let parsed = read_json_rpc_frame(&mut reader)
+            .expect("frame")
+            .expect("message");
         assert_eq!(parsed["id"], 7);
         assert_eq!(parsed["result"]["ok"], true);
     }
 
     #[test]
-    fn file_uri_round_trips_spaces_and_unicode() {
+    fn percent_encoding_round_trips_spaces_and_unicode() {
         let encoded = percent_encode_path("/tmp/repo desk/привіт.rs");
         assert!(encoded.contains("%20"));
         let decoded = percent_decode(&encoded).expect("decode");
@@ -1065,18 +1093,8 @@ mod tests {
     }
 
     #[test]
-    fn server_requests_never_apply_workspace_edits() {
-        let result = handle_server_request_for_test("workspace/applyEdit");
+    fn workspace_edits_are_never_accepted() {
+        let result = workspace_edit_rejection();
         assert_eq!(result["applied"], false);
-    }
-
-    fn handle_server_request_for_test(method: &str) -> Value {
-        if method == "workspace/applyEdit" {
-            return json!({
-                "applied": false,
-                "failureReason": "RepoDesk does not allow language servers to mutate the workspace"
-            });
-        }
-        Value::Null
     }
 }
