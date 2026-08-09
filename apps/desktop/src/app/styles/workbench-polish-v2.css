@@ -17,6 +17,7 @@
 
 .project-switcher-v2 .project-switcher-menu {
   top: calc(100% + 5px);
+  width: min(264px, calc(100vw - 80px));
   max-height: min(300px, calc(100vh - 160px));
   border-radius: 7px;
 }
