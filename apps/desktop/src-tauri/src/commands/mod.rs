@@ -24,6 +24,7 @@ pub mod security;
 pub mod settings;
 pub mod system;
 pub mod task;
+pub mod task_runner;
 pub mod tokens;
 pub mod workflow;
 
@@ -50,6 +51,7 @@ pub use repopilot::*;
 pub use security::*;
 pub use settings::*;
 pub use task::*;
+pub use task_runner::*;
 
 pub use repodesk_core::workflow::CommandResult;
 
