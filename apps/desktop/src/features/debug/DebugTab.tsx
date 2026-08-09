@@ -6,7 +6,6 @@ import { useDebug } from "./useDebug";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { useWorkflow } from "../workflow/useWorkflow";
 import { useGit } from "../git/useGit";
-import { useCode } from "../code/useCode";
 import { useTokens } from "../tokens/useTokens";
 import { useModels } from "../models/useModels";
 import { useSettings } from "../settings/useSettings";
@@ -16,7 +15,6 @@ export function DebugTab() {
   const { snapshot, dbState } = useWorkspace({ includeDbStatus: true });
   const { workflow, history } = useWorkflow();
   const { git } = useGit();
-  const { codeWorkbench } = useCode();
   const { tokens } = useTokens();
   const { models } = useModels();
   const { providerSettings } = useSettings();
@@ -110,7 +108,7 @@ export function DebugTab() {
       </section>
 
       <section className="panel wide-panel"><p className="eyebrow">Action history</p><pre className="code-panel tall">{(history && history.length) ? stringifyPreview(history, 8000) : "No action history yet."}</pre></section>
-      <section className="panel wide-panel"><p className="eyebrow">Raw state</p><pre className="code-panel tall">{stringifyPreview({ snapshot, workflow, git, codeWorkbench, tokens, models, providerSettings, dbState }, 14000)}</pre></section>
+      <section className="panel wide-panel"><p className="eyebrow">Raw state</p><pre className="code-panel tall">{stringifyPreview({ snapshot, workflow, git, tokens, models, providerSettings, dbState }, 14000)}</pre></section>
     </div>
   );
 }
