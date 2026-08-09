@@ -1,3 +1,4 @@
+import { captureRepoPilotProblems } from "./problems";
 import { callCommand } from "./queries";
 
 export type Severity = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "INFO";
@@ -51,8 +52,10 @@ const RANK: Record<Severity, number> = { CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1
 export const NO_FILE_KEY = "(no file)";
 
 /** Run a fresh RepoPilot review of the active project's current diff. */
-export function runRepopilotReview(): Promise<RepoPilotReport> {
-  return callCommand<RepoPilotReport>("repopilot_findings");
+export async function runRepopilotReview(): Promise<RepoPilotReport> {
+  const report = await callCommand<RepoPilotReport>("repopilot_findings");
+  captureRepoPilotProblems(report);
+  return report;
 }
 
 /** Read the active task's persisted health trend (oldest first). */

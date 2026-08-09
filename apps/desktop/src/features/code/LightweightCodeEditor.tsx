@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type UIEvent } from "react";
+import { CODE_OPEN_EVENT, consumeCodeWorkspaceLocation } from "../../shared/api/codeWorkspace";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
+const EDITOR_BOTTOM_PADDING_PX = 28;
 
 function lineAndColumn(value: string, offset: number): { line: number; column: number } {
   const safeOffset = Math.max(0, Math.min(offset, value.length));
@@ -11,6 +13,22 @@ function lineAndColumn(value: string, offset: number): { line: number; column: n
     line: before.split("\n").length,
     column: safeOffset - lastNewline,
   };
+}
+
+function offsetForLocation(value: string, line: number, column: number): number {
+  const targetLine = Math.max(1, line);
+  const targetColumn = Math.max(1, column);
+  let offset = 0;
+  let currentLine = 1;
+  while (currentLine < targetLine && offset < value.length) {
+    const newline = value.indexOf("\n", offset);
+    if (newline < 0) return value.length;
+    offset = newline + 1;
+    currentLine += 1;
+  }
+  const lineEnd = value.indexOf("\n", offset);
+  const maxOffset = lineEnd < 0 ? value.length : lineEnd;
+  return Math.min(maxOffset, offset + targetColumn - 1);
 }
 
 export function LightweightCodeEditor({
@@ -35,6 +53,7 @@ export function LightweightCodeEditor({
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLPreElement>(null);
   const gutterShellRef = useRef<HTMLDivElement>(null);
+  const gutterCompensationRef = useRef(0);
   const findRef = useRef<HTMLInputElement>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -46,13 +65,74 @@ export function LightweightCodeEditor({
     [lineCount],
   );
 
+  const syncGutter = (editor: HTMLTextAreaElement) => {
+    const scrollTop = editor.scrollTop;
+    const gutter = gutterRef.current;
+    if (gutter) {
+      // Keep line positions exactly 1:1. Some WebViews give the textarea a
+      // smaller clientHeight when a horizontal scrollbar is visible, so its
+      // maximum scrollTop can exceed the gutter's. If the gutter clamps early,
+      // add only the missing bottom range and retry instead of scaling scroll.
+      gutter.scrollTop = scrollTop;
+      const missingRange = scrollTop - gutter.scrollTop;
+      if (missingRange > 0.5) {
+        gutterCompensationRef.current += missingRange;
+        gutter.style.paddingBottom = `${EDITOR_BOTTOM_PADDING_PX + gutterCompensationRef.current}px`;
+        gutter.scrollTop = scrollTop;
+      }
+    }
+    if (gutterShellRef.current) {
+      gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
+    }
+  };
+
+  const applyPendingLocation = (): boolean => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    const location = consumeCodeWorkspaceLocation(path);
+    if (!location) return false;
+
+    const offset = offsetForLocation(value, location.line, location.column);
+    editor.focus();
+    editor.setSelectionRange(offset, offset);
+    setCursor(lineAndColumn(value, offset));
+    const targetTop = EDITOR_TOP_PADDING_PX + (location.line - 1) * EDITOR_LINE_HEIGHT_PX;
+    editor.scrollTop = Math.max(0, targetTop - editor.clientHeight * 0.32);
+    syncGutter(editor);
+    return true;
+  };
+
   useEffect(() => {
     setCursor({ line: 1, column: 1 });
     setFindOpen(false);
     setFindQuery("");
+    gutterCompensationRef.current = 0;
+    if (gutterRef.current) gutterRef.current.style.paddingBottom = `${EDITOR_BOTTOM_PADDING_PX}px`;
     if (gutterShellRef.current) gutterShellRef.current.style.setProperty("--editor-scroll-top", "0px");
-    requestAnimationFrame(() => editorRef.current?.focus());
+
+    requestAnimationFrame(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      if (applyPendingLocation()) return;
+      editor.focus();
+      syncGutter(editor);
+    });
+  // The opened document owns this transition. Location changes for the same
+  // path are handled by the event listener below instead of every keystroke.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
+
+  useEffect(() => {
+    const onOpenCode = () => {
+      requestAnimationFrame(() => {
+        void applyPendingLocation();
+      });
+    };
+    window.addEventListener(CODE_OPEN_EVENT, onOpenCode);
+    return () => window.removeEventListener(CODE_OPEN_EVENT, onOpenCode);
+  // Rebind when source changes so a location uses the current in-memory text.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, value]);
 
   const updateCursor = () => {
     const editor = editorRef.current;
@@ -107,11 +187,7 @@ export function LightweightCodeEditor({
   };
 
   const handleScroll = (event: UIEvent<HTMLTextAreaElement>) => {
-    const scrollTop = event.currentTarget.scrollTop;
-    if (gutterRef.current) gutterRef.current.scrollTop = scrollTop;
-    if (gutterShellRef.current) {
-      gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
-    }
+    syncGutter(event.currentTarget);
   };
 
   const activeLineStyle = {

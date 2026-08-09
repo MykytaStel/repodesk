@@ -8,17 +8,12 @@ import { CheckIcon, ChevronIcon, FolderIcon, PlusIcon } from "./NavIcons";
 
 type ProjectConfig = { name: string; path?: string; project_type?: string };
 
-function projectTypeLabel(value?: string): string {
-  if (!value) return "";
-  return value.replace(/[_\s]+/g, "-").toUpperCase();
-}
+const SEARCH_THRESHOLD = 6;
 
 /**
- * Compact workspace-context switcher. The connected-project registry stays
- * secondary to the active engineering surface: one small trigger opens a
- * searchable, keyboard-friendly popover only when the user asks for it.
- * Switching project re-scopes the entire application, so broad invalidation is
- * intentional here even though routine workflow mutations use domain scopes.
+ * Project switching is a context change, not a project-management form. Keep
+ * the common small-list path extremely compact; search appears only once the
+ * connected-project set is large enough to need it.
  */
 export function ProjectSwitcher({ projectName, onConnectProject }: { projectName: string; onConnectProject: () => void }) {
   const queryClient = useQueryClient();
@@ -27,6 +22,7 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
   const [search, setSearch] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const { data: projects = [], isFetching } = useQuery({
@@ -36,14 +32,15 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
     staleTime: 60_000,
   });
 
+  const showSearch = projects.length >= SEARCH_THRESHOLD;
   const filteredProjects = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return projects;
+    if (!showSearch || !query) return projects;
     return projects.filter((project) =>
       [project.name, project.path ?? "", project.project_type ?? ""]
         .some((value) => value.toLowerCase().includes(query)),
     );
-  }, [projects, search]);
+  }, [projects, search, showSearch]);
 
   const switchProject = useMutation({
     mutationFn: (name: string) => projectUse(name),
@@ -91,9 +88,18 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
   useEffect(() => {
     if (!open) return;
     setSearch("");
-    setHighlightedIndex(0);
-    requestAnimationFrame(() => searchRef.current?.focus());
+    const activeIndex = projects.findIndex((project) => project.name === projectName);
+    setHighlightedIndex(activeIndex >= 0 ? activeIndex : 0);
+    requestAnimationFrame(() => menuRef.current?.focus());
+  // Project data may arrive after the popover opens; do not refocus on every
+  // query result update and steal the user's keyboard position.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !showSearch) return;
+    if (document.activeElement === menuRef.current) searchRef.current?.focus();
+  }, [open, showSearch]);
 
   useEffect(() => {
     setHighlightedIndex((current) => Math.min(current, Math.max(0, filteredProjects.length - 1)));
@@ -124,7 +130,7 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
     };
   }, [open]);
 
-  const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+  const handleNavigationKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     const lastIndex = Math.max(0, filteredProjects.length - 1);
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -144,7 +150,7 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
   };
 
   return (
-    <div className="project-switcher" ref={ref}>
+    <div className="project-switcher project-switcher-v2" ref={ref}>
       <button
         type="button"
         className={`project-switcher-trigger${open ? " open" : ""}`}
@@ -159,31 +165,40 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
       </button>
 
       {open ? (
-        <div className="project-switcher-menu" role="dialog" aria-label="Switch project">
-          <div className="project-switcher-search">
-            <input
-              ref={searchRef}
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setHighlightedIndex(0);
-              }}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Search projects…"
-              aria-label="Search projects"
-            />
-            <span>{filteredProjects.length}</span>
-          </div>
+        <div
+          ref={menuRef}
+          className="project-switcher-menu"
+          role="dialog"
+          aria-label="Switch project"
+          tabIndex={-1}
+          onKeyDown={handleNavigationKeyDown}
+        >
+          {showSearch ? (
+            <div className="project-switcher-search compact">
+              <input
+                ref={searchRef}
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setHighlightedIndex(0);
+                }}
+                onKeyDown={handleNavigationKeyDown}
+                placeholder="Find project…"
+                aria-label="Find project"
+              />
+            </div>
+          ) : null}
 
           <div className="project-switcher-list" role="list">
             {isFetching && projects.length === 0 ? (
-              <p className="project-switcher-empty">Loading projects…</p>
+              <p className="project-switcher-empty">Loading…</p>
             ) : filteredProjects.length === 0 ? (
               <p className="project-switcher-empty">No matching projects.</p>
             ) : (
               filteredProjects.map((project, index) => {
                 const active = project.name === projectName;
                 const highlighted = index === highlightedIndex;
+                const meta = [project.project_type, project.path].filter(Boolean).join(" · ");
                 return (
                   <button
                     type="button"
@@ -192,31 +207,29 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
                     disabled={switchProject.isPending}
                     onMouseEnter={() => setHighlightedIndex(index)}
                     onClick={() => selectProject(project)}
-                    title={project.path}
+                    title={meta || project.name}
                     aria-current={active ? "true" : undefined}
                   >
                     <span className="project-switcher-check" aria-hidden="true">
                       {active ? <CheckIcon /> : null}
                     </span>
                     <span className="project-switcher-name">{project.name}</span>
-                    {project.project_type ? (
-                      <span className="project-switcher-type">{projectTypeLabel(project.project_type)}</span>
-                    ) : null}
                   </button>
                 );
               })
             )}
           </div>
 
-          <div className="project-switcher-footer">
+          <div className="project-switcher-footer compact">
             <button
               type="button"
               className="project-switcher-action"
               disabled={openFromFolder.isPending}
               onClick={() => openFromFolder.mutate()}
+              title="Open a project folder"
             >
               <span className="project-switcher-action-icon" aria-hidden="true"><FolderIcon /></span>
-              <span>{openFromFolder.isPending ? "Opening…" : "Open folder…"}</span>
+              <span>{openFromFolder.isPending ? "Opening…" : "Open folder"}</span>
             </button>
             <button
               type="button"
@@ -225,14 +238,11 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
                 setOpen(false);
                 onConnectProject();
               }}
+              title="Open the project registry"
             >
               <span className="project-switcher-action-icon" aria-hidden="true"><PlusIcon /></span>
-              <span>Connect project…</span>
+              <span>Projects…</span>
             </button>
-          </div>
-
-          <div className="project-switcher-hint" aria-hidden="true">
-            <span>↑↓ navigate</span><span>↵ open</span><span>esc close</span>
           </div>
         </div>
       ) : null}

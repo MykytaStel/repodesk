@@ -21,3 +21,5 @@
 @import "./styles/performance-density-v1.css";
 @import "../features/code/code-editor-polish.css";
 @import "./styles/ide-polish-v1.css";
+@import "./styles/workbench-polish-v2.css";
+@import "../features/knowledge/knowledge-v2.css";

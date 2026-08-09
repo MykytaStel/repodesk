@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  CODE_OPEN_EVENT,
   CODE_WORKSPACE_KEY,
   codeWorkspaceSnapshot,
   consumeCodeWorkspaceOpenRequest,
@@ -248,18 +249,25 @@ export function CodeTab({
     }
   }, [tabs]);
 
-  // Changes and future Problems/LSP views can request one file. The request is
-  // consumed exactly once; Rust still re-validates the repository-relative path.
+  // Changes, Problems and future LSP views can request a file while Code is
+  // either mounted or unmounted. Consume once on mount and also listen while
+  // this surface is already active so same-tab diagnostic navigation works.
   useEffect(() => {
     if (!workspace.data) return;
-    const requested = consumeCodeWorkspaceOpenRequest();
-    if (!requested) return;
-    const file = workspace.data.files.find((item) => item.path === requested);
-    if (!file) {
-      setWorkspaceError(`Requested file is not available in the active repository: ${requested}`);
-      return;
-    }
-    void openFile(file);
+    const consumeRequest = () => {
+      const requested = consumeCodeWorkspaceOpenRequest();
+      if (!requested) return;
+      const file = workspace.data.files.find((item) => item.path === requested);
+      if (!file) {
+        setWorkspaceError(`Requested file is not available in the active repository: ${requested}`);
+        return;
+      }
+      void openFile(file);
+    };
+
+    consumeRequest();
+    window.addEventListener(CODE_OPEN_EVENT, consumeRequest);
+    return () => window.removeEventListener(CODE_OPEN_EVENT, consumeRequest);
   }, [openFile, workspace.data]);
 
   const closeTab = (path: string) => {

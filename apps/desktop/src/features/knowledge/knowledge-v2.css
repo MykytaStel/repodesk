@@ -1,0 +1,122 @@
+/* RD2 Knowledge polish v2 ---------------------------------------------------
+   Project Knowledge is a review surface, not a dashboard. Empty filters should
+   collapse into one useful state instead of rendering an empty master/detail. */
+
+.knowledge-workspace-v2 {
+  gap: 12px;
+  max-width: 1180px;
+}
+
+.knowledge-page-header {
+  align-items: center;
+  padding: 4px 2px 12px;
+}
+
+.knowledge-page-header h1 {
+  font-size: 19px;
+}
+
+.knowledge-page-header .muted {
+  max-width: 62ch;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.knowledge-page-header .primary-button {
+  min-height: 30px;
+  padding-inline: 10px;
+  font-size: 10.5px;
+}
+
+.knowledge-workspace-v2 .knowledge-summary-strip {
+  width: auto;
+  max-width: max-content;
+  padding: 2px;
+  gap: 1px;
+  border-color: var(--border);
+  background: transparent;
+}
+
+.knowledge-workspace-v2 .knowledge-summary-strip button {
+  min-width: 78px;
+  min-height: 32px;
+  grid-template-columns: auto auto;
+  gap: 5px;
+  padding: 0 8px;
+  border-radius: 4px;
+}
+
+.knowledge-workspace-v2 .knowledge-summary-strip button.active {
+  background: var(--neutral-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.knowledge-workspace-v2 .knowledge-summary-strip strong {
+  font-size: 11px;
+}
+
+.knowledge-workspace-v2 .knowledge-summary-strip span {
+  font-size: 9.5px;
+}
+
+.knowledge-empty-state {
+  width: min(100%, 620px);
+  min-height: 126px;
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 6px;
+  padding: 18px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.knowledge-empty-state strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.knowledge-empty-state > span {
+  max-width: 58ch;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.knowledge-empty-state .tiny-button {
+  margin-top: 4px;
+}
+
+.knowledge-workspace-v2 .knowledge-master-detail {
+  min-height: 360px;
+  grid-template-columns: minmax(220px, 286px) minmax(0, 1fr);
+}
+
+.knowledge-workspace-v2 .knowledge-list-item {
+  gap: 5px;
+  padding: 8px 9px;
+}
+
+.knowledge-workspace-v2 .knowledge-detail {
+  padding: 16px 18px 20px;
+}
+
+.knowledge-workspace-v2 .knowledge-detail-section {
+  gap: 7px;
+  padding: 13px 0;
+}
+
+.knowledge-workspace-v2 .knowledge-context-state p,
+.knowledge-workspace-v2 .knowledge-content {
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 820px) {
+  .knowledge-page-header {
+    align-items: flex-start;
+  }
+
+  .knowledge-workspace-v2 .knowledge-master-detail {
+    grid-template-columns: 1fr;
+  }
+}

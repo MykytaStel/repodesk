@@ -1,0 +1,203 @@
+/* RD2 Problems --------------------------------------------------------------
+   Diagnostics are rows, not cards. The bottom panel is a dense engineering
+   surface: severity + message + source + exact location. */
+
+.problems-host {
+  padding: 0;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+.problems-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.problems-toolbar {
+  min-height: 34px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.problems-summary,
+.problems-filters {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.problems-summary {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.problems-summary span { white-space: nowrap; }
+
+.problems-filters {
+  gap: 2px;
+}
+
+.problems-filters button {
+  min-height: 25px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  box-shadow: none;
+}
+
+.problems-filters button:hover,
+.problems-filters button.active {
+  background: var(--neutral-soft);
+  color: var(--text);
+  transform: none;
+  box-shadow: none;
+}
+
+.problem-list {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+
+.problem-row {
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) minmax(150px, auto);
+  align-items: center;
+  gap: 9px;
+  padding: 5px 11px 5px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  box-shadow: none;
+}
+
+.problem-row:hover:not(:disabled) {
+  background: var(--neutral-soft);
+  transform: none;
+  box-shadow: none;
+}
+
+.problem-row:disabled {
+  cursor: default;
+  opacity: .82;
+}
+
+.problem-severity-mark {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.problem-row.severity-error .problem-severity-mark { background: var(--danger); }
+.problem-row.severity-warning .problem-severity-mark { background: var(--warning); }
+.problem-row.severity-info .problem-severity-mark { background: var(--muted); }
+
+.problem-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.problem-message {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problem-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.problem-meta code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+}
+
+.problem-location {
+  min-width: 0;
+  max-width: 360px;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.problems-empty,
+.problems-filter-empty {
+  min-height: 112px;
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 18px 14px;
+  color: var(--muted);
+}
+
+.problems-empty strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.problems-empty span,
+.problems-filter-empty {
+  max-width: 58ch;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .problem-row {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+
+  .problem-location {
+    grid-column: 2;
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .problems-summary span:last-child {
+    display: none;
+  }
+}

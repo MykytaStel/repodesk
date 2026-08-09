@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  captureActionDiagnostics,
+  clearProblems,
+  getProblemSnapshot,
+  subscribeProblems,
+} from "../shared/api/problems";
 import { callCommand, debugEmitter, type DebugEventDetail } from "../shared/api/queries";
+import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { formatNumber } from "../shared/utils/helpers";
 import { InteractiveTerminal } from "./InteractiveTerminal";
+import { ProblemsPanel } from "./ProblemsPanel";
 
 interface ActionRunResult {
   id: string;
   title: string;
+  category?: string;
   started_at_ms: number;
   finished_at_ms: number;
   result: {
@@ -72,10 +81,22 @@ function LogRow({ log }: { log: LogEntry }) {
 }
 
 export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProps) {
+  const { projectName } = useWorkspace();
   const [activeTab, setActiveTab] = useState<PanelTab>("output");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
+  const historyProject = useRef<string | null>(projectName ?? null);
+  const problemSnapshot = useSyncExternalStore(subscribeProblems, getProblemSnapshot, getProblemSnapshot);
+
+  useEffect(() => {
+    const nextProject = projectName ?? null;
+    if (historyProject.current === nextProject) return;
+    historyProject.current = nextProject;
+    historyLoaded.current = false;
+    setLogs([]);
+    clearProblems();
+  }, [projectName]);
 
   // The panel stays mounted so PTY sessions survive hide/show, but historical
   // action output is only requested once the user actually opens the panel.
@@ -85,7 +106,8 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
 
     callCommand<ActionRunResult[]>("action_history")
       .then((history) => {
-        const historyLogs = history.map<LogEntry>((action) => ({
+        const ordered = [...history].sort((left, right) => left.started_at_ms - right.started_at_ms);
+        const historyLogs = ordered.map<LogEntry>((action) => ({
           id: `action-${action.started_at_ms}-${action.id}`,
           timestamp: new Date(action.started_at_ms).toLocaleTimeString(),
           title: action.title,
@@ -96,12 +118,17 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
           source: "action",
         }));
         setLogs((current) => [...historyLogs, ...current].slice(-MAX_PANEL_LOGS));
+
+        // Rehydrate diagnostics from oldest -> newest so the latest relevant
+        // check always owns the current `check` source bucket regardless of the
+        // backend's history ordering.
+        for (const action of ordered) captureActionDiagnostics(action);
       })
       .catch(() => {
         historyLoaded.current = false;
         // Output is auxiliary shell evidence. A missing history should not break the workspace.
       });
-  }, [open]);
+  }, [open, projectName]);
 
   // Cheap IPC metadata remains useful even while the panel is hidden. Result
   // payloads are not retained here; explicit Debug owns bounded payload capture.
@@ -129,12 +156,15 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
   }, []);
 
   useEffect(() => {
-    if (open && activeTab !== "terminal" && scrollRef.current) {
+    if (open && activeTab === "output" && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs, open, activeTab]);
 
-  const problems = useMemo(() => logs.filter((log) => log.status === "error"), [logs]);
+  const clearActive = () => {
+    if (activeTab === "problems") clearProblems();
+    else if (activeTab === "output") setLogs([]);
+  };
 
   return (
     <section
@@ -145,7 +175,7 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
       <header className="bottom-panel-tabs">
         <div className="bottom-panel-tab-list" role="tablist" aria-label="Bottom panel views">
           <button type="button" className={activeTab === "problems" ? "active" : ""} onClick={() => setActiveTab("problems")}>
-            Problems <span>{problems.length}</span>
+            Problems <span>{problemSnapshot.diagnostics.length}</span>
           </button>
           <button type="button" className={activeTab === "output" ? "active" : ""} onClick={() => setActiveTab("output")}>
             Output <span>{logs.length}</span>
@@ -155,23 +185,18 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
           </button>
         </div>
         <div className="bottom-panel-actions">
-          {activeTab !== "terminal" ? <button type="button" onClick={() => setLogs([])}>Clear</button> : null}
+          {activeTab !== "terminal" ? <button type="button" onClick={clearActive}>Clear</button> : null}
           <button type="button" onClick={onClose} aria-label="Close bottom panel">×</button>
         </div>
       </header>
 
-      {activeTab !== "terminal" ? (
+      {activeTab === "problems" ? (
+        <div className="bottom-panel-content problems-host">
+          <ProblemsPanel />
+        </div>
+      ) : activeTab === "output" ? (
         <div className="bottom-panel-content" ref={scrollRef}>
-          {activeTab === "problems" ? (
-            problems.length === 0 ? (
-              <div className="bottom-panel-empty">
-                <strong>No runtime problems captured.</strong>
-                <span>Compiler, linter and LSP diagnostics will join this surface in the Problems slice.</span>
-              </div>
-            ) : (
-              problems.map((log) => <LogRow key={log.id} log={log} />)
-            )
-          ) : logs.length === 0 ? (
+          {logs.length === 0 ? (
             <div className="bottom-panel-empty"><strong>No output yet.</strong><span>RepoDesk actions and API activity will appear here.</span></div>
           ) : (
             logs.map((log) => <LogRow key={log.id} log={log} />)
