@@ -6,6 +6,7 @@ import {
   requestLanguageDocumentSymbols,
   requestLanguageHover,
   requestLanguageReferences,
+  stopLanguageServer,
   subscribeLanguageDiagnostics,
   subscribeLanguageServerStatus,
   syncLanguageDocument,
@@ -23,6 +24,28 @@ import { errorToMessage } from "../../shared/utils/helpers";
 import "./live-language.css";
 
 const CHANGE_DEBOUNCE_MS = 350;
+const OWNER_STOP_GRACE_MS = 250;
+let liveEditorOwners = 0;
+let pendingStop: number | null = null;
+
+function acquireLanguageServerOwner(): () => void {
+  liveEditorOwners += 1;
+  if (pendingStop !== null) {
+    window.clearTimeout(pendingStop);
+    pendingStop = null;
+  }
+
+  return () => {
+    liveEditorOwners = Math.max(0, liveEditorOwners - 1);
+    if (liveEditorOwners !== 0 || pendingStop !== null) return;
+    pendingStop = window.setTimeout(() => {
+      pendingStop = null;
+      if (liveEditorOwners !== 0) return;
+      clearLiveLanguageDiagnostics();
+      void stopLanguageServer().catch(() => undefined);
+    }, OWNER_STOP_GRACE_MS);
+  };
+}
 
 type LanguagePanel =
   | { kind: "hover"; title: string; hover: LanguageHover }
@@ -65,6 +88,8 @@ export function useLiveRustLanguage({
   const cursorRef = useRef(cursor);
   valueRef.current = value;
   cursorRef.current = cursor;
+
+  useEffect(() => acquireLanguageServerOwner(), []);
 
   useEffect(() => {
     clearLiveLanguageDiagnostics();
