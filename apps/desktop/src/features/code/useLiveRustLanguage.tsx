@@ -15,8 +15,12 @@ import {
   type LanguageServerStatus,
   type LanguageSymbol,
 } from "../../shared/api/languageIntelligence";
-import { captureLanguageDiagnosticsEvent } from "../../shared/api/liveLanguageDiagnostics";
+import {
+  captureLanguageDiagnosticsEvent,
+  clearLiveLanguageDiagnostics,
+} from "../../shared/api/liveLanguageDiagnostics";
 import { errorToMessage } from "../../shared/utils/helpers";
+import "./live-language.css";
 
 const CHANGE_DEBOUNCE_MS = 350;
 
@@ -61,6 +65,11 @@ export function useLiveRustLanguage({
   const cursorRef = useRef(cursor);
   valueRef.current = value;
   cursorRef.current = cursor;
+
+  useEffect(() => {
+    clearLiveLanguageDiagnostics();
+    setStatus(null);
+  }, [projectName]);
 
   useEffect(() => {
     if (!projectName) return;
