@@ -1,23 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { queryKeys, optionalCommand } from "../../shared/api/queries";
+import { useGit } from "../git/useGit";
 import { codeChangedFiles } from "../../shared/utils/helpers";
 import {
-  RepoPilotHistory,
-  RepoPilotReport,
+  type RepoPilotHistory,
+  type RepoPilotReport,
   getRepopilotHistory,
   groupByFile,
   runRepopilotReview,
 } from "../../shared/api/repopilot";
 
+/** RepoPilot analysis state shared by Changes and compatibility surfaces.
+ * Changed files reuse the canonical Git snapshot instead of triggering the old
+ * Code-workbench IPC path, avoiding an extra repository/Git read. */
 export function useCode() {
   const queryClient = useQueryClient();
+  const { git, isLoading } = useGit();
 
-  const { data: codeWorkbench, isLoading } = useQuery({
-    queryKey: queryKeys.code.workbench,
-    queryFn: () => optionalCommand<unknown>("code_workbench_snapshot"),
-  });
-
-  // Trend is read-only history; the review mutation invalidates it after a run.
   const { data: history } = useQuery<RepoPilotHistory>({
     queryKey: ["repopilot_history"],
     queryFn: getRepopilotHistory,
@@ -29,10 +27,9 @@ export function useCode() {
   });
 
   const report = review.data ?? null;
-  const changedFiles = codeChangedFiles(codeWorkbench);
+  const changedFiles = codeChangedFiles(git);
 
   return {
-    codeWorkbench,
     changedFiles,
     isLoading,
     report,

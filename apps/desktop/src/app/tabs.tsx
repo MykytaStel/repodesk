@@ -37,7 +37,7 @@ export interface AppTab {
 
 export const APP_TABS: AppTab[] = [
   { id: "work", title: "Work", subtitle: "Work Item · Scope → Finish", group: "Work", tier: "primary" },
-  { id: "code", title: "Code", subtitle: "Files, findings & analysis", group: "Work", tier: "primary" },
+  { id: "code", title: "Code", subtitle: "Repository explorer & editor", group: "Work", tier: "primary" },
   { id: "changes", title: "Changes", subtitle: "Diffs, review & git delta", group: "Work", tier: "primary" },
   { id: "history", title: "Runs", subtitle: "Executions, evidence & history", group: "AI", tier: "primary" },
   { id: "projects", title: "Projects", subtitle: "Repository workspaces", group: "System", tier: "primary" },
@@ -83,9 +83,9 @@ export function renderAppTab({
     case "work":
       return <WorkSurface setActiveTab={setActiveTab} />;
     case "code":
-      return <CodeTab />;
+      return <CodeTab setActiveTab={setActiveTab} />;
     case "changes":
-      return <ChangesTab />;
+      return <ChangesTab setActiveTab={setActiveTab} />;
     case "history":
       return <HistoryTab />;
     case "projects":

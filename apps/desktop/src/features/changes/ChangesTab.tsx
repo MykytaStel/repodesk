@@ -6,12 +6,14 @@ import { FindingRow, HealthTrend } from "../code/CodeFindings";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { ActorBadge, EmptyState, stringifyPreview } from "../../shared/ui/SharedComponents";
 import { callCommand, queryKeys } from "../../shared/api/queries";
+import { requestCodeWorkspaceOpen } from "../../shared/api/codeWorkspace";
 import {
   WORK_ENGINEERING_SNAPSHOT_KEY,
   workEngineeringSnapshot,
   type ChangeFileScopeState,
 } from "../../shared/api/engineering";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import type { TabId } from "../../shared/types/api";
 import { listFromRecord } from "../../shared/utils/helpers";
 import type { FileFindings } from "../../shared/api/repopilot";
 import { ChangeGovernancePanel } from "./ChangeGovernancePanel";
@@ -31,18 +33,18 @@ type ViewMode = "diff" | "file";
 
 function scopeMeta(state: ChangeFileScopeState): { label: string; tone: string } {
   switch (state) {
-    case "allowed":
-      return { label: "In scope", tone: "ok" };
-    case "out_of_scope":
-      return { label: "Out of scope", tone: "danger" };
-    case "protected":
-      return { label: "Protected", tone: "danger" };
-    case "ungoverned":
-      return { label: "Ungoverned", tone: "warn" };
+    case "allowed": return { label: "In scope", tone: "ok" };
+    case "out_of_scope": return { label: "Out of scope", tone: "danger" };
+    case "protected": return { label: "Protected", tone: "danger" };
+    case "ungoverned": return { label: "Ungoverned", tone: "warn" };
   }
 }
 
-export function ChangesTab() {
+export function ChangesTab({
+  setActiveTab,
+}: {
+  setActiveTab: (tab: TabId, detail?: string) => void;
+}) {
   const queryClient = useQueryClient();
   const { hasTask } = useWorkspace();
   const { git, branch, dirty, dirtyCount } = useGit();
@@ -86,8 +88,6 @@ export function ChangesTab() {
     return map;
   }, [governance]);
 
-  // One list: every file touched in the working tree or flagged by RepoPilot,
-  // worst findings first, then alphabetical.
   const rows = useMemo(() => {
     const set = new Set<string>([...changedFiles, ...staged, ...unstaged, ...untracked]);
     for (const group of fileFindings) set.add(group.file);
@@ -102,13 +102,9 @@ export function ChangesTab() {
     setPreviewLoading(true);
     try {
       if (mode === "diff") {
-        // Staged files use the cached diff; for the rest fall back to it if the
-        // working-tree diff is empty (e.g. already staged edits).
         const cached = staged.includes(path);
         let result = await callCommand<string>("git_file_diff", { path, cached });
-        if (!result.trim() && !cached) {
-          result = await callCommand<string>("git_file_diff", { path, cached: true });
-        }
+        if (!result.trim() && !cached) result = await callCommand<string>("git_file_diff", { path, cached: true });
         setPreview(result.trim() ? result : "");
       } else {
         const result = await callCommand<any>("read_code_file", { relativePath: path, relative_path: path });
@@ -121,12 +117,10 @@ export function ChangesTab() {
     }
   }
 
-  // Re-load when toggling diff/full-file for the already-selected file.
   useEffect(() => {
     if (selectedFile) void loadPreview(selectedFile, viewMode);
   }, [viewMode]);
 
-  // Auto-run a review once when the tab opens with changes to inspect.
   useEffect(() => {
     if (!autoRan.current && rows.length > 0 && !report && !reviewing) {
       autoRan.current = true;
@@ -138,6 +132,13 @@ export function ChangesTab() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
     void queryClient.invalidateQueries({ queryKey: WORK_ENGINEERING_SNAPSHOT_KEY });
   };
+
+  const openSelectedInCode = () => {
+    if (!selectedFile) return;
+    requestCodeWorkspaceOpen(selectedFile);
+    setActiveTab("code", `Open ${selectedFile} in the guarded editor.`);
+  };
+
   const selectedGroup = selectedFile ? findingsByFile.get(selectedFile) : undefined;
   const counts = report?.counts;
 
@@ -209,6 +210,10 @@ export function ChangesTab() {
                     key={file}
                     className={`file-row ${active ? "active" : ""}`}
                     onClick={() => void loadPreview(file, viewMode)}
+                    onDoubleClick={() => {
+                      requestCodeWorkspaceOpen(file);
+                      setActiveTab("code", `Open ${file} in Code.`);
+                    }}
                   >
                     <code>{file}</code>
                     <span className="file-badges">
@@ -233,6 +238,7 @@ export function ChangesTab() {
                 <div className="preview-controls">
                   <code>{selectedFile}</code>
                   <div className="button-row" style={{ marginTop: 0 }}>
+                    <button className="tiny-button ghost-button" onClick={openSelectedInCode}>Open in Code</button>
                     <button className={`tiny-button ${viewMode === "diff" ? "primary-button" : "ghost-button"}`} onClick={() => setViewMode("diff")}>Diff</button>
                     <button className={`tiny-button ${viewMode === "file" ? "primary-button" : "ghost-button"}`} onClick={() => setViewMode("file")}>Full File</button>
                   </div>

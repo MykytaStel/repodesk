@@ -5,6 +5,7 @@ pub mod ai_discovery_commands {
     }
 }
 
+mod code_workspace;
 pub mod commands;
 mod store;
 mod terminal;
@@ -27,196 +28,50 @@ mod git_workspace_commands {
     }
 }
 
+/// Transitional compatibility commands used by the existing Changes/RepoPilot
+/// hooks. Filesystem safety and status parsing are now owned by the typed core
+/// Code Workspace instead of being duplicated in this Tauri entrypoint.
 mod code_workbench_commands {
-    use serde::{Deserialize, Serialize};
+    use repodesk_core::code_workspace::{
+        CodeWorkspaceFileStatus, load_active_code_workspace, read_active_code_document,
+    };
     use serde_json::json;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-    use std::process::Command;
-
-    const MAX_PREVIEW_BYTES: u64 = 80_000;
-    const MAX_SAFE_PREVIEW_BYTES: u64 = 160_000;
-    const MAX_PREVIEW_CHARS: usize = 4_000;
-
-    #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct CodeFilePreview {
-        pub path: String,
-        pub status: String,
-        pub bytes: u64,
-        pub blocked: bool,
-        pub reason: Option<String>,
-        pub preview: Option<String>,
-    }
-
-    fn active_project_path() -> Result<PathBuf, String> {
-        repodesk_core::projects::get_active_project()
-            .map(|project| project.path)
-            .map_err(|error| error.to_string())
-    }
-
-    fn run_git(project_path: &Path, args: &[&str]) -> String {
-        Command::new("git")
-            .args(args)
-            .current_dir(project_path)
-            .output()
-            .map(|output| {
-                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                if stdout.trim().is_empty() {
-                    stderr
-                } else {
-                    stdout
-                }
-            })
-            .unwrap_or_else(|error| format!("git command failed: {error}"))
-    }
-
-    fn parse_status(project_path: &Path) -> Vec<(String, String)> {
-        run_git(project_path, &["status", "--porcelain=v1"])
-            .lines()
-            .filter_map(|line| {
-                if line.len() < 4 {
-                    return None;
-                }
-                let status = line.chars().take(2).collect::<String>();
-                let mut path = line.chars().skip(3).collect::<String>();
-                if let Some((_, after)) = path.split_once(" -> ") {
-                    path = after.to_string();
-                }
-                Some((path.trim().to_string(), status.trim().to_string()))
-            })
-            .collect()
-    }
-
-    fn safe_preview(project_path: &Path, relative_path: &str, status: &str) -> CodeFilePreview {
-        if let Some(reason) = repodesk_core::security::is_blocked_path(relative_path) {
-            return CodeFilePreview {
-                path: relative_path.into(),
-                status: status.into(),
-                bytes: 0,
-                blocked: true,
-                reason: Some(reason),
-                preview: None,
-            };
-        }
-
-        let full_path = project_path.join(relative_path);
-        let metadata = match fs::metadata(&full_path) {
-            Ok(value) => value,
-            Err(error) => {
-                return CodeFilePreview {
-                    path: relative_path.into(),
-                    status: status.into(),
-                    bytes: 0,
-                    blocked: true,
-                    reason: Some(error.to_string()),
-                    preview: None,
-                };
-            }
-        };
-
-        if metadata.len() > MAX_PREVIEW_BYTES {
-            return CodeFilePreview {
-                path: relative_path.into(),
-                status: status.into(),
-                bytes: metadata.len(),
-                blocked: true,
-                reason: Some("file is too large for UI preview".into()),
-                preview: None,
-            };
-        }
-
-        match fs::read_to_string(&full_path) {
-            Ok(content) => {
-                let preview: String = content.chars().take(MAX_PREVIEW_CHARS).collect();
-                CodeFilePreview {
-                    path: relative_path.into(),
-                    status: status.into(),
-                    bytes: metadata.len(),
-                    blocked: false,
-                    reason: None,
-                    preview: Some(preview),
-                }
-            }
-            Err(error) => CodeFilePreview {
-                path: relative_path.into(),
-                status: status.into(),
-                bytes: metadata.len(),
-                blocked: true,
-                reason: Some(error.to_string()),
-                preview: None,
-            },
-        }
-    }
 
     #[tauri::command]
     pub fn code_workbench_snapshot() -> serde_json::Value {
-        let project_path = match active_project_path() {
-            Ok(path) => path,
-            Err(error) => {
-                return json!({
-                    "connected": false,
-                    "error": error,
-                    "changed_files": [],
-                    "previews": [],
-                });
+        match load_active_code_workspace() {
+            Ok(snapshot) => {
+                let changed_files = snapshot
+                    .files
+                    .iter()
+                    .filter(|file| file.status != CodeWorkspaceFileStatus::Clean)
+                    .map(|file| file.path.clone())
+                    .collect::<Vec<_>>();
+                json!({
+                    "connected": true,
+                    "changed_files": changed_files,
+                    "source": snapshot.source,
+                    "truncated": snapshot.truncated,
+                })
             }
-        };
-
-        let status_items = parse_status(&project_path);
-        let changed_files: Vec<String> =
-            status_items.iter().map(|(path, _)| path.clone()).collect();
-        let previews: Vec<CodeFilePreview> = status_items
-            .iter()
-            .take(30)
-            .map(|(path, status)| safe_preview(&project_path, path, status))
-            .collect();
-
-        json!({
-            "connected": true,
-            "project_path": project_path.display().to_string(),
-            "changed_files": changed_files,
-            "previews": previews,
-            "diff_stat": run_git(&project_path, &["diff", "--stat"]),
-            "cached_diff_stat": run_git(&project_path, &["diff", "--cached", "--stat"]),
-            "recommendation": if status_items.is_empty() { "Workspace is clean. Create or select a task, then build context." } else { "Review changed files, build smart context, then run checks before asking an agent." },
-        })
+            Err(error) => json!({
+                "connected": false,
+                "error": error.to_string(),
+                "changed_files": [],
+            }),
+        }
     }
 
     #[tauri::command]
     pub fn read_code_file(relative_path: String) -> Result<serde_json::Value, String> {
-        if relative_path.trim().is_empty()
-            || relative_path.contains("..")
-            || Path::new(&relative_path).is_absolute()
-        {
-            return Err("Unsafe relative path".into());
-        }
-        if let Some(reason) = repodesk_core::security::is_blocked_path(&relative_path) {
-            return Err(reason);
-        }
-
-        let project_path = active_project_path()?;
-        let project_root = project_path
-            .canonicalize()
-            .map_err(|error| error.to_string())?;
-        let file_path = project_root.join(&relative_path);
-        let canonical_file = file_path
-            .canonicalize()
-            .map_err(|error| error.to_string())?;
-
-        if !canonical_file.starts_with(&project_root) {
-            return Err("Path escapes active project".into());
-        }
-
-        let metadata = fs::metadata(&canonical_file).map_err(|error| error.to_string())?;
-        if metadata.len() > MAX_SAFE_PREVIEW_BYTES {
-            return Err("File is too large for safe UI preview".into());
-        }
-        let content = fs::read_to_string(&canonical_file).map_err(|error| error.to_string())?;
+        let document =
+            read_active_code_document(&relative_path).map_err(|error| error.to_string())?;
         Ok(json!({
-            "path": relative_path,
-            "bytes": metadata.len(),
-            "content": content,
+            "path": document.path,
+            "bytes": document.bytes,
+            "content": document.content,
+            "language": document.language,
+            "fingerprint": document.fingerprint,
         }))
     }
 }
@@ -292,6 +147,9 @@ pub fn run() {
             terminal::terminal_write,
             terminal::terminal_resize,
             terminal::terminal_kill,
+            code_workspace::code_workspace_snapshot,
+            code_workspace::code_workspace_read,
+            code_workspace::code_workspace_save,
             code_workbench_commands::read_code_file,
             code_workbench_commands::code_workbench_snapshot,
             git_workspace_commands::git_workspace_snapshot,
