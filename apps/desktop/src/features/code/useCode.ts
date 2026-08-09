@@ -19,6 +19,8 @@ export function useCode() {
   const { data: history } = useQuery<RepoPilotHistory>({
     queryKey: ["repopilot_history"],
     queryFn: getRepopilotHistory,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
   });
 
   const review = useMutation<RepoPilotReport>({

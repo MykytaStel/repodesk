@@ -57,7 +57,8 @@ export function WorkspaceInspector({
     queryKey: WORK_ENGINEERING_SNAPSHOT_KEY,
     queryFn: workEngineeringSnapshot,
     enabled: hasTask,
-    refetchInterval: 6_000,
+    staleTime: 3_000,
+    refetchOnWindowFocus: true,
   });
 
   const report = snapshot.data?.intelligence;

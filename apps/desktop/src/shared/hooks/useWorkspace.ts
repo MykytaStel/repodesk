@@ -2,20 +2,26 @@ import { useQuery } from "@tanstack/react-query";
 import { queryKeys, optionalCommand } from "../api/queries";
 import { getNestedString, getString } from "../utils/helpers";
 
-export function useWorkspace() {
+export function useWorkspace(options: { includeDbStatus?: boolean } = {}) {
+  const includeDbStatus = options.includeDbStatus === true;
+
   const snapshot = useQuery({
     queryKey: queryKeys.workspace.snapshot,
     queryFn: () => optionalCommand<unknown>("desktop_snapshot"),
+    staleTime: 2_000,
   });
 
   const dbStatus = useQuery({
     queryKey: queryKeys.workspace.dbStatus,
     queryFn: () => optionalCommand<unknown>("db_status"),
+    enabled: includeDbStatus,
+    staleTime: 30_000,
   });
 
   const projectConfig = useQuery({
     queryKey: queryKeys.workspace.activeProject,
     queryFn: () => optionalCommand<any>("get_active_project_config"),
+    staleTime: 5_000,
   });
 
   const projectName = getString(
@@ -39,6 +45,6 @@ export function useWorkspace() {
     taskTitle,
     hasProject,
     hasTask,
-    isLoading: snapshot.isLoading || dbStatus.isLoading || projectConfig.isLoading,
+    isLoading: snapshot.isLoading || projectConfig.isLoading || (includeDbStatus && dbStatus.isLoading),
   };
 }
