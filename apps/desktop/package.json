@@ -15,6 +15,16 @@
     "e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@codemirror/commands": "6.7.1",
+    "@codemirror/lang-javascript": "6.2.2",
+    "@codemirror/lang-json": "6.0.1",
+    "@codemirror/lang-rust": "6.0.1",
+    "@codemirror/language": "6.10.6",
+    "@codemirror/lint": "6.8.4",
+    "@codemirror/search": "6.5.8",
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.35.3",
+    "@lezer/highlight": "1.2.1",
     "@tanstack/react-query": "^5.100.14",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.7.1",
