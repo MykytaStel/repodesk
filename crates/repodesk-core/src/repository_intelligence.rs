@@ -152,7 +152,10 @@ fn index_rust_files(
     let mut indexed_bytes = 0_u64;
     let mut truncated = false;
 
-    for file in files.iter().filter(|file| file.language == "rust" && !file.blocked) {
+    for file in files
+        .iter()
+        .filter(|file| file.language == "rust" && !file.blocked)
+    {
         if facts.len() >= MAX_RUST_FILES
             || indexed_bytes.saturating_add(file.bytes) > MAX_RUST_INDEX_BYTES
         {
@@ -472,10 +475,16 @@ fn closest_tests(
         .map(|facts| facts.has_inline_tests)
         .unwrap_or(false)
     {
-        candidates.insert(focus.to_string(), (100, "inline #[cfg(test)] module".into()));
+        candidates.insert(
+            focus.to_string(),
+            (100, "inline #[cfg(test)] module".into()),
+        );
     }
 
-    for file in files.iter().filter(|file| !file.blocked && is_test_path(&file.path)) {
+    for file in files
+        .iter()
+        .filter(|file| !file.blocked && is_test_path(&file.path))
+    {
         let stem = Path::new(&file.path)
             .file_stem()
             .and_then(|value| value.to_str())
@@ -487,7 +496,10 @@ fn closest_tests(
         } else if parent_slash_path(&file.path) == focus_parent {
             (72, "test file is in the same directory".to_string())
         } else if crate_prefix(&file.path) == crate_prefix(focus) {
-            (48, "test file is in the same crate/package area".to_string())
+            (
+                48,
+                "test file is in the same crate/package area".to_string(),
+            )
         } else {
             continue;
         };
@@ -502,7 +514,11 @@ fn closest_tests(
 
     let mut values = candidates
         .into_iter()
-        .map(|(path, (score, reason))| RepositoryTestCandidate { path, score, reason })
+        .map(|(path, (score, reason))| RepositoryTestCandidate {
+            path,
+            score,
+            reason,
+        })
         .collect::<Vec<_>>();
     values.sort_by(|left, right| {
         right
@@ -709,11 +725,7 @@ mod tests {
             "knowledge".into(),
             "Store".into()
         ]));
-        assert!(paths.contains(&vec![
-            "crate".into(),
-            "engineering".into(),
-            "events".into()
-        ]));
+        assert!(paths.contains(&vec!["crate".into(), "engineering".into(), "events".into()]));
     }
 
     #[test]
