@@ -10,6 +10,7 @@ import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { formatNumber } from "../shared/utils/helpers";
 import { InteractiveTerminal } from "./InteractiveTerminal";
 import { ProblemsPanel } from "./ProblemsPanel";
+import { TaskRunnerPanel } from "./TaskRunnerPanel";
 
 interface ActionRunResult {
   id: string;
@@ -26,7 +27,7 @@ interface ActionRunResult {
   };
 }
 
-type PanelTab = "problems" | "output" | "terminal";
+type PanelTab = "problems" | "tasks" | "output" | "terminal";
 type LogStatus = "success" | "error" | "info" | "running";
 
 interface LogEntry {
@@ -177,6 +178,9 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
           <button type="button" className={activeTab === "problems" ? "active" : ""} onClick={() => setActiveTab("problems")}>
             Problems <span>{problemSnapshot.diagnostics.length}</span>
           </button>
+          <button type="button" className={activeTab === "tasks" ? "active" : ""} onClick={() => setActiveTab("tasks")}>
+            Tasks
+          </button>
           <button type="button" className={activeTab === "output" ? "active" : ""} onClick={() => setActiveTab("output")}>
             Output <span>{logs.length}</span>
           </button>
@@ -185,7 +189,7 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
           </button>
         </div>
         <div className="bottom-panel-actions">
-          {activeTab !== "terminal" ? <button type="button" onClick={clearActive}>Clear</button> : null}
+          {(activeTab === "problems" || activeTab === "output") ? <button type="button" onClick={clearActive}>Clear</button> : null}
           <button type="button" onClick={onClose} aria-label="Close bottom panel">×</button>
         </div>
       </header>
@@ -194,7 +198,13 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
         <div className="bottom-panel-content problems-host">
           <ProblemsPanel />
         </div>
-      ) : activeTab === "output" ? (
+      ) : null}
+
+      <div className={`bottom-panel-task-host${activeTab === "tasks" ? "" : " bottom-panel-view-hidden"}`}>
+        <TaskRunnerPanel active={open && activeTab === "tasks"} onOpenProblems={() => setActiveTab("problems")} />
+      </div>
+
+      {activeTab === "output" ? (
         <div className="bottom-panel-content" ref={scrollRef}>
           {logs.length === 0 ? (
             <div className="bottom-panel-empty"><strong>No output yet.</strong><span>RepoDesk actions and API activity will appear here.</span></div>
