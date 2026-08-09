@@ -19,6 +19,7 @@ import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
+import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
 import { SemanticCodeEditor } from "./SemanticCodeEditor";
 import "./code-workspace.css";
 
@@ -43,9 +44,6 @@ type CachedCodeSession = {
   touchedAt: number;
 };
 
-// Code is route-mounted, so component state would otherwise disappear simply
-// by opening Changes or Work. Keep a very small in-memory session cache. It is
-// not persisted to disk/browser storage and therefore cannot outlive the app.
 const codeSessionCache = new Map<string, CachedCodeSession>();
 
 const STATUS_LABEL: Record<CodeWorkspaceFileStatus, string> = {
@@ -77,8 +75,6 @@ function rememberCodeSession(project: string, tabs: EditorTab[], activePath: str
     const [name] = removable.shift()!;
     codeSessionCache.delete(name);
   }
-  // Never evict dirty sessions merely to satisfy the cache target. Data safety
-  // wins over the soft memory cap; clean sessions are the only eviction pool.
 }
 
 function toTab(document: CodeWorkspaceDocument): EditorTab {
@@ -111,6 +107,7 @@ export function CodeTab({
   const [diff, setDiff] = useState("");
   const [diffLoading, setDiffLoading] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [repoIntelOpen, setRepoIntelOpen] = useState(false);
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const sessionProjectRef = useRef<string | null>(null);
   const openingRef = useRef(false);
@@ -130,9 +127,6 @@ export function CodeTab({
   const activeFindings = activePath ? findingsByFile.get(activePath) : undefined;
   const dirtyCount = tabs.filter((tab) => tab.dirty).length;
 
-  // Restore the project's bounded in-memory editing session. Before switching,
-  // the old project is saved under its old key so a project change cannot
-  // accidentally associate drafts with the new repository.
   useEffect(() => {
     const previousProject = sessionProjectRef.current;
     if (previousProject && previousProject !== projectName) {
@@ -146,6 +140,7 @@ export function CodeTab({
     setWorkspaceError(null);
     setView("edit");
     setInsightsOpen(false);
+    setRepoIntelOpen(false);
   // The state snapshot here intentionally belongs to the previous project.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectName]);
@@ -199,6 +194,7 @@ export function CodeTab({
       void queryClient.invalidateQueries({ queryKey: CODE_WORKSPACE_KEY });
       void queryClient.invalidateQueries({ queryKey: ["git"] });
       void queryClient.invalidateQueries({ queryKey: ["work"] });
+      void queryClient.invalidateQueries({ queryKey: ["repository"] });
     },
     onError: (error) => setWorkspaceError(errorToMessage(error)),
   });
@@ -249,9 +245,6 @@ export function CodeTab({
     }
   }, [tabs]);
 
-  // Changes, Problems and future LSP views can request a file while Code is
-  // either mounted or unmounted. Consume once on mount and also listen while
-  // this surface is already active so same-tab diagnostic navigation works.
   useEffect(() => {
     if (!workspace.data) return;
     const consumeRequest = () => {
@@ -311,6 +304,16 @@ export function CodeTab({
             {dirtyCount > 0 ? <span className="warn">{dirtyCount} unsaved</span> : null}
           </div>
           <div className="code-workspace-actions">
+            {activePath ? (
+              <button
+                type="button"
+                className={`tiny-button${repoIntelOpen ? " active" : ""}`}
+                onClick={() => {
+                  setRepoIntelOpen((open) => !open);
+                  setInsightsOpen(false);
+                }}
+              >Repo context</button>
+            ) : null}
             <button
               type="button"
               className="tiny-button"
@@ -320,7 +323,14 @@ export function CodeTab({
               {review.isPending ? "Analyzing…" : "Analyze changes"}
             </button>
             {review.data ? (
-              <button type="button" className={`tiny-button${insightsOpen ? " active" : ""}`} onClick={() => setInsightsOpen((open) => !open)}>
+              <button
+                type="button"
+                className={`tiny-button${insightsOpen ? " active" : ""}`}
+                onClick={() => {
+                  setInsightsOpen((open) => !open);
+                  setRepoIntelOpen(false);
+                }}
+              >
                 Findings {review.data.total}
               </button>
             ) : null}
@@ -423,6 +433,14 @@ export function CodeTab({
               onSave={() => save.mutate(activeTab)}
             />
           )}
+
+          {repoIntelOpen && activePath ? (
+            <RepositoryIntelligenceDrawer
+              projectName={projectName}
+              path={activePath}
+              onClose={() => setRepoIntelOpen(false)}
+            />
+          ) : null}
 
           {insightsOpen && review.data ? (
             <aside className="code-insights-drawer" aria-label="RepoPilot findings">

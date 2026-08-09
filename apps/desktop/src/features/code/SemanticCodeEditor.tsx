@@ -77,9 +77,7 @@ const editorTheme = EditorView.theme({
     padding: "12px 0 0",
     caretColor: "var(--accent-2)",
   },
-  ".cm-line": {
-    padding: "0 18px 0 10px",
-  },
+  ".cm-line": { padding: "0 18px 0 10px" },
   ".cm-gutters": {
     backgroundColor: "var(--surface-2)",
     color: "var(--muted-2)",
@@ -130,7 +128,11 @@ class GitMarker extends GutterMarker {
   toDOM() {
     const marker = document.createElement("span");
     marker.className = `cm-git-line-marker ${this.kind}`;
-    marker.title = this.kind === "added" ? "Added in Git" : this.kind === "modified" ? "Modified in Git" : "Deleted near this line";
+    marker.title = this.kind === "added"
+      ? "Added in Git"
+      : this.kind === "modified"
+        ? "Modified in Git"
+        : "Deleted near this line";
     return marker;
   }
 }
@@ -267,6 +269,7 @@ export function SemanticCodeEditor({
   const dirtyRef = useRef(dirty);
   const savingRef = useRef(saving);
   const suppressChangeRef = useRef(false);
+  const definitionAvailableRef = useRef(false);
   const liveActionsRef = useRef<ReturnType<typeof useLiveRustLanguage>["actions"] | null>(null);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   onChangeRef.current = onChange;
@@ -297,6 +300,7 @@ export function SemanticCodeEditor({
     cursor,
   });
   liveActionsRef.current = liveLanguage.actions;
+  definitionAvailableRef.current = language === "rust" && languageServer?.availability === "available";
 
   const semantic = useSemanticCodeState({ projectName, path, status, dirty });
 
@@ -350,6 +354,24 @@ export function SemanticCodeEditor({
           ...historyKeymap,
           ...searchKeymap,
         ]),
+        EditorView.domEventHandlers({
+          mousedown(event, view) {
+            if (event.button !== 0 || !(event.metaKey || event.ctrlKey) || !definitionAvailableRef.current) {
+              return false;
+            }
+            const offset = view.posAtCoords({ x: event.clientX, y: event.clientY });
+            if (offset === null) return false;
+            const line = view.state.doc.lineAt(offset);
+            event.preventDefault();
+            view.dispatch({ selection: { anchor: offset } });
+            view.focus();
+            liveActionsRef.current?.definitionAt({
+              line: line.number,
+              column: offset - line.from + 1,
+            });
+            return true;
+          },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             if (suppressChangeRef.current) suppressChangeRef.current = false;

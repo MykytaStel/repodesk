@@ -37,6 +37,8 @@ type LanguageKeyEvent = {
   preventDefault(): void;
 };
 
+type LanguagePosition = { line: number; column: number };
+
 function acquireLanguageServerOwner(): () => void {
   liveEditorOwners += 1;
   if (pendingStop !== null) {
@@ -78,7 +80,7 @@ export function useLiveRustLanguage({
   language: string;
   projectName: string | null | undefined;
   server: LanguageServerDescriptor | null;
-  cursor: { line: number; column: number };
+  cursor: LanguagePosition;
 }): {
   status: LanguageServerStatus | null;
   statusLabel: string | null;
@@ -88,6 +90,7 @@ export function useLiveRustLanguage({
   actions: {
     hover: () => void;
     definition: () => void;
+    definitionAt: (position: LanguagePosition) => void;
     references: () => void;
     symbols: () => void;
     dismiss: () => void;
@@ -168,8 +171,6 @@ export function useLiveRustLanguage({
       if (lastSynced.current?.path === path) lastSynced.current = null;
       void closeLanguageDocument(path).catch(() => undefined);
     };
-  // Opening a different document or project owns didOpen/didClose. Text changes
-  // are handled by the debounced effect below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, path, projectName]);
 
@@ -191,11 +192,11 @@ export function useLiveRustLanguage({
     return () => window.clearTimeout(timer);
   }, [enabled, path, value]);
 
-  const withPosition = useCallback(() => ({
+  const withPosition = useCallback((position: LanguagePosition = cursorRef.current) => ({
     path,
     text: valueRef.current,
-    line: cursorRef.current.line,
-    column: cursorRef.current.column,
+    line: position.line,
+    column: position.column,
   }), [path]);
 
   const runHover = useCallback(async () => {
@@ -213,12 +214,12 @@ export function useLiveRustLanguage({
     }
   }, [busy, enabled, withPosition]);
 
-  const runDefinition = useCallback(async () => {
+  const runDefinitionAt = useCallback(async (position: LanguagePosition) => {
     if (!enabled || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const locations = await requestLanguageDefinition(withPosition());
+      const locations = await requestLanguageDefinition(withPosition(position));
       if (locations.length === 1) {
         const target = locations[0];
         requestCodeWorkspaceOpen(target.path, { line: target.line, column: target.column });
@@ -234,6 +235,8 @@ export function useLiveRustLanguage({
       setBusy(false);
     }
   }, [busy, enabled, withPosition]);
+
+  const runDefinition = useCallback(() => runDefinitionAt(cursorRef.current), [runDefinitionAt]);
 
   const runReferences = useCallback(async () => {
     if (!enabled || busy) return;
@@ -372,6 +375,7 @@ export function useLiveRustLanguage({
     actions: {
       hover: () => { void runHover(); },
       definition: () => { void runDefinition(); },
+      definitionAt: (position) => { void runDefinitionAt(position); },
       references: () => { void runReferences(); },
       symbols: () => { void runSymbols(); },
       dismiss,
