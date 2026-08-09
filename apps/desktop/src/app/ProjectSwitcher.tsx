@@ -116,9 +116,10 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
   }, [open]);
 
   const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    const lastIndex = Math.max(0, filteredProjects.length - 1);
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setHighlightedIndex((current) => Math.min(filteredProjects.length - 1, current + 1));
+      setHighlightedIndex((current) => Math.min(lastIndex, current + 1));
       return;
     }
     if (event.key === "ArrowUp") {
