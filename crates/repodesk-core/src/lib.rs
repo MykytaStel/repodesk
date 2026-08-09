@@ -33,6 +33,7 @@ pub mod playbooks;
 pub mod project_ai_scan;
 pub mod projects;
 pub mod prompts;
+pub mod repository_intelligence;
 pub mod safety;
 pub mod security;
 pub mod sessions;
