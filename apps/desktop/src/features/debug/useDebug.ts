@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
-import { debugEmitter, DebugEventDetail, callCommand } from "../../shared/api/queries";
+import {
+  acquireDebugPayloadCapture,
+  debugEmitter,
+  type DebugEventDetail,
+  callCommand,
+} from "../../shared/api/queries";
 
 /// Prompt artifact kinds destined for a paid/cloud agent. Revealing these is a
 /// human hand-off, so it must pass the paid-agent safety gate first.
@@ -8,6 +13,8 @@ const PAID_PROMPT_AGENT: Record<string, string> = {
   prompt_chatgpt: "chatgpt",
   prompt_review: "gemini",
 };
+
+const MAX_DEBUG_EVENTS = 100;
 
 export type PaidGate = {
   agent: string;
@@ -25,14 +32,16 @@ export function useDebug() {
   const [pendingPaid, setPendingPaid] = useState<{ kind: string; gate: PaidGate } | null>(null);
 
   useEffect(() => {
-    const handleDebugEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<DebugEventDetail>;
-      setDebugEvents((prev) => [customEvent.detail, ...prev].slice(0, 150));
+    const releasePayloadCapture = acquireDebugPayloadCapture();
+    const handleDebugEvent = (event: Event) => {
+      const customEvent = event as CustomEvent<DebugEventDetail>;
+      setDebugEvents((previous) => [customEvent.detail, ...previous].slice(0, MAX_DEBUG_EVENTS));
     };
 
     debugEmitter.addEventListener("debug-command", handleDebugEvent);
     return () => {
       debugEmitter.removeEventListener("debug-command", handleDebugEvent);
+      releasePayloadCapture();
     };
   }, []);
 
