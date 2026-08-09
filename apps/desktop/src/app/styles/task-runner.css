@@ -2,16 +2,29 @@
    A compact execution surface inside the bottom dock. Tasks are project checks,
    not arbitrary shell commands, so the UI stays dense and evidence-oriented. */
 
+.bottom-panel-task-host {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.bottom-panel-view-hidden {
+  display: none;
+}
+
 .task-runner-panel {
+  min-width: 0;
   min-height: 0;
   height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   background: var(--bg);
 }
 
 .task-runner-toolbar {
   min-height: 38px;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -57,6 +70,7 @@
 
 .task-runner-list {
   min-height: 0;
+  flex: 1 1 auto;
   overflow: auto;
 }
 
@@ -185,6 +199,7 @@
 .task-run-detail {
   min-height: 0;
   max-height: 44%;
+  flex: 0 1 44%;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   border-top: 1px solid var(--border-strong);
@@ -275,6 +290,7 @@
 }
 
 .task-runner-error {
+  flex: 0 0 auto;
   padding: 7px 10px;
   border-bottom: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
   background: color-mix(in srgb, var(--danger) 8%, var(--surface));
