@@ -6,6 +6,7 @@ import {
   type ProblemDiagnostic,
   type ProblemSeverity,
 } from "../shared/api/problems";
+import "./styles/problems.css";
 
 type SeverityFilter = "all" | ProblemSeverity;
 
