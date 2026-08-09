@@ -1112,11 +1112,7 @@ fn append_bounded_stderr(target: &mut String, line: &str, max_chars: usize) {
     *target = format!("…{suffix}");
 }
 
-fn language_server_exit_error(
-    server_id: &str,
-    exit_status: Option<&str>,
-    stderr: &str,
-) -> String {
+fn language_server_exit_error(server_id: &str, exit_status: Option<&str>, stderr: &str) -> String {
     let stderr = stderr.trim();
     if exit_status.is_none() && stderr.is_empty() {
         return format!("{server_id} closed its stdout stream");

@@ -98,7 +98,6 @@ export function parseGitLineMarkers(diff: string): GitLineMarker[] {
       continue;
     }
 
-    // A new file header or malformed tail ends the current hunk projection.
     flushDeletes();
     inHunk = false;
   }
@@ -143,7 +142,7 @@ export function useSemanticCodeState({
   const problems = useSyncExternalStore(subscribeProblems, getProblemSnapshot, getProblemSnapshot);
 
   const engineering = useQuery({
-    queryKey: [...WORK_ENGINEERING_SNAPSHOT_KEY, projectName ?? "none", "code-semantic"],
+    queryKey: WORK_ENGINEERING_SNAPSHOT_KEY,
     queryFn: workEngineeringSnapshot,
     enabled: Boolean(projectName),
     staleTime: 5_000,
