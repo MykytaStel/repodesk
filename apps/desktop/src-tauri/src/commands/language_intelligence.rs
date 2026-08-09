@@ -1,117 +1,149 @@
+use std::sync::LazyLock;
+
 use repodesk_core::language_intelligence::{
     LanguageIntelligenceSnapshot, active_language_intelligence_snapshot,
 };
-use tauri::{AppHandle, State};
+use serde::Deserialize;
+use serde_json::{Value, to_value};
+use tauri::AppHandle;
 
-use crate::language_server::{
-    LanguageHover, LanguageLocation, LanguageServerManager, LanguageServerStatus, LanguageSymbol,
-};
+#[path = "../language_server.rs"]
+mod language_server;
 
-#[tauri::command]
-pub fn language_intelligence_snapshot() -> Result<LanguageIntelligenceSnapshot, String> {
-    active_language_intelligence_snapshot().map_err(|error| error.to_string())
+use language_server::LanguageServerManager;
+
+static LANGUAGE_SERVER_MANAGER: LazyLock<LanguageServerManager> =
+    LazyLock::new(LanguageServerManager::default);
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LanguageIntelligenceAction {
+    Status,
+    SyncDocument {
+        path: String,
+        language: String,
+        text: String,
+    },
+    CloseDocument {
+        path: String,
+    },
+    Hover {
+        path: String,
+        text: String,
+        line: u32,
+        column: u32,
+    },
+    Definition {
+        path: String,
+        text: String,
+        line: u32,
+        column: u32,
+    },
+    References {
+        path: String,
+        text: String,
+        line: u32,
+        column: u32,
+    },
+    DocumentSymbols {
+        path: String,
+        text: String,
+    },
+    Stop,
 }
 
+/// One compatibility transport owns both the side-effect-free RD2-15 discovery
+/// snapshot and RD2-15b live language actions. Existing callers that omit
+/// `action` receive the exact discovery shape introduced in #82.
 #[tauri::command]
-pub fn language_server_status(
-    manager: State<'_, LanguageServerManager>,
-) -> Option<LanguageServerStatus> {
-    manager.status()
-}
-
-#[tauri::command]
-pub async fn language_server_sync_document(
+pub async fn language_intelligence_snapshot(
     app: AppHandle,
-    manager: State<'_, LanguageServerManager>,
-    path: String,
-    language: String,
-    text: String,
-) -> Result<LanguageServerStatus, String> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        manager.sync_document(&app, &path, &language, &text)
-    })
-    .await
-    .map_err(|error| format!("Language server worker failed: {error}"))?
-}
+    action: Option<LanguageIntelligenceAction>,
+) -> Result<Value, String> {
+    let Some(action) = action else {
+        let snapshot: LanguageIntelligenceSnapshot =
+            active_language_intelligence_snapshot().map_err(|error| error.to_string())?;
+        return to_value(snapshot).map_err(|error| error.to_string());
+    };
 
-#[tauri::command]
-pub fn language_server_close_document(
-    manager: State<'_, LanguageServerManager>,
-    path: String,
-) -> Result<(), String> {
-    manager.close_document(&path)
-}
-
-#[tauri::command]
-pub async fn language_server_hover(
-    app: AppHandle,
-    manager: State<'_, LanguageServerManager>,
-    path: String,
-    text: String,
-    line: u32,
-    column: u32,
-) -> Result<Option<LanguageHover>, String> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.hover(&app, &path, &text, line, column))
-        .await
-        .map_err(|error| format!("Language hover worker failed: {error}"))?
-}
-
-#[tauri::command]
-pub async fn language_server_definition(
-    app: AppHandle,
-    manager: State<'_, LanguageServerManager>,
-    path: String,
-    text: String,
-    line: u32,
-    column: u32,
-) -> Result<Vec<LanguageLocation>, String> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        manager.definition(&app, &path, &text, line, column)
-    })
-    .await
-    .map_err(|error| format!("Language definition worker failed: {error}"))?
-}
-
-#[tauri::command]
-pub async fn language_server_references(
-    app: AppHandle,
-    manager: State<'_, LanguageServerManager>,
-    path: String,
-    text: String,
-    line: u32,
-    column: u32,
-) -> Result<Vec<LanguageLocation>, String> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        manager.references(&app, &path, &text, line, column)
-    })
-    .await
-    .map_err(|error| format!("Language references worker failed: {error}"))?
-}
-
-#[tauri::command]
-pub async fn language_server_document_symbols(
-    app: AppHandle,
-    manager: State<'_, LanguageServerManager>,
-    path: String,
-    text: String,
-) -> Result<Vec<LanguageSymbol>, String> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.document_symbols(&app, &path, &text))
-        .await
-        .map_err(|error| format!("Language symbols worker failed: {error}"))?
-}
-
-#[tauri::command]
-pub async fn language_server_stop(
-    manager: State<'_, LanguageServerManager>,
-) -> Result<(), String> {
-    let manager = manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || manager.stop())
-        .await
-        .map_err(|error| format!("Language server shutdown worker failed: {error}"))?;
-    Ok(())
+    match action {
+        LanguageIntelligenceAction::Status => {
+            to_value(LANGUAGE_SERVER_MANAGER.status()).map_err(|error| error.to_string())
+        }
+        LanguageIntelligenceAction::CloseDocument { path } => {
+            LANGUAGE_SERVER_MANAGER.close_document(&path)?;
+            Ok(Value::Null)
+        }
+        LanguageIntelligenceAction::Stop => {
+            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            tauri::async_runtime::spawn_blocking(move || manager.stop())
+                .await
+                .map_err(|error| format!("Language server shutdown worker failed: {error}"))?;
+            Ok(Value::Null)
+        }
+        LanguageIntelligenceAction::SyncDocument {
+            path,
+            language,
+            text,
+        } => {
+            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                manager.sync_document(&app, &path, &language, &text)
+            })
+            .await
+            .map_err(|error| format!("Language server worker failed: {error}"))??;
+            to_value(result).map_err(|error| error.to_string())
+        }
+        LanguageIntelligenceAction::Hover {
+            path,
+            text,
+            line,
+            column,
+        } => {
+            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                manager.hover(&app, &path, &text, line, column)
+            })
+            .await
+            .map_err(|error| format!("Language hover worker failed: {error}"))??;
+            to_value(result).map_err(|error| error.to_string())
+        }
+        LanguageIntelligenceAction::Definition {
+            path,
+            text,
+            line,
+            column,
+        } => {
+            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                manager.definition(&app, &path, &text, line, column)
+            })
+            .await
+            .map_err(|error| format!("Language definition worker failed: {error}"))??;
+            to_value(result).map_err(|error| error.to_string())
+        }
+        LanguageIntelligenceAction::References {
+            path,
+            text,
+            line,
+            column,
+        } => {
+            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                manager.references(&app, &path, &text, line, column)
+            })
+            .await
+            .map_err(|error| format!("Language references worker failed: {error}"))??;
+            to_value(result).map_err(|error| error.to_string())
+        }
+        LanguageIntelligenceAction::DocumentSymbols { path, text } => {
+            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || {
+                manager.document_symbols(&app, &path, &text)
+            })
+            .await
+            .map_err(|error| format!("Language symbols worker failed: {error}"))??;
+            to_value(result).map_err(|error| error.to_string())
+        }
+    }
 }
