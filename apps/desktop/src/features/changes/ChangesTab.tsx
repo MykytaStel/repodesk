@@ -44,7 +44,8 @@ export function ChangesTab({
   const queryClient = useQueryClient();
   const { hasTask } = useWorkspace();
   const { git, branch, dirty, dirtyCount } = useGit();
-  const { changedFiles, report, fileFindings, reviewing, runReview, trend } = useCode();
+  const [findingsOpen, setFindingsOpen] = useState(false);
+  const { changedFiles, report, fileFindings, reviewing, runReview, trend } = useCode({ includeHistory: findingsOpen });
   const engineering = useQuery({
     queryKey: WORK_ENGINEERING_SNAPSHOT_KEY,
     queryFn: () => workEngineeringSnapshot(),
@@ -58,7 +59,6 @@ export function ChangesTab({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("diff");
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const [findingsOpen, setFindingsOpen] = useState(false);
 
   const staged = listFromRecord(git, ["staged", "staged_files"]);
   const unstaged = listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"]);
@@ -215,7 +215,7 @@ export function ChangesTab({
                   <span className="file-badges">
                     {exceptionalScope ? <span className={`pill ${exceptionalScope.tone}`}>{exceptionalScope.label}</span> : null}
                     {unattributed ? <span className="pill warn">Unattributed</span> : null}
-                    {status ? <span className={`code-tree-status ${STATUS_META[status].tone}`}>{STATUS_META[status].label}</span> : null}
+                    {status ? <span className={`pill ${STATUS_META[status].tone}`}>{STATUS_META[status].label}</span> : null}
                     {group?.blocking ? <span className="pill danger">{group.blocking}</span> : null}
                   </span>
                 </button>
