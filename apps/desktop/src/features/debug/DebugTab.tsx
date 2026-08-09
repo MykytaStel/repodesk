@@ -13,7 +13,7 @@ import { useSettings } from "../settings/useSettings";
 
 export function DebugTab() {
   const { debugEvents, artifactKind, artifactContent, requestArtifact, pendingPaid, confirmPaidReveal, cancelPaidReveal } = useDebug();
-  const { snapshot, dbState } = useWorkspace();
+  const { snapshot, dbState } = useWorkspace({ includeDbStatus: true });
   const { workflow, history } = useWorkflow();
   const { git } = useGit();
   const { codeWorkbench } = useCode();
