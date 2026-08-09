@@ -1,0 +1,139 @@
+.code-language-panel {
+  position: absolute;
+  top: 10px;
+  right: 18px;
+  z-index: 9;
+  width: min(460px, calc(100% - 92px));
+  max-height: min(380px, 58%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .24);
+}
+
+.code-language-panel > header {
+  min-height: 34px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.code-language-panel > header strong {
+  min-width: 0;
+  flex: 1;
+  font-size: 10.5px;
+}
+
+.code-language-panel > header span {
+  color: var(--muted-2);
+  font-size: 9px;
+}
+
+.code-language-panel > header button {
+  width: 25px;
+  height: 25px;
+  min-width: 25px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.code-language-hover,
+.code-language-error {
+  margin: 0;
+  padding: 10px 12px 12px;
+  overflow: auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.code-language-error {
+  color: var(--danger);
+  font-family: inherit;
+}
+
+.code-language-results {
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.code-language-results > button {
+  width: 100%;
+  min-height: 31px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 10px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  box-shadow: none;
+}
+
+.code-language-results > button:hover {
+  background: var(--neutral-soft);
+  transform: none;
+}
+
+.code-language-results strong,
+.code-language-results span,
+.code-language-results code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-language-results strong {
+  font-size: 10.5px;
+}
+
+.code-language-results span {
+  grid-column: 1;
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.code-language-results code {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--muted-2);
+  font-size: 9px;
+}
+
+.code-language-service.ready,
+.code-language-service.available {
+  color: var(--success);
+}
+
+.code-language-service.starting {
+  color: var(--warning);
+}
+
+.code-language-service.error,
+.code-language-service.missing {
+  color: var(--danger);
+}
+
+@media (max-width: 680px) {
+  .code-language-panel {
+    right: 10px;
+    width: calc(100% - 72px);
+  }
+}
