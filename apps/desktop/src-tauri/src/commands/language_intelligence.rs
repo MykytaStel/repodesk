@@ -75,7 +75,7 @@ pub async fn language_intelligence_snapshot(
             Ok(Value::Null)
         }
         LanguageIntelligenceAction::Stop => {
-            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let manager = (*LANGUAGE_SERVER_MANAGER).clone();
             tauri::async_runtime::spawn_blocking(move || manager.stop())
                 .await
                 .map_err(|error| format!("Language server shutdown worker failed: {error}"))?;
@@ -86,7 +86,7 @@ pub async fn language_intelligence_snapshot(
             language,
             text,
         } => {
-            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let manager = (*LANGUAGE_SERVER_MANAGER).clone();
             let result = tauri::async_runtime::spawn_blocking(move || {
                 manager.sync_document(&app, &path, &language, &text)
             })
@@ -100,7 +100,7 @@ pub async fn language_intelligence_snapshot(
             line,
             column,
         } => {
-            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let manager = (*LANGUAGE_SERVER_MANAGER).clone();
             let result = tauri::async_runtime::spawn_blocking(move || {
                 manager.hover(&app, &path, &text, line, column)
             })
@@ -114,7 +114,7 @@ pub async fn language_intelligence_snapshot(
             line,
             column,
         } => {
-            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let manager = (*LANGUAGE_SERVER_MANAGER).clone();
             let result = tauri::async_runtime::spawn_blocking(move || {
                 manager.definition(&app, &path, &text, line, column)
             })
@@ -128,7 +128,7 @@ pub async fn language_intelligence_snapshot(
             line,
             column,
         } => {
-            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let manager = (*LANGUAGE_SERVER_MANAGER).clone();
             let result = tauri::async_runtime::spawn_blocking(move || {
                 manager.references(&app, &path, &text, line, column)
             })
@@ -137,7 +137,7 @@ pub async fn language_intelligence_snapshot(
             to_value(result).map_err(|error| error.to_string())
         }
         LanguageIntelligenceAction::DocumentSymbols { path, text } => {
-            let manager = LANGUAGE_SERVER_MANAGER.clone();
+            let manager = (*LANGUAGE_SERVER_MANAGER).clone();
             let result = tauri::async_runtime::spawn_blocking(move || {
                 manager.document_symbols(&app, &path, &text)
             })
