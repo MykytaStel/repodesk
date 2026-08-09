@@ -17,9 +17,6 @@ mod git_workspace_commands {
         Ok(repodesk_core::git_workspace::build_git_workspace_snapshot())
     }
 
-    /// Unified diff for a single changed file in the active project. `cached`
-    /// selects the staged diff; the path is repo-relative and traversal-guarded
-    /// in core.
     #[tauri::command]
     pub fn git_file_diff(path: String, cached: bool) -> Result<String, String> {
         Ok(repodesk_core::git_workspace::active_file_diff(
@@ -28,9 +25,6 @@ mod git_workspace_commands {
     }
 }
 
-/// Transitional compatibility commands used by the existing Changes/RepoPilot
-/// hooks. Filesystem safety and status parsing are now owned by the typed core
-/// Code Workspace instead of being duplicated in this Tauri entrypoint.
 mod code_workbench_commands {
     use repodesk_core::code_workspace::{
         CodeWorkspaceFileStatus, load_active_code_workspace, read_active_code_document,
@@ -86,11 +80,7 @@ use tauri_plugin_global_shortcut::ShortcutState;
 pub fn run() {
     tauri::Builder::default()
         .manage(terminal::TerminalManager::default())
-        // Auto-updater: enabled with a real signing key + GitHub Releases endpoint
-        // (see tauri.conf.json plugins.updater). The plugin only verifies/installs
-        // signed update bundles; it is not triggered automatically on launch.
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Native file/folder pickers (used to choose a project directory).
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -186,6 +176,7 @@ pub fn run() {
             commands::task_runner_run,
             commands::task_runner_run_all,
             commands::language_intelligence_snapshot,
+            commands::repository_intelligence_snapshot,
             commands::token_usage_snapshot,
             commands::log_token_usage,
             commands::estimate_raw_text,
@@ -350,10 +341,6 @@ mod tests {
 
     #[test]
     fn run_action_executes_whitelisted_action() {
-        // The action catalog *is* the allowlist now: a registered action maps to
-        // a direct `repodesk-core` call with a typed result — no CLI reparse and
-        // no process-global stdout capture (the old flaky-test source). Routing
-        // needs no project/task state, so it is a stable positive case.
         let action = commands::find_action("runtime-route-patch").expect("action is registered");
         let result = tauri::async_runtime::block_on(commands::action_service::run_action(&action));
         assert!(result.ok, "whitelisted action should run: {result:?}");
