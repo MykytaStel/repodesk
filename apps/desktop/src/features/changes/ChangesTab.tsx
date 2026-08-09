@@ -192,7 +192,12 @@ export function ChangesTab({
             <span>{rows.length}</span>
           </div>
           <div className="file-list scroll-area changes-file-list">
-            {rows.length === 0 ? <p className="muted">No changed files.</p> : null}
+            {rows.length === 0 ? (
+              <div className="changes-file-empty">
+                <strong>Working tree is clean</strong>
+                <span>No changed files in this project. Edit in Code or start a Work Item to produce a ChangeSet.</span>
+              </div>
+            ) : null}
             {rows.map((file) => {
               const status = statusOf(file);
               const group = findingsByFile.get(file);
@@ -243,7 +248,10 @@ export function ChangesTab({
 
           <div className="changes-preview-content">
             {!selectedFile ? (
-              <EmptyState message={dirty ? "Select a file to inspect its diff." : "Working tree is clean."} hint="Double-click a file to edit it in Code." />
+              <EmptyState
+                message={dirty ? "Select a changed file" : "Nothing to review"}
+                hint={dirty ? "Choose a file on the left to inspect its diff. Double-click to edit it in Code." : "The working tree is clean. New edits will appear here automatically after refresh."}
+              />
             ) : previewLoading ? (
               <p className="muted">Loading…</p>
             ) : viewMode === "diff" ? (
