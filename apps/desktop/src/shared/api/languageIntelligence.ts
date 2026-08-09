@@ -1,3 +1,4 @@
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { callCommand } from "./queries";
 
 export type LanguageServerAvailability = "available" | "missing";
@@ -55,10 +56,131 @@ export type LanguageDiagnostic = {
   source: string | null;
 };
 
+export type LanguageServerSessionState = "starting" | "ready" | "error";
+
+export type LanguageServerStatus = {
+  project: string;
+  server_id: string;
+  state: LanguageServerSessionState;
+  pid: number;
+  open_documents: number;
+  started_at: string;
+  last_error: string | null;
+};
+
+export type LanguageHover = {
+  markdown: string;
+  range: LspRange | null;
+};
+
+export type LanguageLocation = {
+  path: string;
+  line: number;
+  column: number;
+  end_line: number;
+  end_column: number;
+};
+
+export type LanguageSymbol = {
+  name: string;
+  detail: string | null;
+  kind: number;
+  range: LspRange;
+  selection_range: LspRange;
+  container_name: string | null;
+};
+
+export type LanguageDiagnosticsEvent = {
+  project: string;
+  server_id: string;
+  path: string;
+  diagnostics: LanguageDiagnostic[];
+};
+
 export const LANGUAGE_INTELLIGENCE_KEY = ["language_intelligence"] as const;
 
+type LanguageAction =
+  | { kind: "status" }
+  | { kind: "sync_document"; path: string; language: string; text: string }
+  | { kind: "close_document"; path: string }
+  | { kind: "hover"; path: string; text: string; line: number; column: number }
+  | { kind: "definition"; path: string; text: string; line: number; column: number }
+  | { kind: "references"; path: string; text: string; line: number; column: number }
+  | { kind: "document_symbols"; path: string; text: string }
+  | { kind: "stop" };
+
+function languageAction<T>(action: LanguageAction): Promise<T> {
+  return callCommand<T>("language_intelligence_snapshot", { action });
+}
+
 export function languageIntelligenceSnapshot(): Promise<LanguageIntelligenceSnapshot> {
-  return callCommand<LanguageIntelligenceSnapshot>("language_intelligence_snapshot");
+  return callCommand<LanguageIntelligenceSnapshot>("language_intelligence_snapshot", { action: null });
+}
+
+export function languageServerStatus(): Promise<LanguageServerStatus | null> {
+  return languageAction<LanguageServerStatus | null>({ kind: "status" });
+}
+
+export function syncLanguageDocument(input: {
+  path: string;
+  language: string;
+  text: string;
+}): Promise<LanguageServerStatus> {
+  return languageAction<LanguageServerStatus>({ kind: "sync_document", ...input });
+}
+
+export function closeLanguageDocument(path: string): Promise<null> {
+  return languageAction<null>({ kind: "close_document", path });
+}
+
+export function requestLanguageHover(input: {
+  path: string;
+  text: string;
+  line: number;
+  column: number;
+}): Promise<LanguageHover | null> {
+  return languageAction<LanguageHover | null>({ kind: "hover", ...input });
+}
+
+export function requestLanguageDefinition(input: {
+  path: string;
+  text: string;
+  line: number;
+  column: number;
+}): Promise<LanguageLocation[]> {
+  return languageAction<LanguageLocation[]>({ kind: "definition", ...input });
+}
+
+export function requestLanguageReferences(input: {
+  path: string;
+  text: string;
+  line: number;
+  column: number;
+}): Promise<LanguageLocation[]> {
+  return languageAction<LanguageLocation[]>({ kind: "references", ...input });
+}
+
+export function requestLanguageDocumentSymbols(input: {
+  path: string;
+  text: string;
+}): Promise<LanguageSymbol[]> {
+  return languageAction<LanguageSymbol[]>({ kind: "document_symbols", ...input });
+}
+
+export function stopLanguageServer(): Promise<null> {
+  return languageAction<null>({ kind: "stop" });
+}
+
+export function subscribeLanguageDiagnostics(
+  listener: (event: LanguageDiagnosticsEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<LanguageDiagnosticsEvent>("language-diagnostics", (event) => listener(event.payload));
+}
+
+export function subscribeLanguageServerStatus(
+  listener: (status: LanguageServerStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<LanguageServerStatus>("language-server-status", (event) => listener(event.payload));
 }
 
 export function languageServerFor(
