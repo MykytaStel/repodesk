@@ -1,7 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export const CODE_WORKSPACE_KEY = ["code", "workspace-v0"] as const;
+export const CODE_OPEN_EVENT = "repodesk:open-code";
 const CODE_OPEN_REQUEST_KEY = "repodesk.code.open-request";
+const CODE_LOCATION_REQUEST_KEY = "repodesk.code.location-request";
 
 export type CodeWorkspaceSource = "git_index" | "filesystem_fallback";
 export type CodeWorkspaceFileStatus =
@@ -46,6 +48,12 @@ export type CodeWorkspaceSaveResult = {
   changed: boolean;
 };
 
+export type CodeWorkspaceLocation = {
+  path: string;
+  line: number;
+  column: number;
+};
+
 export async function codeWorkspaceSnapshot(): Promise<CodeWorkspaceSnapshot> {
   return invoke("code_workspace_snapshot");
 }
@@ -62,14 +70,49 @@ export async function saveCodeWorkspaceDocument(input: {
   return invoke("code_workspace_save", { input });
 }
 
-/** Lightweight hand-off between separately mounted workspace routes. The path
- * is still fully revalidated by Rust when Code opens it. */
-export function requestCodeWorkspaceOpen(path: string): void {
+/**
+ * Lightweight hand-off between separately mounted workspace routes. Only the
+ * repository-relative path and optional cursor location are persisted for the
+ * one-shot transition. Rust still fully revalidates the path before reading it.
+ */
+export function requestCodeWorkspaceOpen(
+  path: string,
+  location?: { line?: number | null; column?: number | null },
+): void {
   window.sessionStorage.setItem(CODE_OPEN_REQUEST_KEY, path);
+  if (location?.line && location.line > 0) {
+    const request: CodeWorkspaceLocation = {
+      path,
+      line: Math.max(1, Math.floor(location.line)),
+      column: Math.max(1, Math.floor(location.column ?? 1)),
+    };
+    window.sessionStorage.setItem(CODE_LOCATION_REQUEST_KEY, JSON.stringify(request));
+  } else {
+    window.sessionStorage.removeItem(CODE_LOCATION_REQUEST_KEY);
+  }
+  window.dispatchEvent(new CustomEvent(CODE_OPEN_EVENT, { detail: { path } }));
 }
 
 export function consumeCodeWorkspaceOpenRequest(): string | null {
   const path = window.sessionStorage.getItem(CODE_OPEN_REQUEST_KEY);
   if (path) window.sessionStorage.removeItem(CODE_OPEN_REQUEST_KEY);
   return path;
+}
+
+export function consumeCodeWorkspaceLocation(path: string): CodeWorkspaceLocation | null {
+  const raw = window.sessionStorage.getItem(CODE_LOCATION_REQUEST_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<CodeWorkspaceLocation>;
+    if (parsed.path !== path || typeof parsed.line !== "number") return null;
+    window.sessionStorage.removeItem(CODE_LOCATION_REQUEST_KEY);
+    return {
+      path,
+      line: Math.max(1, Math.floor(parsed.line)),
+      column: Math.max(1, Math.floor(typeof parsed.column === "number" ? parsed.column : 1)),
+    };
+  } catch {
+    window.sessionStorage.removeItem(CODE_LOCATION_REQUEST_KEY);
+    return null;
+  }
 }
