@@ -34,6 +34,19 @@ type ActionLike = {
   result?: CommandLike;
 };
 
+type TaskRunLike = {
+  task_id?: string;
+  label?: string;
+  command?: string;
+  status?: string;
+  stdout?: string;
+  stderr?: string;
+};
+
+type TaskRunBatchLike = {
+  results?: TaskRunLike[];
+};
+
 type RepoPilotFindingLike = {
   severity?: string;
   title?: string;
@@ -215,6 +228,42 @@ export function parseCommandDiagnostics(
   return parsed.filter((item) => item.path !== null);
 }
 
+function fallbackTaskProblem(run: TaskRunLike, output: string): ProblemDiagnostic[] {
+  if (run.status === "passed") return [];
+
+  const firstUsefulLine = output
+    .replace(ANSI_ESCAPE, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+  const status = run.status ? run.status.replace(/_/g, " ") : "failed";
+  return [diagnostic({
+    source: "check",
+    severity: "error",
+    message: boundedMessage(firstUsefulLine || `${run.label || "Task"} ${status}`),
+    path: null,
+    line: null,
+    column: null,
+    code: run.task_id || null,
+    command: run.command || null,
+  })];
+}
+
+function taskRunDiagnostics(run: TaskRunLike): ProblemDiagnostic[] {
+  const output = `${run.stderr ?? ""}\n${run.stdout ?? ""}`;
+  const parsed = parseCommandDiagnostics(output, { source: "check", command: run.command ?? null });
+  return parsed.length > 0 ? parsed : fallbackTaskProblem(run, output);
+}
+
+export function captureTaskRunDiagnostics(run: TaskRunLike) {
+  replaceProblemSource("check", taskRunDiagnostics(run));
+}
+
+export function captureTaskRunBatchDiagnostics(batch: TaskRunBatchLike) {
+  const diagnostics = (batch.results ?? []).flatMap(taskRunDiagnostics);
+  replaceProblemSource("check", diagnostics);
+}
+
 export function captureActionDiagnostics(action: ActionLike) {
   const result = action.result;
   if (!result) return;
@@ -251,9 +300,19 @@ export function captureActionDiagnostics(action: ActionLike) {
 }
 
 export function captureCommandResult(command: string, result: unknown) {
-  if (command !== "run_desktop_action" && command !== "run_next_safe_step") return;
   if (!result || typeof result !== "object") return;
-  captureActionDiagnostics(result as ActionLike);
+
+  if (command === "run_desktop_action" || command === "run_next_safe_step") {
+    captureActionDiagnostics(result as ActionLike);
+    return;
+  }
+  if (command === "task_runner_run") {
+    captureTaskRunDiagnostics(result as TaskRunLike);
+    return;
+  }
+  if (command === "task_runner_run_all") {
+    captureTaskRunBatchDiagnostics(result as TaskRunBatchLike);
+  }
 }
 
 export function captureRepoPilotProblems(report: RepoPilotReportLike) {

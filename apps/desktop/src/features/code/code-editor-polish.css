@@ -1,7 +1,12 @@
 /* RD2 editor ergonomics ------------------------------------------------------
    Keep the lightweight editor cheap while making its chrome behave like a real
    code editor. Exact line metrics avoid font-rounding drift between textarea
-   content and the line-number gutter. */
+   content and the line-number gutter.
+
+   Code Workspace is lazy-loaded and its base stylesheet can be injected after
+   App.css. Critical editor geometry is therefore authoritative here even when
+   chunk load order changes; otherwise the legacy 28px bottom padding and 1.55
+   line-height can silently return after navigation. */
 
 .code-document-toolbar {
   min-height: 40px;
@@ -60,13 +65,13 @@
   box-sizing: border-box;
   height: 100%;
   margin: 0;
-  padding-top: 12px;
-  padding-bottom: 28px;
+  padding-top: 12px !important;
+  padding-bottom: 0 !important;
   border: 0;
   border-radius: 0;
   font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 20px;
+  font-size: 12.5px !important;
+  line-height: 20px !important;
   tab-size: 2;
 }
 

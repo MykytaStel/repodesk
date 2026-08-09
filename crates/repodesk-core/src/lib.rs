@@ -35,6 +35,7 @@ pub mod prompts;
 pub mod safety;
 pub mod security;
 pub mod sessions;
+pub mod task_runner;
 pub mod tasks;
 pub mod tokens;
 pub mod ui_snapshot;

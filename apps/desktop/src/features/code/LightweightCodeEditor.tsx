@@ -3,7 +3,6 @@ import { CODE_OPEN_EVENT, consumeCodeWorkspaceLocation } from "../../shared/api/
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
-const EDITOR_BOTTOM_PADDING_PX = 28;
 
 function lineAndColumn(value: string, offset: number): { line: number; column: number } {
   const safeOffset = Math.max(0, Math.min(offset, value.length));
@@ -53,7 +52,6 @@ export function LightweightCodeEditor({
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLPreElement>(null);
   const gutterShellRef = useRef<HTMLDivElement>(null);
-  const gutterCompensationRef = useRef(0);
   const findRef = useRef<HTMLInputElement>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -69,17 +67,15 @@ export function LightweightCodeEditor({
     const scrollTop = editor.scrollTop;
     const gutter = gutterRef.current;
     if (gutter) {
-      // Keep line positions exactly 1:1. Some WebViews give the textarea a
-      // smaller clientHeight when a horizontal scrollbar is visible, so its
-      // maximum scrollTop can exceed the gutter's. If the gutter clamps early,
-      // add only the missing bottom range and retry instead of scaling scroll.
+      // The textarea loses vertical viewport space only when the WebView renders
+      // a horizontal scrollbar. Mirror exactly that physical scrollbar height
+      // into the non-visible end of the gutter instead of adding fake source
+      // padding. Both surfaces can then share the same scrollTop 1:1 from the
+      // first line through the absolute end of the file.
+      const horizontalScrollbarHeight = Math.max(0, editor.offsetHeight - editor.clientHeight);
+      const nextPadding = `${horizontalScrollbarHeight}px`;
+      if (gutter.style.paddingBottom !== nextPadding) gutter.style.paddingBottom = nextPadding;
       gutter.scrollTop = scrollTop;
-      const missingRange = scrollTop - gutter.scrollTop;
-      if (missingRange > 0.5) {
-        gutterCompensationRef.current += missingRange;
-        gutter.style.paddingBottom = `${EDITOR_BOTTOM_PADDING_PX + gutterCompensationRef.current}px`;
-        gutter.scrollTop = scrollTop;
-      }
     }
     if (gutterShellRef.current) {
       gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
@@ -106,8 +102,7 @@ export function LightweightCodeEditor({
     setCursor({ line: 1, column: 1 });
     setFindOpen(false);
     setFindQuery("");
-    gutterCompensationRef.current = 0;
-    if (gutterRef.current) gutterRef.current.style.paddingBottom = `${EDITOR_BOTTOM_PADDING_PX}px`;
+    if (gutterRef.current) gutterRef.current.style.paddingBottom = "0px";
     if (gutterShellRef.current) gutterShellRef.current.style.setProperty("--editor-scroll-top", "0px");
 
     requestAnimationFrame(() => {

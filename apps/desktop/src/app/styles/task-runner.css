@@ -1,0 +1,319 @@
+/* RD2-14 Task Runner --------------------------------------------------------
+   A compact execution surface inside the bottom dock. Tasks are project checks,
+   not arbitrary shell commands, so the UI stays dense and evidence-oriented. */
+
+.bottom-panel-task-host {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.bottom-panel-view-hidden {
+  display: none;
+}
+
+.task-runner-panel {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.task-runner-toolbar {
+  min-height: 38px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.task-runner-heading,
+.task-runner-actions,
+.task-runner-state,
+.task-run-detail-meta {
+  display: flex;
+  align-items: center;
+}
+
+.task-runner-heading {
+  min-width: 0;
+  gap: 8px;
+}
+
+.task-runner-heading strong {
+  font-size: 11px;
+}
+
+.task-runner-heading span,
+.task-runner-heading small {
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.task-runner-heading span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-runner-actions {
+  flex: none;
+  gap: 6px;
+}
+
+.task-runner-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.task-runner-row {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 9px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-runner-row:hover {
+  background: var(--surface-2);
+}
+
+.task-runner-row.blocked {
+  opacity: .72;
+}
+
+.task-kind {
+  width: fit-content;
+  max-width: 58px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.task-kind.kind-lint,
+.task-kind.kind-typecheck {
+  color: var(--accent-2);
+}
+
+.task-kind.kind-test {
+  color: var(--success);
+}
+
+.task-kind.kind-security {
+  color: var(--warning);
+}
+
+.task-runner-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  box-shadow: none;
+}
+
+.task-runner-main:disabled {
+  opacity: 1;
+  cursor: default;
+}
+
+.task-runner-main strong,
+.task-runner-main code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-runner-main strong {
+  font-size: 10.5px;
+  font-weight: 720;
+}
+
+.task-runner-main code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.task-runner-state {
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.task-result {
+  min-width: 76px;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 9px;
+}
+
+.task-result.ok { color: var(--success); }
+.task-result.danger { color: var(--danger); }
+.task-result.neutral { color: var(--muted); }
+.task-result small { color: var(--muted); font-size: 8.5px; }
+
+.task-not-run,
+.task-blocked-label {
+  min-width: 58px;
+  color: var(--muted-2);
+  font-size: 9px;
+  text-align: right;
+}
+
+.task-blocked-label {
+  color: var(--warning);
+}
+
+.task-run-button {
+  min-width: 42px;
+}
+
+.task-run-detail {
+  min-height: 0;
+  max-height: 44%;
+  flex: 0 1 44%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface);
+}
+
+.task-run-detail > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-run-detail > header > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.task-run-detail strong,
+.task-run-detail code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-run-detail strong { font-size: 10.5px; }
+.task-run-detail code { color: var(--muted); font-size: 9px; }
+
+.task-run-detail-meta {
+  flex: none;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.task-run-detail pre {
+  min-height: 0;
+  margin: 0;
+  padding: 9px 11px;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-output-note {
+  padding: 4px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-2);
+  font-size: 8.5px;
+}
+
+.task-run-clean-output {
+  padding: 12px 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.task-runner-empty {
+  min-height: 94px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 14px 12px;
+  color: var(--muted);
+}
+
+.task-runner-empty strong {
+  color: var(--text);
+  font-size: 10.5px;
+}
+
+.task-runner-empty span {
+  max-width: 56ch;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.task-runner-error {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 35%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+  color: var(--danger);
+  font-size: 9.5px;
+}
+
+@media (max-width: 700px) {
+  .task-runner-row {
+    grid-template-columns: 50px minmax(0, 1fr);
+  }
+
+  .task-runner-state {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .task-runner-toolbar {
+    align-items: flex-start;
+  }
+
+  .task-runner-heading {
+    display: grid;
+    gap: 2px;
+  }
+}
