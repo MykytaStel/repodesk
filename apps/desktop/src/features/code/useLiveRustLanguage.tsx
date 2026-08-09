@@ -89,7 +89,10 @@ export function useLiveRustLanguage({
   valueRef.current = value;
   cursorRef.current = cursor;
 
-  useEffect(() => acquireLanguageServerOwner(), []);
+  useEffect(() => {
+    if (!enabled) return;
+    return acquireLanguageServerOwner();
+  }, [enabled, projectName]);
 
   useEffect(() => {
     clearLiveLanguageDiagnostics();
@@ -149,10 +152,10 @@ export function useLiveRustLanguage({
       if (lastSynced.current?.path === path) lastSynced.current = null;
       void closeLanguageDocument(path).catch(() => undefined);
     };
-  // Opening a different document owns didOpen/didClose. Text changes are
-  // handled by the debounced effect below.
+  // Opening a different document or project owns didOpen/didClose. Text changes
+  // are handled by the debounced effect below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, path]);
+  }, [enabled, path, projectName]);
 
   useEffect(() => {
     if (!enabled) return;
