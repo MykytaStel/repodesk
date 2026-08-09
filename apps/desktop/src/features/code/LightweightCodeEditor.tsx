@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type UIEvent } from "react";
 import { CODE_OPEN_EVENT, consumeCodeWorkspaceLocation } from "../../shared/api/codeWorkspace";
+import type { LanguageServerDescriptor } from "../../shared/api/languageIntelligence";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
@@ -35,6 +36,7 @@ export function LightweightCodeEditor({
   value,
   dirty,
   language,
+  languageServer,
   bytes,
   saving,
   onChange,
@@ -44,6 +46,7 @@ export function LightweightCodeEditor({
   value: string;
   dirty: boolean;
   language: string;
+  languageServer: LanguageServerDescriptor | null;
   bytes: number;
   saving: boolean;
   onChange: (value: string) => void;
@@ -224,6 +227,16 @@ export function LightweightCodeEditor({
       <footer className="code-editor-status">
         <span>Ln {cursor.line}, Col {cursor.column}</span>
         <span>{language}</span>
+        {languageServer ? (
+          <span
+            className={`code-language-service ${languageServer.availability}`}
+            title={languageServer.availability === "available"
+              ? `${languageServer.label} discovered${languageServer.source === "project_local" ? " in this project" : " on PATH"}. Live LSP sessions are not started in this slice.`
+              : `${languageServer.label} is supported but was not found.`}
+          >
+            LS {languageServer.label} {languageServer.availability === "available" ? "found" : "missing"}
+          </span>
+        ) : null}
         <span>UTF-8</span>
         <span>{lineCount} lines</span>
         <span>{dirty ? `${value.length.toLocaleString()} chars` : `${bytes.toLocaleString()} bytes`}</span>
