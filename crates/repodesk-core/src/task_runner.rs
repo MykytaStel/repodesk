@@ -188,7 +188,8 @@ fn run_task(project: &ProjectConfig, task: &ProjectTask) -> TaskRunResult {
         };
     }
 
-    let command_result = run_validated_check(&task.command, &project.path, TASK_RUNNER_TIMEOUT_SECS);
+    let command_result =
+        run_validated_check(&task.command, &project.path, TASK_RUNNER_TIMEOUT_SECS);
     let finished_at = Utc::now();
     from_check_result(project, task, started_at, finished_at, command_result)
 }
@@ -260,7 +261,11 @@ fn task_kind(command: &str) -> ProjectTaskKind {
         ProjectTaskKind::Lint
     } else if lower.contains("typecheck") || lower.contains("mypy") || lower.contains("tsc") {
         ProjectTaskKind::Typecheck
-    } else if lower.contains("test") || lower.contains("pytest") || lower.contains("jest") || lower.contains("vitest") {
+    } else if lower.contains("test")
+        || lower.contains("pytest")
+        || lower.contains("jest")
+        || lower.contains("vitest")
+    {
         ProjectTaskKind::Test
     } else if lower.contains("snyk")
         || lower.contains("trivy")
@@ -294,8 +299,14 @@ mod tests {
 
     #[test]
     fn classifies_common_project_tasks() {
-        assert_eq!(task_kind("cargo fmt --all -- --check"), ProjectTaskKind::Format);
-        assert_eq!(task_kind("cargo clippy --all-targets"), ProjectTaskKind::Lint);
+        assert_eq!(
+            task_kind("cargo fmt --all -- --check"),
+            ProjectTaskKind::Format
+        );
+        assert_eq!(
+            task_kind("cargo clippy --all-targets"),
+            ProjectTaskKind::Lint
+        );
         assert_eq!(task_kind("pnpm typecheck"), ProjectTaskKind::Typecheck);
         assert_eq!(task_kind("cargo test --all"), ProjectTaskKind::Test);
         assert_eq!(task_kind("trivy fs ."), ProjectTaskKind::Security);

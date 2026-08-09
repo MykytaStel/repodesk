@@ -18,14 +18,14 @@
 
 .knowledge-page-header .muted {
   max-width: 62ch;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .knowledge-page-header .primary-button {
-  min-height: 30px;
+  min-height: var(--control-h-sm);
   padding-inline: 10px;
-  font-size: 10.5px;
+  font-size: 12px;
 }
 
 .knowledge-workspace-v2 .knowledge-summary-strip {
@@ -52,11 +52,15 @@
 }
 
 .knowledge-workspace-v2 .knowledge-summary-strip strong {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .knowledge-workspace-v2 .knowledge-summary-strip span {
-  font-size: 9.5px;
+  font-size: 12px;
+}
+
+.knowledge-workspace-v2 .knowledge-proposal-form {
+  width: min(100%, 760px);
 }
 
 .knowledge-empty-state {
@@ -78,7 +82,7 @@
 .knowledge-empty-state > span {
   max-width: 58ch;
   color: var(--muted);
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -107,7 +111,7 @@
 
 .knowledge-workspace-v2 .knowledge-context-state p,
 .knowledge-workspace-v2 .knowledge-content {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -118,5 +122,9 @@
 
   .knowledge-workspace-v2 .knowledge-master-detail {
     grid-template-columns: 1fr;
+  }
+
+  .knowledge-workspace-v2 .knowledge-proposal-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

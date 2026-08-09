@@ -260,8 +260,16 @@ fn descriptor_for(spec: &ServerSpec, project_path: &Path) -> LanguageServerDescr
         id: spec.id.to_string(),
         label: spec.label.to_string(),
         executable: spec.executable.to_string(),
-        arguments: spec.arguments.iter().map(|value| (*value).to_string()).collect(),
-        languages: spec.languages.iter().map(|value| (*value).to_string()).collect(),
+        arguments: spec
+            .arguments
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
+        languages: spec
+            .languages
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect(),
         availability: if source.is_some() {
             LanguageServerAvailability::Available
         } else {
@@ -272,8 +280,13 @@ fn descriptor_for(spec: &ServerSpec, project_path: &Path) -> LanguageServerDescr
     }
 }
 
-fn resolve_executable_source(spec: &ServerSpec, project_path: &Path) -> Option<LanguageServerSource> {
-    if spec.project_local && executable_in_directory(&project_path.join("node_modules/.bin"), spec.executable) {
+fn resolve_executable_source(
+    spec: &ServerSpec,
+    project_path: &Path,
+) -> Option<LanguageServerSource> {
+    if spec.project_local
+        && executable_in_directory(&project_path.join("node_modules/.bin"), spec.executable)
+    {
         return Some(LanguageServerSource::ProjectLocal);
     }
 
@@ -362,8 +375,14 @@ mod tests {
     #[test]
     fn lsp_coordinates_are_explicitly_zero_based() {
         let range = LspRange {
-            start: LspPosition { line: 0, character: 0 },
-            end: LspPosition { line: 0, character: 4 },
+            start: LspPosition {
+                line: 0,
+                character: 0,
+            },
+            end: LspPosition {
+                line: 0,
+                character: 4,
+            },
         };
         assert_eq!(range.start.line, 0);
         assert_eq!(range.start.character, 0);

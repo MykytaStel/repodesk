@@ -244,12 +244,12 @@
   box-shadow: none;
 }
 
-.work-focus-tool strong { font-size: 11px; }
+.work-focus-tool strong { font-size: 12px; }
 .work-focus-tool span {
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

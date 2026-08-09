@@ -170,6 +170,60 @@ export const onboardedFixtures: CommandFixtures = {
     ],
   },
 
+  code_workspace_snapshot: {
+    project: "RepoDesk",
+    source: "git_index",
+    truncated: false,
+    files: [
+      {
+        path: ".gitignore",
+        name: ".gitignore",
+        extension: null,
+        language: "gitignore",
+        bytes: 6400,
+        status: "modified",
+        blocked: false,
+      },
+    ],
+  },
+  code_workspace_read: {
+    path: ".gitignore",
+    content: Array.from({ length: 240 }, (_, index) => `${String(index + 1).padStart(3, "0")} # ${"source-line-".repeat(12)}${index + 1}`).join("\n") + "\n",
+    bytes: 6400,
+    line_count: 241,
+    language: "gitignore",
+    status: "modified",
+    fingerprint: "editor-ui-fixture",
+  },
+  work_engineering_intelligence: {
+    run_evidence: {
+      run_id: "run-20260616-101500",
+      project: "RepoDesk",
+      work_item_id: "task-n2-e2e",
+      goal: "Wire N2 E2E smoke",
+      status: "completed",
+      dry_run: false,
+      started_at: "2026-06-16T10:15:00Z",
+      finished_at: "2026-06-16T10:16:30Z",
+      total_input_tokens: 1200,
+      total_output_tokens: 260,
+      total_cost_units: 0,
+      workers: [],
+      changed_files: ["src/app.ts"],
+      context: { estimated_tokens: 1800, evidence: [], source: "fixture" },
+      review: { state: "accepted", reviewed_paths: ["src/app.ts"], source: "fixture" },
+      verification: { state: "passed", verification_id: "verify-1", commands: [], evidence: [], verified_at: "2026-06-16T10:17:00Z", source: "fixture" },
+      commit: { committed: false, commit_sha: null, committed_paths: [], source: "fixture" },
+      acceptance: { configured: false, work_item_id: "task-n2-e2e", current_run_id: "run-20260616-101500", criteria: [], proven: 0, failed: 0, unproven: 0 },
+    },
+    knowledge: {
+      project: "RepoDesk",
+      records: [],
+      counts: { candidates: 0, accepted: 0, archived: 0 },
+      suggestions: [],
+    },
+  },
+
   model_health_snapshot: {
     providers: [
       { id: "ollama", label: "Ollama", enabled: true, auth_status: "not_required", reachability: "working", models: [{ id: "llama3", provider: "ollama", available: true }] },

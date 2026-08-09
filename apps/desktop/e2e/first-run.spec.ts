@@ -10,8 +10,8 @@ test.describe("first run (empty workspace)", () => {
   });
 
   test("header reflects no active project", async ({ page }) => {
-    await expect(page.getByRole("heading", { level: 2, name: "No active project" })).toBeVisible();
-    await expect(page.getByText("No active task")).toBeVisible();
+    await expect(page.locator(".ide-breadcrumbs").getByText("No active project")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Scope" })).toBeVisible();
   });
 
   test("Work Scope phase funnels into onboarding", async ({ page }) => {
