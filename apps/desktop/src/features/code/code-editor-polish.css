@@ -1,12 +1,7 @@
 /* RD2 editor ergonomics ------------------------------------------------------
-   Keep the lightweight editor cheap while making its chrome behave like a real
-   code editor. Exact line metrics avoid font-rounding drift between textarea
-   content and the line-number gutter.
-
-   Code Workspace is lazy-loaded and its base stylesheet can be injected after
-   App.css. Critical editor geometry is therefore authoritative here even when
-   chunk load order changes; otherwise the legacy 28px bottom padding and 1.55
-   line-height can silently return after navigation. */
+   The textarea is the only scroll surface. Line numbers are rendered in a
+   clipped visual layer and translated by the textarea's exact scrollTop, so
+   there is no second scrollHeight to clamp or drift near end-of-file. */
 
 .code-document-toolbar {
   min-height: 40px;
@@ -60,31 +55,26 @@
   background: var(--surface-2);
 }
 
-.code-editor-gutter,
-.code-editor-input {
-  box-sizing: border-box;
-  height: 100%;
-  margin: 0;
-  padding-top: 12px !important;
-  padding-bottom: 0 !important;
-  border: 0;
-  border-radius: 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px !important;
-  line-height: 20px !important;
-  tab-size: 2;
-}
-
-.code-editor-gutter {
+.code-editor-gutter-track {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  padding-right: 13px;
-  padding-left: 6px;
-  overflow: hidden;
+  margin: 0;
+  padding: 12px 13px 0 6px;
+  border: 0;
   background: transparent;
   color: var(--muted-2);
-  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+  line-height: 20px;
+  text-align: right;
+  transform: translate3d(0, calc(-1 * var(--editor-scroll-top, 0px)), 0);
+  transform-origin: top left;
   user-select: none;
+  will-change: transform;
+  pointer-events: none;
 }
 
 .code-editor-active-line-number {
@@ -107,15 +97,23 @@
 }
 
 .code-editor-input {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding-right: 22px;
-  padding-left: 16px;
+  height: 100%;
+  margin: 0;
+  padding: 12px 22px 0 16px !important;
+  border: 0;
+  border-radius: 0;
   resize: none;
   overflow: auto;
   background: var(--bg);
   color: var(--text);
   caret-color: var(--accent-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px !important;
+  line-height: 20px !important;
+  tab-size: 2;
   outline: none;
   white-space: pre;
 }
@@ -137,12 +135,12 @@
     grid-template-columns: 54px minmax(0, 1fr);
   }
 
-  .code-editor-gutter,
+  .code-editor-gutter-track,
   .code-editor-active-line-number {
     padding-right: 10px;
   }
 
   .code-editor-input {
-    padding-left: 12px;
+    padding-left: 12px !important;
   }
 }
