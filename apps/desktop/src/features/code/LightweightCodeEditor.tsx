@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type UIEvent } from "react";
-import { consumeCodeWorkspaceLocation } from "../../shared/api/codeWorkspace";
+import { CODE_OPEN_EVENT, consumeCodeWorkspaceLocation } from "../../shared/api/codeWorkspace";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
@@ -77,6 +77,22 @@ export function LightweightCodeEditor({
     }
   };
 
+  const applyPendingLocation = (): boolean => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    const location = consumeCodeWorkspaceLocation(path);
+    if (!location) return false;
+
+    const offset = offsetForLocation(value, location.line, location.column);
+    editor.focus();
+    editor.setSelectionRange(offset, offset);
+    setCursor(lineAndColumn(value, offset));
+    const targetTop = EDITOR_TOP_PADDING_PX + (location.line - 1) * EDITOR_LINE_HEIGHT_PX;
+    editor.scrollTop = Math.max(0, targetTop - editor.clientHeight * 0.32);
+    syncGutter(editor);
+    return true;
+  };
+
   useEffect(() => {
     setCursor({ line: 1, column: 1 });
     setFindOpen(false);
@@ -86,25 +102,26 @@ export function LightweightCodeEditor({
     requestAnimationFrame(() => {
       const editor = editorRef.current;
       if (!editor) return;
-      const location = consumeCodeWorkspaceLocation(path);
-      if (!location) {
-        editor.focus();
-        syncGutter(editor);
-        return;
-      }
-
-      const offset = offsetForLocation(value, location.line, location.column);
+      if (applyPendingLocation()) return;
       editor.focus();
-      editor.setSelectionRange(offset, offset);
-      setCursor(lineAndColumn(value, offset));
-      const targetTop = EDITOR_TOP_PADDING_PX + (location.line - 1) * EDITOR_LINE_HEIGHT_PX;
-      editor.scrollTop = Math.max(0, targetTop - editor.clientHeight * 0.32);
       syncGutter(editor);
     });
-  // `value` belongs to the same opened document; a location is consumed only on
-  // a path transition/request, not every keystroke.
+  // The opened document owns this transition. Location changes for the same
+  // path are handled by the event listener below instead of every keystroke.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
+
+  useEffect(() => {
+    const onOpenCode = () => {
+      requestAnimationFrame(() => {
+        void applyPendingLocation();
+      });
+    };
+    window.addEventListener(CODE_OPEN_EVENT, onOpenCode);
+    return () => window.removeEventListener(CODE_OPEN_EVENT, onOpenCode);
+  // Rebind when source changes so a location uses the current in-memory text.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, value]);
 
   const updateCursor = () => {
     const editor = editorRef.current;
