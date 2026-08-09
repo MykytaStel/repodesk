@@ -97,7 +97,7 @@ export function useLiveRustLanguage({
   }, [projectName]);
 
   useEffect(() => {
-    if (!projectName) return;
+    if (!enabled || !projectName) return;
     let disposed = false;
     let unlistenDiagnostics: (() => void) | undefined;
     let unlistenStatus: (() => void) | undefined;
@@ -108,21 +108,21 @@ export function useLiveRustLanguage({
     }).then((unlisten) => {
       if (disposed) unlisten();
       else unlistenDiagnostics = unlisten;
-    });
+    }).catch(() => undefined);
 
     void subscribeLanguageServerStatus((next) => {
       if (next.project === projectName && !disposed) setStatus(next);
     }).then((unlisten) => {
       if (disposed) unlisten();
       else unlistenStatus = unlisten;
-    });
+    }).catch(() => undefined);
 
     return () => {
       disposed = true;
       unlistenDiagnostics?.();
       unlistenStatus?.();
     };
-  }, [projectName]);
+  }, [enabled, projectName]);
 
   useEffect(() => {
     setPanel(null);
