@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type UIEvent } from "react";
+import { consumeCodeWorkspaceLocation } from "../../shared/api/codeWorkspace";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
@@ -11,6 +12,22 @@ function lineAndColumn(value: string, offset: number): { line: number; column: n
     line: before.split("\n").length,
     column: safeOffset - lastNewline,
   };
+}
+
+function offsetForLocation(value: string, line: number, column: number): number {
+  const targetLine = Math.max(1, line);
+  const targetColumn = Math.max(1, column);
+  let offset = 0;
+  let currentLine = 1;
+  while (currentLine < targetLine && offset < value.length) {
+    const newline = value.indexOf("\n", offset);
+    if (newline < 0) return value.length;
+    offset = newline + 1;
+    currentLine += 1;
+  }
+  const lineEnd = value.indexOf("\n", offset);
+  const maxOffset = lineEnd < 0 ? value.length : lineEnd;
+  return Math.min(maxOffset, offset + targetColumn - 1);
 }
 
 export function LightweightCodeEditor({
@@ -46,12 +63,47 @@ export function LightweightCodeEditor({
     [lineCount],
   );
 
+  const syncGutter = (editor: HTMLTextAreaElement) => {
+    const scrollTop = editor.scrollTop;
+    const editorMax = Math.max(0, editor.scrollHeight - editor.clientHeight);
+    const gutter = gutterRef.current;
+    if (gutter) {
+      const gutterMax = Math.max(0, gutter.scrollHeight - gutter.clientHeight);
+      const progress = editorMax > 0 ? Math.min(1, Math.max(0, scrollTop / editorMax)) : 0;
+      gutter.scrollTop = progress * gutterMax;
+    }
+    if (gutterShellRef.current) {
+      gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
+    }
+  };
+
   useEffect(() => {
     setCursor({ line: 1, column: 1 });
     setFindOpen(false);
     setFindQuery("");
     if (gutterShellRef.current) gutterShellRef.current.style.setProperty("--editor-scroll-top", "0px");
-    requestAnimationFrame(() => editorRef.current?.focus());
+
+    requestAnimationFrame(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const location = consumeCodeWorkspaceLocation(path);
+      if (!location) {
+        editor.focus();
+        syncGutter(editor);
+        return;
+      }
+
+      const offset = offsetForLocation(value, location.line, location.column);
+      editor.focus();
+      editor.setSelectionRange(offset, offset);
+      setCursor(lineAndColumn(value, offset));
+      const targetTop = EDITOR_TOP_PADDING_PX + (location.line - 1) * EDITOR_LINE_HEIGHT_PX;
+      editor.scrollTop = Math.max(0, targetTop - editor.clientHeight * 0.32);
+      syncGutter(editor);
+    });
+  // `value` belongs to the same opened document; a location is consumed only on
+  // a path transition/request, not every keystroke.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
   const updateCursor = () => {
@@ -107,11 +159,7 @@ export function LightweightCodeEditor({
   };
 
   const handleScroll = (event: UIEvent<HTMLTextAreaElement>) => {
-    const scrollTop = event.currentTarget.scrollTop;
-    if (gutterRef.current) gutterRef.current.scrollTop = scrollTop;
-    if (gutterShellRef.current) {
-      gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
-    }
+    syncGutter(event.currentTarget);
   };
 
   const activeLineStyle = {
