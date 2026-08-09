@@ -6,6 +6,7 @@ import {
   subscribeProblems,
 } from "../shared/api/problems";
 import { callCommand, debugEmitter, type DebugEventDetail } from "../shared/api/queries";
+import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { formatNumber } from "../shared/utils/helpers";
 import { InteractiveTerminal } from "./InteractiveTerminal";
 import { ProblemsPanel } from "./ProblemsPanel";
@@ -80,11 +81,22 @@ function LogRow({ log }: { log: LogEntry }) {
 }
 
 export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProps) {
+  const { projectName } = useWorkspace();
   const [activeTab, setActiveTab] = useState<PanelTab>("output");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
+  const historyProject = useRef<string | null>(projectName ?? null);
   const problemSnapshot = useSyncExternalStore(subscribeProblems, getProblemSnapshot, getProblemSnapshot);
+
+  useEffect(() => {
+    const nextProject = projectName ?? null;
+    if (historyProject.current === nextProject) return;
+    historyProject.current = nextProject;
+    historyLoaded.current = false;
+    setLogs([]);
+    clearProblems();
+  }, [projectName]);
 
   // The panel stays mounted so PTY sessions survive hide/show, but historical
   // action output is only requested once the user actually opens the panel.
@@ -94,7 +106,8 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
 
     callCommand<ActionRunResult[]>("action_history")
       .then((history) => {
-        const historyLogs = history.map<LogEntry>((action) => ({
+        const ordered = [...history].sort((left, right) => left.started_at_ms - right.started_at_ms);
+        const historyLogs = ordered.map<LogEntry>((action) => ({
           id: `action-${action.started_at_ms}-${action.id}`,
           timestamp: new Date(action.started_at_ms).toLocaleTimeString(),
           title: action.title,
@@ -106,15 +119,16 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
         }));
         setLogs((current) => [...historyLogs, ...current].slice(-MAX_PANEL_LOGS));
 
-        // Rehydrate diagnostics from persisted engineering checks only. Generic
-        // action/API failures remain Output and do not become code Problems.
-        for (const action of history) captureActionDiagnostics(action);
+        // Rehydrate diagnostics from oldest -> newest so the latest relevant
+        // check always owns the current `check` source bucket regardless of the
+        // backend's history ordering.
+        for (const action of ordered) captureActionDiagnostics(action);
       })
       .catch(() => {
         historyLoaded.current = false;
         // Output is auxiliary shell evidence. A missing history should not break the workspace.
       });
-  }, [open]);
+  }, [open, projectName]);
 
   // Cheap IPC metadata remains useful even while the panel is hidden. Result
   // payloads are not retained here; explicit Debug owns bounded payload capture.
