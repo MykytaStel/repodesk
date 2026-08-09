@@ -24,7 +24,8 @@ let totalErrors = 0;
 let totalMs = 0;
 
 function metricKey(command: string): string {
-  if (metrics.has(command) || metrics.size < MAX_TRACKED_COMMANDS) return command;
+  if (metrics.has(command)) return command;
+  if (metrics.size < MAX_TRACKED_COMMANDS - 1) return command;
   return "__other__";
 }
 
