@@ -35,6 +35,25 @@ const STATUS_LABELS: Record<EngineeringKnowledgeStatus, string> = {
 
 type Filter = "review" | "accepted" | "archived" | "all";
 
+const EMPTY_COPY: Record<Filter, { title: string; detail: string }> = {
+  review: {
+    title: "Nothing to review",
+    detail: "Add a durable project rule or capture a verified command when there is something worth reusing.",
+  },
+  accepted: {
+    title: "No accepted knowledge",
+    detail: "Accepted records are the only project knowledge RepoDesk may reuse in future context.",
+  },
+  archived: {
+    title: "Archive is empty",
+    detail: "Retired project knowledge stays here for auditability.",
+  },
+  all: {
+    title: "No project knowledge yet",
+    detail: "Keep only durable rules, decisions, hazards, commands and testing conventions here.",
+  },
+};
+
 function toneForStatus(status: EngineeringKnowledgeStatus): string {
   if (status === "accepted") return "ok";
   if (status === "candidate") return "warn";
@@ -72,7 +91,7 @@ function KnowledgeListItem({
       </div>
       <strong>{record.title}</strong>
       <small>
-        {record.origin === "verification" ? "From verification" : "Human proposed"}
+        {record.origin === "verification" ? "Verified evidence" : "Human proposed"}
         {record.source_work_item_id ? ` · ${record.source_work_item_id}` : ""}
       </small>
     </button>
@@ -99,7 +118,7 @@ function KnowledgeDetail({
           </span>
           <h2>{record.title}</h2>
           <p className="muted">
-            {record.origin === "verification" ? "Captured from verified engineering evidence" : "Human-proposed project knowledge"}
+            {record.origin === "verification" ? "Captured from verified evidence" : "Added by a human"}
           </p>
         </div>
         <span className={`pill ${toneForStatus(record.status)}`}>{STATUS_LABELS[record.status]}</span>
@@ -114,8 +133,8 @@ function KnowledgeDetail({
         <span className="knowledge-section-label">Provenance</span>
         <div className="knowledge-provenance-grid">
           <span>Project</span><strong>{record.project}</strong>
-          <span>Source Work Item</span><strong>{record.source_work_item_id ?? "Not bound"}</strong>
-          <span>Evidence refs</span><strong>{record.evidence.length}</strong>
+          <span>Work Item</span><strong>{record.source_work_item_id ?? "Not bound"}</strong>
+          <span>Evidence</span><strong>{record.evidence.length}</strong>
           <span>Updated</span><strong>{new Date(record.updated_at).toLocaleString()}</strong>
         </div>
         {record.evidence.length > 0 ? (
@@ -128,28 +147,28 @@ function KnowledgeDetail({
             ))}
           </div>
         ) : (
-          <p className="muted">No machine evidence attached. This record was proposed manually.</p>
+          <p className="muted">No machine evidence attached.</p>
         )}
       </section>
 
       <section className="knowledge-detail-section knowledge-context-state">
-        <span className="knowledge-section-label">Agent context</span>
+        <span className="knowledge-section-label">Future context</span>
         {record.status === "accepted" ? (
-          <p><strong>Eligible.</strong> RepoDesk may include this record in future bounded context packs when lexical relevance and the knowledge budget allow it.</p>
+          <p><strong>Eligible.</strong> RepoDesk may reuse this when it is relevant and fits the context budget.</p>
         ) : (
-          <p><strong>Excluded.</strong> Candidate and archived records never enter agent context.</p>
+          <p><strong>Excluded.</strong> Review or archived records never enter agent context.</p>
         )}
       </section>
 
       <footer className="knowledge-detail-actions">
         {record.status === "candidate" ? (
           <button type="button" className="primary-button" disabled={busy} onClick={onAccept}>
-            Accept into project knowledge
+            Accept
           </button>
         ) : null}
         {record.status !== "archived" ? (
           <button type="button" className="ghost-button" disabled={busy} onClick={onArchive}>
-            {record.status === "candidate" ? "Reject / archive" : "Archive"}
+            {record.status === "candidate" ? "Reject" : "Archive"}
           </button>
         ) : null}
       </footer>
@@ -184,7 +203,7 @@ function ProposalForm({
         </label>
         <label>
           <span>Title</span>
-          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Short engineering rule" />
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Short reusable rule" />
         </label>
       </div>
       <label>
@@ -193,7 +212,7 @@ function ProposalForm({
           rows={5}
           value={content}
           onChange={(event) => setContent(event.target.value)}
-          placeholder="Describe the reusable architecture rule, hazard, decision, command, or convention."
+          placeholder="What should future work on this project remember?"
         />
       </label>
       <div className="knowledge-proposal-actions">
@@ -203,7 +222,7 @@ function ProposalForm({
           disabled={busy || !canSubmit}
           onClick={() => onSubmit({ category, title: title.trim(), content: content.trim() })}
         >
-          Propose candidate
+          Add for review
         </button>
         <button type="button" className="ghost-button" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
@@ -270,7 +289,7 @@ export function KnowledgeTab() {
   }, [records, selectedId]);
 
   if (!hasProject) {
-    return <div className="focus-empty">Connect a project before creating Engineering Knowledge.</div>;
+    return <div className="focus-empty">Connect a project to use Project Knowledge.</div>;
   }
   if (snapshot.isLoading || !data) {
     return <div className="focus-empty">Loading Project Knowledge…</div>;
@@ -282,21 +301,22 @@ export function KnowledgeTab() {
   const selected = data.records.find((record) => record.id === selectedId) ?? null;
   const busy = propose.isPending || capture.isPending || accept.isPending || archive.isPending;
   const mutationError = propose.error ?? capture.error ?? accept.error ?? archive.error;
+  const empty = EMPTY_COPY[filter];
 
   return (
-    <div className="knowledge-workspace">
-      <header className="focus-page-header">
+    <div className="knowledge-workspace knowledge-workspace-v2">
+      <header className="focus-page-header knowledge-page-header">
         <div>
           <p className="eyebrow">Project Knowledge</p>
-          <h1>Reviewed engineering memory</h1>
-          <p className="muted">Only accepted records may enter future context packs. Candidates remain visible for human review.</p>
+          <h1>Engineering knowledge</h1>
+          <p className="muted">Reviewed rules, decisions and commands RepoDesk can reuse in future work.</p>
         </div>
-        <button type="button" className="primary-button" onClick={() => setShowProposal(true)}>New candidate</button>
+        <button type="button" className="primary-button" onClick={() => setShowProposal(true)}>Add knowledge</button>
       </header>
 
       <div className="knowledge-summary-strip">
         <button className={filter === "review" ? "active" : ""} onClick={() => setFilter("review")}>
-          <strong>{data.counts.candidates}</strong><span>To review</span>
+          <strong>{data.counts.candidates}</strong><span>Review</span>
         </button>
         <button className={filter === "accepted" ? "active" : ""} onClick={() => setFilter("accepted")}>
           <strong>{data.counts.accepted}</strong><span>Accepted</span>
@@ -313,8 +333,8 @@ export function KnowledgeTab() {
         <section className="knowledge-suggestions" aria-label="Evidence-backed suggestions">
           <div className="knowledge-section-heading">
             <div>
-              <strong>Fresh verification can teach the project</strong>
-              <span>Successful commands are suggestions only until you capture and accept them.</span>
+              <strong>Verified commands ready to review</strong>
+              <span>Capture only commands worth reusing in future work.</span>
             </div>
             <span className="pill">{data.suggestions.length}</span>
           </div>
@@ -322,7 +342,7 @@ export function KnowledgeTab() {
             <div className="knowledge-suggestion-row" key={suggestion.suggestion_id}>
               <div>
                 <strong>{suggestion.content}</strong>
-                <small>Verified in {suggestion.source_work_item_id}</small>
+                <small>{suggestion.source_work_item_id}</small>
               </div>
               <button
                 type="button"
@@ -330,7 +350,7 @@ export function KnowledgeTab() {
                 disabled={busy}
                 onClick={() => capture.mutate(suggestion.content)}
               >
-                Capture candidate
+                Add for review
               </button>
             </div>
           ))}
@@ -343,35 +363,41 @@ export function KnowledgeTab() {
 
       {mutationError ? <div className="notice danger">{errorToMessage(mutationError)}</div> : null}
 
-      <div className="knowledge-master-detail">
-        <aside className="knowledge-list" aria-label="Engineering Knowledge records">
-          <div className="knowledge-list-heading">
-            <strong>{filter === "review" ? "Needs review" : filter === "accepted" ? "Accepted knowledge" : filter === "archived" ? "Archive" : "All knowledge"}</strong>
-            <span>{records.length}</span>
-          </div>
-          {records.length === 0 ? (
-            <p className="focus-empty compact">Nothing in this view.</p>
-          ) : records.map((record) => (
-            <KnowledgeListItem
-              key={record.id}
-              record={record}
-              selected={record.id === selectedId}
-              onSelect={() => setSelectedId(record.id)}
-            />
-          ))}
-        </aside>
+      {records.length === 0 ? (
+        <section className="knowledge-empty-state">
+          <strong>{empty.title}</strong>
+          <span>{empty.detail}</span>
+          {filter === "review" ? (
+            <button type="button" className="tiny-button" onClick={() => setShowProposal(true)}>Add knowledge</button>
+          ) : null}
+        </section>
+      ) : (
+        <div className="knowledge-master-detail">
+          <aside className="knowledge-list" aria-label="Engineering Knowledge records">
+            <div className="knowledge-list-heading">
+              <strong>{filter === "review" ? "Needs review" : filter === "accepted" ? "Accepted" : filter === "archived" ? "Archived" : "All knowledge"}</strong>
+              <span>{records.length}</span>
+            </div>
+            {records.map((record) => (
+              <KnowledgeListItem
+                key={record.id}
+                record={record}
+                selected={record.id === selectedId}
+                onSelect={() => setSelectedId(record.id)}
+              />
+            ))}
+          </aside>
 
-        {selected ? (
-          <KnowledgeDetail
-            record={selected}
-            busy={busy}
-            onAccept={() => accept.mutate(selected.id)}
-            onArchive={() => archive.mutate(selected.id)}
-          />
-        ) : (
-          <div className="knowledge-detail focus-empty">Select a knowledge record.</div>
-        )}
-      </div>
+          {selected ? (
+            <KnowledgeDetail
+              record={selected}
+              busy={busy}
+              onAccept={() => accept.mutate(selected.id)}
+              onArchive={() => archive.mutate(selected.id)}
+            />
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
