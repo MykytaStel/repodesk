@@ -1,6 +1,12 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type UIEvent } from "react";
 import { CODE_OPEN_EVENT, consumeCodeWorkspaceLocation } from "../../shared/api/codeWorkspace";
-import type { LanguageServerDescriptor } from "../../shared/api/languageIntelligence";
+import {
+  LANGUAGE_INTELLIGENCE_KEY,
+  languageIntelligenceSnapshot,
+  languageServerFor,
+} from "../../shared/api/languageIntelligence";
+import { useWorkspace } from "../../shared/hooks/useWorkspace";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
@@ -36,7 +42,6 @@ export function LightweightCodeEditor({
   value,
   dirty,
   language,
-  languageServer,
   bytes,
   saving,
   onChange,
@@ -46,18 +51,30 @@ export function LightweightCodeEditor({
   value: string;
   dirty: boolean;
   language: string;
-  languageServer: LanguageServerDescriptor | null;
   bytes: number;
   saving: boolean;
   onChange: (value: string) => void;
   onSave: () => void;
 }) {
+  const { hasProject, projectName } = useWorkspace();
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const gutterShellRef = useRef<HTMLDivElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+
+  const languageIntelligence = useQuery({
+    queryKey: [...LANGUAGE_INTELLIGENCE_KEY, projectName ?? "none"],
+    queryFn: languageIntelligenceSnapshot,
+    enabled: hasProject,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const languageServer = useMemo(
+    () => languageServerFor(languageIntelligence.data, language),
+    [language, languageIntelligence.data],
+  );
 
   const lineCount = useMemo(() => value.length === 0 ? 1 : value.split("\n").length, [value]);
   const lineNumbers = useMemo(
