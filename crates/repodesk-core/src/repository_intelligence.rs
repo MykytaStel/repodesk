@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
@@ -162,7 +162,7 @@ fn index_rust_files(
         if file.bytes > MAX_SINGLE_INDEX_FILE_BYTES || !all_paths.contains(&file.path) {
             continue;
         }
-        let Ok(source) = fs::read_to_string(root.join(&file.path)) else {
+        let Some(source) = safe_read_index_text(root, &file.path) else {
             continue;
         };
         let Ok(parsed) = syn::parse_file(&source) else {
@@ -196,6 +196,29 @@ fn index_rust_files(
     }
 
     (facts, indexed_bytes, truncated)
+}
+
+fn safe_read_index_text(root: &Path, relative: &str) -> Option<String> {
+    let joined = root.join(relative);
+    let link_metadata = fs::symlink_metadata(&joined).ok()?;
+    if link_metadata.file_type().is_symlink() {
+        return None;
+    }
+
+    let canonical = joined.canonicalize().ok()?;
+    if !canonical.starts_with(root) {
+        return None;
+    }
+    let metadata = fs::metadata(&canonical).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_SINGLE_INDEX_FILE_BYTES {
+        return None;
+    }
+
+    let source = fs::read_to_string(canonical).ok()?;
+    if source.contains('\0') {
+        return None;
+    }
+    Some(source)
 }
 
 fn collect_use_paths(tree: &UseTree, prefix: Vec<String>, output: &mut Vec<Vec<String>>) {
@@ -469,7 +492,9 @@ fn closest_tests(
             continue;
         };
 
-        let entry = candidates.entry(file.path.clone()).or_insert((score, reason.clone()));
+        let entry = candidates
+            .entry(file.path.clone())
+            .or_insert((score, reason.clone()));
         if score > entry.0 {
             *entry = (score, reason);
         }
@@ -479,7 +504,12 @@ fn closest_tests(
         .into_iter()
         .map(|(path, (score, reason))| RepositoryTestCandidate { path, score, reason })
         .collect::<Vec<_>>();
-    values.sort_by(|left, right| right.score.cmp(&left.score).then_with(|| left.path.cmp(&right.path)));
+    values.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.path.cmp(&right.path))
+    });
     values.truncate(MAX_TESTS);
     values
 }
@@ -503,7 +533,10 @@ fn is_test_path(path: &str) -> bool {
 
 fn crate_prefix(path: &str) -> String {
     let parts = path.split('/').collect::<Vec<_>>();
-    if let Some(index) = parts.iter().position(|part| *part == "src" || *part == "tests") {
+    if let Some(index) = parts
+        .iter()
+        .position(|part| *part == "src" || *part == "tests")
+    {
         return parts[..index].join("/");
     }
     parent_slash_path(path)
@@ -609,13 +642,21 @@ fn context_candidates(
     };
 
     for relation in dependencies {
-        add(&relation.path, 92, format!("dependency: {}", relation.reason));
+        add(
+            &relation.path,
+            92,
+            format!("dependency: {}", relation.reason),
+        );
     }
     for relation in dependents {
         add(&relation.path, 84, relation.reason.clone());
     }
     for test in tests {
-        add(&test.path, test.score.max(80), format!("test: {}", test.reason));
+        add(
+            &test.path,
+            test.score.max(80),
+            format!("test: {}", test.reason),
+        );
     }
     for co_change in co_changes {
         let score = 40_u16.saturating_add((co_change.commits_together.min(6) as u16) * 5);
@@ -637,7 +678,12 @@ fn context_candidates(
             reasons: reasons.into_iter().collect(),
         })
         .collect::<Vec<_>>();
-    values.sort_by(|left, right| right.score.cmp(&left.score).then_with(|| left.path.cmp(&right.path)));
+    values.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.path.cmp(&right.path))
+    });
     values.truncate(MAX_CONTEXT_CANDIDATES);
     values
 }
@@ -652,12 +698,22 @@ mod tests {
 
     #[test]
     fn use_tree_groups_expand_into_paths() {
-        let item: syn::ItemUse = syn::parse_str("use crate::engineering::{knowledge::Store, events};")
-            .expect("parse use");
+        let item: syn::ItemUse =
+            syn::parse_str("use crate::engineering::{knowledge::Store, events};")
+                .expect("parse use");
         let mut paths = Vec::new();
         collect_use_paths(&item.tree, Vec::new(), &mut paths);
-        assert!(paths.contains(&vec!["crate".into(), "engineering".into(), "knowledge".into(), "Store".into()]));
-        assert!(paths.contains(&vec!["crate".into(), "engineering".into(), "events".into()]));
+        assert!(paths.contains(&vec![
+            "crate".into(),
+            "engineering".into(),
+            "knowledge".into(),
+            "Store".into()
+        ]));
+        assert!(paths.contains(&vec![
+            "crate".into(),
+            "engineering".into(),
+            "events".into()
+        ]));
     }
 
     #[test]
@@ -668,10 +724,18 @@ mod tests {
         ]);
         let resolved = resolve_use_path(
             "crates/core/src/lib.rs",
-            &["crate".into(), "engineering".into(), "knowledge".into(), "Store".into()],
+            &[
+                "crate".into(),
+                "engineering".into(),
+                "knowledge".into(),
+                "Store".into(),
+            ],
             &paths,
         );
-        assert_eq!(resolved.as_deref(), Some("crates/core/src/engineering/knowledge.rs"));
+        assert_eq!(
+            resolved.as_deref(),
+            Some("crates/core/src/engineering/knowledge.rs")
+        );
     }
 
     #[test]
