@@ -90,10 +90,15 @@ const editorTheme = EditorView.theme({
     padding: "0 10px 0 6px",
     textAlign: "right",
     fontVariantNumeric: "tabular-nums",
+    cursor: "pointer",
+  },
+  ".cm-lineNumbers .cm-gutterElement:hover": {
+    color: "var(--text)",
+    backgroundColor: "color-mix(in srgb, var(--muted) 10%, transparent)",
   },
   ".cm-activeLineGutter": {
     color: "var(--text)",
-    backgroundColor: "transparent",
+    backgroundColor: "var(--neutral-soft)",
   },
   ".cm-activeLine": {
     backgroundColor: "color-mix(in srgb, var(--accent-soft) 22%, transparent)",
@@ -305,7 +310,16 @@ export function SemanticCodeEditor({
         highlightSpecialChars(),
         history(),
         gitCompartment.of(gitGutterExtension(semantic, dirty)),
-        lineNumbers(),
+        lineNumbers({
+          domEventHandlers: {
+            mousedown(view, line, event) {
+              event.preventDefault();
+              view.dispatch({ selection: { anchor: line.from } });
+              view.focus();
+              return true;
+            },
+          },
+        }),
         highlightActiveLineGutter(),
         drawSelection(),
         indentOnInput(),

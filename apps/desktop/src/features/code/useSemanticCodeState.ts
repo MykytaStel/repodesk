@@ -170,7 +170,9 @@ export function useSemanticCodeState({
 
     return {
       path,
-      workItemId: snapshot?.work_item_contract.configured ? snapshot.work_item_contract.contract.work_item_id : null,
+      workItemId: snapshot?.work_item_contract?.configured
+        ? snapshot.work_item_contract.contract.work_item_id
+        : null,
       scopeState: fileGovernance?.scope_state ?? null,
       reviewState: governance?.review_state ?? null,
       verificationState: governance?.verification.state ?? null,
