@@ -14,6 +14,7 @@ const SOURCE_LABEL: Record<ProblemDiagnostic["source"], string> = {
   repopilot: "RepoPilot",
   check: "Checks",
   verification: "Verification",
+  lsp: "Language Server",
 };
 
 function locationLabel(problem: ProblemDiagnostic): string {
@@ -41,7 +42,11 @@ function ProblemRow({ problem }: { problem: ProblemDiagnostic }) {
         <span className="problem-meta">
           <span>{SOURCE_LABEL[problem.source]}</span>
           {problem.code ? <code>{problem.code}</code> : null}
-          {problem.command ? <span title={problem.command}>from check command</span> : null}
+          {problem.command ? (
+            <span title={problem.command}>
+              {problem.source === "lsp" ? problem.command : "from check command"}
+            </span>
+          ) : null}
         </span>
       </span>
       <code className="problem-location">{locationLabel(problem)}</code>
@@ -64,7 +69,7 @@ export function ProblemsPanel() {
     return (
       <div className="problems-empty">
         <strong>No code problems collected.</strong>
-        <span>Run Checks or Analyze changes. File-backed diagnostics will appear here and open directly in Code.</span>
+        <span>Run project tasks or Analyze changes. Language-service diagnostics will use this same list when live sessions are enabled.</span>
       </div>
     );
   }
