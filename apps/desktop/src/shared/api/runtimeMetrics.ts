@@ -17,7 +17,7 @@ export type RuntimeMetricsSnapshot = {
 };
 
 const MAX_TRACKED_COMMANDS = 96;
-const startedAt = new Date().toISOString();
+let startedAt = new Date().toISOString();
 const metrics = new Map<string, RuntimeCommandMetric>();
 let totalCalls = 0;
 let totalErrors = 0;
@@ -74,4 +74,5 @@ export function resetRuntimeMetrics(): void {
   totalCalls = 0;
   totalErrors = 0;
   totalMs = 0;
+  startedAt = new Date().toISOString();
 }
