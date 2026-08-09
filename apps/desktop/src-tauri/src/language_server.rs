@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -93,6 +93,8 @@ struct SessionInner {
     state: Mutex<SessionState>,
     writer: Mutex<ChildStdin>,
     child: Mutex<Child>,
+    stderr_tail: Mutex<String>,
+    stopping: AtomicBool,
     pending: Mutex<HashMap<u64, mpsc::Sender<Result<Value, String>>>>,
     next_request_id: AtomicU64,
     documents: Mutex<HashMap<String, u32>>,
@@ -106,6 +108,7 @@ struct SessionState {
 
 impl Drop for SessionInner {
     fn drop(&mut self) {
+        self.stopping.store(true, Ordering::Release);
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
             let _ = child.wait();
@@ -231,7 +234,10 @@ impl LanguageServerManager {
 
     fn ensure_rust_session(&self, app: &AppHandle) -> Result<Arc<SessionInner>, String> {
         let project = get_active_project().map_err(|error| error.to_string())?;
-        let canonical_root = project.path.canonicalize().map_err(|error| error.to_string())?;
+        let canonical_root = project
+            .path
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
 
         let mut slot = self
             .session
@@ -250,7 +256,8 @@ impl LanguageServerManager {
             drop(stale);
         }
 
-        let snapshot = active_language_intelligence_snapshot().map_err(|error| error.to_string())?;
+        let snapshot =
+            active_language_intelligence_snapshot().map_err(|error| error.to_string())?;
         let server = preferred_server_for_language(&snapshot, "rust")
             .ok_or_else(|| "No Rust language server is registered".to_string())?;
         if server.id != "rust-analyzer"
@@ -315,16 +322,26 @@ impl SessionInner {
             }),
             writer: Mutex::new(stdin),
             child: Mutex::new(child),
+            stderr_tail: Mutex::new(String::new()),
+            stopping: AtomicBool::new(false),
             pending: Mutex::new(HashMap::new()),
             next_request_id: AtomicU64::new(1),
             documents: Mutex::new(HashMap::new()),
             document_sync: Mutex::new(()),
         });
 
-        spawn_stdout_reader(Arc::downgrade(&session), app.clone(), stdout);
+        let (stderr_done_sender, stderr_done_receiver) = mpsc::channel();
         if let Some(stderr) = stderr {
-            spawn_stderr_reader(Arc::downgrade(&session), stderr);
+            spawn_stderr_reader(Arc::downgrade(&session), stderr, stderr_done_sender);
+        } else {
+            drop(stderr_done_sender);
         }
+        spawn_stdout_reader(
+            Arc::downgrade(&session),
+            app.clone(),
+            stdout,
+            stderr_done_receiver,
+        );
 
         let initialize = session.request(
             "initialize",
@@ -409,6 +426,33 @@ impl SessionInner {
             state.last_error = Some(truncate_chars(&error, MAX_SERVER_ERROR_CHARS));
         }
         fail_pending(self, error);
+    }
+
+    fn record_stderr(&self, line: &str) {
+        if let Ok(mut tail) = self.stderr_tail.lock() {
+            append_bounded_stderr(&mut tail, line, MAX_SERVER_ERROR_CHARS);
+        }
+    }
+
+    fn stream_error(&self, protocol_error: Option<&str>) -> Option<String> {
+        let status = self
+            .child
+            .lock()
+            .ok()
+            .and_then(|mut child| child.try_wait().ok().flatten())
+            .map(|status| status.to_string());
+        let stderr = self
+            .stderr_tail
+            .lock()
+            .map(|tail| tail.clone())
+            .unwrap_or_default();
+        language_server_stream_error(
+            self.stopping.load(Ordering::Acquire),
+            &self.server_id,
+            protocol_error,
+            status.as_deref(),
+            &stderr,
+        )
     }
 
     fn sync_document(&self, path: &str, language: &str, text: &str) -> Result<(), String> {
@@ -505,9 +549,9 @@ impl SessionInner {
                 let _ = self.notify("$/cancelRequest", json!({ "id": id }));
                 Err(format!("Language server request timed out: {method}"))
             }
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                Err(format!("Language server disconnected while handling: {method}"))
-            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => Err(format!(
+                "Language server disconnected while handling: {method}"
+            )),
         }
     }
 
@@ -541,6 +585,7 @@ impl SessionInner {
     }
 
     fn shutdown(&self) {
+        self.stopping.store(true, Ordering::Release);
         if self.is_ready() {
             let _ = self.request("shutdown", Value::Null, Duration::from_secs(2));
             let _ = self.notify("exit", Value::Null);
@@ -587,6 +632,7 @@ fn spawn_stdout_reader(
     session: Weak<SessionInner>,
     app: AppHandle,
     stdout: impl Read + Send + 'static,
+    stderr_done: mpsc::Receiver<()>,
 ) {
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -601,15 +647,21 @@ fn spawn_stdout_reader(
                 }
                 Ok(None) => {
                     if let Some(session) = session.upgrade() {
-                        session.set_error("rust-analyzer closed its stdout stream".into());
-                        let _ = app.emit("language-server-status", session.status());
+                        let _ = stderr_done.recv_timeout(Duration::from_millis(100));
+                        if let Some(error) = session.stream_error(None) {
+                            session.set_error(error);
+                            let _ = app.emit("language-server-status", session.status());
+                        }
                     }
                     break;
                 }
                 Err(error) => {
                     if let Some(session) = session.upgrade() {
-                        session.set_error(format!("rust-analyzer protocol read failed: {error}"));
-                        let _ = app.emit("language-server-status", session.status());
+                        let _ = stderr_done.recv_timeout(Duration::from_millis(100));
+                        if let Some(error) = session.stream_error(Some(&error.to_string())) {
+                            session.set_error(error);
+                            let _ = app.emit("language-server-status", session.status());
+                        }
                     }
                     break;
                 }
@@ -618,15 +670,20 @@ fn spawn_stdout_reader(
     });
 }
 
-fn spawn_stderr_reader(session: Weak<SessionInner>, stderr: impl Read + Send + 'static) {
+fn spawn_stderr_reader(
+    session: Weak<SessionInner>,
+    stderr: impl Read + Send + 'static,
+    done: mpsc::Sender<()>,
+) {
     thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
-            if session.upgrade().is_none() {
+            let Some(session) = session.upgrade() else {
                 break;
-            }
-            let _ = line;
+            };
+            session.record_stderr(&line);
         }
+        let _ = done.send(());
     });
 }
 
@@ -694,8 +751,7 @@ fn handle_server_message(session: &Arc<SessionInner>, app: &AppHandle, message: 
         return;
     }
 
-    if message.get("method").and_then(Value::as_str)
-        == Some("textDocument/publishDiagnostics")
+    if message.get("method").and_then(Value::as_str) == Some("textDocument/publishDiagnostics")
         && let Some(event) = diagnostics_event(session, message.get("params"))
     {
         let _ = app.emit("language-diagnostics", event);
@@ -966,23 +1022,19 @@ fn file_uri(path: &Path) -> Result<String, String> {
 fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
     let raw = uri.strip_prefix("file://")?;
     let decoded = percent_decode(raw)?;
-    let normalized = if cfg!(windows)
-        && decoded.starts_with('/')
-        && decoded.as_bytes().get(2) == Some(&b':')
-    {
-        decoded[1..].to_string()
-    } else {
-        decoded
-    };
+    let normalized =
+        if cfg!(windows) && decoded.starts_with('/') && decoded.as_bytes().get(2) == Some(&b':') {
+            decoded[1..].to_string()
+        } else {
+            decoded
+        };
     Some(PathBuf::from(normalized))
 }
 
 fn percent_encode_path(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
-        if byte.is_ascii_alphanumeric()
-            || matches!(byte, b'/' | b':' | b'-' | b'_' | b'.' | b'~')
-        {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b':' | b'-' | b'_' | b'.' | b'~') {
             encoded.push(char::from(byte));
         } else {
             encoded.push_str(&format!("%{byte:02X}"));
@@ -1034,6 +1086,77 @@ fn fail_pending(session: &SessionInner, error: String) {
             let _ = sender.send(Err(error.clone()));
         }
     }
+}
+
+fn append_bounded_stderr(target: &mut String, line: &str, max_chars: usize) {
+    if max_chars == 0 {
+        target.clear();
+        return;
+    }
+    if !target.is_empty() && !line.is_empty() {
+        target.push('\n');
+    }
+    target.push_str(line);
+    if target.chars().count() <= max_chars {
+        return;
+    }
+
+    let suffix = target
+        .chars()
+        .rev()
+        .take(max_chars.saturating_sub(1))
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    *target = format!("…{suffix}");
+}
+
+fn language_server_exit_error(
+    server_id: &str,
+    exit_status: Option<&str>,
+    stderr: &str,
+) -> String {
+    let stderr = stderr.trim();
+    if exit_status.is_none() && stderr.is_empty() {
+        return format!("{server_id} closed its stdout stream");
+    }
+
+    let mut message = format!("{server_id} exited");
+    if let Some(status) = exit_status {
+        message.push_str(" with ");
+        message.push_str(status);
+    }
+    if !stderr.is_empty() {
+        message.push_str(": ");
+        message.push_str(stderr);
+    }
+    if server_id == "rust-analyzer" && stderr.contains("unknown binary 'rust-analyzer'") {
+        message.push_str("\nInstall it with: rustup component add rust-analyzer");
+    }
+    message
+}
+
+fn language_server_stream_error(
+    stopping: bool,
+    server_id: &str,
+    protocol_error: Option<&str>,
+    exit_status: Option<&str>,
+    stderr: &str,
+) -> Option<String> {
+    if stopping {
+        return None;
+    }
+    if let Some(protocol_error) = protocol_error {
+        let mut message = format!("{server_id} protocol read failed: {protocol_error}");
+        let stderr = stderr.trim();
+        if !stderr.is_empty() {
+            message.push_str(": ");
+            message.push_str(stderr);
+        }
+        return Some(message);
+    }
+    Some(language_server_exit_error(server_id, exit_status, stderr))
 }
 
 fn truncate_chars(value: &str, max_chars: usize) -> String {
@@ -1096,5 +1219,47 @@ mod tests {
     fn workspace_edits_are_never_accepted() {
         let result = workspace_edit_rejection();
         assert_eq!(result["applied"], false);
+    }
+
+    #[test]
+    fn early_exit_reports_status_stderr_and_rustup_repair() {
+        let error = language_server_exit_error(
+            "rust-analyzer",
+            Some("exit status: 1"),
+            "error: unknown binary 'rust-analyzer' in toolchain 'stable'",
+        );
+        assert!(error.contains("exit status: 1"));
+        assert!(error.contains("unknown binary 'rust-analyzer'"));
+        assert!(error.contains("rustup component add rust-analyzer"));
+    }
+
+    #[test]
+    fn stderr_tail_is_bounded() {
+        let mut tail = String::new();
+        append_bounded_stderr(&mut tail, "0123456789", 8);
+        assert_eq!(tail.chars().count(), 8);
+        assert!(tail.ends_with("3456789"));
+    }
+
+    #[test]
+    fn exit_without_evidence_uses_generic_fallback() {
+        assert_eq!(
+            language_server_exit_error("rust-analyzer", None, ""),
+            "rust-analyzer closed its stdout stream",
+        );
+    }
+
+    #[test]
+    fn intentional_shutdown_suppresses_stream_failures() {
+        assert_eq!(
+            language_server_stream_error(
+                true,
+                "rust-analyzer",
+                Some("failed to fill whole buffer"),
+                Some("signal: 9"),
+                "server log",
+            ),
+            None,
+        );
     }
 }
