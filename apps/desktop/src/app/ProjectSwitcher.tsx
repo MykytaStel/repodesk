@@ -101,6 +101,15 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
 
   useEffect(() => {
     if (!open) return;
+    requestAnimationFrame(() => {
+      ref.current
+        ?.querySelector<HTMLElement>(".project-switcher-item.highlighted")
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  }, [highlightedIndex, open]);
+
+  useEffect(() => {
+    if (!open) return;
     const onClick = (event: MouseEvent) => {
       if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
     };
