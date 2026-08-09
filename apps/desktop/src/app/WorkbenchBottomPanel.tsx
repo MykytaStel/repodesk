@@ -27,7 +27,6 @@ interface LogEntry {
   command?: string;
   status: LogStatus;
   durationMs?: number;
-  stdout?: string;
   stderr?: string;
   source: "action" | "debug";
 }
@@ -37,7 +36,14 @@ interface WorkbenchBottomPanelProps {
   onClose: () => void;
 }
 
-const MAX_PANEL_LOGS = 300;
+const MAX_PANEL_LOGS = 150;
+const MAX_ERROR_CHARS = 4_000;
+
+function boundedText(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  if (text.length <= MAX_ERROR_CHARS) return text;
+  return `${text.slice(0, MAX_ERROR_CHARS)}\n… [${text.length - MAX_ERROR_CHARS} chars omitted]`;
+}
 
 function formatOutput(text: string): string {
   if (!text) return "";
@@ -69,8 +75,14 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
   const [activeTab, setActiveTab] = useState<PanelTab>("output");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const historyLoaded = useRef(false);
 
+  // The panel stays mounted so PTY sessions survive hide/show, but historical
+  // action output is only requested once the user actually opens the panel.
   useEffect(() => {
+    if (!open || historyLoaded.current) return;
+    historyLoaded.current = true;
+
     callCommand<ActionRunResult[]>("action_history")
       .then((history) => {
         const historyLogs = history.map<LogEntry>((action) => ({
@@ -80,17 +92,19 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
           command: action.result.command,
           status: action.result.ok ? "success" : "error",
           durationMs: action.finished_at_ms - action.started_at_ms,
-          stdout: action.result.stdout,
-          stderr: action.result.stderr,
+          stderr: boundedText(action.result.stderr),
           source: "action",
         }));
-        setLogs(historyLogs.slice(-MAX_PANEL_LOGS));
+        setLogs((current) => [...historyLogs, ...current].slice(-MAX_PANEL_LOGS));
       })
       .catch(() => {
+        historyLoaded.current = false;
         // Output is auxiliary shell evidence. A missing history should not break the workspace.
       });
-  }, []);
+  }, [open]);
 
+  // Cheap IPC metadata remains useful even while the panel is hidden. Result
+  // payloads are not retained here; explicit Debug owns bounded payload capture.
   useEffect(() => {
     const onDebug = (event: Event) => {
       const detail = (event as CustomEvent<DebugEventDetail>).detail;
@@ -103,8 +117,7 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
             title: detail.command,
             status: detail.status,
             durationMs: detail.durationMs,
-            stdout: detail.preview,
-            stderr: detail.error,
+            stderr: boundedText(detail.error),
             source: "debug" as const,
           },
         ];
