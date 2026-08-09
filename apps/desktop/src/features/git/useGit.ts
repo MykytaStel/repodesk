@@ -6,6 +6,8 @@ export function useGit() {
   const { data: git, isLoading } = useQuery({
     queryKey: queryKeys.git.snapshot,
     queryFn: () => optionalCommand<unknown>("git_workspace_snapshot"),
+    staleTime: 1_500,
+    refetchOnWindowFocus: true,
   });
 
   const branch = getString(git, "branch", getString(git, "current_branch", "-"));
