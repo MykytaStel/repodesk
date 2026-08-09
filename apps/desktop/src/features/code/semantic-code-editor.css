@@ -21,6 +21,62 @@
   background: var(--bg);
 }
 
+[data-theme="light"] .semantic-code-editor {
+  --syntax-keyword: #7d3fb2;
+  --syntax-type: #16768a;
+  --syntax-function: #9a6400;
+  --syntax-variable: #33291f;
+  --syntax-property: #315f8b;
+  --syntax-string: #4d7a32;
+  --syntax-number: #a24f20;
+  --syntax-comment: #8c806d;
+  --syntax-operator: #625647;
+  --syntax-punctuation: #766a5a;
+  --syntax-meta: #99558f;
+}
+
+[data-theme="midnight"] .semantic-code-editor {
+  --syntax-keyword: #b8a7ff;
+  --syntax-type: #71d9f5;
+  --syntax-function: #f1ce73;
+  --syntax-variable: #dbe2f0;
+  --syntax-property: #86b8ff;
+  --syntax-string: #7edca7;
+  --syntax-number: #ffad78;
+  --syntax-comment: #7481a5;
+  --syntax-operator: #b7c2dd;
+  --syntax-punctuation: #8490ad;
+  --syntax-meta: #d79be9;
+}
+
+[data-theme="nord"] .semantic-code-editor {
+  --syntax-keyword: #b48ead;
+  --syntax-type: #8fbcbb;
+  --syntax-function: #ebcb8b;
+  --syntax-variable: #eceff4;
+  --syntax-property: #81a1c1;
+  --syntax-string: #a3be8c;
+  --syntax-number: #d08770;
+  --syntax-comment: #7b8494;
+  --syntax-operator: #d8dee9;
+  --syntax-punctuation: #9aa4b5;
+  --syntax-meta: #b48ead;
+}
+
+[data-theme="high-contrast"] .semantic-code-editor {
+  --syntax-keyword: #ffdf68;
+  --syntax-type: #68e7ff;
+  --syntax-function: #fff28a;
+  --syntax-variable: #ffffff;
+  --syntax-property: #8ecaff;
+  --syntax-string: #8cffb2;
+  --syntax-number: #ffab70;
+  --syntax-comment: #bcbcbc;
+  --syntax-operator: #ffffff;
+  --syntax-punctuation: #d8d8d8;
+  --syntax-meta: #ff9df3;
+}
+
 .semantic-code-editor-host {
   min-width: 0;
   min-height: 0;
