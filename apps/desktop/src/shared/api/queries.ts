@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { recordRuntimeMetric } from "./runtimeMetrics";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -157,6 +158,7 @@ export async function callCommand<T>(command: string, args?: UnknownRecord): Pro
   try {
     const result = await invoke<T>(command, args);
     const durationMs = Math.round(performance.now() - started);
+    recordRuntimeMetric(command, durationMs, "success");
     dispatchDebugEvent({
       command,
       status: "success",
@@ -167,6 +169,7 @@ export async function callCommand<T>(command: string, args?: UnknownRecord): Pro
     return result;
   } catch (error: any) {
     const durationMs = Math.round(performance.now() - started);
+    recordRuntimeMetric(command, durationMs, "error");
     dispatchDebugEvent({
       command,
       status: "error",
