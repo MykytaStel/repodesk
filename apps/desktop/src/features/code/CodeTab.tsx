@@ -19,7 +19,7 @@ import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
-import { LightweightCodeEditor } from "./LightweightCodeEditor";
+import { SemanticCodeEditor } from "./SemanticCodeEditor";
 import "./code-workspace.css";
 
 const MAX_OPEN_TABS = 8;
@@ -411,12 +411,13 @@ export function CodeTab({
               )}
             </div>
           ) : (
-            <LightweightCodeEditor
+            <SemanticCodeEditor
               path={activeTab.path}
               value={activeTab.content}
               dirty={activeTab.dirty}
               language={activeTab.language}
               bytes={activeTab.bytes}
+              status={activeTab.status}
               saving={save.isPending}
               onChange={updateActiveContent}
               onSave={() => save.mutate(activeTab)}

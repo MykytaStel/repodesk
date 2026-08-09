@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { requestCodeWorkspaceOpen } from "../../shared/api/codeWorkspace";
 import {
   closeLanguageDocument,
@@ -27,6 +27,15 @@ const CHANGE_DEBOUNCE_MS = 350;
 const OWNER_STOP_GRACE_MS = 250;
 let liveEditorOwners = 0;
 let pendingStop: number | null = null;
+
+type LanguageKeyEvent = {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+  preventDefault(): void;
+};
 
 function acquireLanguageServerOwner(): () => void {
   liveEditorOwners += 1;
@@ -76,7 +85,14 @@ export function useLiveRustLanguage({
   statusTitle: string | null;
   busy: boolean;
   panel: ReactNode;
-  handleKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  actions: {
+    hover: () => void;
+    definition: () => void;
+    references: () => void;
+    symbols: () => void;
+    dismiss: () => void;
+  };
+  handleKeyDown: (event: LanguageKeyEvent) => boolean;
 } {
   const enabled = language === "rust" && server?.id === "rust-analyzer" && server.availability === "available";
   const [status, setStatus] = useState<LanguageServerStatus | null>(null);
@@ -247,7 +263,12 @@ export function useLiveRustLanguage({
     }
   }, [busy, enabled, path]);
 
-  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>): boolean => {
+  const dismiss = useCallback(() => {
+    setPanel(null);
+    setError(null);
+  }, []);
+
+  const handleKeyDown = useCallback((event: LanguageKeyEvent): boolean => {
     if (!enabled) return false;
     const mod = event.metaKey || event.ctrlKey;
     if (event.key === "F12" && event.shiftKey) {
@@ -272,12 +293,11 @@ export function useLiveRustLanguage({
     }
     if (event.key === "Escape" && (panel || error)) {
       event.preventDefault();
-      setPanel(null);
-      setError(null);
+      dismiss();
       return true;
     }
     return false;
-  }, [enabled, error, panel, runDefinition, runHover, runReferences, runSymbols]);
+  }, [dismiss, enabled, error, panel, runDefinition, runHover, runReferences, runSymbols]);
 
   const statusLabel = !enabled
     ? null
@@ -299,7 +319,7 @@ export function useLiveRustLanguage({
       <header>
         <strong>{error ? "Language server" : panel?.title}</strong>
         {busy ? <span>Working…</span> : null}
-        <button type="button" onClick={() => { setPanel(null); setError(null); }} aria-label="Close language panel">×</button>
+        <button type="button" onClick={dismiss} aria-label="Close language panel">×</button>
       </header>
       {error ? <div className="code-language-error">{error}</div> : null}
       {panel?.kind === "hover" ? <pre className="code-language-hover">{panel.hover.markdown}</pre> : null}
@@ -349,6 +369,13 @@ export function useLiveRustLanguage({
     statusTitle,
     busy,
     panel: panelNode,
+    actions: {
+      hover: () => { void runHover(); },
+      definition: () => { void runDefinition(); },
+      references: () => { void runReferences(); },
+      symbols: () => { void runSymbols(); },
+      dismiss,
+    },
     handleKeyDown,
   };
 }

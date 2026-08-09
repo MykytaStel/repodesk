@@ -1,0 +1,229 @@
+.semantic-code-editor {
+  --syntax-keyword: #c7a0ff;
+  --syntax-type: #7dd3e8;
+  --syntax-function: #e6c477;
+  --syntax-variable: #d7dbea;
+  --syntax-property: #a9c7ee;
+  --syntax-string: #8fd694;
+  --syntax-number: #e9a66f;
+  --syntax-comment: #6f7c98;
+  --syntax-operator: #b8c1d9;
+  --syntax-punctuation: #8e99b3;
+  --syntax-meta: #d58bdc;
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+[data-theme="light"] .semantic-code-editor {
+  --syntax-keyword: #7d3fb2;
+  --syntax-type: #16768a;
+  --syntax-function: #9a6400;
+  --syntax-variable: #33291f;
+  --syntax-property: #315f8b;
+  --syntax-string: #4d7a32;
+  --syntax-number: #a24f20;
+  --syntax-comment: #8c806d;
+  --syntax-operator: #625647;
+  --syntax-punctuation: #766a5a;
+  --syntax-meta: #99558f;
+}
+
+[data-theme="midnight"] .semantic-code-editor {
+  --syntax-keyword: #b8a7ff;
+  --syntax-type: #71d9f5;
+  --syntax-function: #f1ce73;
+  --syntax-variable: #dbe2f0;
+  --syntax-property: #86b8ff;
+  --syntax-string: #7edca7;
+  --syntax-number: #ffad78;
+  --syntax-comment: #7481a5;
+  --syntax-operator: #b7c2dd;
+  --syntax-punctuation: #8490ad;
+  --syntax-meta: #d79be9;
+}
+
+[data-theme="nord"] .semantic-code-editor {
+  --syntax-keyword: #b48ead;
+  --syntax-type: #8fbcbb;
+  --syntax-function: #ebcb8b;
+  --syntax-variable: #eceff4;
+  --syntax-property: #81a1c1;
+  --syntax-string: #a3be8c;
+  --syntax-number: #d08770;
+  --syntax-comment: #7b8494;
+  --syntax-operator: #d8dee9;
+  --syntax-punctuation: #9aa4b5;
+  --syntax-meta: #b48ead;
+}
+
+[data-theme="high-contrast"] .semantic-code-editor {
+  --syntax-keyword: #ffdf68;
+  --syntax-type: #68e7ff;
+  --syntax-function: #fff28a;
+  --syntax-variable: #ffffff;
+  --syntax-property: #8ecaff;
+  --syntax-string: #8cffb2;
+  --syntax-number: #ffab70;
+  --syntax-comment: #bcbcbc;
+  --syntax-operator: #ffffff;
+  --syntax-punctuation: #d8d8d8;
+  --syntax-meta: #ff9df3;
+}
+
+.semantic-code-editor-host {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.semantic-code-editor-host > .cm-editor {
+  width: 100%;
+  height: 100%;
+}
+
+.semantic-code-editor-host .cm-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.semantic-code-editor-host .cm-scroller::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.semantic-code-editor-host .cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.semantic-code-editor-host .cm-scroller::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-2) 58%, transparent);
+  background-clip: padding-box;
+}
+
+.semantic-code-editor-host .cm-scroller::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
+  background-clip: padding-box;
+}
+
+.semantic-code-editor-host .cm-gutterElement {
+  box-sizing: border-box;
+}
+
+.semantic-code-editor-host .cm-git-gutter {
+  width: 5px;
+  min-width: 5px;
+  overflow: hidden;
+}
+
+.semantic-code-editor-host .cm-git-gutter .cm-gutterElement {
+  width: 5px;
+  min-width: 5px;
+  padding: 0;
+}
+
+.cm-git-line-marker {
+  display: block;
+  width: 3px;
+  height: 100%;
+  min-height: 20px;
+  margin-left: 1px;
+  border-radius: 1px;
+}
+
+.cm-git-line-marker.added { background: var(--success); }
+.cm-git-line-marker.modified { background: var(--accent-2); }
+.cm-git-line-marker.deleted { background: var(--danger); }
+
+.semantic-code-editor-host .cm-lintRange-error {
+  background-image: none;
+  text-decoration: underline wavy var(--danger);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.semantic-code-editor-host .cm-lintRange-warning {
+  background-image: none;
+  text-decoration: underline wavy var(--warning);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.semantic-code-editor-host .cm-lintRange-info {
+  background-image: none;
+  text-decoration: underline dotted var(--muted);
+  text-underline-offset: 3px;
+}
+
+.semantic-code-editor-host .cm-lint-marker-error,
+.semantic-code-editor-host .cm-lint-marker-warning,
+.semantic-code-editor-host .cm-lint-marker-info {
+  transform: scale(.72);
+  transform-origin: center;
+}
+
+.semantic-code-strip {
+  min-height: 29px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 9.5px;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+
+.semantic-code-strip::-webkit-scrollbar { display: none; }
+.semantic-code-strip span { display: inline-flex; align-items: center; gap: 3px; }
+.semantic-code-strip strong { color: var(--text); font-weight: 700; }
+.semantic-code-strip .ok { color: var(--success); }
+.semantic-code-strip .warn { color: var(--warning); }
+.semantic-code-strip .danger { color: var(--danger); }
+
+.semantic-code-strip span + span::before {
+  content: "·";
+  margin-right: 7px;
+  color: var(--muted-2);
+}
+
+.semantic-code-editor.scope-out_of_scope .semantic-code-strip,
+.semantic-code-editor.scope-protected .semantic-code-strip {
+  background: color-mix(in srgb, var(--danger-soft) 62%, var(--surface-2));
+  border-bottom-color: var(--danger-border);
+}
+
+.semantic-code-editor.scope-ungoverned .semantic-code-strip {
+  background: color-mix(in srgb, var(--warning-soft) 46%, var(--surface-2));
+  border-bottom-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+}
+
+.semantic-status {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.semantic-status::-webkit-scrollbar { display: none; }
+
+@media (max-width: 860px) {
+  .semantic-code-strip {
+    min-height: 27px;
+    gap: 7px;
+    padding-inline: 8px;
+    font-size: 9px;
+  }
+}
