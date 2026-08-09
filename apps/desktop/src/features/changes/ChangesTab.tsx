@@ -233,9 +233,9 @@ export function ChangesTab({
             {selectedFile ? (
               <div className="changes-preview-actions">
                 <button className="tiny-button" onClick={openSelectedInCode}>Open in Code</button>
-                <div className="code-view-switch" role="group" aria-label="Changes view">
-                  <button className={viewMode === "diff" ? "active" : ""} onClick={() => setViewMode("diff")}>Diff</button>
-                  <button className={viewMode === "file" ? "active" : ""} onClick={() => setViewMode("file")}>File</button>
+                <div className="changes-view-switch" role="group" aria-label="Changes view">
+                  <button className={`tiny-button${viewMode === "diff" ? " active" : ""}`} onClick={() => setViewMode("diff")}>Diff</button>
+                  <button className={`tiny-button${viewMode === "file" ? " active" : ""}`} onClick={() => setViewMode("file")}>File</button>
                 </div>
               </div>
             ) : null}
