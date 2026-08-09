@@ -1,5 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type UIEvent } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type UIEvent } from "react";
 import { CODE_OPEN_EVENT, consumeCodeWorkspaceLocation } from "../../shared/api/codeWorkspace";
+import {
+  LANGUAGE_INTELLIGENCE_KEY,
+  languageIntelligenceSnapshot,
+  languageServerFor,
+} from "../../shared/api/languageIntelligence";
+import { useWorkspace } from "../../shared/hooks/useWorkspace";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
@@ -49,37 +56,51 @@ export function LightweightCodeEditor({
   onChange: (value: string) => void;
   onSave: () => void;
 }) {
+  const { hasProject, projectName } = useWorkspace();
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  const gutterRef = useRef<HTMLPreElement>(null);
   const gutterShellRef = useRef<HTMLDivElement>(null);
+  const scrollbarRef = useRef<HTMLDivElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
 
+  const languageIntelligence = useQuery({
+    queryKey: [...LANGUAGE_INTELLIGENCE_KEY, projectName ?? "none"],
+    queryFn: languageIntelligenceSnapshot,
+    enabled: hasProject,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+  const languageServer = useMemo(
+    () => languageServerFor(languageIntelligence.data, language),
+    [language, languageIntelligence.data],
+  );
+
   const lineCount = useMemo(() => value.length === 0 ? 1 : value.split("\n").length, [value]);
   const lineNumbers = useMemo(
-    () => Array.from({ length: lineCount }, (_, index) => String(index + 1)).join("\n"),
+    () => Array.from({ length: lineCount }, (_, index) => index + 1),
     [lineCount],
   );
 
-  const syncGutter = (editor: HTMLTextAreaElement) => {
-    const scrollTop = editor.scrollTop;
-    const gutter = gutterRef.current;
-    if (gutter) {
-      // The textarea loses vertical viewport space only when the WebView renders
-      // a horizontal scrollbar. Mirror exactly that physical scrollbar height
-      // into the non-visible end of the gutter instead of adding fake source
-      // padding. Both surfaces can then share the same scrollTop 1:1 from the
-      // first line through the absolute end of the file.
-      const horizontalScrollbarHeight = Math.max(0, editor.offsetHeight - editor.clientHeight);
-      const nextPadding = `${horizontalScrollbarHeight}px`;
-      if (gutter.style.paddingBottom !== nextPadding) gutter.style.paddingBottom = nextPadding;
-      gutter.scrollTop = scrollTop;
-    }
-    if (gutterShellRef.current) {
-      gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
-    }
+  const syncScrollGeometry = (editor: HTMLTextAreaElement) => {
+    // The textarea is now the only scroll surface. The gutter is a clipped,
+    // non-scrollable visual layer translated by the textarea's exact scrollTop.
+    // That removes the independent scrollHeight/clamping behaviour that caused
+    // line numbers to stop before the document reached its absolute end.
+    gutterShellRef.current?.style.setProperty("--editor-scroll-top", `${editor.scrollTop}px`);
+    const scrollbar = scrollbarRef.current;
+    if (!scrollbar) return;
+    const trackHeight = scrollbar.clientHeight || editor.clientHeight;
+    const maxScroll = Math.max(0, editor.scrollHeight - editor.clientHeight);
+    const thumbHeight = maxScroll === 0
+      ? trackHeight
+      : Math.max(28, trackHeight * editor.clientHeight / editor.scrollHeight);
+    const travel = Math.max(0, trackHeight - thumbHeight);
+    const thumbTop = maxScroll === 0 ? 0 : travel * editor.scrollTop / maxScroll;
+    scrollbar.style.setProperty("--editor-thumb-height", `${thumbHeight}px`);
+    scrollbar.style.setProperty("--editor-thumb-top", `${thumbTop}px`);
+    scrollbar.toggleAttribute("data-scrollable", maxScroll > 0);
   };
 
   const applyPendingLocation = (): boolean => {
@@ -94,7 +115,7 @@ export function LightweightCodeEditor({
     setCursor(lineAndColumn(value, offset));
     const targetTop = EDITOR_TOP_PADDING_PX + (location.line - 1) * EDITOR_LINE_HEIGHT_PX;
     editor.scrollTop = Math.max(0, targetTop - editor.clientHeight * 0.32);
-    syncGutter(editor);
+    syncScrollGeometry(editor);
     return true;
   };
 
@@ -102,18 +123,34 @@ export function LightweightCodeEditor({
     setCursor({ line: 1, column: 1 });
     setFindOpen(false);
     setFindQuery("");
-    if (gutterRef.current) gutterRef.current.style.paddingBottom = "0px";
-    if (gutterShellRef.current) gutterShellRef.current.style.setProperty("--editor-scroll-top", "0px");
+    gutterShellRef.current?.style.setProperty("--editor-scroll-top", "0px");
 
     requestAnimationFrame(() => {
       const editor = editorRef.current;
       if (!editor) return;
       if (applyPendingLocation()) return;
       editor.focus();
-      syncGutter(editor);
+      syncScrollGeometry(editor);
     });
   // The opened document owns this transition. Location changes for the same
   // path are handled by the event listener below instead of every keystroke.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (editorRef.current) syncScrollGeometry(editorRef.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [value]);
+
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => syncScrollGeometry(editor));
+    observer.observe(editor);
+    return () => observer.disconnect();
+  // The observer must follow the newly mounted editor when the document changes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path]);
 
@@ -133,6 +170,15 @@ export function LightweightCodeEditor({
     const editor = editorRef.current;
     if (!editor) return;
     setCursor(lineAndColumn(value, editor.selectionStart));
+  };
+
+  const goToLine = (line: number) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const offset = offsetForLocation(value, line, 1);
+    editor.focus();
+    editor.setSelectionRange(offset, offset);
+    setCursor({ line, column: 1 });
   };
 
   const findNext = (reverse = false) => {
@@ -182,7 +228,43 @@ export function LightweightCodeEditor({
   };
 
   const handleScroll = (event: UIEvent<HTMLTextAreaElement>) => {
-    syncGutter(event.currentTarget);
+    syncScrollGeometry(event.currentTarget);
+  };
+
+  const handleScrollbarPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const editor = editorRef.current;
+    const track = scrollbarRef.current;
+    if (!editor || !track || !track.hasAttribute("data-scrollable")) return;
+    event.preventDefault();
+    track.setPointerCapture(event.pointerId);
+
+    const rect = track.getBoundingClientRect();
+    const thumb = track.querySelector<HTMLElement>(".code-editor-scrollbar-thumb");
+    const thumbHeight = thumb?.getBoundingClientRect().height ?? 28;
+    const maxScroll = Math.max(0, editor.scrollHeight - editor.clientHeight);
+    const travel = Math.max(1, rect.height - thumbHeight);
+    const startY = event.clientY;
+    const startScroll = editor.scrollTop;
+    const clickedThumb = event.target === thumb;
+
+    if (!clickedThumb) {
+      editor.scrollTop = Math.max(0, Math.min(maxScroll, ((event.clientY - rect.top - thumbHeight / 2) / travel) * maxScroll));
+      syncScrollGeometry(editor);
+    }
+
+    const move = (moveEvent: PointerEvent) => {
+      if (!clickedThumb) return;
+      editor.scrollTop = Math.max(0, Math.min(maxScroll, startScroll + ((moveEvent.clientY - startY) / travel) * maxScroll));
+      syncScrollGeometry(editor);
+    };
+    const finish = () => {
+      track.removeEventListener("pointermove", move);
+      track.removeEventListener("pointerup", finish);
+      track.removeEventListener("pointercancel", finish);
+    };
+    track.addEventListener("pointermove", move);
+    track.addEventListener("pointerup", finish);
+    track.addEventListener("pointercancel", finish);
   };
 
   const activeLineStyle = {
@@ -214,9 +296,24 @@ export function LightweightCodeEditor({
       ) : null}
 
       <div className="code-editor-body">
-        <div ref={gutterShellRef} className="code-editor-gutter-shell" aria-hidden="true">
-          <pre ref={gutterRef} className="code-editor-gutter">{lineNumbers}</pre>
-          <span className="code-editor-active-line-number" style={activeLineStyle}>{cursor.line}</span>
+        <div ref={gutterShellRef} className="code-editor-gutter-shell" aria-label="Line numbers">
+          <pre className="code-editor-gutter-track">
+            {lineNumbers.map((line) => (
+              <button
+                key={line}
+                type="button"
+                tabIndex={-1}
+                className="code-editor-line-number"
+                data-line={line}
+                aria-label={`Go to line ${line}`}
+                aria-current={cursor.line === line ? "true" : undefined}
+                onClick={() => goToLine(line)}
+              >
+                {line}
+              </button>
+            ))}
+          </pre>
+          <span className="code-editor-active-line-number" style={activeLineStyle} />
         </div>
         <textarea
           ref={editorRef}
@@ -232,11 +329,29 @@ export function LightweightCodeEditor({
           spellCheck={false}
           aria-label={`Editing ${path}`}
         />
+        <div
+          ref={scrollbarRef}
+          className="code-editor-scrollbar"
+          aria-hidden="true"
+          onPointerDown={handleScrollbarPointerDown}
+        >
+          <span className="code-editor-scrollbar-thumb" />
+        </div>
       </div>
 
       <footer className="code-editor-status">
         <span>Ln {cursor.line}, Col {cursor.column}</span>
         <span>{language}</span>
+        {languageServer ? (
+          <span
+            className={`code-language-service ${languageServer.availability}`}
+            title={languageServer.availability === "available"
+              ? `${languageServer.label} discovered${languageServer.source === "project_local" ? " in this project" : " on PATH"}. Live LSP sessions are not started in this slice.`
+              : `${languageServer.label} is supported but was not found.`}
+          >
+            LS {languageServer.label} {languageServer.availability === "available" ? "found" : "missing"}
+          </span>
+        ) : null}
         <span>UTF-8</span>
         <span>{lineCount} lines</span>
         <span>{dirty ? `${value.length.toLocaleString()} chars` : `${bytes.toLocaleString()} bytes`}</span>

@@ -1,12 +1,7 @@
 /* RD2 editor ergonomics ------------------------------------------------------
-   Keep the lightweight editor cheap while making its chrome behave like a real
-   code editor. Exact line metrics avoid font-rounding drift between textarea
-   content and the line-number gutter.
-
-   Code Workspace is lazy-loaded and its base stylesheet can be injected after
-   App.css. Critical editor geometry is therefore authoritative here even when
-   chunk load order changes; otherwise the legacy 28px bottom padding and 1.55
-   line-height can silently return after navigation. */
+   The textarea is the only scroll surface. Line numbers are rendered in a
+   clipped visual layer and translated by the textarea's exact scrollTop, so
+   there is no second scrollHeight to clamp or drift near end-of-file. */
 
 .code-document-toolbar {
   min-height: 40px;
@@ -46,7 +41,12 @@
 }
 
 .code-editor-body {
-  grid-template-columns: 62px minmax(0, 1fr);
+  --editor-gutter-width: 62px;
+  --editor-line-height: 20px;
+  --editor-padding-top: 12px;
+  --editor-gutter-inset: 13px;
+  grid-template-columns: var(--editor-gutter-width) minmax(0, 1fr);
+  position: relative;
 }
 
 .code-editor-gutter-shell {
@@ -60,71 +60,146 @@
   background: var(--surface-2);
 }
 
-.code-editor-gutter,
-.code-editor-input {
+.code-editor-gutter-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
   box-sizing: border-box;
-  height: 100%;
-  margin: 0;
-  padding-top: 12px !important;
-  padding-bottom: 0 !important;
-  border: 0;
-  border-radius: 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px !important;
-  line-height: 20px !important;
-  tab-size: 2;
-}
-
-.code-editor-gutter {
+  display: grid;
+  grid-auto-rows: var(--editor-line-height);
+  align-content: start;
   width: 100%;
-  padding-right: 13px;
-  padding-left: 6px;
-  overflow: hidden;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: var(--editor-padding-top) 0 0;
+  border: 0;
   background: transparent;
   color: var(--muted-2);
-  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+  line-height: var(--editor-line-height);
+  white-space: pre;
+  word-break: normal;
+  overflow: visible;
+  transform: translate3d(0, calc(-1 * var(--editor-scroll-top, 0px)), 0);
+  transform-origin: top left;
   user-select: none;
+  will-change: transform;
+}
+
+.code-editor-line-number {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  height: var(--editor-line-height);
+  margin: 0;
+  padding: 0 var(--editor-gutter-inset) 0 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: inherit;
+  line-height: var(--editor-line-height);
+  text-align: right;
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.code-editor-line-number:hover {
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+  color: var(--text);
 }
 
 .code-editor-active-line-number {
   position: absolute;
   left: 0;
   right: 0;
-  z-index: 2;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 13px;
-  background: color-mix(in srgb, var(--surface-3) 86%, transparent);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  line-height: 20px;
+  z-index: 1;
+  height: var(--editor-line-height);
+  background: var(--neutral-soft);
+  box-shadow: none;
   pointer-events: none;
 }
 
 .code-editor-input {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding-right: 22px;
-  padding-left: 16px;
+  height: 100%;
+  margin: 0;
+  padding: var(--editor-padding-top) 22px 0 16px !important;
+  border: 0;
+  border-radius: 0;
   resize: none;
   overflow: auto;
   background: var(--bg);
   color: var(--text);
   caret-color: var(--accent-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px !important;
+  line-height: var(--editor-line-height) !important;
+  tab-size: 2;
   outline: none;
   white-space: pre;
+  scrollbar-width: none;
+}
+
+.code-editor-input::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.code-editor-scrollbar {
+  --editor-thumb-height: 0px;
+  --editor-thumb-top: 0px;
+  position: absolute;
+  top: 4px;
+  right: 3px;
+  bottom: 4px;
+  z-index: 4;
+  width: 8px;
+  border-radius: 999px;
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+
+.code-editor-scrollbar[data-scrollable] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.code-editor-scrollbar-thumb {
+  position: absolute;
+  top: var(--editor-thumb-top);
+  left: 1px;
+  width: 6px;
+  height: var(--editor-thumb-height);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+}
+
+.code-editor-scrollbar:hover .code-editor-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 66%, transparent);
 }
 
 .code-editor-status {
   min-height: 28px;
   gap: 14px;
   padding-inline: 14px;
-  font-size: 9.5px;
+  font-size: 12px;
+}
+
+.code-language-service {
+  max-width: min(180px, 24vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .code-find-bar {
@@ -134,15 +209,11 @@
 
 @media (max-width: 680px) {
   .code-editor-body {
-    grid-template-columns: 54px minmax(0, 1fr);
-  }
-
-  .code-editor-gutter,
-  .code-editor-active-line-number {
-    padding-right: 10px;
+    --editor-gutter-width: 54px;
+    --editor-gutter-inset: 10px;
   }
 
   .code-editor-input {
-    padding-left: 12px;
+    padding-left: 12px !important;
   }
 }

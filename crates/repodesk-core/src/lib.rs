@@ -21,6 +21,7 @@ pub mod executors;
 pub mod guard;
 pub mod init;
 pub mod judge;
+pub mod language_intelligence;
 pub mod memory;
 pub mod module_registry;
 pub mod orchestrator;

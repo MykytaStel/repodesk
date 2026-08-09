@@ -415,39 +415,29 @@
   grid-template-columns: 52px minmax(0, 1fr);
   overflow: hidden;
 }
-.code-editor-gutter,
+
+/* The textarea is the only scroll surface. The line-number layer lives in
+   code-editor-polish.css and is translated by textarea scrollTop. Keep this
+   base geometry aligned so lazy CSS loading cannot resurrect the old 28px
+   artificial bottom range. */
 .code-editor-input {
-  height: 100%;
-  margin: 0;
-  padding-top: 12px;
-  padding-bottom: 28px;
-  border: 0;
-  border-radius: 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.55;
-  tab-size: 2;
-}
-.code-editor-gutter {
-  padding-right: 9px;
-  padding-left: 4px;
-  overflow: hidden;
-  border-right: 1px solid var(--border);
-  background: var(--surface-2);
-  color: var(--muted-2);
-  text-align: right;
-  user-select: none;
-}
-.code-editor-input {
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  padding-right: 18px;
-  padding-left: 12px;
+  height: 100%;
+  margin: 0;
+  padding: 12px 18px 0 12px;
+  border: 0;
+  border-radius: 0;
   resize: none;
   overflow: auto;
   background: var(--bg);
   color: var(--text);
   caret-color: var(--accent-2);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 20px;
+  tab-size: 2;
   outline: none;
   white-space: pre;
 }
@@ -468,6 +458,8 @@
   font-size: 9px;
 }
 .code-editor-status strong { color: var(--warning); }
+.code-language-service.available { color: var(--success); }
+.code-language-service.missing { color: var(--warning); }
 
 .code-diff-stage {
   width: 100%;
@@ -527,5 +519,5 @@
 @media (max-width: 680px) {
   .code-workspace-v0 { grid-template-columns: 150px minmax(0, 1fr); }
   .code-workspace-actions .tiny-button:not(:first-child) { display: none; }
-  .code-editor-status span:nth-child(n + 3) { display: none; }
+  .code-editor-status span:nth-child(n + 4) { display: none; }
 }

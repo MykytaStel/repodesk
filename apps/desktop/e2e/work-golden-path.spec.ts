@@ -17,9 +17,7 @@ test.describe("work tab golden path (onboarded)", () => {
   test("Work is the default home and renders the six-phase rail", async ({ page }) => {
     // Work is the primary spine's first tab and the default landing. Scope to
     // `.nav-item` so the "Work" tab isn't confused with the "Work" group toggle.
-    await expect(
-      page.locator(".nav-item").filter({ has: page.getByText("Work", { exact: true }) }),
-    ).toHaveClass(/active/);
+    await expect(page.getByRole("button", { name: /^Work —/ })).toHaveAttribute("aria-pressed", "true");
 
     // The phase rail shows all six phases in order.
     const rail = page.locator(".phase-rail");
@@ -56,18 +54,17 @@ test.describe("work tab golden path (onboarded)", () => {
 
   test("Execute previews the run and gates launch on required approvals", async ({ page }) => {
     // The pre-launch preview spells out executor/model/workspace/writes/cost.
-    await expect(page.getByText("Before you launch")).toBeVisible();
-    await expect(page.locator(".exec-preview-grid").getByText("Codex CLI")).toBeVisible();
-    await expect(page.locator(".exec-preview-grid").getByText("Isolated worktree")).toBeVisible();
+    await expect(page.locator(".exec-preview-facts").getByText("Codex CLI")).toBeVisible();
+    await expect(page.locator(".exec-preview-facts").getByText("Isolated")).toBeVisible();
 
     // Agent-run mode surfaces the ExecutionAuthorization gates on the card.
-    await expect(page.getByText(/Approve coding-agent CLIs/)).toBeVisible();
-    await expect(page.getByText(/Approve paid providers/)).toBeVisible();
+    await expect(page.getByText(/Coding-agent process/)).toBeVisible();
+    await expect(page.getByText(/Paid providers/)).toBeVisible();
 
     // The run needs the coding-agent approval, so the CTA is blocked until granted.
     const cta = page.locator(".work-cta-row .primary-cta");
     await expect(cta).toBeDisabled();
-    await page.getByRole("checkbox", { name: /Approve coding-agent CLIs/ }).check();
+    await page.getByRole("checkbox", { name: /Coding-agent process/ }).check();
     await expect(cta).toBeEnabled();
 
     // Now the primary CTA launches the orchestrator run inline.
@@ -78,32 +75,30 @@ test.describe("work tab golden path (onboarded)", () => {
   });
 
   test("advanced orchestrator details stay collapsed until disclosed", async ({ page }) => {
-    const disclosure = page.getByRole("button", { name: /Advanced orchestrator details/ });
+    const disclosure = page.getByRole("button", { name: /Advanced orchestration/ });
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
     await disclosure.click();
     await expect(disclosure).toHaveAttribute("aria-expanded", "true");
   });
 
-  test("primary nav is collapsed to Work / Changes / History / Models & Cost / Settings", async ({ page }) => {
-    const nav = page.locator(".nav-list .nav-group").first();
-    for (const tab of ["Work", "Changes", "History", "Models & Cost", "Settings"]) {
-      await expect(nav.getByRole("button", { name: new RegExp(`^${tab}`) })).toBeVisible();
+  test("primary activity rail stays focused and deeper tools live in the drawer", async ({ page }) => {
+    for (const tab of ["Work", "Code", "Changes", "Runs", "Projects"]) {
+      await expect(page.getByRole("button", { name: new RegExp(`^${tab} —`) })).toBeVisible();
     }
-    // Models & Cost merges runtime health + usage/cost behind one subnav.
-    await nav.getByRole("button", { name: /^Models & Cost/ }).click();
+    await page.getByRole("button", { name: "Command palette" }).click();
+    await page.getByPlaceholder("Search tabs and actions…").fill("Models & Cost");
+    await page.keyboard.press("Enter");
     await expect(page.locator(".subnav")).toBeVisible();
     await expect(page.getByText("This view crashed")).toHaveCount(0);
     // Changes is one unified surface: a workspace summary header above a single
     // changed-files list + preview pane (no segmented Git/Code subnav).
-    await nav.getByRole("button", { name: /^Changes/ }).click();
-    await expect(page.locator(".changes-summary")).toBeVisible();
-    await expect(page.locator(".changes-summary").getByText("feat/n2-e2e")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Changed files" })).toBeVisible();
+    await page.getByRole("button", { name: /^Changes —/ }).click();
+    await expect(page.getByText("feat/n2-e2e", { exact: true })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Changed files" })).toBeVisible();
     await expect(page.getByText("This view crashed")).toHaveCount(0);
 
-    await nav.getByRole("button", { name: /^History/ }).click();
-    await expect(page.locator(".changes-summary")).toBeVisible();
-    await expect(page.locator(".subnav")).toBeVisible();
+    await page.getByRole("button", { name: /^Runs —/ }).click();
+    await expect(page.getByRole("button", { name: /^Runs —/ })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("This view crashed")).toHaveCount(0);
   });
 });

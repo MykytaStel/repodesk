@@ -238,6 +238,7 @@ apps/desktop/e2e-native/logs/
 /runs/
 /.repodesk-debug/
 .repopilot/
+/.superpowers/
 # Shared AI context (CLAUDE.md, AGENTS.md, .claude/agents/) IS committed so any
 # AI/agent gets project context without re-deriving it.
 # Permission allowlists are local/volatile (the harness rewrites them) — keep out of git:
