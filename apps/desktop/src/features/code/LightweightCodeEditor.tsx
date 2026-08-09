@@ -1,4 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type UIEvent } from "react";
+
+const EDITOR_LINE_HEIGHT_PX = 20;
+const EDITOR_TOP_PADDING_PX = 12;
 
 function lineAndColumn(value: string, offset: number): { line: number; column: number } {
   const safeOffset = Math.max(0, Math.min(offset, value.length));
@@ -31,6 +34,7 @@ export function LightweightCodeEditor({
 }) {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLPreElement>(null);
+  const gutterShellRef = useRef<HTMLDivElement>(null);
   const findRef = useRef<HTMLInputElement>(null);
   const [findOpen, setFindOpen] = useState(false);
   const [findQuery, setFindQuery] = useState("");
@@ -46,6 +50,7 @@ export function LightweightCodeEditor({
     setCursor({ line: 1, column: 1 });
     setFindOpen(false);
     setFindQuery("");
+    if (gutterShellRef.current) gutterShellRef.current.style.setProperty("--editor-scroll-top", "0px");
     requestAnimationFrame(() => editorRef.current?.focus());
   }, [path]);
 
@@ -102,8 +107,16 @@ export function LightweightCodeEditor({
   };
 
   const handleScroll = (event: UIEvent<HTMLTextAreaElement>) => {
-    if (gutterRef.current) gutterRef.current.scrollTop = event.currentTarget.scrollTop;
+    const scrollTop = event.currentTarget.scrollTop;
+    if (gutterRef.current) gutterRef.current.scrollTop = scrollTop;
+    if (gutterShellRef.current) {
+      gutterShellRef.current.style.setProperty("--editor-scroll-top", `${scrollTop}px`);
+    }
   };
+
+  const activeLineStyle = {
+    top: `calc(${EDITOR_TOP_PADDING_PX}px + ${(cursor.line - 1) * EDITOR_LINE_HEIGHT_PX}px - var(--editor-scroll-top, 0px))`,
+  } as CSSProperties;
 
   return (
     <section className="code-editor-shell" aria-label={`Editor for ${path}`}>
@@ -130,7 +143,10 @@ export function LightweightCodeEditor({
       ) : null}
 
       <div className="code-editor-body">
-        <pre ref={gutterRef} className="code-editor-gutter" aria-hidden="true">{lineNumbers}</pre>
+        <div ref={gutterShellRef} className="code-editor-gutter-shell" aria-hidden="true">
+          <pre ref={gutterRef} className="code-editor-gutter">{lineNumbers}</pre>
+          <span className="code-editor-active-line-number" style={activeLineStyle}>{cursor.line}</span>
+        </div>
         <textarea
           ref={editorRef}
           className="code-editor-input"
