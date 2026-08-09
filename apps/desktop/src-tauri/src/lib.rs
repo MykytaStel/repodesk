@@ -185,6 +185,7 @@ pub fn run() {
             commands::task_runner_snapshot,
             commands::task_runner_run,
             commands::task_runner_run_all,
+            commands::language_intelligence_snapshot,
             commands::token_usage_snapshot,
             commands::log_token_usage,
             commands::estimate_raw_text,
