@@ -142,7 +142,7 @@ export function ChangesTab({
         <div className="changes-focus-title">
           <p className="eyebrow">Changes</p>
           <strong>{branch}</strong>
-          <span className={dirty ? "warn" : "muted"}>{dirty ? `${dirtyCount} uncommitted` : "Working tree clean"}</span>
+          <span className={dirty ? "warn" : "muted"}>{dirty ? `${dirtyCount} uncommitted` : "Clean"}</span>
         </div>
         <div className="changes-focus-actions">
           <button className="tiny-button" onClick={refreshWorkspace}>Refresh</button>
@@ -173,7 +173,7 @@ export function ChangesTab({
         </div>
       ) : (
         <div className="changes-gate-bar muted">
-          <span>Governance</span><strong>No active Work Item</strong><small>Git changes are visible but unattributed.</small>
+          <span>Governance</span><strong>No Work Item</strong><small>Changes are not attributed to a task.</small>
         </div>
       )}
 
@@ -194,8 +194,8 @@ export function ChangesTab({
           <div className="file-list scroll-area changes-file-list">
             {rows.length === 0 ? (
               <div className="changes-file-empty">
-                <strong>Working tree is clean</strong>
-                <span>No changed files in this project. Edit in Code or start a Work Item to produce a ChangeSet.</span>
+                <strong>No changes</strong>
+                <span>This project has no uncommitted files.</span>
               </div>
             ) : null}
             {rows.map((file) => {
@@ -233,7 +233,7 @@ export function ChangesTab({
           <div className="changes-pane-head preview">
             <div className="changes-preview-location">
               <strong>{selectedFile ? selectedFile.split("/").pop() : "Diff"}</strong>
-              {selectedFile ? <code>{selectedFile}</code> : <span>Select a changed file</span>}
+              {selectedFile ? <code>{selectedFile}</code> : <span>{dirty ? "Select a file" : "No file selected"}</span>}
             </div>
             {selectedFile ? (
               <div className="changes-preview-actions">
@@ -249,8 +249,8 @@ export function ChangesTab({
           <div className="changes-preview-content">
             {!selectedFile ? (
               <EmptyState
-                message={dirty ? "Select a changed file" : "Nothing to review"}
-                hint={dirty ? "Choose a file on the left to inspect its diff. Double-click to edit it in Code." : "The working tree is clean. New edits will appear here automatically after refresh."}
+                message={dirty ? "Select a file" : "Nothing to review"}
+                hint={dirty ? "Choose a changed file to inspect its diff." : "New edits will appear here after refresh."}
               />
             ) : previewLoading ? (
               <p className="muted">Loading…</p>
