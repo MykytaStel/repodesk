@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import { projectUse, projectAdd } from "../shared/api/workflow";
@@ -8,23 +8,42 @@ import { CheckIcon, ChevronIcon, FolderIcon, PlusIcon } from "./NavIcons";
 
 type ProjectConfig = { name: string; path?: string; project_type?: string };
 
+function projectTypeLabel(value?: string): string {
+  if (!value) return "";
+  return value.replace(/[_\s]+/g, "-").toUpperCase();
+}
+
 /**
- * Header control to switch the active project (or jump to connect a new one).
- * Switching re-scopes everything downstream, so it invalidates all queries.
+ * Compact workspace-context switcher. The connected-project registry stays
+ * secondary to the active engineering surface: one small trigger opens a
+ * searchable, keyboard-friendly popover only when the user asks for it.
+ * Switching project re-scopes the entire application, so broad invalidation is
+ * intentional here even though routine workflow mutations use domain scopes.
  */
 export function ProjectSwitcher({ projectName, onConnectProject }: { projectName: string; onConnectProject: () => void }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const { data: projects = [] } = useQuery({
+  const { data: projects = [], isFetching } = useQuery({
     queryKey: ["project_list_configs"],
     queryFn: () => invoke<ProjectConfig[]>("project_list_configs").catch(() => [] as ProjectConfig[]),
-    // The connected-projects list only changes on add/switch (which invalidate
-    // all queries), so it can stay fresh much longer than the 5s default.
+    enabled: open,
     staleTime: 60_000,
   });
+
+  const filteredProjects = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return projects;
+    return projects.filter((project) =>
+      [project.name, project.path ?? "", project.project_type ?? ""]
+        .some((value) => value.toLowerCase().includes(query)),
+    );
+  }, [projects, search]);
 
   const switchProject = useMutation({
     mutationFn: (name: string) => projectUse(name),
@@ -37,10 +56,9 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
       setOpen(false);
       void queryClient.invalidateQueries();
     },
-    onError: (e: any) => toast.error(e?.message || "Could not switch project"),
+    onError: (error: any) => toast.error(error?.message || "Could not switch project"),
   });
 
-  // Open a folder picker, register it as a project, and activate it in one step.
   const openFromFolder = useMutation({
     mutationFn: async () => {
       const path = await pickDirectory("Open project folder");
@@ -59,60 +77,165 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
       setOpen(false);
       void queryClient.invalidateQueries();
     },
-    onError: (e: any) => toast.error(e?.message || "Could not open folder"),
+    onError: (error: any) => toast.error(error?.message || "Could not open folder"),
   });
 
-  // Close on outside click.
+  const selectProject = (project: ProjectConfig) => {
+    if (project.name === projectName) {
+      setOpen(false);
+      return;
+    }
+    switchProject.mutate(project.name);
+  };
+
   useEffect(() => {
     if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    setSearch("");
+    setHighlightedIndex(0);
+    requestAnimationFrame(() => searchRef.current?.focus());
+  }, [open]);
+
+  useEffect(() => {
+    setHighlightedIndex((current) => Math.min(current, Math.max(0, filteredProjects.length - 1)));
+  }, [filteredProjects.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    requestAnimationFrame(() => {
+      ref.current
+        ?.querySelector<HTMLElement>(".project-switcher-item.highlighted")
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  }, [highlightedIndex, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
     };
     window.addEventListener("mousedown", onClick);
-    return () => window.removeEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
+
+  const handleSearchKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    const lastIndex = Math.max(0, filteredProjects.length - 1);
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlightedIndex((current) => Math.min(lastIndex, current + 1));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlightedIndex((current) => Math.max(0, current - 1));
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const project = filteredProjects[highlightedIndex];
+      if (project) selectProject(project);
+    }
+  };
 
   return (
     <div className="project-switcher" ref={ref}>
-      <button className="project-switcher-trigger" onClick={() => setOpen((o) => !o)}>
-        <h2>{projectName}</h2>
+      <button
+        type="button"
+        className={`project-switcher-trigger${open ? " open" : ""}`}
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <span className="project-switcher-current">{projectName || "Select project"}</span>
         <span className="project-switcher-caret" aria-hidden="true">
-          <ChevronIcon open />
+          <ChevronIcon open={open} />
         </span>
       </button>
-      {open && (
-        <div className="project-switcher-menu">
-          {projects.length === 0 && <p className="muted project-switcher-empty">No projects connected.</p>}
-          {projects.map((p) => (
+
+      {open ? (
+        <div className="project-switcher-menu" role="dialog" aria-label="Switch project">
+          <div className="project-switcher-search">
+            <input
+              ref={searchRef}
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setHighlightedIndex(0);
+              }}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search projects…"
+              aria-label="Search projects"
+            />
+            <span>{filteredProjects.length}</span>
+          </div>
+
+          <div className="project-switcher-list" role="list">
+            {isFetching && projects.length === 0 ? (
+              <p className="project-switcher-empty">Loading projects…</p>
+            ) : filteredProjects.length === 0 ? (
+              <p className="project-switcher-empty">No matching projects.</p>
+            ) : (
+              filteredProjects.map((project, index) => {
+                const active = project.name === projectName;
+                const highlighted = index === highlightedIndex;
+                return (
+                  <button
+                    type="button"
+                    key={project.name}
+                    className={`project-switcher-item${active ? " active" : ""}${highlighted ? " highlighted" : ""}`}
+                    disabled={switchProject.isPending}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    onClick={() => selectProject(project)}
+                    title={project.path}
+                    aria-current={active ? "true" : undefined}
+                  >
+                    <span className="project-switcher-check" aria-hidden="true">
+                      {active ? <CheckIcon /> : null}
+                    </span>
+                    <span className="project-switcher-name">{project.name}</span>
+                    {project.project_type ? (
+                      <span className="project-switcher-type">{projectTypeLabel(project.project_type)}</span>
+                    ) : null}
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="project-switcher-footer">
             <button
-              key={p.name}
-              className={`project-switcher-item ${p.name === projectName ? "active" : ""}`}
-              disabled={switchProject.isPending || p.name === projectName}
-              onClick={() => switchProject.mutate(p.name)}
-              title={p.path}
+              type="button"
+              className="project-switcher-action"
+              disabled={openFromFolder.isPending}
+              onClick={() => openFromFolder.mutate()}
             >
-              <span className="project-switcher-check" aria-hidden="true">
-                {p.name === projectName ? <CheckIcon /> : null}
-              </span>
-              <span className="project-switcher-name">{p.name}</span>
-              {p.project_type && <span className="project-switcher-type">{p.project_type}</span>}
+              <span className="project-switcher-action-icon" aria-hidden="true"><FolderIcon /></span>
+              <span>{openFromFolder.isPending ? "Opening…" : "Open folder…"}</span>
             </button>
-          ))}
-          <div className="project-switcher-sep" />
-          <button className="project-switcher-item" disabled={openFromFolder.isPending} onClick={() => openFromFolder.mutate()}>
-            <span className="project-switcher-check" aria-hidden="true">
-              <FolderIcon />
-            </span>
-            <span className="project-switcher-name">{openFromFolder.isPending ? "Opening…" : "Open from folder…"}</span>
-          </button>
-          <button className="project-switcher-item" onClick={() => { setOpen(false); onConnectProject(); }}>
-            <span className="project-switcher-check" aria-hidden="true">
-              <PlusIcon />
-            </span>
-            <span className="project-switcher-name">Connect with details…</span>
-          </button>
+            <button
+              type="button"
+              className="project-switcher-action"
+              onClick={() => {
+                setOpen(false);
+                onConnectProject();
+              }}
+            >
+              <span className="project-switcher-action-icon" aria-hidden="true"><PlusIcon /></span>
+              <span>Connect project…</span>
+            </button>
+          </div>
+
+          <div className="project-switcher-hint" aria-hidden="true">
+            <span>↑↓ navigate</span><span>↵ open</span><span>esc close</span>
+          </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
