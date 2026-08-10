@@ -168,11 +168,10 @@ impl TaskRunReceipt {
                 let run_matches = review.run_id == self.run_id;
                 let digest_matches = self.execution.changeset_digest.as_deref()
                     == Some(review.changeset_digest.as_str());
-                let tree_matches =
-                    match (review.index_tree_after_accept.as_deref(), current_tree) {
-                        (Some(reviewed), Some(current)) => reviewed == current,
-                        _ => false,
-                    };
+                let tree_matches = match (review.index_tree_after_accept.as_deref(), current_tree) {
+                    (Some(reviewed), Some(current)) => reviewed == current,
+                    _ => false,
+                };
                 !run_matches || !digest_matches || !tree_matches
             })
             .unwrap_or(false);
@@ -217,8 +216,9 @@ fn validate_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
                 .is_none()
             {
                 return Err(RepoDeskError::RoutingFailed {
-                    detail: "accept blocked: could not bind the reviewed changes to an exact index tree"
-                        .to_string(),
+                    detail:
+                        "accept blocked: could not bind the reviewed changes to an exact index tree"
+                            .to_string(),
                 });
             }
         }
@@ -238,18 +238,19 @@ fn validate_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
                 .ok_or_else(|| RepoDeskError::RoutingFailed {
                     detail: "verification cannot be saved without an accepted review".to_string(),
                 })?;
-            let reviewed_tree = review
-                .index_tree_after_accept
-                .as_deref()
-                .ok_or_else(|| RepoDeskError::RoutingFailed {
-                    detail: "verification cannot be saved without an exact reviewed tree".to_string(),
-                })?;
+            let reviewed_tree = review.index_tree_after_accept.as_deref().ok_or_else(|| {
+                RepoDeskError::RoutingFailed {
+                    detail: "verification cannot be saved without an exact reviewed tree"
+                        .to_string(),
+                }
+            })?;
             if review.changeset_digest != run_digest
                 || verification.changeset_digest != run_digest
                 || verification.index_tree_sha != reviewed_tree
             {
                 return Err(RepoDeskError::RoutingFailed {
-                    detail: "verification receipt is not bound to the exact reviewed tree".to_string(),
+                    detail: "verification receipt is not bound to the exact reviewed tree"
+                        .to_string(),
                 });
             }
         }
@@ -376,8 +377,9 @@ pub fn reviewed_tree_sha_for(
         .filter(|review| review.run_id == receipt.run_id)
         .filter(|review| review.changeset_digest == run_digest)
         .ok_or_else(|| RepoDeskError::RoutingFailed {
-            detail: "review is missing or stale — accept the exact changeset again before verification"
-                .to_string(),
+            detail:
+                "review is missing or stale — accept the exact changeset again before verification"
+                    .to_string(),
         })?;
     let reviewed_tree = review
         .index_tree_after_accept
@@ -385,7 +387,8 @@ pub fn reviewed_tree_sha_for(
         .map(str::trim)
         .filter(|tree| !tree.is_empty())
         .ok_or_else(|| RepoDeskError::RoutingFailed {
-            detail: "review is missing exact tree evidence — accept the changeset again".to_string(),
+            detail: "review is missing exact tree evidence — accept the changeset again"
+                .to_string(),
         })?;
     if reviewed_tree != current_index_tree {
         return Err(RepoDeskError::RoutingFailed {
