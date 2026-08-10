@@ -7,7 +7,7 @@ import {
   languageServerFor,
 } from "../../shared/api/languageIntelligence";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
-import { useLiveRustLanguage } from "./useLiveRustLanguage";
+import { useLiveLanguage } from "./useLiveLanguage";
 
 const EDITOR_LINE_HEIGHT_PX = 20;
 const EDITOR_TOP_PADDING_PX = 12;
@@ -77,7 +77,7 @@ export function LightweightCodeEditor({
     () => languageServerFor(languageIntelligence.data, language),
     [language, languageIntelligence.data],
   );
-  const liveLanguage = useLiveRustLanguage({
+  const liveLanguage = useLiveLanguage({
     path,
     value,
     language,
@@ -282,8 +282,8 @@ export function LightweightCodeEditor({
   } as CSSProperties;
 
   const languageStatus = languageServer
-    ? language === "rust" && languageServer.availability === "available"
-      ? liveLanguage.statusLabel ?? "RA starting"
+    ? languageServer.profile_state === "active" && languageServer.availability === "available"
+      ? liveLanguage.statusLabel ?? "LS starting"
       : `LS ${languageServer.label} ${languageServer.availability === "available" ? "found" : "missing"}`
     : null;
   const languageStatusTitle = liveLanguage.statusTitle

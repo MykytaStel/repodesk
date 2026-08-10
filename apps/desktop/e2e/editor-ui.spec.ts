@@ -45,6 +45,9 @@ const rustEditorFixtures = {
       languages: ["rust"],
       availability: "available",
       source: "path",
+      profile_state: "active",
+      initialization_profile: "default",
+      install_recipe_id: "rust-analyzer",
       capabilities: {
         diagnostics: true,
         hover: true,
@@ -81,6 +84,145 @@ const rustEditorFixtures = {
     end_column: 16,
   }],
   "language_intelligence_snapshot:close_document": null,
+};
+
+function languageEditorFixtures({
+  path,
+  language,
+  source,
+  serverId,
+  serverLabel,
+  capabilities,
+  hover = null,
+  definition = [],
+}: {
+  path: string;
+  language: string;
+  source: string;
+  serverId: string;
+  serverLabel: string;
+  capabilities: typeof rustEditorFixtures["language_intelligence_snapshot"]["servers"][number]["capabilities"];
+  hover?: unknown;
+  definition?: unknown[];
+}) {
+  const name = path.split("/").at(-1) ?? path;
+  const extension = name.includes(".") ? name.split(".").at(-1) ?? "" : "";
+  return {
+    ...onboardedFixtures,
+    code_workspace_snapshot: {
+      project: "RepoDesk",
+      source: "git_index",
+      truncated: false,
+      files: [{
+        path,
+        name,
+        extension,
+        language,
+        bytes: source.length,
+        status: "modified",
+        blocked: false,
+      }],
+    },
+    code_workspace_read: {
+      path,
+      content: source,
+      bytes: source.length,
+      line_count: source.split("\n").length,
+      language,
+      status: "modified",
+      fingerprint: `${language}-editor-ui-fixture`,
+    },
+    "language_intelligence_snapshot:snapshot": {
+      project: "RepoDesk",
+      primary_language: language,
+      available_count: 1,
+      generated_at: "2026-08-10T08:00:00Z",
+      servers: [{
+        id: serverId,
+        label: serverLabel,
+        executable: serverId,
+        arguments: [],
+        languages: language === "typescript" ? ["typescript", "javascript"] : [language],
+        availability: "available",
+        source: "path",
+        profile_state: "active",
+        initialization_profile: serverId === "taplo" ? "taplo" : "default",
+        install_recipe_id: serverId,
+        capabilities,
+      }],
+    },
+    "language_intelligence_snapshot:sync_document": {
+      project: "RepoDesk",
+      server_id: serverId,
+      state: "ready",
+      pid: 202,
+      open_documents: 1,
+      started_at: "2026-08-10T08:00:00Z",
+      last_error: null,
+    },
+    "language_intelligence_snapshot:hover": hover,
+    "language_intelligence_snapshot:definition": definition,
+    "language_intelligence_snapshot:close_document": null,
+  };
+}
+
+const fullLanguageCapabilities = {
+  diagnostics: true,
+  hover: true,
+  definition: true,
+  references: true,
+  completion: true,
+  rename: true,
+  formatting: true,
+  document_symbols: true,
+};
+
+const typescriptSource = [
+  "function client(): number { return 1; }",
+  "const value = client();",
+].join("\n");
+
+const typescriptEditorFixtures = languageEditorFixtures({
+  path: "api.ts",
+  language: "typescript",
+  source: typescriptSource,
+  serverId: "typescript-language-server",
+  serverLabel: "TypeScript Language Server",
+  capabilities: fullLanguageCapabilities,
+  hover: {
+    markdown: "function client(): number",
+    range: {
+      start: { line: 1, character: 14 },
+      end: { line: 1, character: 20 },
+    },
+  },
+  definition: [{
+    path: "api.ts",
+    line: 1,
+    column: 10,
+    end_line: 1,
+    end_column: 16,
+  }],
+});
+
+const tomlEditorFixtures = languageEditorFixtures({
+  path: "Cargo.toml",
+  language: "toml",
+  source: "[package]\nname = \"repodesk\"",
+  serverId: "taplo",
+  serverLabel: "Taplo",
+  capabilities: fullLanguageCapabilities,
+});
+
+const metadataOnlyCapabilities = {
+  diagnostics: true,
+  hover: false,
+  definition: false,
+  references: false,
+  completion: true,
+  rename: false,
+  formatting: true,
+  document_symbols: true,
 };
 
 async function textCenter(page: import("@playwright/test").Page, lineIndex: number, text: string) {
@@ -310,3 +452,94 @@ test.describe("semantic definition navigation", () => {
     await expect(page.locator(".code-editor-status")).toContainText("Ln 1, Col 4");
   });
 });
+
+test.describe("TypeScript intelligence", () => {
+  test.beforeEach(async ({ page }) => {
+    await installMockIpc(page, typescriptEditorFixtures);
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Code —/ }).click();
+    await page.getByRole("treeitem", { name: /api.ts/ }).click();
+    await expect(page.locator(".semantic-code-editor-host .cm-editor")).toBeVisible();
+    await expect(page.locator(".code-language-service")).toContainText("TS ready");
+  });
+
+  test("modifier-hover previews a definition and F12 reveals its exact range", async ({ page }) => {
+    const point = await textCenter(page, 1, "client");
+
+    await page.keyboard.down("Control");
+    await page.mouse.move(point.x, point.y);
+
+    await expect(page.locator(".cm-definition-link")).toHaveText("client");
+    await expect(page.locator(".cm-definition-preview")).toContainText("function client(): number");
+
+    await page.keyboard.up("Control");
+    await page.mouse.click(point.x, point.y);
+    await page.keyboard.press("F12");
+
+    await expect(page.locator(".cm-navigation-target")).toHaveText("client");
+    await expect(page.locator(".code-editor-status")).toContainText("Ln 1, Col 10");
+  });
+
+  test("synchronizes the document with its TypeScript language id", async ({ page }) => {
+    await expect.poll(async () => {
+      const invocations = await recordedInvocations(page);
+      const sync = invocations.find((call) => {
+        const action = call.args?.action as { kind?: string } | undefined;
+        return call.cmd === "language_intelligence_snapshot" && action?.kind === "sync_document";
+      });
+      return (sync?.args?.action as { language?: string } | undefined)?.language;
+    }).toBe("typescript");
+  });
+});
+
+test.describe("TOML intelligence", () => {
+  test("starts Taplo and synchronizes TOML instead of falling back to discovery-only UI", async ({ page }) => {
+    await installMockIpc(page, tomlEditorFixtures);
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Code —/ }).click();
+    await page.getByRole("treeitem", { name: /Cargo.toml/ }).click();
+
+    await expect(page.locator(".code-language-service")).toContainText("TOML ready");
+    await expect.poll(async () => {
+      const invocations = await recordedInvocations(page);
+      const sync = invocations.find((call) => {
+        const action = call.args?.action as { kind?: string } | undefined;
+        return call.cmd === "language_intelligence_snapshot" && action?.kind === "sync_document";
+      });
+      return (sync?.args?.action as { language?: string } | undefined)?.language;
+    }).toBe("toml");
+  });
+});
+
+for (const language of ["json", "yaml"] as const) {
+  test(`${language.toUpperCase()} intelligence respects disabled navigation capabilities`, async ({ page }) => {
+    const extension = language === "json" ? "json" : "yaml";
+    const serverId = language === "json" ? "json-language-server" : "yaml-language-server";
+    await installMockIpc(page, languageEditorFixtures({
+      path: `config.${extension}`,
+      language,
+      source: language === "json" ? "{\"enabled\": true}" : "enabled: true",
+      serverId,
+      serverLabel: language === "json" ? "JSON Language Server" : "YAML Language Server",
+      capabilities: metadataOnlyCapabilities,
+    }));
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Code —/ }).click();
+    await page.getByRole("treeitem", { name: new RegExp(`config\\.${extension}`) }).click();
+
+    await expect(page.locator(".code-language-service")).toContainText(`${language.toUpperCase()} ready`);
+    const point = await textCenter(page, 0, "enabled");
+    await page.keyboard.down("Control");
+    await page.mouse.move(point.x, point.y);
+    await page.waitForTimeout(250);
+    await page.keyboard.up("Control");
+
+    const invocations = await recordedInvocations(page);
+    const navigationCalls = invocations.filter((call) => {
+      const action = call.args?.action as { kind?: string } | undefined;
+      return call.cmd === "language_intelligence_snapshot"
+        && (action?.kind === "hover" || action?.kind === "definition");
+    });
+    expect(navigationCalls).toEqual([]);
+  });
+}

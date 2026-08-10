@@ -3,6 +3,8 @@ import { callCommand } from "./queries";
 
 export type LanguageServerAvailability = "available" | "missing";
 export type LanguageServerSource = "project_local" | "path";
+export type LanguageServerProfileState = "active" | "discovery_only";
+export type LanguageServerInitializationProfile = "default" | "taplo";
 
 export type LanguageServerCapabilities = {
   diagnostics: boolean;
@@ -24,6 +26,9 @@ export type LanguageServerDescriptor = {
   availability: LanguageServerAvailability;
   source: LanguageServerSource | null;
   capabilities: LanguageServerCapabilities;
+  profile_state: LanguageServerProfileState;
+  initialization_profile: LanguageServerInitializationProfile;
+  install_recipe_id: string | null;
 };
 
 export type LanguageIntelligenceSnapshot = {

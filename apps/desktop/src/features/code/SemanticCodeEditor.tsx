@@ -17,8 +17,6 @@ import {
   Compartment,
   EditorState,
   RangeSet,
-  StateEffect,
-  StateField,
   type Extension,
 } from "@codemirror/state";
 import {
@@ -41,7 +39,17 @@ import {
   languageServerFor,
 } from "../../shared/api/languageIntelligence";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
-import { useLiveRustLanguage } from "./useLiveRustLanguage";
+import {
+  clearDefinitionLink,
+  clearNavigationTarget,
+  definitionLinkField,
+  navigationTargetField,
+  offsetForLspPosition,
+  showDefinitionLink,
+  showNavigationTarget,
+  wordRangeAt,
+} from "./definitionNavigation";
+import { useLiveLanguage } from "./useLiveLanguage";
 import { useSemanticCodeState, type GitLineKind, type SemanticFileState } from "./useSemanticCodeState";
 import "./semantic-code-editor.css";
 
@@ -198,64 +206,6 @@ function offsetForLocation(state: EditorState, line: number, column: number): nu
   return Math.min(target.to, target.from + Math.max(0, column - 1));
 }
 
-function offsetForLspPosition(state: EditorState, line: number, character: number): number {
-  return offsetForLocation(state, line + 1, character + 1);
-}
-
-function wordRangeAt(state: EditorState, offset: number): { from: number; to: number } {
-  const line = state.doc.lineAt(offset);
-  const text = line.text;
-  let from = Math.max(0, offset - line.from);
-  let to = from;
-  while (from > 0 && /[\w$]/.test(text[from - 1])) from -= 1;
-  while (to < text.length && /[\w$]/.test(text[to])) to += 1;
-  return { from: line.from + from, to: line.from + to };
-}
-
-const showNavigationTarget = StateEffect.define<{ from: number; to: number }>();
-const clearNavigationTarget = StateEffect.define<void>();
-
-const navigationTargetField = StateField.define({
-  create: () => Decoration.none,
-  update(decorations, transaction) {
-    let next = decorations.map(transaction.changes);
-    if (transaction.docChanged || transaction.selection) next = Decoration.none;
-    for (const effect of transaction.effects) {
-      if (effect.is(clearNavigationTarget)) next = Decoration.none;
-      if (effect.is(showNavigationTarget)) {
-        const { from, to } = effect.value;
-        const line = transaction.state.doc.lineAt(from);
-        const ranges = [Decoration.line({ class: "cm-navigation-target-line" }).range(line.from)];
-        if (to > from) ranges.push(Decoration.mark({ class: "cm-navigation-target" }).range(from, to));
-        next = Decoration.set(ranges, true);
-      }
-    }
-    return next;
-  },
-  provide: (field) => EditorView.decorations.from(field),
-});
-
-const showDefinitionLink = StateEffect.define<{ from: number; to: number }>();
-const clearDefinitionLink = StateEffect.define<void>();
-
-const definitionLinkField = StateField.define({
-  create: () => Decoration.none,
-  update(decorations, transaction) {
-    let next = transaction.docChanged ? Decoration.none : decorations.map(transaction.changes);
-    for (const effect of transaction.effects) {
-      if (effect.is(clearDefinitionLink)) next = Decoration.none;
-      if (effect.is(showDefinitionLink)) {
-        const { from, to } = effect.value;
-        next = to > from
-          ? Decoration.set([Decoration.mark({ class: "cm-definition-link" }).range(from, to)])
-          : Decoration.none;
-      }
-    }
-    return next;
-  },
-  provide: (field) => EditorView.decorations.from(field),
-});
-
 type DefinitionPreviewState = {
   markdown: string;
   left: number;
@@ -345,7 +295,7 @@ export function SemanticCodeEditor({
   const suppressChangeRef = useRef(false);
   const navigationTimerRef = useRef<number | null>(null);
   const definitionAvailableRef = useRef(false);
-  const liveActionsRef = useRef<ReturnType<typeof useLiveRustLanguage>["actions"] | null>(null);
+  const liveActionsRef = useRef<ReturnType<typeof useLiveLanguage>["actions"] | null>(null);
   const modifierDownRef = useRef(false);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [definitionPreview, setDefinitionPreview] = useState<DefinitionPreviewState | null>(null);
@@ -368,7 +318,7 @@ export function SemanticCodeEditor({
     () => languageServerFor(languageIntelligence.data, language),
     [language, languageIntelligence.data],
   );
-  const liveLanguage = useLiveRustLanguage({
+  const liveLanguage = useLiveLanguage({
     path,
     value,
     language,
@@ -377,7 +327,9 @@ export function SemanticCodeEditor({
     cursor,
   });
   liveActionsRef.current = liveLanguage.actions;
-  definitionAvailableRef.current = language === "rust" && languageServer?.availability === "available";
+  definitionAvailableRef.current = languageServer?.profile_state === "active"
+    && languageServer.availability === "available"
+    && languageServer.capabilities.definition;
 
   const semantic = useSemanticCodeState({ projectName, path, status, dirty });
 
@@ -635,8 +587,8 @@ export function SemanticCodeEditor({
 
   const lineCount = value.length === 0 ? 1 : value.split("\n").length;
   const languageStatus = languageServer
-    ? language === "rust" && languageServer.availability === "available"
-      ? liveLanguage.statusLabel ?? "RA starting"
+    ? languageServer.profile_state === "active" && languageServer.availability === "available"
+      ? liveLanguage.statusLabel ?? "LS starting"
       : `LS ${languageServer.label} ${languageServer.availability === "available" ? "found" : "missing"}`
     : null;
   const languageStatusTitle = liveLanguage.statusTitle

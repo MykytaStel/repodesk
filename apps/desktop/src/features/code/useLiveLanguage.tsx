@@ -72,7 +72,16 @@ function locationLabel(location: LanguageLocation): string {
   return `${location.path}:${location.line}:${location.column}`;
 }
 
-export function useLiveRustLanguage({
+function languageServiceLabel(language: string, server: LanguageServerDescriptor): string {
+  if (server.id === "rust-analyzer") return "RA";
+  if (language === "typescript" || language === "javascript") return "TS";
+  if (language === "toml") return "TOML";
+  if (language === "json") return "JSON";
+  if (language === "yaml") return "YAML";
+  return "LS";
+}
+
+export function useLiveLanguage({
   path,
   value,
   language,
@@ -104,7 +113,10 @@ export function useLiveRustLanguage({
   };
   handleKeyDown: (event: LanguageKeyEvent) => boolean;
 } {
-  const enabled = language === "rust" && server?.id === "rust-analyzer" && server.availability === "available";
+  const enabled = server?.profile_state === "active"
+    && server.availability === "available"
+    && server.languages.includes(language);
+  const capabilities = server?.capabilities;
   const [status, setStatus] = useState<LanguageServerStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [panel, setPanel] = useState<LanguagePanel | null>(null);
@@ -133,7 +145,7 @@ export function useLiveRustLanguage({
     let unlistenStatus: (() => void) | undefined;
 
     void subscribeLanguageDiagnostics((event) => {
-      if (event.project !== projectName || disposed) return;
+      if (event.project !== projectName || event.server_id !== server?.id || disposed) return;
       captureLanguageDiagnosticsEvent(event);
     }).then((unlisten) => {
       if (disposed) unlisten();
@@ -141,7 +153,7 @@ export function useLiveRustLanguage({
     }).catch(() => undefined);
 
     void subscribeLanguageServerStatus((next) => {
-      if (next.project === projectName && !disposed) setStatus(next);
+      if (next.project === projectName && next.server_id === server?.id && !disposed) setStatus(next);
     }).then((unlisten) => {
       if (disposed) unlisten();
       else unlistenStatus = unlisten;
@@ -152,7 +164,7 @@ export function useLiveRustLanguage({
       unlistenDiagnostics?.();
       unlistenStatus?.();
     };
-  }, [enabled, projectName]);
+  }, [enabled, projectName, server?.id]);
 
   useEffect(() => {
     setPanel(null);
@@ -166,7 +178,7 @@ export function useLiveRustLanguage({
     let cancelled = false;
     const initialText = valueRef.current;
     lastSynced.current = { path, text: initialText };
-    void syncLanguageDocument({ path, language: "rust", text: initialText })
+    void syncLanguageDocument({ path, language, text: initialText })
       .then((next) => {
         if (!cancelled) setStatus(next);
       })
@@ -180,7 +192,7 @@ export function useLiveRustLanguage({
       void closeLanguageDocument(path).catch(() => undefined);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, path, projectName]);
+  }, [enabled, language, path, projectName, server?.id]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -192,13 +204,13 @@ export function useLiveRustLanguage({
       const current = lastSynced.current;
       if (!current || current.path !== path || current.text === text) return;
       lastSynced.current = { path, text };
-      void syncLanguageDocument({ path, language: "rust", text })
+      void syncLanguageDocument({ path, language, text })
         .then(setStatus)
         .catch((cause) => setError(errorToMessage(cause)));
     }, CHANGE_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timer);
-  }, [enabled, path, value]);
+  }, [enabled, language, path, value]);
 
   const withPosition = useCallback((position: LanguagePosition = cursorRef.current) => ({
     path,
@@ -208,7 +220,7 @@ export function useLiveRustLanguage({
   }), [path]);
 
   const runHover = useCallback(async () => {
-    if (!enabled || busy) return;
+    if (!enabled || !capabilities?.hover || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -220,10 +232,10 @@ export function useLiveRustLanguage({
     } finally {
       setBusy(false);
     }
-  }, [busy, enabled, withPosition]);
+  }, [busy, capabilities?.hover, enabled, withPosition]);
 
   const runDefinitionAt = useCallback(async (position: LanguagePosition) => {
-    if (!enabled || busy) return;
+    if (!enabled || !capabilities?.definition || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -247,19 +259,19 @@ export function useLiveRustLanguage({
     } finally {
       setBusy(false);
     }
-  }, [busy, enabled, withPosition]);
+  }, [busy, capabilities?.definition, enabled, withPosition]);
 
   const previewAt = useCallback(async (
     position: LanguagePosition,
   ): Promise<LanguageDefinitionPreview | null> => {
-    if (!enabled) return null;
+    if (!enabled || (!capabilities?.hover && !capabilities?.definition)) return null;
     const request = ++previewRequest.current;
     setError(null);
     try {
       const input = withPosition(position);
       const [hover, definitions] = await Promise.all([
-        requestLanguageHover(input),
-        requestLanguageDefinition(input),
+        capabilities?.hover ? requestLanguageHover(input) : Promise.resolve(null),
+        capabilities?.definition ? requestLanguageDefinition(input) : Promise.resolve([]),
       ]);
       if (request !== previewRequest.current) return null;
       return { hover, definitions };
@@ -267,7 +279,7 @@ export function useLiveRustLanguage({
       if (request === previewRequest.current) setError(errorToMessage(cause));
       return null;
     }
-  }, [enabled, withPosition]);
+  }, [capabilities?.definition, capabilities?.hover, enabled, withPosition]);
 
   const clearPreview = useCallback(() => {
     previewRequest.current += 1;
@@ -276,7 +288,7 @@ export function useLiveRustLanguage({
   const runDefinition = useCallback(() => runDefinitionAt(cursorRef.current), [runDefinitionAt]);
 
   const runReferences = useCallback(async () => {
-    if (!enabled || busy) return;
+    if (!enabled || !capabilities?.references || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -287,10 +299,10 @@ export function useLiveRustLanguage({
     } finally {
       setBusy(false);
     }
-  }, [busy, enabled, withPosition]);
+  }, [busy, capabilities?.references, enabled, withPosition]);
 
   const runSymbols = useCallback(async () => {
-    if (!enabled || busy) return;
+    if (!enabled || !capabilities?.document_symbols || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -301,7 +313,7 @@ export function useLiveRustLanguage({
     } finally {
       setBusy(false);
     }
-  }, [busy, enabled, path]);
+  }, [busy, capabilities?.document_symbols, enabled, path]);
 
   const dismiss = useCallback(() => {
     clearPreview();
@@ -312,22 +324,22 @@ export function useLiveRustLanguage({
   const handleKeyDown = useCallback((event: LanguageKeyEvent): boolean => {
     if (!enabled) return false;
     const mod = event.metaKey || event.ctrlKey;
-    if (event.key === "F12" && event.shiftKey) {
+    if (event.key === "F12" && event.shiftKey && capabilities?.references) {
       event.preventDefault();
       void runReferences();
       return true;
     }
-    if (event.key === "F12") {
+    if (event.key === "F12" && capabilities?.definition) {
       event.preventDefault();
       void runDefinition();
       return true;
     }
-    if (mod && event.shiftKey && event.key.toLowerCase() === "o") {
+    if (mod && event.shiftKey && event.key.toLowerCase() === "o" && capabilities?.document_symbols) {
       event.preventDefault();
       void runSymbols();
       return true;
     }
-    if (event.altKey && event.key.toLowerCase() === "h") {
+    if (event.altKey && event.key.toLowerCase() === "h" && capabilities?.hover) {
       event.preventDefault();
       void runHover();
       return true;
@@ -338,25 +350,27 @@ export function useLiveRustLanguage({
       return true;
     }
     return false;
-  }, [dismiss, enabled, error, panel, runDefinition, runHover, runReferences, runSymbols]);
+  }, [capabilities, dismiss, enabled, error, panel, runDefinition, runHover, runReferences, runSymbols]);
+
+  const serviceLabel = server ? languageServiceLabel(language, server) : "LS";
 
   const statusLabel = !enabled
     ? null
     : error
-      ? "RA error"
+      ? `${serviceLabel} error`
       : status?.state === "ready"
-        ? "RA ready"
+        ? `${serviceLabel} ready`
         : status?.state === "error"
-          ? "RA error"
-          : "RA starting";
+          ? `${serviceLabel} error`
+          : `${serviceLabel} starting`;
   const statusTitle = error
     ?? status?.last_error
     ?? (status?.state === "ready"
-      ? `rust-analyzer PID ${status.pid} · ${status.open_documents} open document${status.open_documents === 1 ? "" : "s"}`
-      : enabled ? "Starting rust-analyzer for the active project" : null);
+      ? `${server?.label ?? "Language server"} PID ${status.pid} · ${status.open_documents} open document${status.open_documents === 1 ? "" : "s"}`
+      : enabled ? `Starting ${server?.label ?? "language server"} for the active project` : null);
 
   const panelNode = panel || error ? (
-    <aside className="code-language-panel" aria-label="Rust language intelligence">
+    <aside className="code-language-panel" aria-label={`${server?.label ?? "Language"} intelligence`}>
       <header>
         <strong>{error ? "Language server" : panel?.title}</strong>
         {busy ? <span>Working…</span> : null}
