@@ -350,11 +350,8 @@ impl LanguageToolInstallService {
             InstallLayout::ExternalToolchain => PathBuf::from(recipe.executable),
         };
         let install_command = install_command(recipe, staging_dir.as_deref(), repodesk_home)?;
-        let probe_command = verification_command(
-            recipe,
-            staging_dir.as_deref(),
-            &expected_executable,
-        )?;
+        let staging = staging_dir.as_deref();
+        let probe_command = verification_command(recipe, staging, &expected_executable)?;
         let expires_at = now + Duration::minutes(CONFIRMATION_TTL_MINUTES);
         let token = confirmation_token(
             ProjectConfirmationBinding {
@@ -1138,8 +1135,8 @@ mod tests {
         ] {
             let recipe = recipe(recipe_id).expect("recipe");
             let executable = executable_in_install_root(staging, recipe);
-            let command = verification_command(recipe, Some(staging), &executable)
-                .expect("verification command");
+            let probe = verification_command(recipe, Some(staging), &executable);
+            let command = probe.expect("verification command");
             assert_eq!(command.program, "npm");
             assert_eq!(command.args[0], "--prefix");
             assert_eq!(command.args[2], "ls");
