@@ -350,14 +350,11 @@ impl LanguageToolInstallService {
             InstallLayout::ExternalToolchain => PathBuf::from(recipe.executable),
         };
         let install_command = install_command(recipe, staging_dir.as_deref(), repodesk_home)?;
-        let probe_command = LanguageToolCommand {
-            program: expected_executable.to_string_lossy().into_owned(),
-            args: recipe
-                .probe_args
-                .iter()
-                .map(|arg| (*arg).to_string())
-                .collect(),
-        };
+        let probe_command = verification_command(
+            recipe,
+            staging_dir.as_deref(),
+            &expected_executable,
+        )?;
         let expires_at = now + Duration::minutes(CONFIRMATION_TTL_MINUTES);
         let token = confirmation_token(
             ProjectConfirmationBinding {
@@ -631,7 +628,7 @@ impl LanguageToolInstallService {
                 &pending.preview.recipe_id,
                 LanguageToolInstallState::Error,
                 100,
-                "Version probe could not start",
+                "Installed executable is missing",
                 started_at,
                 Some(Utc::now()),
                 Some(detail),
@@ -685,14 +682,15 @@ impl LanguageToolInstallService {
         }
         if !probe_outcome.success {
             self.cleanup_staging(pending);
+            let detail = install_failure_detail(&probe_output);
             let status = self.set_status(
                 &pending.preview.recipe_id,
                 LanguageToolInstallState::Error,
                 100,
-                "Version probe failed",
+                "Installed package verification failed",
                 started_at,
                 Some(Utc::now()),
-                Some("Installed language server failed its version probe".into()),
+                Some(detail),
                 observer,
             )?;
             return Ok(LanguageToolInstallResult {
@@ -802,9 +800,18 @@ pub fn managed_executable_path(recipe_id: &str) -> Option<PathBuf> {
 }
 
 fn managed_install_matches_recipe(root: &Path, recipe: &InstallRecipe) -> bool {
-    let Some((package, expected_version)) = recipe.companion_package else {
+    if recipe.installer != LanguageToolInstaller::Npm {
         return true;
-    };
+    }
+    if !npm_package_matches(root, recipe.package, recipe.version) {
+        return false;
+    }
+    recipe
+        .companion_package
+        .is_none_or(|(package, version)| npm_package_matches(root, package, version))
+}
+
+fn npm_package_matches(root: &Path, package: &str, expected_version: &str) -> bool {
     let package_json = root.join("node_modules").join(package).join("package.json");
     let Ok(contents) = fs::read_to_string(package_json) else {
         return false;
@@ -869,6 +876,41 @@ fn install_command(
     Ok(LanguageToolCommand {
         program: recipe.installer.executable().into(),
         args,
+    })
+}
+
+fn verification_command(
+    recipe: &InstallRecipe,
+    staging_dir: Option<&Path>,
+    expected_executable: &Path,
+) -> RepoDeskResult<LanguageToolCommand> {
+    if recipe.installer == LanguageToolInstaller::Npm {
+        let staging = staging_dir.ok_or_else(|| {
+            RepoDeskError::Api("Managed npm recipe has no staging directory".into())
+        })?;
+        let mut args = vec![
+            "--prefix".into(),
+            staging.to_string_lossy().into_owned(),
+            "ls".into(),
+            "--depth=0".into(),
+            format!("{}@{}", recipe.package, recipe.version),
+        ];
+        if let Some((package, version)) = recipe.companion_package {
+            args.push(format!("{package}@{version}"));
+        }
+        return Ok(LanguageToolCommand {
+            program: "npm".into(),
+            args,
+        });
+    }
+
+    Ok(LanguageToolCommand {
+        program: expected_executable.to_string_lossy().into_owned(),
+        args: recipe
+            .probe_args
+            .iter()
+            .map(|arg| (*arg).to_string())
+            .collect(),
     })
 }
 
@@ -1084,6 +1126,57 @@ mod tests {
                 "taplo"
             ]
         );
+    }
+
+    #[test]
+    fn npm_recipes_verify_packages_without_starting_language_servers() {
+        let staging = Path::new("/tmp/repodesk-language-tool-test");
+        for recipe_id in [
+            "typescript-language-server",
+            "json-language-server",
+            "yaml-language-server",
+        ] {
+            let recipe = recipe(recipe_id).expect("recipe");
+            let executable = executable_in_install_root(staging, recipe);
+            let command = verification_command(recipe, Some(staging), &executable)
+                .expect("verification command");
+            assert_eq!(command.program, "npm");
+            assert_eq!(command.args[0], "--prefix");
+            assert_eq!(command.args[2], "ls");
+            assert!(command.args.iter().any(|arg| arg == "--depth=0"));
+            assert!(
+                command
+                    .args
+                    .iter()
+                    .any(|arg| arg == &format!("{}@{}", recipe.package, recipe.version))
+            );
+            assert!(!command.args.iter().any(|arg| arg == "--version"));
+            assert!(!command.program.contains("language-server"));
+        }
+    }
+
+    #[test]
+    fn managed_npm_recipe_requires_exact_primary_package_version() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let package = root.path().join("node_modules/yaml-language-server");
+        fs::create_dir_all(&package).expect("package dir");
+        fs::write(
+            package.join("package.json"),
+            r#"{"name":"yaml-language-server","version":"1.23.0"}"#,
+        )
+        .expect("package metadata");
+        let yaml = recipe("yaml-language-server").expect("yaml recipe");
+        assert!(!managed_install_matches_recipe(root.path(), yaml));
+
+        fs::write(
+            package.join("package.json"),
+            format!(
+                r#"{{"name":"yaml-language-server","version":"{}"}}"#,
+                YAML_LANGUAGE_SERVER_VERSION
+            ),
+        )
+        .expect("package metadata");
+        assert!(managed_install_matches_recipe(root.path(), yaml));
     }
 
     #[test]
