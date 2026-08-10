@@ -12,8 +12,9 @@ use crate::engineering::instrumentation::VerificationFinishedTelemetry;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::receipt::{
-    CheckReceipt, FinishReceipt, ReviewDecision, VerificationReceipt, commit_exists, commit_tree_sha,
-    head_sha, index_tree_sha, load_receipt, reviewed_tree_sha_for, save_receipt, staged_paths,
+    CheckReceipt, FinishReceipt, ReviewDecision, VerificationReceipt, commit_exists,
+    commit_tree_sha, head_sha, index_tree_sha, load_receipt, reviewed_tree_sha_for, save_receipt,
+    staged_paths,
 };
 
 /// Result of running final verification.
