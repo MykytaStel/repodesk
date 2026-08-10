@@ -39,7 +39,7 @@ jobs:
         run: pnpm --dir apps/desktop install --frozen-lockfile
       - name: Build frontend
         run: pnpm --dir apps/desktop run build
-      - name: Replace eight-argument confirmation helper with typed binding
+      - name: Bind confirmation token to typed project context
         shell: python
         run: |
           from pathlib import Path
@@ -47,117 +47,37 @@ jobs:
           path = Path("crates/repodesk-core/src/language_tools.rs")
           text = path.read_text()
 
-          old_call = '''        let token = confirmation_token(
-              project,
-              project_root,
-              recipe.id,
-              &revision,
-              destination_dir.as_deref(),
-              &install_command,
-              now,
-              sequence,
-          );'''
-          new_call = '''        let token = confirmation_token(ConfirmationTokenBinding {
-              project,
-              project_root,
-              recipe_id: recipe.id,
-              revision: &revision,
-              destination: destination_dir.as_deref(),
-              command: &install_command,
-              issued_at: now,
-              sequence,
-          });'''
+          call_old = "            project,\n            project_root,\n"
+          call_new = (
+              "            ProjectConfirmationBinding {\n"
+              "                name: project,\n"
+              "                root: project_root,\n"
+              "            },\n"
+          )
+          signature_old = "fn confirmation_token(\n    project: &str,\n    project_root: &Path,\n"
+          signature_new = (
+              "struct ProjectConfirmationBinding<'a> {\n"
+              "    name: &'a str,\n"
+              "    root: &'a Path,\n"
+              "}\n\n"
+              "fn confirmation_token(\n"
+              "    project: ProjectConfirmationBinding<'_>,\n"
+          )
 
-          old_fn = '''fn confirmation_token(
-              project: &str,
-              project_root: &Path,
-              recipe_id: &str,
-              revision: &str,
-              destination: Option<&Path>,
-              command: &LanguageToolCommand,
-              issued_at: DateTime<Utc>,
-              sequence: u64,
-          ) -> String {
-              let mut hasher = Sha256::new();
-              hasher.update(project.as_bytes());
-              hasher.update([0]);
-              hasher.update(project_root.as_os_str().to_string_lossy().as_bytes());
-              hasher.update([0]);
-              hasher.update(recipe_id.as_bytes());
-              hasher.update([0]);
-              hasher.update(revision.as_bytes());
-              hasher.update([0]);
-              if let Some(destination) = destination {
-                  hasher.update(destination.as_os_str().to_string_lossy().as_bytes());
-              }
-              hasher.update([0]);
-              hasher.update(command.program.as_bytes());
-              for arg in &command.args {
-                  hasher.update([0]);
-                  hasher.update(arg.as_bytes());
-              }
-              hasher.update(
-                  issued_at
-                      .timestamp_nanos_opt()
-                      .unwrap_or_default()
-                      .to_le_bytes(),
-              );
-              hasher.update(sequence.to_le_bytes());
-              format!("lang_install_{}", hex::encode(hasher.finalize()))
-          }'''
-          new_fn = '''struct ConfirmationTokenBinding<'a> {
-              project: &'a str,
-              project_root: &'a Path,
-              recipe_id: &'a str,
-              revision: &'a str,
-              destination: Option<&'a Path>,
-              command: &'a LanguageToolCommand,
-              issued_at: DateTime<Utc>,
-              sequence: u64,
-          }
+          if call_old not in text:
+              raise SystemExit("confirmation call binding pattern not found")
+          if signature_old not in text:
+              raise SystemExit("confirmation signature pattern not found")
 
-          fn confirmation_token(binding: ConfirmationTokenBinding<'_>) -> String {
-              let mut hasher = Sha256::new();
-              hasher.update(binding.project.as_bytes());
-              hasher.update([0]);
-              hasher.update(
-                  binding
-                      .project_root
-                      .as_os_str()
-                      .to_string_lossy()
-                      .as_bytes(),
-              );
-              hasher.update([0]);
-              hasher.update(binding.recipe_id.as_bytes());
-              hasher.update([0]);
-              hasher.update(binding.revision.as_bytes());
-              hasher.update([0]);
-              if let Some(destination) = binding.destination {
-                  hasher.update(destination.as_os_str().to_string_lossy().as_bytes());
-              }
-              hasher.update([0]);
-              hasher.update(binding.command.program.as_bytes());
-              for arg in &binding.command.args {
-                  hasher.update([0]);
-                  hasher.update(arg.as_bytes());
-              }
-              hasher.update(
-                  binding
-                      .issued_at
-                      .timestamp_nanos_opt()
-                      .unwrap_or_default()
-                      .to_le_bytes(),
-              );
-              hasher.update(binding.sequence.to_le_bytes());
-              format!("lang_install_{}", hex::encode(hasher.finalize()))
-          }'''
-
-          if old_call not in text:
-              raise SystemExit("confirmation_token call pattern not found")
-          if old_fn not in text:
-              raise SystemExit("confirmation_token function pattern not found")
-
-          path.write_text(text.replace(old_call, new_call).replace(old_fn, new_fn))
+          text = text.replace(call_old, call_new, 1)
+          text = text.replace(signature_old, signature_new, 1)
+          text = text.replace("hasher.update(project.as_bytes());", "hasher.update(project.name.as_bytes());", 1)
+          text = text.replace(
+              "hasher.update(project_root.as_os_str().to_string_lossy().as_bytes());",
+              "hasher.update(project.root.as_os_str().to_string_lossy().as_bytes());",
+              1,
+          )
+          path.write_text(text)
       - name: Format
         run: cargo fmt --all
       - name: Clippy
