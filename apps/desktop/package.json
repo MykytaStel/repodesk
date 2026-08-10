@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4177",
     "tauri": "tauri",
-    "desktop:icon": "tauri icon app-icon.svg --output src-tauri/generated-icons",
+    "desktop:icon": "tauri icon app-icon.svg --output src-tauri/generated/repodesk-icons",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "e2e": "playwright test",
