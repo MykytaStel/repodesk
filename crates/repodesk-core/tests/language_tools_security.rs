@@ -273,6 +273,39 @@ fn verified_install_promotes_staging_without_repository_writes() {
 }
 
 #[test]
+fn verified_install_emits_each_progress_transition_without_polling() {
+    let repo = TempDir::new().expect("repo tempdir");
+    let home = TempDir::new().expect("home tempdir");
+    let service = LanguageToolInstallService::new(Arc::new(FakeRunner::default()));
+    let now = Utc::now();
+    let preview = service
+        .preview_for_project("taplo", "demo", repo.path(), home.path(), now)
+        .expect("preview");
+    let observed = Mutex::new(Vec::new());
+
+    let result = service
+        .install_with_observer(&preview.confirmation_token, |status| {
+            observed
+                .lock()
+                .expect("observer statuses")
+                .push((status.state, status.progress));
+        })
+        .expect("install result");
+
+    assert_eq!(result.status.state, LanguageToolInstallState::Ready);
+    assert_eq!(
+        observed.into_inner().expect("observer statuses"),
+        vec![
+            (LanguageToolInstallState::Installing, 10),
+            (LanguageToolInstallState::Installing, 30),
+            (LanguageToolInstallState::Installing, 70),
+            (LanguageToolInstallState::Installing, 90),
+            (LanguageToolInstallState::Ready, 100),
+        ]
+    );
+}
+
+#[test]
 fn cancellation_does_not_promote_partial_installation() {
     let repo = TempDir::new().expect("repo tempdir");
     let home = TempDir::new().expect("home tempdir");

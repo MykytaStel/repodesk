@@ -427,13 +427,33 @@ impl LanguageToolInstallService {
     }
 
     pub fn install(&self, confirmation_token: &str) -> RepoDeskResult<LanguageToolInstallResult> {
-        self.install_at(confirmation_token, Utc::now())
+        self.install_with_observer(confirmation_token, |_| {})
+    }
+
+    pub fn install_with_observer<F>(
+        &self,
+        confirmation_token: &str,
+        observer: F,
+    ) -> RepoDeskResult<LanguageToolInstallResult>
+    where
+        F: Fn(&LanguageToolInstallStatus),
+    {
+        self.install_at_observed(confirmation_token, Utc::now(), &observer)
     }
 
     pub fn install_at(
         &self,
         confirmation_token: &str,
         now: DateTime<Utc>,
+    ) -> RepoDeskResult<LanguageToolInstallResult> {
+        self.install_at_observed(confirmation_token, now, &|_| {})
+    }
+
+    fn install_at_observed(
+        &self,
+        confirmation_token: &str,
+        now: DateTime<Utc>,
+        observer: &dyn Fn(&LanguageToolInstallStatus),
     ) -> RepoDeskResult<LanguageToolInstallResult> {
         let pending = self
             .pending
@@ -498,9 +518,10 @@ impl LanguageToolInstallService {
             now,
             None,
             None,
+            observer,
         )?;
 
-        let result = self.execute_pending(&pending, &cancel, now);
+        let result = self.execute_pending(&pending, &cancel, now, observer);
         if let Ok(mut running) = self.running.lock() {
             running.remove(&pending.preview.recipe_id);
         }
@@ -532,6 +553,7 @@ impl LanguageToolInstallService {
         pending: &PendingInstall,
         cancel: &AtomicBool,
         started_at: DateTime<Utc>,
+        observer: &dyn Fn(&LanguageToolInstallStatus),
     ) -> RepoDeskResult<LanguageToolInstallResult> {
         if let Some(staging) = &pending.staging_dir {
             if staging.exists() {
@@ -553,6 +575,7 @@ impl LanguageToolInstallService {
             started_at,
             None,
             None,
+            observer,
         )?;
         let install_outcome =
             self.runner
@@ -569,6 +592,7 @@ impl LanguageToolInstallService {
                 started_at,
                 Some(Utc::now()),
                 None,
+                observer,
             )?;
             return Ok(LanguageToolInstallResult {
                 status,
@@ -587,6 +611,7 @@ impl LanguageToolInstallService {
                 started_at,
                 Some(Utc::now()),
                 Some(detail),
+                observer,
             )?;
             return Ok(LanguageToolInstallResult {
                 status,
@@ -610,6 +635,7 @@ impl LanguageToolInstallService {
                 started_at,
                 Some(Utc::now()),
                 Some(detail),
+                observer,
             )?;
             return Ok(LanguageToolInstallResult {
                 status,
@@ -626,6 +652,7 @@ impl LanguageToolInstallService {
             started_at,
             None,
             None,
+            observer,
         )?;
         let probe_outcome = self
             .runner
@@ -648,6 +675,7 @@ impl LanguageToolInstallService {
                 started_at,
                 Some(Utc::now()),
                 None,
+                observer,
             )?;
             return Ok(LanguageToolInstallResult {
                 status,
@@ -665,6 +693,7 @@ impl LanguageToolInstallService {
                 started_at,
                 Some(Utc::now()),
                 Some("Installed language server failed its version probe".into()),
+                observer,
             )?;
             return Ok(LanguageToolInstallResult {
                 status,
@@ -683,6 +712,7 @@ impl LanguageToolInstallService {
                     started_at,
                     None,
                     None,
+                    observer,
                 )?;
                 let staging = pending.staging_dir.as_deref().ok_or_else(|| {
                     RepoDeskError::Api("Managed install has no staging directory".into())
@@ -708,6 +738,7 @@ impl LanguageToolInstallService {
             started_at,
             Some(Utc::now()),
             None,
+            observer,
         )?;
         Ok(LanguageToolInstallResult {
             status,
@@ -732,6 +763,7 @@ impl LanguageToolInstallService {
         started_at: DateTime<Utc>,
         finished_at: Option<DateTime<Utc>>,
         error: Option<String>,
+        observer: &dyn Fn(&LanguageToolInstallStatus),
     ) -> RepoDeskResult<LanguageToolInstallStatus> {
         let status = LanguageToolInstallStatus {
             recipe_id: recipe_id.to_string(),
@@ -746,6 +778,7 @@ impl LanguageToolInstallService {
             .lock()
             .map_err(|_| RepoDeskError::Api("Language-tool status registry is unavailable".into()))?
             .insert(recipe_id.to_string(), status.clone());
+        observer(&status);
         Ok(status)
     }
 }

@@ -394,7 +394,7 @@ git commit -m "feat: add recovery engine contracts"
 - Consumes: `LanguageServerDescriptor`, `LanguageServerAvailability`, `LanguageServerProfileState`, existing `LanguageToolInstallStatus`, and Task 1 `RecoveryObservation`.
 - Produces: `language_observation(LanguageRecoveryInput) -> Option<RecoveryObservation>` and `LanguageToolInstallService::install_with_observer(token, observer) -> RepoDeskResult<LanguageToolInstallResult>`.
 
-- [ ] **Step 1: Write failing adapter tests**
+- [x] **Step 1: Write failing adapter tests**
 
 Create a concrete descriptor helper and tests covering these exact outcomes:
 
@@ -549,7 +549,7 @@ fn installer_success_stays_repairing_until_runtime_verification() {
 }
 ```
 
-- [ ] **Step 2: Run the adapter tests and verify failure**
+- [x] **Step 2: Run the adapter tests and verify failure**
 
 Run:
 
@@ -559,7 +559,7 @@ REPODESK_HOME=/tmp/repodesk-dev cargo test -p repodesk-core --test language_reco
 
 Expected: FAIL because `recovery::language` is absent.
 
-- [ ] **Step 3: Implement neutral runtime input and pure mapping**
+- [x] **Step 3: Implement neutral runtime input and pure mapping**
 
 Define:
 
@@ -580,11 +580,11 @@ pub struct LanguageRecoveryInput<'a> {
 
 `language_observation` returns `None` for discovery-only profiles. Missing active profiles expose only a confirmable managed-install action. Runtime initialization errors expose an automatic `restart-language-session` action. A ready install status without a ready initialized runtime remains `repairing`, never `healthy`.
 
-- [ ] **Step 4: Write a failing install-observer test**
+- [x] **Step 4: Write a failing install-observer test**
 
 Extend `language_tools_security.rs` with a fake runner and observer vector. Assert the observed state sequence is exactly `Installing` at progress 10, 30, 70, 90, then `Ready` at 100 for a successful managed install, and that the existing no-repository-write assertion remains true.
 
-- [ ] **Step 5: Implement status observation without changing existing callers**
+- [x] **Step 5: Implement status observation without changing existing callers**
 
 Add:
 
@@ -600,7 +600,7 @@ where
 
 Keep `install()` as `self.install_with_observer(confirmation_token, |_| {})`. Thread `&dyn Fn(&LanguageToolInstallStatus)` through `execute_pending` and invoke it immediately after every successful `set_status`. Do not add a timer, polling loop, or mutable global callback.
 
-- [ ] **Step 6: Run adapter and installer tests**
+- [x] **Step 6: Run adapter and installer tests**
 
 ```bash
 REPODESK_HOME=/tmp/repodesk-dev cargo test -p repodesk-core --test language_recovery
@@ -610,7 +610,7 @@ cargo clippy -p repodesk-core --tests -- -D warnings
 
 Expected: PASS with the exact progress sequence and existing security tests green.
 
-- [ ] **Step 7: Commit the language adapter**
+- [x] **Step 7: Commit the language adapter**
 
 ```bash
 git add crates/repodesk-core/src/recovery crates/repodesk-core/src/language_tools.rs crates/repodesk-core/tests/language_recovery.rs crates/repodesk-core/tests/language_tools_security.rs
