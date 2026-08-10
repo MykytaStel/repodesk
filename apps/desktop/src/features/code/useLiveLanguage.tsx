@@ -21,6 +21,7 @@ import {
   clearLiveLanguageDiagnostics,
 } from "../../shared/api/liveLanguageDiagnostics";
 import { errorToMessage } from "../../shared/utils/helpers";
+import { LanguageToolPill } from "./LanguageToolPill";
 import "./live-language.css";
 
 const CHANGE_DEBOUNCE_MS = 350;
@@ -389,7 +390,7 @@ export function useLiveLanguage({
       ? `${server?.label ?? "Language server"} PID ${status.pid} · ${status.open_documents} open document${status.open_documents === 1 ? "" : "s"}`
       : enabled ? `Starting ${server?.label ?? "language server"} for the active project` : null);
 
-  const panelNode = panel || error ? (
+  const intelligencePanel = panel || error ? (
     <aside className="code-language-panel" aria-label={`${server?.label ?? "Language"} intelligence`}>
       <header>
         <strong>{error ? "Language server" : panel?.title}</strong>
@@ -446,13 +447,30 @@ export function useLiveLanguage({
     </aside>
   ) : null;
 
+  const surface = (
+    <>
+      {server ? (
+        <div className="language-tool-rail">
+          <LanguageToolPill
+            language={language}
+            server={server}
+            sessionStatus={status}
+            sessionError={error}
+            onRetrySession={() => { void retry(); }}
+          />
+        </div>
+      ) : null}
+      {intelligencePanel}
+    </>
+  );
+
   return {
     status,
     statusLabel,
     statusTitle,
     error,
     busy,
-    panel: panelNode,
+    panel: surface,
     actions: {
       hover: () => { void runHover(); },
       definition: () => { void runDefinition(); },
