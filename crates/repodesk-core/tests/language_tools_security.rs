@@ -123,16 +123,13 @@ fn preview_builds_pinned_allowlisted_argv_outside_repository() {
         )
         .expect("preview");
 
+    let tools_root = home.path().join("tools/language-servers");
+    let prefix = flag_value(&preview.install_command.args, "--prefix").expect("npm prefix");
+
     assert_eq!(preview.recipe_id, "typescript-language-server");
     assert_eq!(preview.install_command.program, "npm");
     assert_eq!(preview.install_command.args[0], "install");
-    assert_eq!(
-        flag_value(&preview.install_command.args, "--prefix")
-            .map(Path::new)
-            .and_then(|path| path.parent())
-            .and_then(Path::parent),
-        Some(home.path().join("tools/language-servers").as_path())
-    );
+    assert!(Path::new(prefix).starts_with(tools_root.join(".staging")));
     assert!(
         preview
             .install_command
