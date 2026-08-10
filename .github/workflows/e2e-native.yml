@@ -1,13 +1,21 @@
 name: E2E (native)
 
 # Real-backend Tauri E2E: drives the compiled binary via tauri-driver +
-# WebdriverIO (Linux only — tauri-driver has no macOS support). This does a full
-# release build, so it runs on push to main + on demand rather than blocking every
-# PR. The fast frontend smoke (Playwright, mock IPC) runs per-PR in ci.yml.
-# Promote to `pull_request` once it has proven stable.
+# WebdriverIO (Linux only — tauri-driver has no macOS support). The fast frontend
+# Playwright suite still provides mock-IPC coverage; this workflow proves that the
+# compiled WebView + Tauri IPC + repodesk-core stack boots and serves the current
+# Work-first shell. Path filtering keeps the heavier release build off docs-only PRs.
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'crates/repodesk-core/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/e2e-native.sh'
+      - '.github/workflows/e2e-native.yml'
   workflow_dispatch:
 
 concurrency:
@@ -67,9 +75,18 @@ jobs:
         run: pnpm --dir apps/desktop/e2e-native install
 
       # Throwaway REPODESK_HOME → first-run state (no project/task), so the smoke
-      # asserts the onboarding funnel through the real frontend + IPC + core.
+      # asserts the Work → Scope onboarding funnel through real frontend + IPC + core.
       - name: Run native smoke
         run: |
           export REPODESK_HOME="$(mktemp -d)"
           echo "REPODESK_HOME=$REPODESK_HOME"
           xvfb-run -a pnpm --dir apps/desktop/e2e-native test
+
+      - name: Upload native E2E failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-e2e-failure-${{ github.run_id }}
+          path: apps/desktop/e2e-native/artifacts
+          if-no-files-found: ignore
+          retention-days: 7
