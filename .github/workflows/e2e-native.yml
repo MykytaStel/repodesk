@@ -1,13 +1,21 @@
 name: E2E (native)
 
 # Real-backend Tauri E2E: drives the compiled binary via tauri-driver +
-# WebdriverIO (Linux only — tauri-driver has no macOS support). This does a full
-# release build, so it runs on push to main + on demand rather than blocking every
-# PR. The fast frontend smoke (Playwright, mock IPC) runs per-PR in ci.yml.
-# Promote to `pull_request` once it has proven stable.
+# WebdriverIO (Linux only — tauri-driver has no macOS support). The fast frontend
+# Playwright suite still provides mock-IPC coverage; this workflow proves that the
+# compiled WebView + Tauri IPC + repodesk-core stack boots and serves the current
+# Work-first shell. Path filtering keeps the heavier release build off docs-only PRs.
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - 'apps/desktop/**'
+      - 'crates/repodesk-core/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/e2e-native.sh'
+      - '.github/workflows/e2e-native.yml'
   workflow_dispatch:
 
 concurrency:
