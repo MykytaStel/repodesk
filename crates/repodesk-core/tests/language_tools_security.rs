@@ -51,7 +51,9 @@ impl LanguageToolCommandRunner for FakeRunner {
             let bin = Path::new(root).join("bin");
             fs::create_dir_all(&bin)?;
             fs::write(platform_executable(&bin, "taplo"), b"fake taplo")?;
-        } else if command.program == "npm" && command.args.first().is_some_and(|arg| arg == "install") {
+        } else if command.program == "npm"
+            && command.args.first().is_some_and(|arg| arg == "install")
+        {
             let prefix = flag_value(&command.args, "--prefix").expect("npm --prefix");
             let root = Path::new(prefix).join("node_modules");
             let bin = root.join(".bin");
@@ -76,7 +78,8 @@ impl LanguageToolCommandRunner for FakeRunner {
             success: true,
             cancelled: false,
             stdout: if command.program == "cargo"
-                || (command.program == "npm" && command.args.first().is_some_and(|arg| arg == "install"))
+                || (command.program == "npm"
+                    && command.args.first().is_some_and(|arg| arg == "install"))
             {
                 "installed\nNPM_TOKEN=do-not-leak".into()
             } else {
@@ -198,12 +201,8 @@ fn incompatible_managed_typescript_is_not_reported_ready() {
         b"fake language server",
     )
     .expect("write executable");
-    write_npm_package(
-        &node_modules,
-        "typescript-language-server",
-        "5.3.0",
-    )
-    .expect("write primary package metadata");
+    write_npm_package(&node_modules, "typescript-language-server", "5.3.0")
+        .expect("write primary package metadata");
     write_npm_package(&node_modules, "typescript", "7.0.2")
         .expect("write incompatible TypeScript metadata");
 
