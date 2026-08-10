@@ -249,8 +249,21 @@ fn diagnosis_revision(observation: &RecoveryObservation) -> String {
         .code
         .map(|value| format!("{value:?}"))
         .unwrap_or_else(|| "healthy".into());
+    let actions = observation
+        .actions
+        .iter()
+        .map(|action| {
+            format!(
+                "{}:{:?}:{}",
+                action.id,
+                action.kind,
+                action.recipe_id.as_deref().unwrap_or("none")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",");
     format!(
-        "{}:{}:{}",
-        observation.capability_id, observation.generation, code
+        "{}:{}:{}:{}",
+        observation.module_id, observation.capability_id, code, actions
     )
 }

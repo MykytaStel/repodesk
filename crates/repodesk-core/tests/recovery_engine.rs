@@ -160,6 +160,46 @@ fn automatic_attempt_budget_stops_after_two_failures() {
 }
 
 #[test]
+fn repeated_observation_of_same_failure_preserves_automatic_attempt_budget() {
+    let mut engine = RecoveryEngine::new("RepoDesk".into(), 100);
+    for generation in 1..=2 {
+        engine.observe(observation(
+            generation,
+            RecoveryState::Degraded,
+            Some(RecoveryFailureCode::InitializationFailed),
+            vec![action(AUTOMATIC_ACTION, RecoveryActionKind::Automatic)],
+        ));
+        engine
+            .begin_repair(CAPABILITY_ID, AUTOMATIC_ACTION, at(generation as i64 * 3))
+            .unwrap();
+        engine
+            .finish_repair(
+                CAPABILITY_ID,
+                RepairCompletion::Failed {
+                    finished_at: at(generation as i64 * 3 + 1),
+                    summary: "Restart did not initialize the server".into(),
+                },
+            )
+            .unwrap();
+    }
+
+    engine.observe(observation(
+        3,
+        RecoveryState::Degraded,
+        Some(RecoveryFailureCode::InitializationFailed),
+        vec![action(AUTOMATIC_ACTION, RecoveryActionKind::Automatic)],
+    ));
+    let record = &engine.snapshot().records[0];
+    assert_eq!(record.automatic_attempts, 2);
+    assert!(
+        record
+            .actions
+            .iter()
+            .all(|candidate| candidate.kind != RecoveryActionKind::Automatic)
+    );
+}
+
+#[test]
 fn history_is_bounded() {
     let mut engine = RecoveryEngine::new("RepoDesk".into(), 2);
 
