@@ -195,8 +195,6 @@ const RECIPES: &[InstallRecipe] = &[
 #[derive(Debug, Clone)]
 struct PendingInstall {
     preview: LanguageToolInstallPreview,
-    project: String,
-    project_root: PathBuf,
     staging_dir: Option<PathBuf>,
     destination_dir: Option<PathBuf>,
     expected_executable: PathBuf,
@@ -347,6 +345,7 @@ impl LanguageToolInstallService {
         let expires_at = now + Duration::minutes(CONFIRMATION_TTL_MINUTES);
         let token = confirmation_token(
             project,
+            project_root,
             recipe.id,
             &revision,
             destination_dir.as_deref(),
@@ -389,8 +388,6 @@ impl LanguageToolInstallService {
 
         let pending = PendingInstall {
             preview: preview.clone(),
-            project: project.to_string(),
-            project_root: project_root.to_path_buf(),
             staging_dir,
             destination_dir,
             expected_executable,
@@ -843,6 +840,7 @@ fn recipe_revision(recipe: &InstallRecipe) -> String {
 
 fn confirmation_token(
     project: &str,
+    project_root: &Path,
     recipe_id: &str,
     revision: &str,
     destination: Option<&Path>,
@@ -852,6 +850,8 @@ fn confirmation_token(
 ) -> String {
     let mut hasher = Sha256::new();
     hasher.update(project.as_bytes());
+    hasher.update([0]);
+    hasher.update(project_root.as_os_str().to_string_lossy().as_bytes());
     hasher.update([0]);
     hasher.update(recipe_id.as_bytes());
     hasher.update([0]);
