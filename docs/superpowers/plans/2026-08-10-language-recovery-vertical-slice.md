@@ -761,7 +761,7 @@ git commit -m "feat: expose language recovery coordinator"
 - Consumes: Task 3 Tauri command/event JSON.
 - Produces: `useRecovery()` with `snapshot`, `history`, `selected`, `openHealth(capabilityId?)`, `closeHealth()`, `check(capabilityId)`, `preview(capabilityId, actionId)`, `confirm(token)`, and `cancel(recipeId)`; a minimum accessible titlebar indicator and panel make the task independently testable.
 
-- [ ] **Step 1: Add controlled mock event delivery**
+- [x] **Step 1: Add controlled mock event delivery**
 
 Extend `mock-ipc.ts` so tests can call:
 
@@ -771,7 +771,7 @@ await emitMockTauriEvent(page, "recovery-record-changed", nextRecord);
 
 Store registered callbacks by event name, invoke only current listeners, and remove them when Tauri calls `unregisterCallback`. Preserve existing command recording behavior.
 
-- [ ] **Step 2: Write a failing controller-to-panel Playwright test**
+- [x] **Step 2: Write a failing controller-to-panel Playwright test**
 
 Add these common fixtures to `onboardedFixtures`:
 
@@ -788,7 +788,7 @@ recovery_history: [],
 
 In `ide-health.spec.ts`, override the snapshot with one `needs_approval` TypeScript record, assert a titlebar button named `IDE health: 1 needs attention`, click it, assert the exact capability title in the `IDE Health` dialog, emit a newer `repairing` record, and assert the same selected card now says `Repairing` without another `recovery_snapshot` invocation.
 
-- [ ] **Step 3: Define frontend contracts matching Rust exactly**
+- [x] **Step 3: Define frontend contracts matching Rust exactly**
 
 In `recovery.ts`, define snake-case-compatible fields and these unions:
 
@@ -802,15 +802,15 @@ export const RECOVERY_QUERY_KEY = ["recovery_snapshot"] as const;
 
 Command wrappers must call `callCommand`, and `subscribeRecoveryChanges` must use Tauri `listen` and return its unlisten function. Define wrappers for snapshot, history, check, preview, confirm, and cancel. `RecoverySnapshot` includes `warnings: string[]`; the panel renders these as non-blocking notices.
 
-- [ ] **Step 4: Implement the provider without polling**
+- [x] **Step 4: Implement the provider without polling**
 
 Use one `useQuery` each for snapshot and bounded history, one event subscription that updates the matching record with `queryClient.setQueryData`, and local state only for panel visibility, selected capability, preview, and mutation progress. `check` explicitly invokes `recovery_check`; no `setInterval` is allowed. Ignore an event whose generation is lower than the cached record generation.
 
-- [ ] **Step 5: Render a minimum accessible indicator and panel**
+- [x] **Step 5: Render a minimum accessible indicator and panel**
 
 The indicator counts only `degraded`, `needs_approval`, and `blocked`. The panel uses `role="dialog"`, an `IDE Health` accessible name, a close button, the selected record title/state/explanation, and a polite progress region. It does not yet implement the final card hierarchy or repair-detail composition; Task 5 adds those against failing tests.
 
-- [ ] **Step 6: Mount the provider and run the independent task gate**
+- [x] **Step 6: Mount the provider and run the independent task gate**
 
 Wrap `<App />` inside `<RecoveryProvider>` under `QueryClientProvider` and `ToastProvider` in `main.tsx`. Render the indicator next to Git status and render the panel from the provider.
 
@@ -823,7 +823,7 @@ pnpm --dir apps/desktop exec playwright test e2e/ide-health.spec.ts
 
 Expected: the production build and controller-to-panel event test pass.
 
-- [ ] **Step 7: Commit the shared controller and minimum surface**
+- [x] **Step 7: Commit the shared controller and minimum surface**
 
 ```bash
 git add apps/desktop/src/shared/api/recovery.ts apps/desktop/src/shared/api/queries.ts apps/desktop/src/features/health apps/desktop/src/app/main.tsx apps/desktop/src/app/App.tsx apps/desktop/e2e/fixtures.ts apps/desktop/e2e/mock-ipc.ts apps/desktop/e2e/ide-health.spec.ts

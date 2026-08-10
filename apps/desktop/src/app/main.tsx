@@ -10,6 +10,7 @@ import App from "./App";
 import { ErrorBoundary } from "../shared/ui/ErrorBoundary";
 import { ToastProvider } from "../shared/ui/Toast";
 import { reportError } from "../shared/utils/errors";
+import { RecoveryProvider } from "../features/health/RecoveryProvider";
 
 // Every query/mutation failure flows through the central reporter (console +
 // Debug tab + event journal), so no command error is silently swallowed.
@@ -35,7 +36,9 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <ErrorBoundary scope="app" fullscreen>
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
-          <App />
+          <RecoveryProvider>
+            <App />
+          </RecoveryProvider>
         </ToastProvider>
       </QueryClientProvider>
     </ErrorBoundary>

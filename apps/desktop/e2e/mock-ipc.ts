@@ -19,13 +19,45 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
   await page.addInitScript((data: CommandFixtures) => {
     const calls: string[] = [];
     const invocations: Array<{ cmd: string; args: Record<string, unknown> | undefined }> = [];
+    const callbacks = new Map<number, (payload: unknown) => unknown>();
+    const listeners = new Map<string, number[]>();
+    let callbackSequence = 0;
     (window as unknown as { __repodeskMockCalls: string[] }).__repodeskMockCalls = calls;
     (window as unknown as { __repodeskMockInvocations: typeof invocations }).__repodeskMockInvocations = invocations;
+
+    const unregisterCallback = (identifier: number) => {
+      callbacks.delete(identifier);
+      for (const [event, identifiers] of listeners) {
+        const next = identifiers.filter((candidate) => candidate !== identifier);
+        if (next.length > 0) listeners.set(event, next);
+        else listeners.delete(event);
+      }
+    };
+
+    (window as unknown as {
+      __repodeskEmitMockTauriEvent: (event: string, payload: unknown) => void;
+    }).__repodeskEmitMockTauriEvent = (event, payload) => {
+      for (const identifier of listeners.get(event) ?? []) {
+        callbacks.get(identifier)?.({ event, id: identifier, payload });
+      }
+    };
 
     (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
       invoke(cmd: string, args?: Record<string, unknown>) {
         calls.push(cmd);
         invocations.push({ cmd, args });
+
+        if (cmd === "plugin:event|listen") {
+          const event = String(args?.event ?? "");
+          const handler = Number(args?.handler);
+          listeners.set(event, [...(listeners.get(event) ?? []), handler]);
+          return Promise.resolve(handler);
+        }
+        if (cmd === "plugin:event|unlisten") {
+          unregisterCallback(Number(args?.eventId));
+          return Promise.resolve(null);
+        }
+
         const action = args?.action;
         const actionKind = action && typeof action === "object" && "kind" in action
           ? String((action as { kind: unknown }).kind)
@@ -51,16 +83,40 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
       // Stubs for the event/callback machinery so `@tauri-apps/api/event` and
       // friends don't throw if a component subscribes on mount.
       transformCallback(callback: unknown) {
-        void callback;
-        return Math.floor(Math.random() * 1_000_000);
+        callbackSequence += 1;
+        if (typeof callback === "function") {
+          callbacks.set(callbackSequence, callback as (payload: unknown) => unknown);
+        }
+        return callbackSequence;
       },
-      unregisterCallback() {},
+      unregisterCallback,
       convertFileSrc(path: string) {
         return path;
       },
       metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main" } },
     };
+    (window as unknown as { __TAURI_EVENT_PLUGIN_INTERNALS__: unknown }).__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+      unregisterListener(_event: string, identifier: number) {
+        unregisterCallback(identifier);
+      },
+    };
   }, fixtures);
+}
+
+/** Delivers one event only to listeners that are currently registered in the page. */
+export async function emitMockTauriEvent(
+  page: Page,
+  event: string,
+  payload: unknown,
+): Promise<void> {
+  await page.evaluate(
+    ({ eventName, eventPayload }) => {
+      (window as unknown as {
+        __repodeskEmitMockTauriEvent: (name: string, value: unknown) => void;
+      }).__repodeskEmitMockTauriEvent(eventName, eventPayload);
+    },
+    { eventName: event, eventPayload: payload },
+  );
 }
 
 /** Reads the ordered list of commands the frontend invoked through the mock. */

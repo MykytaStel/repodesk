@@ -122,6 +122,10 @@ export const queryKeys = {
   models: {
     health: ["model_health_snapshot"] as const,
   },
+  recovery: {
+    snapshot: ["recovery_snapshot"] as const,
+    history: ["recovery_history"] as const,
+  },
   system: {
     agents: ["get_system_agents"] as const,
     capabilities: ["get_system_capabilities"] as const,

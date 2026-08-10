@@ -1,0 +1,223 @@
+.ide-health-indicator {
+  min-height: 27px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  box-shadow: none;
+}
+
+.ide-health-indicator:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--neutral-soft);
+  transform: none;
+  box-shadow: none;
+}
+
+.ide-health-indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--muted-2);
+}
+
+.ide-health-indicator.needs-attention {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, transparent);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.ide-health-indicator.needs-attention .ide-health-indicator-dot {
+  background: var(--warning);
+}
+
+.ide-health-indicator strong {
+  min-width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  font-size: 9px;
+}
+
+.ide-health-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: flex-end;
+  padding: 48px 14px 14px;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  backdrop-filter: blur(3px);
+}
+
+.ide-health-panel {
+  width: min(440px, calc(100vw - 28px));
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 22px 70px color-mix(in srgb, #000 35%, transparent);
+}
+
+.ide-health-panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ide-health-panel-header h2 {
+  margin: 3px 0 0;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+
+.ide-health-eyebrow {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.ide-health-close {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--neutral-soft);
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.ide-health-panel-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 20px 24px;
+}
+
+.ide-health-warning {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ide-health-record-nav {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  padding-bottom: 3px;
+}
+
+.ide-health-record-nav button {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.ide-health-record-nav button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.ide-health-record,
+.ide-health-empty {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-elevated, var(--bg));
+}
+
+.ide-health-record-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-2);
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.ide-health-state {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--neutral-soft);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.ide-health-state.needs_approval,
+.ide-health-state.degraded,
+.ide-health-state.blocked {
+  background: color-mix(in srgb, var(--warning) 11%, transparent);
+  color: var(--warning);
+}
+
+.ide-health-state.repairing {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.ide-health-record h3,
+.ide-health-empty h3 {
+  margin: 14px 0 7px;
+  font-size: 15px;
+}
+
+.ide-health-record p,
+.ide-health-empty p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.ide-health-progress {
+  min-height: 18px;
+  margin-top: 10px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .ide-health-overlay { padding: 42px 0 0; }
+  .ide-health-panel {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 14px 14px 0 0;
+  }
+}

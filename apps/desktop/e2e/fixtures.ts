@@ -21,6 +21,14 @@ export const onboardedFixtures: CommandFixtures = {
     ignore_rules: [],
   },
   db_status: { ok: true, path: "/tmp/repodesk-dev/repodesk.db" },
+  recovery_snapshot: {
+    project: "RepoDesk",
+    records: [],
+    actionable_count: 0,
+    warnings: [],
+    generated_at: "2026-08-10T12:00:00Z",
+  },
+  recovery_history: [],
 
   // Work tab phase progression — mid-flow at Execute, so the rail shows
   // completed/locked phases, the mode toggle, and the single CTA.

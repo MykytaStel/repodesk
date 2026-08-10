@@ -5,6 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { EconomyMode } from "../features/routing/EconomyControl";
+import { IDEHealthIndicator } from "../features/health/IDEHealthIndicator";
+import { IDEHealthPanel } from "../features/health/IDEHealthPanel";
 import { useGit } from "../features/git/useGit";
 import { callCommand } from "../shared/api/queries";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
@@ -429,6 +431,7 @@ export default function App() {
             >
               {dirty ? `${dirtyCount} changes` : "Git clean"}
             </button>
+            <IDEHealthIndicator />
             <button
               type="button"
               className="ide-title-icon-button"
@@ -477,6 +480,7 @@ export default function App() {
         onClose={() => setViewingArtifact(null)}
       />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
+      <IDEHealthPanel />
     </div>
   );
 }
