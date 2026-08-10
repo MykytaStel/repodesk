@@ -40,7 +40,23 @@ RESULTS=$(git grep -n -I -E "$PATTERN" -- \
 STATUS=$?
 set -e
 
+# AWS publishes one canonical access-key-shaped value for documentation and
+# scanner tests. Keep the AWS rule strict, but remove only that exact public
+# sentinel before deciding whether a matching line still contains a secret.
+# If another secret is present on the same line it remains in RESULTS.
 if [[ $STATUS -eq 0 && -n "$RESULTS" ]]; then
+  PUBLIC_AWS_EXAMPLE='AK''IAIOSFODNN7EXAMPLE'
+  FILTERED_RESULTS=""
+  while IFS= read -r line; do
+    sanitized=${line//$PUBLIC_AWS_EXAMPLE/}
+    if printf '%s\n' "$sanitized" | grep -E -q "$PATTERN"; then
+      FILTERED_RESULTS+="$line"$'\n'
+    fi
+  done <<< "$RESULTS"
+  RESULTS=${FILTERED_RESULTS%$'\n'}
+fi
+
+if [[ -n "$RESULTS" ]]; then
   echo "WARN: potential hardcoded secret values found:"
   echo "$RESULTS"
   echo "Review these before committing. False positives are possible."
