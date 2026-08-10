@@ -88,7 +88,7 @@ const readyStatus = {
 
 const installPreview = {
   recipe_id: "typescript-language-server",
-  recipe_revision: "typescript-language-server:5.3.0:typescript:7.0.2",
+  recipe_revision: "typescript-language-server:5.3.0:typescript:6.0.3",
   server_id: "typescript-language-server",
   server_label: "TypeScript Language Server",
   languages: ["typescript", "javascript"],
@@ -103,7 +103,7 @@ const installPreview = {
       "--prefix",
       "/tmp/repodesk-dev/tools/language-servers/.staging/typescript-language-server-fixture",
       "typescript-language-server@5.3.0",
-      "typescript@7.0.2",
+      "typescript@6.0.3",
       "--ignore-scripts",
       "--no-audit",
       "--no-fund",
@@ -199,7 +199,7 @@ test.describe("language tool UI", () => {
 
     const dialog = page.getByRole("dialog", { name: "Install TypeScript Language Server" });
     await expect(dialog).toContainText("typescript-language-server@5.3.0");
-    await expect(dialog).toContainText("typescript@7.0.2");
+    await expect(dialog).toContainText("typescript@6.0.3");
     await expect(dialog).toContainText("--ignore-scripts");
     await expect(dialog).toContainText("/tmp/repodesk-dev/tools/language-servers");
     await page.getByRole("button", { name: "Install language server" }).click();

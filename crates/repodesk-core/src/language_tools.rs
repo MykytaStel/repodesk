@@ -24,7 +24,10 @@ use crate::projects::get_active_project;
 const CONFIRMATION_TTL_MINUTES: i64 = 5;
 const MAX_INSTALL_OUTPUT_CHARS: usize = 12_000;
 const TYPESCRIPT_LANGUAGE_SERVER_VERSION: &str = "5.3.0";
-const TYPESCRIPT_VERSION: &str = "7.0.2";
+// typescript-language-server 5.x wraps the legacy JavaScript tsserver. TypeScript
+// 7 is the native port and no longer ships lib/tsserver.js, so it cannot be used
+// as this server's companion runtime.
+const TYPESCRIPT_VERSION: &str = "6.0.3";
 const VSCODE_LANGSERVERS_VERSION: &str = "4.10.0";
 const YAML_LANGUAGE_SERVER_VERSION: &str = "1.24.0";
 const TAPLO_VERSION: &str = "0.10.0";
@@ -758,8 +761,25 @@ pub fn managed_executable_path(recipe_id: &str) -> Option<PathBuf> {
         .join("tools")
         .join("language-servers")
         .join(recipe.id);
+    if !managed_install_matches_recipe(&root, recipe) {
+        return None;
+    }
     let executable = executable_in_install_root(&root, recipe);
     executable.is_file().then_some(executable)
+}
+
+fn managed_install_matches_recipe(root: &Path, recipe: &InstallRecipe) -> bool {
+    let Some((package, expected_version)) = recipe.companion_package else {
+        return true;
+    };
+    let package_json = root.join("node_modules").join(package).join("package.json");
+    let Ok(contents) = fs::read_to_string(package_json) else {
+        return false;
+    };
+    serde_json::from_str::<serde_json::Value>(&contents)
+        .ok()
+        .and_then(|metadata| metadata.get("version")?.as_str().map(str::to_owned))
+        .is_some_and(|version| version == expected_version)
 }
 
 fn recipe(recipe_id: &str) -> RepoDeskResult<&'static InstallRecipe> {

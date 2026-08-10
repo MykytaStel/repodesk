@@ -8,9 +8,10 @@ use std::time::Duration as StdDuration;
 use chrono::{Duration, Utc};
 use repodesk_core::language_tools::{
     CommandOutcome, LanguageToolCommand, LanguageToolCommandRunner, LanguageToolInstallService,
-    LanguageToolInstallState,
+    LanguageToolInstallState, managed_executable_path,
 };
 use repodesk_core::{RepoDeskError, RepoDeskResult};
+use serial_test::serial;
 use tempfile::TempDir;
 
 #[derive(Default)]
@@ -145,7 +146,7 @@ fn preview_builds_pinned_allowlisted_argv_outside_repository() {
             .install_command
             .args
             .iter()
-            .any(|arg| arg == "typescript@7.0.2")
+            .any(|arg| arg == "typescript@6.0.3")
     );
     assert!(
         preview
@@ -173,6 +174,33 @@ fn preview_builds_pinned_allowlisted_argv_outside_repository() {
             .starts_with(repo.path().to_string_lossy().as_ref())
     );
     assert_eq!(preview.expires_at, now + Duration::minutes(5));
+}
+
+#[test]
+#[serial]
+fn incompatible_managed_typescript_is_not_reported_ready() {
+    let home = TempDir::new().expect("home tempdir");
+    let install_root = home
+        .path()
+        .join("tools/language-servers/typescript-language-server");
+    let bin = install_root.join("node_modules/.bin");
+    let typescript = install_root.join("node_modules/typescript");
+    fs::create_dir_all(&bin).expect("create bin");
+    fs::create_dir_all(&typescript).expect("create TypeScript package");
+    fs::write(
+        platform_executable(&bin, "typescript-language-server"),
+        b"fake language server",
+    )
+    .expect("write executable");
+    fs::write(
+        typescript.join("package.json"),
+        r#"{"name":"typescript","version":"7.0.2"}"#,
+    )
+    .expect("write TypeScript package metadata");
+
+    unsafe { std::env::set_var("REPODESK_HOME", home.path()) };
+    assert_eq!(managed_executable_path("typescript-language-server"), None);
+    unsafe { std::env::remove_var("REPODESK_HOME") };
 }
 
 #[test]
