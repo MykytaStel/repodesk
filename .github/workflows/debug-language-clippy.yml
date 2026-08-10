@@ -1,15 +1,20 @@
-name: Debug language clippy
+name: Fix language installer CI
 
 on:
   push:
     branches:
       - fix/language-managed-tools-ci
 
+permissions:
+  contents: write
+
 jobs:
-  clippy-log:
+  fix-and-verify:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fix/language-managed-tools-ci
       - name: Install Tauri system dependencies
         run: |
           sudo apt-get update
@@ -21,7 +26,7 @@ jobs:
             patchelf
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: rustfmt, clippy
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -34,17 +39,140 @@ jobs:
         run: pnpm --dir apps/desktop install --frozen-lockfile
       - name: Build frontend
         run: pnpm --dir apps/desktop run build
-      - name: Capture clippy diagnostics
+      - name: Replace eight-argument confirmation helper with typed binding
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("crates/repodesk-core/src/language_tools.rs")
+          text = path.read_text()
+
+          old_call = '''        let token = confirmation_token(
+              project,
+              project_root,
+              recipe.id,
+              &revision,
+              destination_dir.as_deref(),
+              &install_command,
+              now,
+              sequence,
+          );'''
+          new_call = '''        let token = confirmation_token(ConfirmationTokenBinding {
+              project,
+              project_root,
+              recipe_id: recipe.id,
+              revision: &revision,
+              destination: destination_dir.as_deref(),
+              command: &install_command,
+              issued_at: now,
+              sequence,
+          });'''
+
+          old_fn = '''fn confirmation_token(
+              project: &str,
+              project_root: &Path,
+              recipe_id: &str,
+              revision: &str,
+              destination: Option<&Path>,
+              command: &LanguageToolCommand,
+              issued_at: DateTime<Utc>,
+              sequence: u64,
+          ) -> String {
+              let mut hasher = Sha256::new();
+              hasher.update(project.as_bytes());
+              hasher.update([0]);
+              hasher.update(project_root.as_os_str().to_string_lossy().as_bytes());
+              hasher.update([0]);
+              hasher.update(recipe_id.as_bytes());
+              hasher.update([0]);
+              hasher.update(revision.as_bytes());
+              hasher.update([0]);
+              if let Some(destination) = destination {
+                  hasher.update(destination.as_os_str().to_string_lossy().as_bytes());
+              }
+              hasher.update([0]);
+              hasher.update(command.program.as_bytes());
+              for arg in &command.args {
+                  hasher.update([0]);
+                  hasher.update(arg.as_bytes());
+              }
+              hasher.update(
+                  issued_at
+                      .timestamp_nanos_opt()
+                      .unwrap_or_default()
+                      .to_le_bytes(),
+              );
+              hasher.update(sequence.to_le_bytes());
+              format!("lang_install_{}", hex::encode(hasher.finalize()))
+          }'''
+          new_fn = '''struct ConfirmationTokenBinding<'a> {
+              project: &'a str,
+              project_root: &'a Path,
+              recipe_id: &'a str,
+              revision: &'a str,
+              destination: Option<&'a Path>,
+              command: &'a LanguageToolCommand,
+              issued_at: DateTime<Utc>,
+              sequence: u64,
+          }
+
+          fn confirmation_token(binding: ConfirmationTokenBinding<'_>) -> String {
+              let mut hasher = Sha256::new();
+              hasher.update(binding.project.as_bytes());
+              hasher.update([0]);
+              hasher.update(
+                  binding
+                      .project_root
+                      .as_os_str()
+                      .to_string_lossy()
+                      .as_bytes(),
+              );
+              hasher.update([0]);
+              hasher.update(binding.recipe_id.as_bytes());
+              hasher.update([0]);
+              hasher.update(binding.revision.as_bytes());
+              hasher.update([0]);
+              if let Some(destination) = binding.destination {
+                  hasher.update(destination.as_os_str().to_string_lossy().as_bytes());
+              }
+              hasher.update([0]);
+              hasher.update(binding.command.program.as_bytes());
+              for arg in &binding.command.args {
+                  hasher.update([0]);
+                  hasher.update(arg.as_bytes());
+              }
+              hasher.update(
+                  binding
+                      .issued_at
+                      .timestamp_nanos_opt()
+                      .unwrap_or_default()
+                      .to_le_bytes(),
+              );
+              hasher.update(binding.sequence.to_le_bytes());
+              format!("lang_install_{}", hex::encode(hasher.finalize()))
+          }'''
+
+          if old_call not in text:
+              raise SystemExit("confirmation_token call pattern not found")
+          if old_fn not in text:
+              raise SystemExit("confirmation_token function pattern not found")
+
+          path.write_text(text.replace(old_call, new_call).replace(old_fn, new_fn))
+      - name: Format
+        run: cargo fmt --all
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+      - name: Commit verified fix
         shell: bash
         run: |
-          set +e
-          cargo clippy --all-targets --all-features -- -D warnings > clippy.log 2>&1
-          status=$?
-          cat clippy.log
-          echo "clippy_exit=$status" >> clippy.log
-          exit 0
-      - uses: actions/upload-artifact@v4
-        with:
-          name: language-clippy-log
-          path: clippy.log
-          if-no-files-found: error
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/repodesk-core/src/language_tools.rs
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+            exit 0
+          fi
+          git commit -m "fix(language): satisfy strict clippy gate"
+          git push origin HEAD:fix/language-managed-tools-ci
