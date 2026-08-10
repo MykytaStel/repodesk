@@ -99,6 +99,7 @@ export function useLiveLanguage({
   status: LanguageServerStatus | null;
   statusLabel: string | null;
   statusTitle: string | null;
+  error: string | null;
   busy: boolean;
   panel: ReactNode;
   actions: {
@@ -109,6 +110,7 @@ export function useLiveLanguage({
     clearPreview: () => void;
     references: () => void;
     symbols: () => void;
+    retry: () => void;
     dismiss: () => void;
   };
   handleKeyDown: (event: LanguageKeyEvent) => boolean;
@@ -316,6 +318,23 @@ export function useLiveLanguage({
     }
   }, [busy, capabilities?.document_symbols, enabled, path]);
 
+  const retry = useCallback(async () => {
+    if (!enabled || busy) return;
+    setBusy(true);
+    setError(null);
+    setStatus(null);
+    setPanel(null);
+    try {
+      const text = valueRef.current;
+      lastSynced.current = { path, text };
+      setStatus(await syncLanguageDocument({ path, language, text }));
+    } catch (cause) {
+      setError(errorToMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, enabled, language, path]);
+
   const dismiss = useCallback(() => {
     clearPreview();
     setPanel(null);
@@ -431,6 +450,7 @@ export function useLiveLanguage({
     status,
     statusLabel,
     statusTitle,
+    error,
     busy,
     panel: panelNode,
     actions: {
@@ -441,6 +461,7 @@ export function useLiveLanguage({
       clearPreview,
       references: () => { void runReferences(); },
       symbols: () => { void runSymbols(); },
+      retry: () => { void retry(); },
       dismiss,
     },
     handleKeyDown,
