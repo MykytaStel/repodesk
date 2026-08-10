@@ -103,6 +103,114 @@
   line-height: 1.45;
 }
 
+.repo-intel-evidence {
+  background: color-mix(in srgb, var(--neutral-soft) 48%, transparent);
+}
+
+.repo-intel-evidence-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.repo-intel-evidence-head h4 {
+  margin-bottom: 0;
+}
+
+.repo-intel-evidence-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.repo-intel-evidence-badge.strong {
+  border-color: color-mix(in srgb, var(--success) 48%, var(--border));
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
+}
+
+.repo-intel-evidence-badge.bounded {
+  border-color: color-mix(in srgb, var(--warning) 48%, var(--border));
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface));
+}
+
+.repo-intel-evidence-badge.unavailable {
+  color: var(--muted-2);
+  background: var(--neutral-soft);
+}
+
+.repo-intel-strategy {
+  display: inline-block;
+  margin: 6px 2px 1px;
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.repo-intel-limitations {
+  display: grid;
+  gap: 4px;
+  margin: 7px 2px 0;
+  padding-left: 14px;
+  color: var(--muted-2);
+  font-size: 8.5px;
+  line-height: 1.45;
+}
+
+.repo-intel-coverage-row {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 7px;
+  border-radius: 5px;
+}
+
+.repo-intel-coverage-row:hover {
+  background: var(--neutral-soft);
+}
+
+.repo-intel-coverage-row > span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.repo-intel-coverage-row > span:first-child {
+  display: grid;
+  gap: 1px;
+}
+
+.repo-intel-coverage-row strong {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 560;
+}
+
+.repo-intel-coverage-row code {
+  color: var(--muted-2);
+  font-size: 8px;
+}
+
+.repo-intel-coverage-row small {
+  color: var(--muted);
+  font-size: 8.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .repo-intel-row {
   width: 100%;
   min-width: 0;

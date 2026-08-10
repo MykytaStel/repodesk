@@ -4,12 +4,40 @@ import {
   REPOSITORY_INTELLIGENCE_KEY,
   repositoryIntelligenceSnapshot,
   type RepositoryContextCandidate,
+  type RepositoryEvidenceLevel,
+  type RepositoryLanguageCoverage,
+  type RepositorySemanticStrategy,
 } from "../../shared/api/repositoryIntelligence";
 import { errorToMessage } from "../../shared/utils/helpers";
 import "./repository-intelligence.css";
 
 function fileLabel(path: string): string {
   return path.split("/").pop() || path;
+}
+
+function evidenceLabel(level: RepositoryEvidenceLevel): string {
+  switch (level) {
+    case "strong": return "Strong";
+    case "bounded": return "Bounded";
+    case "unavailable": return "Unavailable";
+  }
+}
+
+function strategyLabel(strategy: RepositorySemanticStrategy): string {
+  switch (strategy) {
+    case "rust_ast": return "Rust AST";
+    case "script_literal_imports": return "Local literal imports";
+    case "unavailable": return "No dependency indexer";
+  }
+}
+
+function relevantCoverage(
+  languages: RepositoryLanguageCoverage[],
+  focusLanguage: string | null,
+): RepositoryLanguageCoverage[] {
+  return languages.filter((item) => (
+    item.strategy !== "unavailable" || item.language === focusLanguage
+  ));
 }
 
 function CandidateRow({ candidate }: { candidate: RepositoryContextCandidate }) {
@@ -46,6 +74,9 @@ export function RepositoryIntelligenceDrawer({
   });
 
   const focus = snapshot.data?.focus ?? null;
+  const coverageLanguages = snapshot.data
+    ? relevantCoverage(snapshot.data.coverage.languages, focus?.language ?? null)
+    : [];
 
   return (
     <aside className="repo-intel-drawer" aria-label="Repository intelligence">
@@ -63,13 +94,57 @@ export function RepositoryIntelligenceDrawer({
       {snapshot.data ? (
         <div className="repo-intel-meta">
           <span>{snapshot.data.indexed_files.toLocaleString()} files visible</span>
-          <span>{snapshot.data.rust_files_indexed.toLocaleString()} Rust AST indexed</span>
+          <span>
+            {snapshot.data.coverage.semantic_files_indexed.toLocaleString()}/
+            {snapshot.data.coverage.semantic_files_eligible.toLocaleString()} semantic files indexed
+          </span>
           {snapshot.data.truncated ? <span className="warn">bounded index</span> : null}
         </div>
       ) : null}
 
-      {focus ? (
+      {focus && snapshot.data ? (
         <div className="repo-intel-sections">
+          <section className="repo-intel-evidence">
+            <div className="repo-intel-evidence-head">
+              <h4>Graph evidence</h4>
+              <span className={`repo-intel-evidence-badge ${focus.graph_evidence.level}`}>
+                {evidenceLabel(focus.graph_evidence.level)}
+              </span>
+            </div>
+            <code className="repo-intel-strategy">{strategyLabel(focus.graph_evidence.strategy)}</code>
+            {focus.graph_evidence.reasons.map((reason) => <p key={reason}>{reason}</p>)}
+            {focus.graph_evidence.limitations.length > 0 ? (
+              <ul className="repo-intel-limitations">
+                {focus.graph_evidence.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}
+              </ul>
+            ) : null}
+          </section>
+
+          <section className="repo-intel-coverage">
+            <h4>
+              Semantic coverage
+              <span>
+                {snapshot.data.coverage.semantic_files_indexed}/
+                {snapshot.data.coverage.semantic_files_eligible}
+              </span>
+            </h4>
+            <p>Only files with an implemented dependency strategy count as semantic-eligible.</p>
+            {coverageLanguages.length === 0 ? <p>No semantic dependency indexer is active.</p> : coverageLanguages.map((item) => (
+              <div className="repo-intel-coverage-row" key={item.language} title={item.limitations.join(" · ")}>
+                <span>
+                  <strong>{item.language}</strong>
+                  <code>{strategyLabel(item.strategy)}</code>
+                </span>
+                <span>
+                  <i className={`repo-intel-evidence-badge ${item.evidence_level}`}>
+                    {evidenceLabel(item.evidence_level)}
+                  </i>
+                  <small>{item.semantic_files_indexed}/{item.visible_files}</small>
+                </span>
+              </div>
+            ))}
+          </section>
+
           <section>
             <h4>Dependencies <span>{focus.dependencies.length}</span></h4>
             {focus.dependencies.length === 0 ? <p>No resolved local dependencies.</p> : focus.dependencies.map((item) => (
