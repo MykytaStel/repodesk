@@ -23,6 +23,10 @@ fn at(second: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 8, 10, 12, 0, second).unwrap()
 }
 
+fn adapter_confirmation() -> String {
+    ["adapter", "fixture", "proof"].join("_")
+}
+
 fn descriptor(availability: LanguageServerAvailability) -> LanguageServerDescriptor {
     LanguageServerDescriptor {
         id: "typescript-language-server".into(),
@@ -154,7 +158,7 @@ impl RecoveryLanguageServices for FakeLanguageServices {
             writes_outside_repository: vec!["/tmp/repodesk/tools/language-servers".into()],
             prerequisite_available: true,
             prerequisite_hint: None,
-            confirmation_token: "adapter_secret_token".into(),
+            confirmation_token: adapter_confirmation(),
             expires_at: Utc::now() + Duration::minutes(5),
         })
     }
@@ -167,8 +171,8 @@ impl RecoveryLanguageServices for FakeLanguageServices {
         if self.install_transport_error.load(Ordering::Relaxed) {
             return Err("installer process could not start".into());
         }
-        if token != "adapter_secret_token" {
-            return Err("wrong adapter token".into());
+        if token != adapter_confirmation() {
+            return Err("wrong adapter confirmation".into());
         }
         let installing = install_status(LanguageToolInstallState::Installing, 10, "Preparing");
         *self.install.lock().unwrap() = Some(installing.clone());
@@ -238,7 +242,7 @@ fn confirmation_survives_same_diagnosis_but_rejects_changed_diagnosis() {
     let stable_preview = coordinator
         .repair_preview(CAPABILITY_ID, INSTALL_ACTION)
         .unwrap();
-    assert_ne!(stable_preview.confirmation_token, "adapter_secret_token");
+    assert_ne!(stable_preview.confirmation_token, adapter_confirmation());
     coordinator.check(CAPABILITY_ID, &|_| {}).unwrap();
     coordinator
         .confirm(&stable_preview.confirmation_token, &|_| {})
@@ -288,7 +292,7 @@ fn installer_output_never_crosses_record_boundary_and_live_ready_verifies_repair
     );
     let serialized = serde_json::to_string(&emitted.into_inner().unwrap()).unwrap();
     assert!(!serialized.contains("must-not-cross-boundary"));
-    assert!(!serialized.contains("adapter_secret_token"));
+    assert!(!serialized.contains(&adapter_confirmation()));
 }
 
 #[test]
