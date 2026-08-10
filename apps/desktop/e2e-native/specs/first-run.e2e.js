@@ -29,7 +29,7 @@ describe("RepoDesk desktop — first-run smoke", () => {
 
     const phases = $("[aria-label='Task phases']");
     await expect(phases).toBeExisting();
-    await expect(phases.$(".phase-current")).toHaveText(expect.stringContaining("Scope"));
+    await expect(phases.$(".phase-current .phase-title")).toHaveText("Scope");
 
     const connectProject = $("//button[normalize-space()='Connect a project']");
     await expect(connectProject).toBeDisplayed();
