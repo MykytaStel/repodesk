@@ -19,8 +19,14 @@ use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 
 mod script_imports;
+mod semantic_coverage;
 
-pub const REPOSITORY_INTELLIGENCE_VERSION: u32 = 1;
+pub use semantic_coverage::{
+    RepositoryEvidenceLevel, RepositoryGraphEvidence, RepositoryLanguageCoverage,
+    RepositorySemanticCoverage, RepositorySemanticStrategy,
+};
+
+pub const REPOSITORY_INTELLIGENCE_VERSION: u32 = 2;
 const MAX_RUST_FILES: usize = 4_000;
 const MAX_RUST_INDEX_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_SINGLE_INDEX_FILE_BYTES: u64 = 384 * 1024;
@@ -39,6 +45,7 @@ pub struct RepositoryIntelligenceSnapshot {
     pub indexed_files: usize,
     pub rust_files_indexed: usize,
     pub rust_bytes_indexed: u64,
+    pub coverage: RepositorySemanticCoverage,
     pub truncated: bool,
     pub git_history_available: bool,
     pub focus: Option<RepositoryFileIntelligence>,
@@ -48,6 +55,7 @@ pub struct RepositoryIntelligenceSnapshot {
 pub struct RepositoryFileIntelligence {
     pub path: String,
     pub language: String,
+    pub graph_evidence: RepositoryGraphEvidence,
     pub dependencies: Vec<RepositoryRelation>,
     pub dependents: Vec<RepositoryRelation>,
     pub closest_tests: Vec<RepositoryTestCandidate>,
@@ -116,6 +124,12 @@ pub fn build_repository_intelligence(
     let mut dependencies = build_dependency_map(&rust_facts, &all_paths);
     script_imports::extend_dependency_map(&mut dependencies, &script_index, &all_paths);
     let dependents = reverse_relations(&dependencies);
+    let semantic_truncated = workspace.truncated || rust_truncated || script_index.truncated;
+    let coverage = semantic_coverage::build_semantic_coverage(
+        &workspace.files,
+        &dependencies,
+        semantic_truncated,
+    );
 
     let focus_path = focus_path
         .map(normalize_slashes)
@@ -131,6 +145,7 @@ pub fn build_repository_intelligence(
             &dependencies,
             &dependents,
             git_history_available,
+            semantic_truncated,
         )
     });
 
@@ -141,7 +156,8 @@ pub fn build_repository_intelligence(
         indexed_files: workspace.files.len(),
         rust_files_indexed: rust_facts.len(),
         rust_bytes_indexed,
-        truncated: workspace.truncated || rust_truncated || script_index.truncated,
+        coverage,
+        truncated: semantic_truncated,
         git_history_available,
         focus,
     })
@@ -429,6 +445,7 @@ fn build_focus_intelligence(
     dependencies: &BTreeMap<String, Vec<RepositoryRelation>>,
     dependents: &BTreeMap<String, Vec<RepositoryRelation>>,
     git_history_available: bool,
+    semantic_truncated: bool,
 ) -> RepositoryFileIntelligence {
     let direct_dependencies = dependencies.get(focus).cloned().unwrap_or_default();
     let direct_dependents = dependents.get(focus).cloned().unwrap_or_default();
@@ -445,10 +462,18 @@ fn build_focus_intelligence(
         &closest_tests,
         &co_changes,
     );
+    let language = language_for_path(focus).to_string();
+    let graph_evidence = semantic_coverage::graph_evidence_for_focus(
+        focus,
+        &language,
+        dependencies,
+        semantic_truncated,
+    );
 
     RepositoryFileIntelligence {
         path: focus.to_string(),
-        language: language_for_path(focus).to_string(),
+        language,
+        graph_evidence,
         dependencies: direct_dependencies,
         dependents: direct_dependents,
         closest_tests,
