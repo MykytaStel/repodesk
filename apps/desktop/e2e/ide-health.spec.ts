@@ -149,7 +149,7 @@ test("IDE Health explains impact and requires review before a managed repair", a
   await expect(panel.getByRole("heading", { name: "Install TypeScript Language Server" })).toBeVisible();
   await expect(panel.getByText("Moderate risk")).toBeVisible();
   await expect(panel.getByText("Install typescript-language-server@5.3.0")).toBeVisible();
-  await expect(panel.getByText("Required", { exact: true })).toBeVisible();
+  await expect(panel.locator(".ide-health-preview-facts")).toContainText("NetworkRequired");
   await expect(panel).not.toContainText(recoveryConfirmation);
 
   const previewInvocation = (await recordedInvocations(page)).find(
