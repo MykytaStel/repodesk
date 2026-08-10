@@ -12,9 +12,8 @@ use crate::engineering::instrumentation::VerificationFinishedTelemetry;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::receipt::{
-    CheckReceipt, FinishReceipt, ReviewDecision, VerificationReceipt, commit_exists,
-    commit_tree_sha, head_sha, index_tree_sha, load_receipt, reviewed_tree_sha_for, save_receipt,
-    staged_paths,
+    CheckReceipt, FinishReceipt, ReviewDecision, VerificationReceipt, commit_exists, commit_tree_sha,
+    head_sha, index_tree_sha, load_receipt, reviewed_tree_sha_for, save_receipt, staged_paths,
 };
 
 /// Result of running final verification.
@@ -57,7 +56,11 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     // index is byte-for-byte the tree the human accepted. For no-change runs,
     // Review is intentionally vacuous and there is no accepted tree to require.
     let reviewed_tree = reviewed_tree_sha_for(&receipt, &tree)?;
-    debug_assert!(reviewed_tree.as_deref().is_none_or(|accepted| accepted == tree));
+    debug_assert!(
+        reviewed_tree
+            .as_deref()
+            .is_none_or(|accepted| accepted == tree)
+    );
 
     let digest = receipt
         .execution
@@ -200,11 +203,10 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let tree = index_tree_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "could not read the staged index tree".to_string(),
     })?;
-    let reviewed_tree = reviewed_tree_sha_for(&receipt, &tree)?.ok_or_else(|| {
-        RepoDeskError::RoutingFailed {
+    let reviewed_tree =
+        reviewed_tree_sha_for(&receipt, &tree)?.ok_or_else(|| RepoDeskError::RoutingFailed {
             detail: "commit blocked: no exact reviewed tree exists for this changeset".to_string(),
-        }
-    })?;
+        })?;
     let digest = run_digest
         .clone()
         .unwrap_or_else(|| super::receipt::changeset_digest(&[]));
