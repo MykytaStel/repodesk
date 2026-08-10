@@ -83,7 +83,7 @@
 - Consumes: existing `LanguageToolInstallService`, `managed_executable_path`, and managed install recipes.
 - Produces: `typescript-language-server@5.3.0` paired with `typescript@6.0.3`; `managed_executable_path("typescript-language-server") -> None` for a stale incompatible companion package.
 
-- [ ] **Step 1: Review the prerequisite diff and confirm no recovery-platform code is mixed into it**
+- [x] **Step 1: Review the prerequisite diff and confirm no recovery-platform code is mixed into it**
 
 Run:
 
@@ -93,7 +93,7 @@ git diff -- crates/repodesk-core/src/language_tools.rs crates/repodesk-core/test
 
 Expected: only the TypeScript 6.0.3 pin, companion-version validation, matching Rust regression, and Playwright fixture revision/package updates.
 
-- [ ] **Step 2: Run the incompatible-install regression**
+- [x] **Step 2: Run the incompatible-install regression**
 
 Run:
 
@@ -103,7 +103,7 @@ REPODESK_HOME=/tmp/repodesk-dev cargo test -p repodesk-core --test language_tool
 
 Expected: PASS.
 
-- [ ] **Step 3: Run the language-tool UI regression file**
+- [x] **Step 3: Run the language-tool UI regression file**
 
 Run:
 
@@ -113,7 +113,7 @@ pnpm --dir apps/desktop exec playwright test e2e/language-tool-ui.spec.ts
 
 Expected: all tests in the file pass.
 
-- [ ] **Step 4: Commit only the prerequisite**
+- [x] **Step 4: Commit only the prerequisite**
 
 ```bash
 git add crates/repodesk-core/src/language_tools.rs crates/repodesk-core/tests/language_tools_security.rs apps/desktop/e2e/language-tool-ui.spec.ts
@@ -135,7 +135,7 @@ git commit -m "fix: validate managed TypeScript runtime"
 
 **Interfaces:**
 - Consumes: `chrono::{DateTime, Utc}`, `serde::{Deserialize, Serialize}`.
-- Produces: `RecoveryEngine::new(project: String, history_limit: usize)`, `observe(RecoveryObservation) -> ObserveOutcome`, `begin_repair(&str, &str, DateTime<Utc>) -> RepoDeskResult<RecoveryRecord>`, `finish_repair(&str, RepairCompletion) -> RepoDeskResult<RecoveryRecord>`, `snapshot() -> RecoverySnapshot`, `history() -> Vec<RecoveryAttempt>`, `RecoveryStore::load(&Path, String, usize)`, and `RecoveryStore::save(&Path, &RecoveryEngine)`.
+- Produces: `RecoveryEngine::new(project: String, history_limit: usize)`, `observe(RecoveryObservation) -> ObserveOutcome`, `begin_repair(&str, &str, DateTime<Utc>) -> RepoDeskResult<RecoveryRecord>`, `finish_repair(&str, RepairCompletion) -> RepoDeskResult<RecoveryRecord>`, `prune_history(DateTime<Utc>)`, `snapshot() -> RecoverySnapshot`, `history() -> Vec<RecoveryAttempt>`, `RecoveryStore::load(&Path, String, usize)`, and `RecoveryStore::save(&Path, &RecoveryEngine)`.
 
 - [ ] **Step 1: Write failing public contract tests**
 
@@ -302,6 +302,7 @@ pub struct RecoverySnapshot {
     pub project: String,
     pub records: Vec<RecoveryRecord>,
     pub actionable_count: usize,
+    pub warnings: Vec<String>,
     pub generated_at: DateTime<Utc>,
 }
 
@@ -360,7 +361,7 @@ Implement `RecoveryEngine` with `BTreeMap<String, RecoveryRecord>` and `VecDeque
 
 - [ ] **Step 5: Export the module and run focused tests**
 
-Add `store.rs` with an internal serialized state version `1`. `save` writes a sibling staging file, flushes it, and renames it over `recovery-state.json`; `load` rejects an unknown version or corrupt JSON and never silently discards it. Add tests proving records/history survive reload, retention remains 100 attempts, and corrupt JSON returns an error while a fresh in-memory engine can still be created by the caller.
+Add `store.rs` with an internal serialized state version `1`. `save` writes a sibling staging file, flushes it, and renames it over `recovery-state.json`; `load` rejects an unknown version or corrupt JSON and never silently discards it. `prune_history` removes attempts finished before the supplied cutoff before enforcing the count limit. Add tests proving records/history survive reload, retention is the newest 100 attempts within 30 days, and corrupt JSON returns an error while a fresh in-memory engine can still be created by the caller.
 
 Add `pub mod recovery;` to `crates/repodesk-core/src/lib.rs`, re-export public contracts from `recovery/mod.rs`, then run:
 
@@ -772,7 +773,20 @@ Store registered callbacks by event name, invoke only current listeners, and rem
 
 - [ ] **Step 2: Write a failing controller-to-panel Playwright test**
 
-Add a healthy empty `recovery_snapshot` and empty `recovery_history` to `onboardedFixtures`. In `ide-health.spec.ts`, override the snapshot with one `needs_approval` TypeScript record, assert a titlebar button named `IDE health: 1 needs attention`, click it, assert the exact capability title in the `IDE Health` dialog, emit a newer `repairing` record, and assert the same selected card now says `Repairing` without another `recovery_snapshot` invocation.
+Add these common fixtures to `onboardedFixtures`:
+
+```ts
+recovery_snapshot: {
+  project: "RepoDesk",
+  records: [],
+  actionable_count: 0,
+  warnings: [],
+  generated_at: "2026-08-10T12:00:00Z",
+},
+recovery_history: [],
+```
+
+In `ide-health.spec.ts`, override the snapshot with one `needs_approval` TypeScript record, assert a titlebar button named `IDE health: 1 needs attention`, click it, assert the exact capability title in the `IDE Health` dialog, emit a newer `repairing` record, and assert the same selected card now says `Repairing` without another `recovery_snapshot` invocation.
 
 - [ ] **Step 3: Define frontend contracts matching Rust exactly**
 
@@ -786,7 +800,7 @@ export const RECOVERY_CHANGED_EVENT = "recovery-record-changed";
 export const RECOVERY_QUERY_KEY = ["recovery_snapshot"] as const;
 ```
 
-Command wrappers must call `callCommand`, and `subscribeRecoveryChanges` must use Tauri `listen` and return its unlisten function. Define wrappers for snapshot, history, check, preview, confirm, and cancel.
+Command wrappers must call `callCommand`, and `subscribeRecoveryChanges` must use Tauri `listen` and return its unlisten function. Define wrappers for snapshot, history, check, preview, confirm, and cancel. `RecoverySnapshot` includes `warnings: string[]`; the panel renders these as non-blocking notices.
 
 - [ ] **Step 4: Implement the provider without polling**
 
