@@ -5,11 +5,13 @@ import {
   CODE_WORKSPACE_KEY,
   codeWorkspaceSnapshot,
   consumeCodeWorkspaceOpenRequest,
+  readCodeLibraryDocument,
   readCodeWorkspaceDocument,
   saveCodeWorkspaceDocument,
   type CodeWorkspaceDocument,
   type CodeWorkspaceFile,
   type CodeWorkspaceFileStatus,
+  type CodeWorkspaceOpenRequest,
 } from "../../shared/api/codeWorkspace";
 import { callCommand } from "../../shared/api/queries";
 import { groupByFile, runRepopilotReview } from "../../shared/api/repopilot";
@@ -19,6 +21,7 @@ import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
+import { LibraryTabBadge } from "./LibraryTabBadge";
 import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
 import { SemanticCodeEditor } from "./SemanticCodeEditor";
 import "./code-workspace.css";
@@ -27,7 +30,9 @@ const MAX_OPEN_TABS = 8;
 const MAX_CACHED_PROJECT_SESSIONS = 2;
 
 type EditorTab = {
+  kind: "workspace" | "library";
   path: string;
+  libraryHandle: string | null;
   content: string;
   fingerprint: string;
   language: string;
@@ -61,9 +66,10 @@ function cloneTabs(tabs: EditorTab[]): EditorTab[] {
 }
 
 function rememberCodeSession(project: string, tabs: EditorTab[], activePath: string | null) {
+  const workspaceTabs = tabs.filter((tab) => tab.kind === "workspace");
   codeSessionCache.set(project, {
-    tabs: cloneTabs(tabs),
-    activePath,
+    tabs: cloneTabs(workspaceTabs),
+    activePath: workspaceTabs.some((tab) => tab.path === activePath) ? activePath : null,
     touchedAt: Date.now(),
   });
 
@@ -79,12 +85,28 @@ function rememberCodeSession(project: string, tabs: EditorTab[], activePath: str
 
 function toTab(document: CodeWorkspaceDocument): EditorTab {
   return {
+    kind: "workspace",
     path: document.path,
+    libraryHandle: null,
     content: document.content,
     fingerprint: document.fingerprint,
     language: document.language,
     bytes: document.bytes,
     status: document.status,
+    dirty: false,
+  };
+}
+
+function toLibraryTab(document: Awaited<ReturnType<typeof readCodeLibraryDocument>>): EditorTab {
+  return {
+    kind: "library",
+    path: document.display_path,
+    libraryHandle: document.handle,
+    content: document.content,
+    fingerprint: "",
+    language: document.language,
+    bytes: document.bytes,
+    status: "clean",
     dirty: false,
   };
 }
@@ -160,7 +182,7 @@ export function CodeTab({
   }, [tabs]);
 
   useEffect(() => {
-    if (view !== "diff" || !activePath) return;
+    if (view !== "diff" || !activePath || activeTab?.kind !== "workspace") return;
     let cancelled = false;
     setDiffLoading(true);
     setDiff("");
@@ -179,7 +201,7 @@ export function CodeTab({
     return () => {
       cancelled = true;
     };
-  }, [activePath, view]);
+  }, [activePath, activeTab?.kind, view]);
 
   const save = useMutation({
     mutationFn: (tab: EditorTab) => saveCodeWorkspaceDocument({
@@ -245,14 +267,56 @@ export function CodeTab({
     }
   }, [tabs]);
 
+  const openLibrary = useCallback(async (request: CodeWorkspaceOpenRequest) => {
+    if (!request.libraryHandle || openingRef.current) return;
+    const existing = tabs.find((tab) => tab.kind === "library" && tab.path === request.path);
+    if (existing) {
+      setActivePath(existing.path);
+      setView("edit");
+      return;
+    }
+
+    let evictPath: string | null = null;
+    if (tabs.length >= MAX_OPEN_TABS) {
+      evictPath = tabs.find((tab) => !tab.dirty)?.path ?? null;
+      if (!evictPath) {
+        setWorkspaceError(`Code Workspace keeps at most ${MAX_OPEN_TABS} open files. Save or close one first.`);
+        return;
+      }
+    }
+
+    openingRef.current = true;
+    setOpeningPath(request.path);
+    setWorkspaceError(null);
+    try {
+      const document = await readCodeLibraryDocument(request.libraryHandle);
+      const tab = toLibraryTab(document);
+      setTabs((current) => [
+        ...(evictPath ? current.filter((item) => item.path !== evictPath) : current),
+        tab,
+      ]);
+      setActivePath(tab.path);
+      setView("edit");
+    } catch (error) {
+      setWorkspaceError(errorToMessage(error));
+    } finally {
+      openingRef.current = false;
+      setOpeningPath(null);
+    }
+  }, [tabs]);
+
   useEffect(() => {
     if (!workspace.data) return;
     const consumeRequest = () => {
       const requested = consumeCodeWorkspaceOpenRequest();
       if (!requested) return;
-      const file = workspace.data.files.find((item) => item.path === requested);
+      if (requested.libraryHandle) {
+        void openLibrary(requested);
+        return;
+      }
+      const file = workspace.data.files.find((item) => item.path === requested.path);
       if (!file) {
-        setWorkspaceError(`Requested file is not available in the active repository: ${requested}`);
+        setWorkspaceError(`Requested file is not available in the active repository: ${requested.path}`);
         return;
       }
       void openFile(file);
@@ -261,7 +325,7 @@ export function CodeTab({
     consumeRequest();
     window.addEventListener(CODE_OPEN_EVENT, consumeRequest);
     return () => window.removeEventListener(CODE_OPEN_EVENT, consumeRequest);
-  }, [openFile, workspace.data]);
+  }, [openFile, openLibrary, workspace.data]);
 
   const closeTab = (path: string) => {
     const target = tabs.find((tab) => tab.path === path);
@@ -277,7 +341,9 @@ export function CodeTab({
 
   const updateActiveContent = (content: string) => {
     if (!activePath) return;
-    setTabs((current) => current.map((tab) => tab.path === activePath ? { ...tab, content, dirty: true } : tab));
+    setTabs((current) => current.map((tab) => (
+      tab.path === activePath && tab.kind === "workspace" ? { ...tab, content, dirty: true } : tab
+    )));
   };
 
   if (!hasProject) {
@@ -304,7 +370,7 @@ export function CodeTab({
             {dirtyCount > 0 ? <span className="warn">{dirtyCount} unsaved</span> : null}
           </div>
           <div className="code-workspace-actions">
-            {activePath ? (
+            {activeTab?.kind === "workspace" ? (
               <button
                 type="button"
                 className={`tiny-button${repoIntelOpen ? " active" : ""}`}
@@ -355,6 +421,7 @@ export function CodeTab({
                 title={tab.path}
               >
                 <span>{fileName(tab.path)}</span>
+                {tab.kind === "library" ? <LibraryTabBadge /> : null}
                 {STATUS_LABEL[tab.status] ? <small>{STATUS_LABEL[tab.status]}</small> : null}
                 {tab.dirty ? <i aria-label="Unsaved">●</i> : null}
               </button>
@@ -387,9 +454,11 @@ export function CodeTab({
 
         <div className="code-document-toolbar">
           <div className="code-document-location">
-            {openingPath ? <span>Opening {openingPath}…</span> : activeTab ? <code>{activeTab.path}</code> : <span>No file open</span>}
+            {openingPath ? <span>Opening {openingPath}…</span> : activeTab ? (
+              <><code>{activeTab.path}</code>{activeTab.kind === "library" ? <span className="code-read-only-label">Read only</span> : null}</>
+            ) : <span>No file open</span>}
           </div>
-          {activeTab ? (
+          {activeTab?.kind === "workspace" ? (
             <div className="code-document-actions">
               <div className="code-view-switch" role="group" aria-label="Code view">
                 <button type="button" className={view === "edit" ? "active" : ""} onClick={() => setView("edit")}>Edit</button>
@@ -414,7 +483,7 @@ export function CodeTab({
               <span>Choose a safe text file in Explorer. Code no longer depends on the Git changed-file list.</span>
               <small>Editor budget: {MAX_OPEN_TABS} open files · 512 KiB per file · conflict-safe saves.</small>
             </div>
-          ) : view === "diff" ? (
+          ) : view === "diff" && activeTab.kind === "workspace" ? (
             <div className="code-diff-stage">
               {diffLoading ? <div className="focus-empty compact">Loading diff…</div> : diff ? <DiffViewer diff={diff} /> : (
                 <div className="focus-empty compact">No Git diff for this file.</div>
@@ -429,8 +498,11 @@ export function CodeTab({
               bytes={activeTab.bytes}
               status={activeTab.status}
               saving={save.isPending}
+              readOnly={activeTab.kind === "library"}
               onChange={updateActiveContent}
-              onSave={() => save.mutate(activeTab)}
+              onSave={() => {
+                if (activeTab.kind === "workspace") save.mutate(activeTab);
+              }}
             />
           )}
 

@@ -5,6 +5,7 @@ pub mod ai_discovery_commands {
     }
 }
 
+mod code_library;
 mod code_workspace;
 pub mod commands;
 mod store;
@@ -150,6 +151,7 @@ pub fn run() {
             code_workspace::code_workspace_snapshot,
             code_workspace::code_workspace_read,
             code_workspace::code_workspace_save,
+            code_library::code_library_read,
             code_workbench_commands::read_code_file,
             code_workbench_commands::code_workbench_snapshot,
             git_workspace_commands::git_workspace_snapshot,

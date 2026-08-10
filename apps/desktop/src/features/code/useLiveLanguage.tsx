@@ -247,6 +247,7 @@ export function useLiveLanguage({
           column: target.column,
           endLine: target.end_line,
           endColumn: target.end_column,
+          libraryHandle: target.library_handle,
         });
         setPanel(null);
       } else if (locations.length > 1) {
@@ -390,6 +391,7 @@ export function useLiveLanguage({
                   column: location.column,
                   endLine: location.end_line,
                   endColumn: location.end_column,
+                  libraryHandle: location.library_handle,
                 });
                 setPanel(null);
               }}

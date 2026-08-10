@@ -9,6 +9,7 @@ pub mod brain;
 
 pub mod capabilities;
 pub mod checks;
+pub mod code_library;
 pub mod code_workspace;
 pub mod context;
 pub mod credentials;

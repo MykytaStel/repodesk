@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export const CODE_WORKSPACE_KEY = ["code", "workspace-v0"] as const;
 export const CODE_OPEN_EVENT = "repodesk:open-code";
 const CODE_OPEN_REQUEST_KEY = "repodesk.code.open-request";
+const CODE_LIBRARY_HANDLE_REQUEST_KEY = "repodesk.code.library-handle-request";
 const CODE_LOCATION_REQUEST_KEY = "repodesk.code.location-request";
 
 export type CodeWorkspaceSource = "git_index" | "filesystem_fallback";
@@ -48,6 +49,21 @@ export type CodeWorkspaceSaveResult = {
   changed: boolean;
 };
 
+export type CodeLibraryDocument = {
+  handle: string;
+  display_path: string;
+  content: string;
+  bytes: number;
+  line_count: number;
+  language: string;
+  read_only: true;
+};
+
+export type CodeWorkspaceOpenRequest = {
+  path: string;
+  libraryHandle: string | null;
+};
+
 export type CodeWorkspaceLocation = {
   path: string;
   line: number;
@@ -72,6 +88,10 @@ export async function saveCodeWorkspaceDocument(input: {
   return invoke("code_workspace_save", { input });
 }
 
+export async function readCodeLibraryDocument(handle: string): Promise<CodeLibraryDocument> {
+  return invoke("code_library_read", { handle });
+}
+
 /**
  * Lightweight hand-off between separately mounted workspace routes. Only the
  * repository-relative path and optional cursor location are persisted for the
@@ -84,9 +104,15 @@ export function requestCodeWorkspaceOpen(
     column?: number | null;
     endLine?: number | null;
     endColumn?: number | null;
+    libraryHandle?: string | null;
   },
 ): void {
   window.sessionStorage.setItem(CODE_OPEN_REQUEST_KEY, path);
+  if (location?.libraryHandle) {
+    window.sessionStorage.setItem(CODE_LIBRARY_HANDLE_REQUEST_KEY, location.libraryHandle);
+  } else {
+    window.sessionStorage.removeItem(CODE_LIBRARY_HANDLE_REQUEST_KEY);
+  }
   if (location?.line && location.line > 0) {
     const request: CodeWorkspaceLocation = {
       path,
@@ -104,10 +130,13 @@ export function requestCodeWorkspaceOpen(
   window.dispatchEvent(new CustomEvent(CODE_OPEN_EVENT, { detail: { path } }));
 }
 
-export function consumeCodeWorkspaceOpenRequest(): string | null {
+export function consumeCodeWorkspaceOpenRequest(): CodeWorkspaceOpenRequest | null {
   const path = window.sessionStorage.getItem(CODE_OPEN_REQUEST_KEY);
   if (path) window.sessionStorage.removeItem(CODE_OPEN_REQUEST_KEY);
-  return path;
+  if (!path) return null;
+  const libraryHandle = window.sessionStorage.getItem(CODE_LIBRARY_HANDLE_REQUEST_KEY);
+  window.sessionStorage.removeItem(CODE_LIBRARY_HANDLE_REQUEST_KEY);
+  return { path, libraryHandle };
 }
 
 export function consumeCodeWorkspaceLocation(path: string): CodeWorkspaceLocation | null {

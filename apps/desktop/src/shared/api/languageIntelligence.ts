@@ -80,6 +80,8 @@ export type LanguageHover = {
 
 export type LanguageLocation = {
   path: string;
+  library_handle: string | null;
+  read_only: boolean;
   line: number;
   column: number;
   end_line: number;

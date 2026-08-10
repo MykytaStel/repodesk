@@ -266,6 +266,16 @@
   white-space: nowrap;
 }
 .code-file-tab-select small { color: var(--warning); font-size: 9px; }
+.code-file-tab-select .code-library-badge {
+  padding: 1px 4px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-family: var(--font-ui);
+  font-size: 8px;
+  line-height: 1.2;
+}
 .code-file-tab-select i { color: var(--warning); font-size: 7px; font-style: normal; }
 .code-tab-close {
   width: 22px;
@@ -319,6 +329,11 @@
   white-space: nowrap;
 }
 .code-document-location code { color: var(--muted); }
+.code-read-only-label {
+  margin-left: 8px;
+  color: var(--accent);
+  font-weight: 700;
+}
 
 .code-view-switch {
   overflow: hidden;

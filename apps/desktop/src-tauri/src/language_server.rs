@@ -55,10 +55,18 @@ pub struct LanguageHover {
 #[derive(Debug, Clone, Serialize)]
 pub struct LanguageLocation {
     pub path: String,
+    pub library_handle: Option<String>,
+    pub read_only: bool,
     pub line: u32,
     pub column: u32,
     pub end_line: u32,
     pub end_column: u32,
+}
+
+struct DefinitionTarget {
+    path: String,
+    library_handle: Option<String>,
+    read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -292,6 +300,7 @@ impl LanguageServerManager {
             .map(|mut registry| registry.drain())
             .unwrap_or_default();
         for session in sessions {
+            crate::code_library::clear_project(&session.project);
             session.shutdown();
         }
     }
@@ -348,6 +357,7 @@ impl LanguageServerManager {
             (stale, existing)
         };
         for session in stale {
+            crate::code_library::clear_project(&session.project);
             session.shutdown();
         }
         if let Some(existing) = existing {
@@ -1019,24 +1029,26 @@ fn parse_locations(session: &SessionInner, value: &Value, limit: usize) -> Vec<L
         .take(limit)
         .filter_map(|location| {
             if let Some(uri) = location.get("uri").and_then(Value::as_str) {
-                let path = session.relative_path_from_uri(uri)?;
+                let target = session.definition_target_from_uri(uri)?;
                 let range = parse_range(location.get("range")?)?;
-                return Some(location_from_range(path, range));
+                return Some(location_from_range(target, range));
             }
             let uri = location.get("targetUri")?.as_str()?;
-            let path = session.relative_path_from_uri(uri)?;
+            let target = session.definition_target_from_uri(uri)?;
             let range = location
                 .get("targetSelectionRange")
                 .or_else(|| location.get("targetRange"))
                 .and_then(parse_range)?;
-            Some(location_from_range(path, range))
+            Some(location_from_range(target, range))
         })
         .collect()
 }
 
-fn location_from_range(path: String, range: LspRange) -> LanguageLocation {
+fn location_from_range(target: DefinitionTarget, range: LspRange) -> LanguageLocation {
     LanguageLocation {
-        path,
+        path: target.path,
+        library_handle: target.library_handle,
+        read_only: target.read_only,
         line: range.start.line.saturating_add(1),
         column: range.start.character.saturating_add(1),
         end_line: range.end.line.saturating_add(1),
@@ -1117,6 +1129,24 @@ impl SessionInner {
         let canonical = path.canonicalize().ok()?;
         let relative = canonical.strip_prefix(&self.root).ok()?;
         Some(slash_path(relative))
+    }
+
+    fn definition_target_from_uri(&self, uri: &str) -> Option<DefinitionTarget> {
+        if let Ok(definition) =
+            crate::code_library::issue_definition(&self.project, &self.root, &self.server_id, uri)
+        {
+            return Some(DefinitionTarget {
+                path: definition.display_path,
+                library_handle: Some(definition.handle),
+                read_only: true,
+            });
+        }
+        self.relative_path_from_uri(uri)
+            .map(|path| DefinitionTarget {
+                path,
+                library_handle: None,
+                read_only: false,
+            })
     }
 }
 
@@ -1352,9 +1382,17 @@ mod tests {
             "end": { "line": 4, "character": 8 }
         }))
         .expect("range");
-        let location = location_from_range("src/lib.rs".into(), range);
+        let location = location_from_range(
+            DefinitionTarget {
+                path: "src/lib.rs".into(),
+                library_handle: None,
+                read_only: false,
+            },
+            range,
+        );
         assert_eq!(location.line, 5);
         assert_eq!(location.column, 3);
+        assert!(!location.read_only);
     }
 
     #[test]

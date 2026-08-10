@@ -273,6 +273,7 @@ export function SemanticCodeEditor({
   saving,
   onChange,
   onSave,
+  readOnly = false,
 }: {
   path: string;
   value: string;
@@ -283,6 +284,7 @@ export function SemanticCodeEditor({
   saving: boolean;
   onChange: (value: string) => void;
   onSave: () => void;
+  readOnly?: boolean;
 }) {
   const { hasProject, projectName } = useWorkspace();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -323,11 +325,11 @@ export function SemanticCodeEditor({
     value,
     language,
     projectName,
-    server: languageServer,
+    server: readOnly ? null : languageServer,
     cursor,
   });
   liveActionsRef.current = liveLanguage.actions;
-  definitionAvailableRef.current = languageServer?.profile_state === "active"
+  definitionAvailableRef.current = !readOnly && languageServer?.profile_state === "active"
     && languageServer.availability === "available"
     && languageServer.capabilities.definition;
 
@@ -424,12 +426,14 @@ export function SemanticCodeEditor({
         definitionLinkField,
         editorTheme,
         EditorState.tabSize.of(2),
+        EditorState.readOnly.of(readOnly),
+        EditorView.editable.of(!readOnly),
         keymap.of([
           {
             key: "Mod-s",
             preventDefault: true,
             run: () => {
-              if (dirtyRef.current && !savingRef.current) onSaveRef.current();
+              if (!readOnly && dirtyRef.current && !savingRef.current) onSaveRef.current();
               return true;
             },
           },
@@ -562,7 +566,7 @@ export function SemanticCodeEditor({
   // A document/language transition gets a clean CodeMirror state and history.
   // Semantic state and external content are updated by dedicated effects below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gitCompartment, language, path]);
+  }, [gitCompartment, language, path, readOnly]);
 
   useEffect(() => {
     const view = viewRef.current;

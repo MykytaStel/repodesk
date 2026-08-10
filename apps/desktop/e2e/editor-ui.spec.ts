@@ -205,6 +205,28 @@ const typescriptEditorFixtures = languageEditorFixtures({
   }],
 });
 
+const libraryDefinitionFixtures = {
+  ...typescriptEditorFixtures,
+  "language_intelligence_snapshot:definition": [{
+    path: "node_modules/pkg/index.d.ts",
+    library_handle: "lib_fixture_handle",
+    read_only: true,
+    line: 1,
+    column: 22,
+    end_line: 1,
+    end_column: 27,
+  }],
+  code_library_read: {
+    handle: "lib_fixture_handle",
+    display_path: "node_modules/pkg/index.d.ts",
+    content: "export declare const client: () => number;\n",
+    bytes: 45,
+    line_count: 1,
+    language: "typescript",
+    read_only: true,
+  },
+};
+
 const tomlEditorFixtures = languageEditorFixtures({
   path: "Cargo.toml",
   language: "toml",
@@ -508,6 +530,30 @@ test.describe("TOML intelligence", () => {
       });
       return (sync?.args?.action as { language?: string } | undefined)?.language;
     }).toBe("toml");
+  });
+});
+
+test.describe("Library definition navigation", () => {
+  test("opens an external declaration in a visibly read-only Library tab", async ({ page }) => {
+    await installMockIpc(page, libraryDefinitionFixtures);
+    await page.goto("/");
+    await page.getByRole("button", { name: /^Code —/ }).click();
+    await page.getByRole("treeitem", { name: /api.ts/ }).click();
+    await expect(page.locator(".code-language-service")).toContainText("TS ready");
+
+    const point = await textCenter(page, 1, "client");
+    await page.mouse.click(point.x, point.y);
+    await page.keyboard.press("F12");
+
+    await expect(page.getByRole("tab", { name: /index.d.ts/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /index.d.ts/ })).toContainText("Library");
+    await expect(page.locator(".code-document-toolbar")).toContainText("Read only");
+    await expect(page.locator(".semantic-code-editor-host .cm-content")).toContainText("export declare const client");
+    await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+
+    const libraryReads = (await recordedInvocations(page)).filter((call) => call.cmd === "code_library_read");
+    expect(libraryReads).toHaveLength(1);
+    expect(libraryReads[0].args).toEqual({ handle: "lib_fixture_handle" });
   });
 });
 
