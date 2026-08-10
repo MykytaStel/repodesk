@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::code_workspace::{CodeWorkspaceFile, CodeWorkspaceFileStatus};
+use crate::code_workspace::CodeWorkspaceFile;
 
 use super::RepositoryRelation;
 
@@ -238,6 +238,7 @@ fn limitations_for_strategy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code_workspace::CodeWorkspaceFileStatus;
 
     fn file(path: &str, language: &str, bytes: u64, blocked: bool) -> CodeWorkspaceFile {
         CodeWorkspaceFile {
