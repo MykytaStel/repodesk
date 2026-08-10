@@ -1,0 +1,29 @@
+name: Debug language clippy
+
+on:
+  push:
+    branches:
+      - fix/language-managed-tools-ci
+
+jobs:
+  clippy-log:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Capture clippy diagnostics
+        shell: bash
+        run: |
+          set +e
+          cargo clippy --workspace --all-targets --all-features -- -D warnings > clippy.log 2>&1
+          status=$?
+          cat clippy.log
+          echo "clippy_exit=$status" >> clippy.log
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: language-clippy-log
+          path: clippy.log
+          if-no-files-found: error
