@@ -218,7 +218,7 @@ export function LanguageToolPill({
     <div ref={rootRef} className="language-tool-control">
       <button
         type="button"
-        className={`language-tool-pill code-language-service ${viewState}`}
+        className={`language-tool-pill ${viewState}`}
         aria-expanded={open}
         aria-haspopup="dialog"
         aria-label={`${label} language tool: ${visualLabel}`}
