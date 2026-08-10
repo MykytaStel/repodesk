@@ -170,7 +170,22 @@ fn parse_import(bytes: &[u8], cursor: usize) -> Option<(ScriptImport, usize)> {
 }
 
 fn parse_export(bytes: &[u8], cursor: usize) -> Option<(ScriptImport, usize)> {
-    find_from_specifier(bytes, skip_trivia(bytes, cursor), "export from")
+    let cursor = skip_trivia(bytes, cursor);
+    match bytes.get(cursor).copied()? {
+        b'{' | b'*' => find_from_specifier(bytes, cursor, "export from"),
+        value if is_identifier_start(value) => {
+            let (identifier, next) = read_identifier(bytes, cursor);
+            if identifier != "type" {
+                return None;
+            }
+            let next = skip_trivia(bytes, next);
+            if !matches!(bytes.get(next), Some(b'{') | Some(b'*')) {
+                return None;
+            }
+            find_from_specifier(bytes, next, "export type from")
+        }
+        _ => None,
+    }
 }
 
 fn find_from_specifier(
@@ -397,9 +412,11 @@ mod tests {
             import type { Shape } from '../types';
             import "./setup";
             export { helper } from "./helper";
+            export type { Shape as PublicShape } from "./public-types";
             const lazy = import("./lazy");
             const legacy = require("./legacy");
             const noise = "require('./string-noise')";
+            export const from = "./not-a-reexport";
             // import ignored from "./comment";
             /* const ignored = require("./block-comment"); */
             object.require("./member-call");
@@ -418,6 +435,7 @@ mod tests {
                 "./helper",
                 "./lazy",
                 "./legacy",
+                "./public-types",
                 "./setup",
                 "./value",
             ])
