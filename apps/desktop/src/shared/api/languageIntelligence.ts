@@ -2,7 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { callCommand } from "./queries";
 
 export type LanguageServerAvailability = "available" | "missing";
-export type LanguageServerSource = "project_local" | "path";
+export type LanguageServerSource = "project_local" | "managed" | "path";
 export type LanguageServerProfileState = "active" | "discovery_only";
 export type LanguageServerInitializationProfile = "default" | "taplo";
 
@@ -37,6 +37,51 @@ export type LanguageIntelligenceSnapshot = {
   servers: LanguageServerDescriptor[];
   available_count: number;
   generated_at: string;
+};
+
+export type LanguageToolInstaller = "npm" | "cargo" | "rustup";
+
+export type LanguageToolCommand = {
+  program: string;
+  args: string[];
+};
+
+export type LanguageToolInstallPreview = {
+  recipe_id: string;
+  recipe_revision: string;
+  server_id: string;
+  server_label: string;
+  languages: string[];
+  installer: LanguageToolInstaller;
+  package: string;
+  version: string;
+  destination: string;
+  install_command: LanguageToolCommand;
+  probe_command: LanguageToolCommand;
+  network_required: boolean;
+  writes_outside_repository: string[];
+  prerequisite_available: boolean;
+  prerequisite_hint: string | null;
+  confirmation_token: string;
+  expires_at: string;
+};
+
+export type LanguageToolInstallState = "installing" | "ready" | "cancelled" | "error";
+
+export type LanguageToolInstallStatus = {
+  recipe_id: string;
+  state: LanguageToolInstallState;
+  progress: number;
+  message: string;
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+};
+
+export type LanguageToolInstallResult = {
+  status: LanguageToolInstallStatus;
+  executable: string | null;
+  output: string;
 };
 
 export type LspPosition = {
@@ -122,6 +167,28 @@ function languageAction<T>(action: LanguageAction): Promise<T> {
 
 export function languageIntelligenceSnapshot(): Promise<LanguageIntelligenceSnapshot> {
   return callCommand<LanguageIntelligenceSnapshot>("language_intelligence_snapshot", { action: null });
+}
+
+export function languageToolInstallPreview(recipeId: string): Promise<LanguageToolInstallPreview> {
+  return callCommand<LanguageToolInstallPreview>("language_tool_install_preview", { recipeId });
+}
+
+export function languageToolInstallConfirm(
+  confirmationToken: string,
+): Promise<LanguageToolInstallResult> {
+  return callCommand<LanguageToolInstallResult>("language_tool_install_confirm", {
+    confirmationToken,
+  });
+}
+
+export function languageToolInstallStatus(
+  recipeId: string,
+): Promise<LanguageToolInstallStatus | null> {
+  return callCommand<LanguageToolInstallStatus | null>("language_tool_install_status", { recipeId });
+}
+
+export function languageToolInstallCancel(recipeId: string): Promise<boolean> {
+  return callCommand<boolean>("language_tool_install_cancel", { recipeId });
 }
 
 export function languageServerStatus(): Promise<LanguageServerStatus | null> {
