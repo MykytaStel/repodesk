@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { rust } from "@codemirror/lang-rust";
 import {
   HighlightStyle,
   bracketMatching,
@@ -49,25 +46,17 @@ import {
   showNavigationTarget,
   wordRangeAt,
 } from "./definitionNavigation";
+import { editorLanguageExtension } from "./editorLanguages";
 import { useLiveLanguage } from "./useLiveLanguage";
 import { useSemanticCodeState, type GitLineKind, type SemanticFileState } from "./useSemanticCodeState";
 import "./semantic-code-editor.css";
 
-function languageExtension(language: string, path: string): Extension {
-  const extension = path.split(".").pop()?.toLowerCase() ?? "";
-  if (language === "rust") return rust();
-  if (language === "typescript") return javascript({ typescript: true, jsx: extension === "tsx" });
-  if (language === "javascript") return javascript({ jsx: extension === "jsx" });
-  if (language === "json") return json();
-  return [];
-}
-
 const repodeskHighlight = HighlightStyle.define([
   { tag: [tags.keyword, tags.controlKeyword], color: "var(--syntax-keyword)", fontWeight: "600" },
-  { tag: [tags.typeName, tags.className], color: "var(--syntax-type)" },
+  { tag: [tags.typeName, tags.className, tags.tagName], color: "var(--syntax-type)" },
   { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--syntax-function)" },
   { tag: tags.variableName, color: "var(--syntax-variable)" },
-  { tag: tags.propertyName, color: "var(--syntax-property)" },
+  { tag: [tags.propertyName, tags.attributeName], color: "var(--syntax-property)" },
   { tag: [tags.string, tags.special(tags.string)], color: "var(--syntax-string)" },
   { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--syntax-number)" },
   { tag: tags.comment, color: "var(--syntax-comment)", fontStyle: "italic" },
@@ -421,7 +410,7 @@ export function SemanticCodeEditor({
         lintGutter(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         syntaxHighlighting(repodeskHighlight),
-        languageExtension(language, path),
+        editorLanguageExtension(language, path),
         navigationTargetField,
         definitionLinkField,
         editorTheme,
