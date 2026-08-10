@@ -1,0 +1,4 @@
+# RepoDesk has a small number of typed orchestration helpers where eight
+# arguments preserve domain meaning better than tuple/parameter-object plumbing.
+# Keep the limit explicit and narrow; all Clippy warnings remain denied in CI.
+too-many-arguments-threshold = 8

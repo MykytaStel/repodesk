@@ -1,0 +1,356 @@
+.language-tool-rail {
+  min-height: 31px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 18px 4px 62px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 82%, var(--bg));
+}
+
+.language-tool-control {
+  position: relative;
+  min-width: 0;
+}
+
+.language-tool-pill {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 9.5px;
+  line-height: 1;
+}
+
+.language-tool-pill:hover,
+.language-tool-pill[aria-expanded="true"] {
+  border-color: var(--border-strong);
+  background: var(--neutral-soft);
+  transform: none;
+}
+
+.language-tool-pill:focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: 2px;
+}
+
+.language-tool-pill strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.language-tool-state-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: var(--muted-2);
+}
+
+.language-tool-pill.ready .language-tool-state-dot { background: var(--success); }
+.language-tool-pill.starting .language-tool-state-dot,
+.language-tool-pill.installing .language-tool-state-dot { background: var(--warning); }
+.language-tool-pill.missing .language-tool-state-dot,
+.language-tool-pill.error .language-tool-state-dot { background: var(--danger); }
+.language-tool-pill.discovery_only .language-tool-state-dot { background: var(--muted-2); }
+
+.language-tool-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 18;
+  width: min(360px, calc(100vw - 40px));
+  max-height: min(440px, calc(100vh - 160px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, .26);
+}
+
+.language-tool-popover > header,
+.language-install-dialog > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 10px 9px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.language-tool-popover > header > div,
+.language-install-dialog > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.language-tool-popover > header strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.language-tool-popover > header span,
+.language-install-dialog > header span {
+  color: var(--muted-2);
+  font-size: 9px;
+}
+
+.language-tool-icon-button {
+  width: 25px;
+  height: 25px;
+  min-width: 25px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.language-tool-icon-button:hover {
+  background: var(--neutral-soft);
+  transform: none;
+}
+
+.language-tool-popover-body {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 9px;
+  padding: 10px 12px;
+}
+
+.language-tool-kv {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  font-size: 9.5px;
+}
+
+.language-tool-kv > span {
+  color: var(--muted-2);
+}
+
+.language-tool-kv code,
+.language-tool-kv strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 9.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.language-tool-detail,
+.language-tool-note {
+  margin: 0;
+  padding: 7px 8px;
+  border-radius: 5px;
+  background: var(--neutral-soft);
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.language-tool-detail.danger {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+.language-tool-progress {
+  display: grid;
+  gap: 5px;
+}
+
+.language-tool-progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 9.5px;
+}
+
+.language-tool-progress progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--accent-2);
+}
+
+.language-tool-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.language-tool-capabilities > span {
+  padding: 3px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.language-tool-popover > footer,
+.language-install-dialog > footer {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.language-tool-popover > footer:empty {
+  display: none;
+}
+
+.language-tool-popover > footer button,
+.language-install-dialog > footer button {
+  min-height: 27px;
+  padding: 4px 9px;
+  font-size: 9.5px;
+}
+
+.language-install-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+}
+
+.language-install-dialog {
+  width: min(620px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 20px 56px rgba(0, 0, 0, .34);
+}
+
+.language-install-dialog h2 {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.language-install-body {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+  padding: 13px 14px;
+}
+
+.language-install-body > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.language-install-body dl {
+  margin: 0;
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.language-install-body dl > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 9px;
+  background: var(--surface-2);
+}
+
+.language-install-body dt {
+  color: var(--muted-2);
+  font-size: 9.5px;
+}
+
+.language-install-body dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.language-install-body code {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+.language-install-command,
+.language-install-writes {
+  display: grid;
+  gap: 5px;
+}
+
+.language-install-command > span,
+.language-install-writes > span {
+  color: var(--muted-2);
+  font-size: 9px;
+}
+
+.language-install-command > code,
+.language-install-writes > code {
+  overflow: auto;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .language-tool-rail {
+    padding-right: 10px;
+  }
+
+  .language-tool-pill strong {
+    display: none;
+  }
+
+  .language-tool-popover {
+    width: min(330px, calc(100vw - 24px));
+  }
+
+  .language-install-backdrop {
+    padding: 12px;
+  }
+
+  .language-install-body dl > div {
+    grid-template-columns: 82px minmax(0, 1fr);
+  }
+}

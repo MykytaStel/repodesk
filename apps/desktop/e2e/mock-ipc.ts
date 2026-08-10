@@ -9,6 +9,10 @@ import type { CommandFixtures } from "./fixtures";
 // changes, no Rust backend. Commands present in `fixtures` resolve to their value;
 // anything else resolves to `null` (which optionalCommand and the shell hooks tolerate).
 //
+// A fixture may opt into a delayed response with
+// `{ __mock_delay_ms: number, __mock_value: unknown }`. This keeps normal array/object
+// fixtures literal while letting UI tests observe in-flight states such as installation.
+//
 // `__repodeskMockCalls` records the command sequence so specs can assert that the
 // frontend actually drove the daily loop through the IPC seam.
 export async function installMockIpc(page: Page, fixtures: CommandFixtures): Promise<void> {
@@ -30,6 +34,18 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
         const value = actionKey && Object.prototype.hasOwnProperty.call(data, actionKey)
           ? data[actionKey]
           : Object.prototype.hasOwnProperty.call(data, cmd) ? data[cmd] : null;
+
+        if (
+          value
+          && typeof value === "object"
+          && "__mock_delay_ms" in value
+          && "__mock_value" in value
+        ) {
+          const delayed = value as { __mock_delay_ms: unknown; __mock_value: unknown };
+          const delay = typeof delayed.__mock_delay_ms === "number" ? delayed.__mock_delay_ms : 0;
+          return new Promise((resolve) => window.setTimeout(() => resolve(delayed.__mock_value), delay));
+        }
+
         return Promise.resolve(value);
       },
       // Stubs for the event/callback machinery so `@tauri-apps/api/event` and
