@@ -226,10 +226,10 @@ fn count_changed_files(project_path: &Path) -> Option<usize> {
 }
 
 fn directory_is_provably_empty(path: &Path) -> bool {
-    fs::read_dir(path)
-        .ok()
-        .and_then(|mut entries| entries.next())
-        .is_none_and(|entry| entry.is_none())
+    match fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => false,
+    }
 }
 
 #[cfg(test)]
