@@ -12,6 +12,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
+use crate::language_tools::managed_executable_path;
 use crate::projects::get_active_project;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,6 +26,7 @@ pub enum LanguageServerAvailability {
 #[serde(rename_all = "snake_case")]
 pub enum LanguageServerSource {
     ProjectLocal,
+    Managed,
     Path,
 }
 
@@ -311,11 +313,20 @@ pub fn preferred_server_for_language<'a>(
 }
 
 fn descriptor_for(spec: &ServerSpec, project_path: &Path) -> LanguageServerDescriptor {
-    let source = resolve_executable_source(spec, project_path);
+    let resolved = resolve_executable(spec, project_path);
+    let availability = if resolved.is_some() {
+        LanguageServerAvailability::Available
+    } else {
+        LanguageServerAvailability::Missing
+    };
+    let (executable, source) = resolved
+        .map(|(path, source)| (path.to_string_lossy().into_owned(), Some(source)))
+        .unwrap_or_else(|| (spec.executable.to_string(), None));
+
     LanguageServerDescriptor {
         id: spec.id.to_string(),
         label: spec.label.to_string(),
-        executable: spec.executable.to_string(),
+        executable,
         arguments: spec
             .arguments
             .iter()
@@ -326,11 +337,7 @@ fn descriptor_for(spec: &ServerSpec, project_path: &Path) -> LanguageServerDescr
             .iter()
             .map(|value| (*value).to_string())
             .collect(),
-        availability: if source.is_some() {
-            LanguageServerAvailability::Available
-        } else {
-            LanguageServerAvailability::Missing
-        },
+        availability,
         source,
         capabilities: LanguageServerCapabilities::full(),
         profile_state: spec.profile_state,
@@ -339,27 +346,35 @@ fn descriptor_for(spec: &ServerSpec, project_path: &Path) -> LanguageServerDescr
     }
 }
 
-fn resolve_executable_source(
+fn resolve_executable(
     spec: &ServerSpec,
     project_path: &Path,
-) -> Option<LanguageServerSource> {
+) -> Option<(PathBuf, LanguageServerSource)> {
     if spec.project_local
-        && executable_in_directory(&project_path.join("node_modules/.bin"), spec.executable)
+        && let Some(path) =
+            executable_in_directory(&project_path.join("node_modules/.bin"), spec.executable)
     {
-        return Some(LanguageServerSource::ProjectLocal);
+        return Some((path, LanguageServerSource::ProjectLocal));
+    }
+
+    if let Some(recipe_id) = spec.install_recipe_id
+        && let Some(path) = managed_executable_path(recipe_id)
+    {
+        return Some((path, LanguageServerSource::Managed));
     }
 
     env::var_os("PATH").and_then(|path| {
-        env::split_paths(&path)
-            .any(|directory| executable_in_directory(&directory, spec.executable))
-            .then_some(LanguageServerSource::Path)
+        env::split_paths(&path).find_map(|directory| {
+            executable_in_directory(&directory, spec.executable)
+                .map(|path| (path, LanguageServerSource::Path))
+        })
     })
 }
 
-fn executable_in_directory(directory: &Path, executable: &str) -> bool {
+fn executable_in_directory(directory: &Path, executable: &str) -> Option<PathBuf> {
     executable_variants(directory, executable)
-        .iter()
-        .any(|candidate| candidate.is_file())
+        .into_iter()
+        .find(|candidate| candidate.is_file())
 }
 
 fn executable_variants(directory: &Path, executable: &str) -> Vec<PathBuf> {
@@ -378,6 +393,10 @@ fn executable_variants(directory: &Path, executable: &str) -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
     use super::*;
 
     #[test]
@@ -450,6 +469,32 @@ mod tests {
             .find(|server| server.languages.contains(&"typescript"))
             .expect("typescript server");
         assert_eq!(typescript.id, "typescript-language-server");
+    }
+
+    #[test]
+    fn project_local_descriptor_uses_resolved_executable_path() {
+        let project = TempDir::new().expect("project tempdir");
+        let bin = project.path().join("node_modules/.bin");
+        fs::create_dir_all(&bin).expect("project bin");
+        let executable = if cfg!(windows) {
+            bin.join("typescript-language-server.cmd")
+        } else {
+            bin.join("typescript-language-server")
+        };
+        fs::write(&executable, "fake").expect("fake executable");
+
+        let spec = SERVER_SPECS
+            .iter()
+            .find(|server| server.id == "typescript-language-server")
+            .expect("typescript profile");
+        let descriptor = descriptor_for(spec, project.path());
+
+        assert_eq!(
+            descriptor.availability,
+            LanguageServerAvailability::Available
+        );
+        assert_eq!(descriptor.source, Some(LanguageServerSource::ProjectLocal));
+        assert_eq!(PathBuf::from(descriptor.executable), executable);
     }
 
     #[test]

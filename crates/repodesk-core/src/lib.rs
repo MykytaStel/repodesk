@@ -23,6 +23,7 @@ pub mod guard;
 pub mod init;
 pub mod judge;
 pub mod language_intelligence;
+pub mod language_tools;
 pub mod memory;
 pub mod module_registry;
 pub mod orchestrator;
