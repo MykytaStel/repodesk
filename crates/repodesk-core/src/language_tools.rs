@@ -357,8 +357,10 @@ impl LanguageToolInstallService {
         };
         let expires_at = now + Duration::minutes(CONFIRMATION_TTL_MINUTES);
         let token = confirmation_token(
-            project,
-            project_root,
+            ProjectConfirmationBinding {
+                name: project,
+                root: project_root,
+            },
             recipe.id,
             &revision,
             destination_dir.as_deref(),
@@ -862,9 +864,13 @@ fn recipe_revision(recipe: &InstallRecipe) -> String {
     format!("r1-{}", &hex::encode(hasher.finalize())[..16])
 }
 
+struct ProjectConfirmationBinding<'a> {
+    name: &'a str,
+    root: &'a Path,
+}
+
 fn confirmation_token(
-    project: &str,
-    project_root: &Path,
+    project: ProjectConfirmationBinding<'_>,
     recipe_id: &str,
     revision: &str,
     destination: Option<&Path>,
@@ -873,9 +879,9 @@ fn confirmation_token(
     sequence: u64,
 ) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(project.as_bytes());
+    hasher.update(project.name.as_bytes());
     hasher.update([0]);
-    hasher.update(project_root.as_os_str().to_string_lossy().as_bytes());
+    hasher.update(project.root.as_os_str().to_string_lossy().as_bytes());
     hasher.update([0]);
     hasher.update(recipe_id.as_bytes());
     hasher.update([0]);
