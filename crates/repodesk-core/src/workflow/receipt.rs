@@ -167,13 +167,11 @@ impl TaskRunReceipt {
                 let run_matches = review.run_id == self.run_id;
                 let digest_matches = self.execution.changeset_digest.as_deref()
                     == Some(review.changeset_digest.as_str());
-                let tree_matches = match (
-                    review.index_tree_after_accept.as_deref(),
-                    current_tree,
-                ) {
-                    (Some(reviewed), Some(current)) => reviewed == current,
-                    _ => false,
-                };
+                let tree_matches =
+                    match (review.index_tree_after_accept.as_deref(), current_tree) {
+                        (Some(reviewed), Some(current)) => reviewed == current,
+                        _ => false,
+                    };
                 !run_matches || !digest_matches || !tree_matches
             })
             .unwrap_or(false);
@@ -242,16 +240,14 @@ fn validate_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
                 .index_tree_after_accept
                 .as_deref()
                 .ok_or_else(|| RepoDeskError::RoutingFailed {
-                    detail: "verification cannot be saved without an exact reviewed tree"
-                        .to_string(),
+                    detail: "verification cannot be saved without an exact reviewed tree".to_string(),
                 })?;
             if review.changeset_digest != run_digest
                 || verification.changeset_digest != run_digest
                 || verification.index_tree_sha != reviewed_tree
             {
                 return Err(RepoDeskError::RoutingFailed {
-                    detail: "verification receipt is not bound to the exact reviewed tree"
-                        .to_string(),
+                    detail: "verification receipt is not bound to the exact reviewed tree".to_string(),
                 });
             }
         }
@@ -381,8 +377,7 @@ pub fn reviewed_tree_sha_for(
         .map(str::trim)
         .filter(|tree| !tree.is_empty())
         .ok_or_else(|| RepoDeskError::RoutingFailed {
-            detail: "review is missing exact tree evidence — accept the changeset again"
-                .to_string(),
+            detail: "review is missing exact tree evidence — accept the changeset again".to_string(),
         })?;
     if reviewed_tree != current_index_tree {
         return Err(RepoDeskError::RoutingFailed {
@@ -619,7 +614,9 @@ mod tests {
     fn accepted_review_is_bound_to_exact_tree_not_only_paths() {
         let receipt = reviewed_receipt(Some("tree-t1"));
         assert_eq!(
-            reviewed_tree_sha_for(&receipt, "tree-t1").unwrap().as_deref(),
+            reviewed_tree_sha_for(&receipt, "tree-t1")
+                .unwrap()
+                .as_deref(),
             Some("tree-t1")
         );
         // Same run + same path digest, but different staged bytes => different
