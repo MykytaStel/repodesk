@@ -10,8 +10,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use repodesk_core::code_workspace::{MAX_EDITABLE_FILE_BYTES, read_active_code_document};
 use repodesk_core::language_intelligence::{
-    LanguageDiagnostic, LanguageDiagnosticSeverity, LanguageServerAvailability, LspPosition,
-    LspRange, active_language_intelligence_snapshot, preferred_server_for_language,
+    LanguageDiagnostic, LanguageDiagnosticSeverity, LanguageServerAvailability,
+    LanguageServerInitializationProfile, LanguageServerProfileState, LspPosition, LspRange,
+    active_language_intelligence_snapshot, preferred_server_for_language,
 };
 use repodesk_core::projects::get_active_project;
 use serde::Serialize;
@@ -78,9 +79,77 @@ pub struct LanguageDiagnosticsEvent {
     pub diagnostics: Vec<LanguageDiagnostic>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SessionKey {
+    project: String,
+    server_id: String,
+}
+
+impl SessionKey {
+    fn new(project: impl Into<String>, server_id: impl Into<String>) -> Self {
+        Self {
+            project: project.into(),
+            server_id: server_id.into(),
+        }
+    }
+}
+
+struct SessionRegistry<T> {
+    entries: HashMap<SessionKey, T>,
+}
+
+impl<T> Default for SessionRegistry<T> {
+    fn default() -> Self {
+        Self {
+            entries: HashMap::new(),
+        }
+    }
+}
+
+impl<T> SessionRegistry<T> {
+    fn get(&self, key: &SessionKey) -> Option<&T> {
+        self.entries.get(key)
+    }
+
+    fn insert(&mut self, key: SessionKey, value: T) -> Option<T> {
+        self.entries.insert(key, value)
+    }
+
+    fn values(&self) -> impl Iterator<Item = &T> {
+        self.entries.values()
+    }
+
+    fn remove_other_projects(&mut self, project: &str) -> Vec<T> {
+        let stale = self
+            .entries
+            .keys()
+            .filter(|key| key.project != project)
+            .cloned()
+            .collect::<Vec<_>>();
+        stale
+            .into_iter()
+            .filter_map(|key| self.entries.remove(&key))
+            .collect()
+    }
+
+    fn drain(&mut self) -> Vec<T> {
+        self.entries.drain().map(|(_, value)| value).collect()
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct LanguageServerManager {
-    session: Arc<Mutex<Option<Arc<SessionInner>>>>,
+    sessions: Arc<Mutex<SessionRegistry<Arc<SessionInner>>>>,
 }
 
 struct SessionInner {
@@ -118,10 +187,10 @@ impl Drop for SessionInner {
 
 impl LanguageServerManager {
     pub fn status(&self) -> Option<LanguageServerStatus> {
-        self.session
+        self.sessions
             .lock()
             .ok()
-            .and_then(|guard| guard.clone())
+            .and_then(|registry| registry.values().next().cloned())
             .map(|session| session.status())
     }
 
@@ -133,16 +202,23 @@ impl LanguageServerManager {
         text: &str,
     ) -> Result<LanguageServerStatus, String> {
         validate_document_payload(path, language, text)?;
-        let session = self.ensure_rust_session(app)?;
+        let session = self.ensure_session(app, language)?;
         session.sync_document(path, language, text)?;
         Ok(session.status())
     }
 
     pub fn close_document(&self, path: &str) -> Result<(), String> {
-        let Some(session) = self.current_session() else {
-            return Ok(());
-        };
-        session.close_document(path)
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "Language server manager lock is poisoned".to_string())?
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for session in sessions {
+            session.close_document(path)?;
+        }
+        Ok(())
     }
 
     pub fn hover(
@@ -153,7 +229,7 @@ impl LanguageServerManager {
         line: u32,
         column: u32,
     ) -> Result<Option<LanguageHover>, String> {
-        let session = self.ensure_synced_rust_document(app, path, text)?;
+        let session = self.ensure_synced_document(app, path, text)?;
         let result = session.request(
             "textDocument/hover",
             position_params(&session, path, line, column)?,
@@ -170,7 +246,7 @@ impl LanguageServerManager {
         line: u32,
         column: u32,
     ) -> Result<Vec<LanguageLocation>, String> {
-        let session = self.ensure_synced_rust_document(app, path, text)?;
+        let session = self.ensure_synced_document(app, path, text)?;
         let result = session.request(
             "textDocument/definition",
             position_params(&session, path, line, column)?,
@@ -187,7 +263,7 @@ impl LanguageServerManager {
         line: u32,
         column: u32,
     ) -> Result<Vec<LanguageLocation>, String> {
-        let session = self.ensure_synced_rust_document(app, path, text)?;
+        let session = self.ensure_synced_document(app, path, text)?;
         let mut params = position_params(&session, path, line, column)?;
         params["context"] = json!({ "includeDeclaration": true });
         let result = session.request("textDocument/references", params, REQUEST_TIMEOUT)?;
@@ -200,7 +276,7 @@ impl LanguageServerManager {
         path: &str,
         text: &str,
     ) -> Result<Vec<LanguageSymbol>, String> {
-        let session = self.ensure_synced_rust_document(app, path, text)?;
+        let session = self.ensure_synced_document(app, path, text)?;
         let result = session.request(
             "textDocument/documentSymbol",
             json!({ "textDocument": { "uri": session.document_uri(path)? } }),
@@ -210,70 +286,94 @@ impl LanguageServerManager {
     }
 
     pub fn stop(&self) {
-        let session = self.session.lock().ok().and_then(|mut guard| guard.take());
-        if let Some(session) = session {
+        let sessions = self
+            .sessions
+            .lock()
+            .map(|mut registry| registry.drain())
+            .unwrap_or_default();
+        for session in sessions {
             session.shutdown();
         }
     }
 
-    fn ensure_synced_rust_document(
+    fn ensure_synced_document(
         &self,
         app: &AppHandle,
         path: &str,
         text: &str,
     ) -> Result<Arc<SessionInner>, String> {
-        validate_document_payload(path, "rust", text)?;
-        let session = self.ensure_rust_session(app)?;
-        session.sync_document(path, "rust", text)?;
+        let language = read_active_code_document(path)
+            .map_err(|error| error.to_string())?
+            .language;
+        validate_document_payload(path, &language, text)?;
+        let session = self.ensure_session(app, &language)?;
+        session.sync_document(path, &language, text)?;
         Ok(session)
     }
 
-    fn current_session(&self) -> Option<Arc<SessionInner>> {
-        self.session.lock().ok().and_then(|guard| guard.clone())
-    }
-
-    fn ensure_rust_session(&self, app: &AppHandle) -> Result<Arc<SessionInner>, String> {
+    fn ensure_session(&self, app: &AppHandle, language: &str) -> Result<Arc<SessionInner>, String> {
         let project = get_active_project().map_err(|error| error.to_string())?;
         let canonical_root = project
             .path
             .canonicalize()
             .map_err(|error| error.to_string())?;
-
-        let mut slot = self
-            .session
-            .lock()
-            .map_err(|_| "Language server manager lock is poisoned".to_string())?;
-
-        if let Some(existing) = slot.as_ref() {
-            if existing.project == project.name
-                && existing.root == canonical_root
-                && existing.server_id == "rust-analyzer"
-                && existing.is_ready()
-            {
-                return Ok(existing.clone());
-            }
-            let stale = slot.take();
-            drop(stale);
-        }
-
         let snapshot =
             active_language_intelligence_snapshot().map_err(|error| error.to_string())?;
-        let server = preferred_server_for_language(&snapshot, "rust")
-            .ok_or_else(|| "No Rust language server is registered".to_string())?;
-        if server.id != "rust-analyzer"
-            || server.availability != LanguageServerAvailability::Available
-        {
-            return Err("rust-analyzer is not available for the active project".into());
+        let server = preferred_server_for_language(&snapshot, language)
+            .ok_or_else(|| format!("No language server is registered for {language}"))?;
+        if server.profile_state != LanguageServerProfileState::Active {
+            return Err(format!(
+                "{} is discoverable but live support is not enabled",
+                server.label
+            ));
+        }
+        if server.availability != LanguageServerAvailability::Available {
+            return Err(format!(
+                "{} is not available for the active project",
+                server.label
+            ));
         }
 
+        let key = SessionKey::new(&project.name, &server.id);
+        let (stale, existing) = {
+            let mut registry = self
+                .sessions
+                .lock()
+                .map_err(|_| "Language server manager lock is poisoned".to_string())?;
+            let stale = registry.remove_other_projects(&project.name);
+            let existing = registry
+                .get(&key)
+                .filter(|existing| existing.root == canonical_root && existing.is_ready())
+                .cloned();
+            (stale, existing)
+        };
+        for session in stale {
+            session.shutdown();
+        }
+        if let Some(existing) = existing {
+            return Ok(existing);
+        }
+
+        let mut registry = self
+            .sessions
+            .lock()
+            .map_err(|_| "Language server manager lock is poisoned".to_string())?;
+        if let Some(existing) = registry
+            .get(&key)
+            .filter(|existing| existing.root == canonical_root && existing.is_ready())
+        {
+            return Ok(existing.clone());
+        }
         let session = SessionInner::start(
             app.clone(),
             project.name,
             canonical_root,
+            &server.id,
             &server.executable,
             &server.arguments,
+            server.initialization_profile,
         )?;
-        *slot = Some(session.clone());
+        registry.insert(key, session.clone());
         Ok(session)
     }
 }
@@ -283,8 +383,10 @@ impl SessionInner {
         app: AppHandle,
         project: String,
         root: PathBuf,
+        server_id: &str,
         executable: &str,
         arguments: &[String],
+        initialization_profile: LanguageServerInitializationProfile,
     ) -> Result<Arc<Self>, String> {
         let root_uri = file_uri(&root)?;
         let mut command = Command::new(executable);
@@ -297,23 +399,23 @@ impl SessionInner {
 
         let mut child = command
             .spawn()
-            .map_err(|error| format!("Failed to start rust-analyzer: {error}"))?;
+            .map_err(|error| format!("Failed to start {server_id}: {error}"))?;
         let pid = child.id();
         let stdin = child
             .stdin
             .take()
-            .ok_or_else(|| "rust-analyzer stdin was not captured".to_string())?;
+            .ok_or_else(|| format!("{server_id} stdin was not captured"))?;
         let stdout = child
             .stdout
             .take()
-            .ok_or_else(|| "rust-analyzer stdout was not captured".to_string())?;
+            .ok_or_else(|| format!("{server_id} stdout was not captured"))?;
         let stderr = child.stderr.take();
 
         let session = Arc::new(Self {
             project,
             root,
             root_uri,
-            server_id: "rust-analyzer".into(),
+            server_id: server_id.to_string(),
             pid,
             started_at: Utc::now(),
             state: Mutex::new(SessionState {
@@ -349,6 +451,7 @@ impl SessionInner {
                 "processId": Value::Null,
                 "clientInfo": { "name": "RepoDesk", "version": "0.1.0" },
                 "rootUri": session.root_uri.clone(),
+                "initializationOptions": initialization_options(initialization_profile),
                 "capabilities": {
                     "workspace": {
                         "workspaceFolders": true,
@@ -573,7 +676,7 @@ impl SessionInner {
             .write_all(format!("Content-Length: {}\r\n\r\n", bytes.len()).as_bytes())
             .and_then(|_| writer.write_all(&bytes))
             .and_then(|_| writer.flush())
-            .map_err(|error| format!("Failed writing to rust-analyzer: {error}"))
+            .map_err(|error| format!("Failed writing to {}: {error}", self.server_id))
     }
 
     fn respond(&self, id: Value, result: Result<Value, Value>) -> Result<(), String> {
@@ -597,18 +700,25 @@ impl SessionInner {
     }
 }
 
-fn validate_document_payload(path: &str, language: &str, text: &str) -> Result<(), String> {
-    if language != "rust" {
-        return Err("Live language sessions currently support Rust only".into());
+fn initialization_options(profile: LanguageServerInitializationProfile) -> Value {
+    match profile {
+        LanguageServerInitializationProfile::Default => Value::Null,
+        LanguageServerInitializationProfile::Taplo => json!({}),
     }
+}
+
+fn validate_document_payload(path: &str, language: &str, text: &str) -> Result<(), String> {
     if text.len() as u64 > MAX_EDITABLE_FILE_BYTES {
         return Err(format!(
             "Language document exceeds the {MAX_EDITABLE_FILE_BYTES} byte editor limit"
         ));
     }
     let document = read_active_code_document(path).map_err(|error| error.to_string())?;
-    if document.language != "rust" {
-        return Err("Requested document is not a Rust source file".into());
+    if document.language != language {
+        return Err(format!(
+            "Requested document language is {}, not {language}",
+            document.language
+        ));
     }
     Ok(())
 }
@@ -1168,6 +1278,42 @@ fn truncate_chars(value: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn session_registry_keeps_servers_isolated_and_evicts_other_projects() {
+        let mut registry = SessionRegistry::default();
+        registry.insert(SessionKey::new("alpha", "rust-analyzer"), "rust");
+        registry.insert(
+            SessionKey::new("alpha", "typescript-language-server"),
+            "typescript",
+        );
+
+        assert_eq!(
+            registry.get(&SessionKey::new("alpha", "rust-analyzer")),
+            Some(&"rust")
+        );
+        assert_eq!(registry.len(), 2);
+
+        let stale = registry.remove_other_projects("beta");
+        assert_eq!(stale.len(), 2);
+        assert!(registry.is_empty());
+
+        registry.insert(SessionKey::new("beta", "taplo"), "toml");
+        assert!(registry.remove_other_projects("beta").is_empty());
+        assert_eq!(registry.len(), 1);
+    }
+
+    #[test]
+    fn taplo_initialization_profile_is_explicit() {
+        assert_eq!(
+            initialization_options(LanguageServerInitializationProfile::Default),
+            Value::Null
+        );
+        assert_eq!(
+            initialization_options(LanguageServerInitializationProfile::Taplo),
+            json!({})
+        );
+    }
 
     #[test]
     fn json_rpc_frame_reader_obeys_content_length() {
