@@ -32,9 +32,11 @@ type RecoveryContextValue = {
   selected: RecoveryRecord | null;
   previewState: RecoveryRepairPreview | null;
   mutationProgress: string | null;
+  mutationError: string | null;
   panelOpen: boolean;
   openHealth: (capabilityId?: string) => void;
   closeHealth: () => void;
+  dismissPreview: () => void;
   check: (capabilityId: string) => Promise<RecoveryRecord>;
   preview: (capabilityId: string, actionId: string) => Promise<RecoveryRepairPreview>;
   confirm: (confirmationToken: string) => Promise<RecoveryRecord>;
@@ -69,12 +71,19 @@ function mergeRecord(
   };
 }
 
+function recoveryError(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return "Recovery operation failed";
+}
+
 export function RecoveryProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedCapabilityId, setSelectedCapabilityId] = useState<string | null>(null);
   const [previewState, setPreviewState] = useState<RecoveryRepairPreview | null>(null);
   const [mutationProgress, setMutationProgress] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const snapshotQuery = useQuery({
     queryKey: RECOVERY_QUERY_KEY,
     queryFn: recoverySnapshot,
@@ -115,37 +124,54 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
       const fallback = snapshot?.records.find((record) => ACTIONABLE_STATES.has(record.state))
         ?? snapshot?.records[0];
       setSelectedCapabilityId(capabilityId ?? fallback?.capability_id ?? null);
+      setMutationError(null);
       setPanelOpen(true);
     },
     [snapshot],
   );
 
+  const dismissPreview = useCallback(() => {
+    if (mutationProgress === "Repairing") return;
+    setPreviewState(null);
+    setMutationError(null);
+  }, [mutationProgress]);
+
   const closeHealth = useCallback(() => {
     setPanelOpen(false);
     setPreviewState(null);
     setMutationProgress(null);
+    setMutationError(null);
   }, []);
 
   const check = useCallback(
     async (capabilityId: string) => {
+      setMutationError(null);
       setMutationProgress("Checking");
       try {
         const record = await recoveryCheck(capabilityId);
         applyRecord(record);
+        void queryClient.invalidateQueries({ queryKey: RECOVERY_HISTORY_QUERY_KEY });
         return record;
+      } catch (error) {
+        setMutationError(recoveryError(error));
+        throw error;
       } finally {
         setMutationProgress(null);
       }
     },
-    [applyRecord],
+    [applyRecord, queryClient],
   );
 
   const preview = useCallback(async (capabilityId: string, actionId: string) => {
+    setMutationError(null);
     setMutationProgress("Preparing repair");
     try {
       const nextPreview = await recoveryRepairPreview(capabilityId, actionId);
       setPreviewState(nextPreview);
       return nextPreview;
+    } catch (error) {
+      setMutationError(recoveryError(error));
+      throw error;
     } finally {
       setMutationProgress(null);
     }
@@ -153,13 +179,20 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
 
   const confirm = useCallback(
     async (confirmationToken: string) => {
+      setMutationError(null);
       setMutationProgress("Repairing");
       try {
         const record = await recoveryRepairConfirm(confirmationToken);
         applyRecord(record);
         setPreviewState(null);
-        void queryClient.invalidateQueries({ queryKey: RECOVERY_HISTORY_QUERY_KEY });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: RECOVERY_HISTORY_QUERY_KEY }),
+          queryClient.invalidateQueries({ queryKey: RECOVERY_QUERY_KEY }),
+        ]);
         return record;
+      } catch (error) {
+        setMutationError(recoveryError(error));
+        throw error;
       } finally {
         setMutationProgress(null);
       }
@@ -168,15 +201,22 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
   );
 
   const cancel = useCallback(async (recipeId: string) => {
+    setMutationError(null);
     setMutationProgress("Cancelling repair");
     try {
       const cancelled = await recoveryRepairCancel(recipeId);
-      if (cancelled) setPreviewState(null);
+      if (cancelled) {
+        setPreviewState(null);
+        void queryClient.invalidateQueries({ queryKey: RECOVERY_HISTORY_QUERY_KEY });
+      }
       return cancelled;
+    } catch (error) {
+      setMutationError(recoveryError(error));
+      throw error;
     } finally {
       setMutationProgress(null);
     }
-  }, []);
+  }, [queryClient]);
 
   const selected = useMemo(
     () =>
@@ -192,9 +232,11 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
       selected,
       previewState,
       mutationProgress,
+      mutationError,
       panelOpen,
       openHealth,
       closeHealth,
+      dismissPreview,
       check,
       preview,
       confirm,
@@ -205,7 +247,9 @@ export function RecoveryProvider({ children }: { children: ReactNode }) {
       check,
       closeHealth,
       confirm,
+      dismissPreview,
       history,
+      mutationError,
       mutationProgress,
       openHealth,
       panelOpen,
