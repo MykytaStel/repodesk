@@ -5,12 +5,11 @@ use crate::language_intelligence::{
 };
 use crate::language_tools::{LanguageToolInstallState, LanguageToolInstallStatus};
 
+use super::sanitize::sanitize_recovery_text;
 use super::types::{
     RecoveryAction, RecoveryActionKind, RecoveryEvidence, RecoveryFailureCode, RecoveryObservation,
     RecoverySeverity, RecoveryState,
 };
-
-const MAX_LANGUAGE_EVIDENCE_CHARS: usize = 2_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LanguageRuntimeState {
@@ -223,14 +222,5 @@ fn advertised_capabilities(descriptor: &LanguageServerDescriptor) -> Vec<String>
 }
 
 fn bounded(value: &str) -> String {
-    let mut characters = value.chars();
-    let bounded = characters
-        .by_ref()
-        .take(MAX_LANGUAGE_EVIDENCE_CHARS)
-        .collect::<String>();
-    if characters.next().is_some() {
-        format!("{bounded}…")
-    } else {
-        bounded
-    }
+    sanitize_recovery_text(value)
 }

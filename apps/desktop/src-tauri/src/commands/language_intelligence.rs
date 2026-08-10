@@ -12,8 +12,37 @@ mod language_server;
 
 use language_server::LanguageServerManager;
 
+use super::recovery::LanguageRuntimeStatus;
+use repodesk_core::recovery::LanguageRuntimeState;
+
 static LANGUAGE_SERVER_MANAGER: LazyLock<LanguageServerManager> =
     LazyLock::new(LanguageServerManager::default);
+
+pub(crate) fn recovery_language_server_statuses() -> Vec<LanguageRuntimeStatus> {
+    LANGUAGE_SERVER_MANAGER
+        .statuses()
+        .into_iter()
+        .map(|status| LanguageRuntimeStatus {
+            project: status.project,
+            server_id: status.server_id,
+            state: match status.state {
+                language_server::LanguageServerSessionState::Starting => {
+                    LanguageRuntimeState::Starting
+                }
+                language_server::LanguageServerSessionState::Ready => LanguageRuntimeState::Ready,
+                language_server::LanguageServerSessionState::Error => LanguageRuntimeState::Error,
+            },
+            last_error: status.last_error,
+        })
+        .collect()
+}
+
+pub(crate) fn recovery_language_server_restart(
+    app: &AppHandle,
+    server_id: &str,
+) -> Result<(), String> {
+    LANGUAGE_SERVER_MANAGER.restart(app, server_id).map(|_| ())
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

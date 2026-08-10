@@ -633,7 +633,7 @@ git commit -m "feat: diagnose language recovery states"
 - Consumes: Task 1 `RecoveryEngine`; Task 2 `language_observation`; existing active language snapshot, session manager, and `LanguageToolInstallService`.
 - Produces Tauri commands: `recovery_snapshot`, `recovery_check`, `recovery_repair_preview`, `recovery_repair_confirm`, `recovery_repair_cancel`, and `recovery_history`; emits `recovery-record-changed` carrying a `RecoveryRecord`.
 
-- [ ] **Step 1: Write failing coordinator unit tests**
+- [x] **Step 1: Write failing coordinator unit tests**
 
 In `commands/recovery.rs`, add tests around an injected fake `RecoveryLanguageServices` trait:
 
@@ -653,9 +653,9 @@ trait RecoveryLanguageServices: Send + Sync {
 }
 ```
 
-Test: first capability check creates one missing TypeScript record; snapshot alone does not invent unused records; preview returns an outer token bound to capability and diagnosis revision; a changed generation rejects that token; installer `Ready` remains `repairing` until a ready runtime observation verifies it; emitted updates never include raw installer output. Also assert that an initialization failure automatically invokes `restart` at most twice for one diagnosis revision and that the third check returns a non-automatic action without invoking it again. Reload a coordinator from a temporary RepoDesk home and assert its latest record and bounded attempt history survive.
+Test: first capability check creates one missing TypeScript record; snapshot alone does not invent unused records; preview returns an outer token bound to capability and diagnosis revision; a repeated check of the same diagnosis keeps the token valid while a changed diagnosis rejects it; installer `Ready` remains `repairing` until a ready runtime observation verifies it; emitted updates never include raw installer output. Also assert that an initialization failure automatically invokes `restart` at most twice for one diagnosis revision and that the third check returns a non-automatic action without invoking it again. Reload a coordinator from a temporary RepoDesk home and assert its latest record and bounded attempt history survive.
 
-- [ ] **Step 2: Run the desktop library test and verify failure**
+- [x] **Step 2: Run the desktop library test and verify failure**
 
 Run:
 
@@ -665,15 +665,15 @@ REPODESK_HOME=/tmp/repodesk-dev cargo test -p repodesk-desktop recovery --lib
 
 Expected: FAIL because the recovery command module does not exist.
 
-- [ ] **Step 3: Add all-session status access**
+- [x] **Step 3: Add all-session status access**
 
 Add `LanguageServerManager::statuses() -> Vec<LanguageServerStatus>` by cloning every current session status under the registry lock. Keep `status()` for compatibility. Add a unit test with two session registry entries proving both project/server keys remain distinguishable.
 
-- [ ] **Step 4: Share existing language services without adding a second installer**
+- [x] **Step 4: Share existing language services without adding a second installer**
 
 Make the existing installer `pub(crate)` in `commands/language_tools.rs`. In `commands/language_intelligence.rs`, expose crate-private functions returning all statuses and restarting one server by id. The recovery coordinator must depend on these existing owners; it must not create a second `LanguageServerManager` or `LanguageToolInstallService`.
 
-- [ ] **Step 5: Implement coordinator records and bound confirmations**
+- [x] **Step 5: Implement coordinator records and bound confirmations**
 
 Use:
 
@@ -697,7 +697,7 @@ struct PendingRecoveryRepair {
 
 Create the outer token with SHA-256 over project identity, capability id, diagnosis revision, action id, recipe revision, expiry, and a monotonic sequence. Return a generic `RecoveryRepairPreview` that contains display scope and the outer token but not the adapter token. Confirm removes the outer token before use, rechecks project and diagnosis revision, starts the engine attempt, streams bounded progress records, and completes only after a fresh live-runtime check reports `Ready`. During `recovery_check`, run an advertised automatic restart immediately only while `RecoveryEngine` reports remaining automatic-attempt budget; observe and emit its post-restart verification result before returning.
 
-- [ ] **Step 6: Register the generic commands and event**
+- [x] **Step 6: Register the generic commands and event**
 
 Command signatures:
 
@@ -723,7 +723,7 @@ pub fn recovery_history() -> Result<Vec<RecoveryAttempt>, String>;
 
 Cancel and history commands accept only stable ids. Emit `recovery-record-changed` after observations and state transitions. Persist the engine after each applied observation and repair transition at `RepoDeskPaths::home/recovery/recovery-state.json`. If loading or saving fails, keep the current in-memory engine usable and add one bounded `history_unavailable` evidence item to the snapshot. Truncate/redact evidence using a dedicated function with a 2,000-character value limit and sensitive-key matching for token, authorization, password, secret, api-key, and home paths.
 
-- [ ] **Step 7: Run backend tests and lint**
+- [x] **Step 7: Run backend tests and lint**
 
 ```bash
 REPODESK_HOME=/tmp/repodesk-dev cargo test -p repodesk-desktop recovery --lib
@@ -733,7 +733,7 @@ cargo clippy -p repodesk-desktop --all-targets --all-features -- -D warnings
 
 Expected: PASS; no raw adapter token or output crosses the serialized preview/record boundary.
 
-- [ ] **Step 8: Commit the backend coordinator**
+- [x] **Step 8: Commit the backend coordinator**
 
 ```bash
 git add apps/desktop/src-tauri/src/commands/recovery.rs apps/desktop/src-tauri/src/commands/mod.rs apps/desktop/src-tauri/src/commands/language_intelligence.rs apps/desktop/src-tauri/src/commands/language_tools.rs apps/desktop/src-tauri/src/language_server.rs apps/desktop/src-tauri/src/lib.rs apps/desktop/src-tauri/Cargo.toml Cargo.lock

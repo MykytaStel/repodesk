@@ -123,6 +123,10 @@ impl<T> SessionRegistry<T> {
         self.entries.insert(key, value)
     }
 
+    fn remove(&mut self, key: &SessionKey) -> Option<T> {
+        self.entries.remove(key)
+    }
+
     fn values(&self) -> impl Iterator<Item = &T> {
         self.entries.values()
     }
@@ -200,6 +204,63 @@ impl LanguageServerManager {
             .ok()
             .and_then(|registry| registry.values().next().cloned())
             .map(|session| session.status())
+    }
+
+    pub fn statuses(&self) -> Vec<LanguageServerStatus> {
+        self.sessions
+            .lock()
+            .map(|registry| registry.values().map(|session| session.status()).collect())
+            .unwrap_or_default()
+    }
+
+    pub fn restart(
+        &self,
+        app: &AppHandle,
+        server_id: &str,
+    ) -> Result<LanguageServerStatus, String> {
+        let project = get_active_project().map_err(|error| error.to_string())?;
+        let canonical_root = project
+            .path
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        let snapshot =
+            active_language_intelligence_snapshot().map_err(|error| error.to_string())?;
+        let server = snapshot
+            .servers
+            .iter()
+            .find(|server| server.id == server_id)
+            .ok_or_else(|| format!("Language server '{server_id}' is not registered"))?;
+        if server.profile_state != LanguageServerProfileState::Active {
+            return Err(format!("{} live support is not enabled", server.label));
+        }
+        if server.availability != LanguageServerAvailability::Available {
+            return Err(format!("{} is not available", server.label));
+        }
+
+        let key = SessionKey::new(&project.name, server_id);
+        let previous = self
+            .sessions
+            .lock()
+            .map_err(|_| "Language server manager lock is poisoned".to_string())?
+            .remove(&key);
+        if let Some(previous) = previous {
+            previous.shutdown();
+        }
+        let session = SessionInner::start(
+            app.clone(),
+            project.name,
+            canonical_root,
+            &server.id,
+            &server.executable,
+            &server.arguments,
+            server.initialization_profile,
+        )?;
+        let status = session.status();
+        self.sessions
+            .lock()
+            .map_err(|_| "Language server manager lock is poisoned".to_string())?
+            .insert(key, session);
+        Ok(status)
     }
 
     pub fn sync_document(

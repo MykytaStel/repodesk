@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{RepoDeskError, RepoDeskResult};
 
+use super::sanitize::sanitize_recovery_text;
 use super::types::{
     ObserveOutcome, RecoveryActionKind, RecoveryAttempt, RecoveryAttemptResult,
     RecoveryFailureCode, RecoveryObservation, RecoveryRecord, RecoverySnapshot, RecoveryState,
@@ -65,6 +66,14 @@ impl RecoveryEngine {
             actions.retain(|candidate| candidate.kind != RecoveryActionKind::Automatic);
         }
 
+        let evidence = observation
+            .evidence
+            .into_iter()
+            .map(|mut evidence| {
+                evidence.value = sanitize_recovery_text(&evidence.value);
+                evidence
+            })
+            .collect();
         let record = RecoveryRecord {
             capability_id: observation.capability_id,
             module_id: observation.module_id,
@@ -78,7 +87,7 @@ impl RecoveryEngine {
             explanation: observation.explanation,
             affected: observation.affected,
             unaffected: observation.unaffected,
-            evidence: observation.evidence,
+            evidence,
             actions,
             automatic_attempts,
         };
@@ -161,7 +170,7 @@ impl RecoveryEngine {
             })?;
         attempt.finished_at = Some(finished_at);
         attempt.result = Some(result);
-        attempt.verification_summary = Some(summary.to_string());
+        attempt.verification_summary = Some(sanitize_recovery_text(summary));
 
         let record = self.records.get_mut(capability_id).ok_or_else(|| {
             RepoDeskError::Api(format!(

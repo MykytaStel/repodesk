@@ -1,7 +1,7 @@
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use repodesk_core::recovery::{
-    ObserveOutcome, RecoveryAction, RecoveryActionKind, RecoveryEngine, RecoveryFailureCode,
-    RecoveryObservation, RecoverySeverity, RecoveryState, RepairCompletion,
+    ObserveOutcome, RecoveryAction, RecoveryActionKind, RecoveryEngine, RecoveryEvidence,
+    RecoveryFailureCode, RecoveryObservation, RecoverySeverity, RecoveryState, RepairCompletion,
 };
 
 const CAPABILITY_ID: &str = "language:typescript-language-server";
@@ -116,6 +116,43 @@ fn healthy_records_are_not_actionable() {
     assert_eq!(snapshot.actionable_count, 0);
     assert!(snapshot.records[0].actions.is_empty());
     assert!(snapshot.warnings.is_empty());
+}
+
+#[test]
+fn external_recovery_text_is_bounded_and_redacted_before_serialization() {
+    let mut engine = RecoveryEngine::new("RepoDesk".into(), 100);
+    let mut missing = missing_language(1);
+    missing.evidence = vec![RecoveryEvidence {
+        label: "Installer output".into(),
+        value: format!(
+            "Authorization: Bearer private-token\npath=/Users/developer/private\n{}",
+            "x".repeat(2_500)
+        ),
+    }];
+    engine.observe(missing);
+
+    let evidence = &engine.snapshot().records[0].evidence[0].value;
+    assert!(!evidence.contains("private-token"));
+    assert!(!evidence.contains("/Users/developer"));
+    assert!(evidence.contains("[redacted]"));
+    assert!(evidence.chars().count() <= 2_000);
+
+    engine
+        .begin_repair(CAPABILITY_ID, CONFIRMABLE_ACTION, at(2))
+        .unwrap();
+    engine
+        .finish_repair(
+            CAPABILITY_ID,
+            RepairCompletion::Failed {
+                finished_at: at(3),
+                summary: "api-key=another-private-value".into(),
+            },
+        )
+        .unwrap();
+    let history = engine.history();
+    let summary = history[0].verification_summary.as_deref().unwrap();
+    assert!(!summary.contains("another-private-value"));
+    assert!(summary.contains("[redacted]"));
 }
 
 #[test]

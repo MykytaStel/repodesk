@@ -5,7 +5,7 @@ use repodesk_core::language_tools::{
     LanguageToolInstallStatus,
 };
 
-static LANGUAGE_TOOL_INSTALLER: LazyLock<LanguageToolInstallService> =
+pub(crate) static LANGUAGE_TOOL_INSTALLER: LazyLock<LanguageToolInstallService> =
     LazyLock::new(LanguageToolInstallService::default);
 
 #[tauri::command]
