@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use crate::errors::RepoDeskResult;
+use crate::security::scan_text_for_secrets;
 use crate::tasks::show_active_task;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +77,23 @@ pub fn scan_text(target: &str, text: &str) -> SafetyReport {
                     .to_string(),
             });
         }
+    }
+
+    // The literal markers above only catch keyword-adjacent secrets (e.g. text
+    // containing the literal string "aws_secret_access_key"). A bare key value
+    // with no nearby keyword — an AKIA... access key ID, a Stripe/OpenAI/GitHub
+    // token — would sail through undetected, even though this scan is the gate
+    // `judge::judge_agent` relies on before allowing an external AI hand-off.
+    // `security::scan_text_for_secrets` has real regexes for those formats;
+    // fold its findings in here so the judge gate actually catches them.
+    for kind in scan_text_for_secrets(text) {
+        findings.push(SafetyFinding {
+            level: SafetyLevel::Block,
+            label: kind.clone(),
+            reason: format!("{kind} pattern detected in content."),
+            recommendation: "Remove secrets before sending this content to any external agent."
+                .to_string(),
+        });
     }
 
     let warning_patterns = [
@@ -206,6 +224,23 @@ mod tests {
                 .findings
                 .iter()
                 .all(|f| f.level == SafetyLevel::Warning)
+        );
+    }
+
+    #[test]
+    fn bare_secret_pattern_blocks_even_without_a_nearby_keyword() {
+        // Regression: an AWS access key ID with no adjacent keyword like
+        // "aws_secret_access_key" used to sail through this scan — the literal
+        // markers only matched keyword text, not the actual key format. This
+        // scan backs `judge::judge_agent`'s pre-AI-handoff gate, so a miss here
+        // meant a real secret could reach a paid/cloud provider undetected.
+        let report = scan_text("ctx", "config value: AKIAIOSFODNN7EXAMPLE");
+        assert_eq!(report.level, SafetyLevel::Block);
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.label.contains("AWS Access Key"))
         );
     }
 

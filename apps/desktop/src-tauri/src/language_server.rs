@@ -11,8 +11,8 @@ use chrono::{DateTime, Utc};
 use repodesk_core::code_workspace::{MAX_EDITABLE_FILE_BYTES, read_active_code_document};
 use repodesk_core::language_intelligence::{
     LanguageDiagnostic, LanguageDiagnosticSeverity, LanguageServerAvailability,
-    LanguageServerInitializationProfile, LanguageServerProfileState, LspPosition, LspRange,
-    active_language_intelligence_snapshot, preferred_server_for_language,
+    LanguageServerCapabilities, LanguageServerInitializationProfile, LanguageServerProfileState,
+    LspPosition, LspRange, active_language_intelligence_snapshot, preferred_server_for_language,
 };
 use repodesk_core::projects::get_active_project;
 use serde::Serialize;
@@ -176,6 +176,12 @@ struct SessionInner {
     child: Mutex<Child>,
     stderr_tail: Mutex<String>,
     stopping: AtomicBool,
+    /// The server's *real* capabilities, parsed from its `initialize`
+    /// response — not the static per-server table in `language_intelligence`.
+    /// Used to fail closed with a clear error instead of forwarding a request
+    /// the server told us it doesn't implement and relaying its raw
+    /// "Method not found" JSON-RPC error to the UI.
+    negotiated_capabilities: Mutex<LanguageServerCapabilities>,
     pending: Mutex<HashMap<u64, mpsc::Sender<Result<Value, String>>>>,
     next_request_id: AtomicU64,
     documents: Mutex<HashMap<String, u32>>,
@@ -299,6 +305,7 @@ impl LanguageServerManager {
         column: u32,
     ) -> Result<Option<LanguageHover>, String> {
         let session = self.ensure_synced_document(app, path, text)?;
+        session.require_capability("hover", |caps| caps.hover)?;
         let result = session.request(
             "textDocument/hover",
             position_params(&session, path, line, column)?,
@@ -316,6 +323,7 @@ impl LanguageServerManager {
         column: u32,
     ) -> Result<Vec<LanguageLocation>, String> {
         let session = self.ensure_synced_document(app, path, text)?;
+        session.require_capability("definition", |caps| caps.definition)?;
         let result = session.request(
             "textDocument/definition",
             position_params(&session, path, line, column)?,
@@ -333,6 +341,7 @@ impl LanguageServerManager {
         column: u32,
     ) -> Result<Vec<LanguageLocation>, String> {
         let session = self.ensure_synced_document(app, path, text)?;
+        session.require_capability("references", |caps| caps.references)?;
         let mut params = position_params(&session, path, line, column)?;
         params["context"] = json!({ "includeDeclaration": true });
         let result = session.request("textDocument/references", params, REQUEST_TIMEOUT)?;
@@ -346,6 +355,7 @@ impl LanguageServerManager {
         text: &str,
     ) -> Result<Vec<LanguageSymbol>, String> {
         let session = self.ensure_synced_document(app, path, text)?;
+        session.require_capability("document symbols", |caps| caps.document_symbols)?;
         let result = session.request(
             "textDocument/documentSymbol",
             json!({ "textDocument": { "uri": session.document_uri(path)? } }),
@@ -497,6 +507,7 @@ impl SessionInner {
             child: Mutex::new(child),
             stderr_tail: Mutex::new(String::new()),
             stopping: AtomicBool::new(false),
+            negotiated_capabilities: Mutex::new(LanguageServerCapabilities::default()),
             pending: Mutex::new(HashMap::new()),
             next_request_id: AtomicU64::new(1),
             documents: Mutex::new(HashMap::new()),
@@ -548,9 +559,15 @@ impl SessionInner {
             INITIALIZE_TIMEOUT,
         );
 
-        if let Err(error) = initialize {
-            session.set_error(error.clone());
-            return Err(error);
+        let initialize_result = match initialize {
+            Ok(result) => result,
+            Err(error) => {
+                session.set_error(error.clone());
+                return Err(error);
+            }
+        };
+        if let Ok(mut capabilities) = session.negotiated_capabilities.lock() {
+            *capabilities = parse_negotiated_capabilities(&initialize_result);
         }
 
         session.notify("initialized", json!({}))?;
@@ -564,6 +581,30 @@ impl SessionInner {
             .lock()
             .map(|state| state.state == LanguageServerSessionState::Ready)
             .unwrap_or(false)
+    }
+
+    /// Fail closed with a clear RepoDesk error when the server's real,
+    /// negotiated capabilities (from `initialize`) don't back `feature`,
+    /// instead of forwarding the request and relaying the server's raw
+    /// JSON-RPC "Method not found" error to the UI.
+    fn require_capability(
+        &self,
+        feature: &str,
+        predicate: impl Fn(&LanguageServerCapabilities) -> bool,
+    ) -> Result<(), String> {
+        let supported = self
+            .negotiated_capabilities
+            .lock()
+            .map(|capabilities| predicate(&capabilities))
+            .unwrap_or(false);
+        if supported {
+            Ok(())
+        } else {
+            Err(format!(
+                "{} does not implement {feature} for this project",
+                self.server_id
+            ))
+        }
     }
 
     fn status(&self) -> LanguageServerStatus {
@@ -775,6 +816,34 @@ fn initialization_options(profile: LanguageServerInitializationProfile) -> Value
     match profile {
         LanguageServerInitializationProfile::Default => Value::Null,
         LanguageServerInitializationProfile::Taplo => json!({}),
+    }
+}
+
+/// Parse the server's real, negotiated capabilities out of its `initialize`
+/// response. Per the LSP spec, a provider field is present as `true` or a
+/// provider-options object to mean "supported"; it is either absent or
+/// explicitly `false` to mean "not supported".
+fn parse_negotiated_capabilities(initialize_result: &Value) -> LanguageServerCapabilities {
+    let capabilities = initialize_result
+        .get("capabilities")
+        .cloned()
+        .unwrap_or(Value::Null);
+    let supports = |key: &str| {
+        capabilities
+            .get(key)
+            .is_some_and(|value| !matches!(value, Value::Bool(false)))
+    };
+    LanguageServerCapabilities {
+        // Diagnostics arrive as unsolicited `textDocument/publishDiagnostics`
+        // notifications, not a request/response we gate — always considered on.
+        diagnostics: true,
+        hover: supports("hoverProvider"),
+        definition: supports("definitionProvider"),
+        references: supports("referencesProvider"),
+        completion: supports("completionProvider"),
+        rename: supports("renameProvider"),
+        formatting: supports("documentFormattingProvider"),
+        document_symbols: supports("documentSymbolProvider"),
     }
 }
 
@@ -1404,6 +1473,45 @@ mod tests {
             initialization_options(LanguageServerInitializationProfile::Taplo),
             json!({})
         );
+    }
+
+    #[test]
+    fn negotiated_capabilities_reflect_the_servers_real_initialize_response() {
+        // Regression: this response used to be parsed and then discarded —
+        // RepoDesk fell back to the static, blanket-"everything supported"
+        // table and only found out a method was unimplemented when the
+        // server rejected the request with a raw JSON-RPC "Method not
+        // found" error.
+        let taplo_like = json!({
+            "capabilities": {
+                "hoverProvider": true,
+                "documentSymbolProvider": true,
+                "documentFormattingProvider": { "workDoneProgress": false },
+                "completionProvider": { "triggerCharacters": ["."] }
+                // no definitionProvider / referencesProvider / renameProvider
+            }
+        });
+        let capabilities = parse_negotiated_capabilities(&taplo_like);
+        assert!(capabilities.hover);
+        assert!(capabilities.document_symbols);
+        assert!(capabilities.formatting);
+        assert!(capabilities.completion);
+        assert!(!capabilities.definition);
+        assert!(!capabilities.references);
+        assert!(!capabilities.rename);
+        assert!(
+            capabilities.diagnostics,
+            "diagnostics are push-based, always on"
+        );
+
+        let explicit_false = json!({
+            "capabilities": { "definitionProvider": false }
+        });
+        assert!(!parse_negotiated_capabilities(&explicit_false).definition);
+
+        let no_capabilities_key = json!({});
+        let empty = parse_negotiated_capabilities(&no_capabilities_key);
+        assert!(!empty.hover && !empty.definition && !empty.references);
     }
 
     #[test]

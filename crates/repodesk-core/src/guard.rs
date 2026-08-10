@@ -110,26 +110,42 @@ pub fn preflight(agent: &str) -> RepoDeskResult<GuardResult> {
     }
 
     if normalized_agent == "codex" {
-        let changed_files = count_changed_files(&project.path);
-
-        if changed_files > budget.max_files_for_patch_agent * 2 {
-            level = GuardLevel::Block;
-            reasons.push(format!(
-                "Too many changed files for a patch agent: {} > {}.",
-                changed_files,
-                budget.max_files_for_patch_agent * 2
-            ));
-            recommendations.push("Split the task before using Codex.".to_string());
-        } else if changed_files > budget.max_files_for_patch_agent {
-            if level != GuardLevel::Block {
-                level = GuardLevel::Warning;
+        match count_changed_files(&project.path) {
+            Some(changed_files) if changed_files > budget.max_files_for_patch_agent * 2 => {
+                level = GuardLevel::Block;
+                reasons.push(format!(
+                    "Too many changed files for a patch agent: {} > {}.",
+                    changed_files,
+                    budget.max_files_for_patch_agent * 2
+                ));
+                recommendations.push("Split the task before using Codex.".to_string());
             }
-            reasons.push(format!(
-                "Many changed files for a patch agent: {} > {}.",
-                changed_files, budget.max_files_for_patch_agent
-            ));
-            recommendations
-                .push("Ask Codex for a very bounded patch or reduce the diff first.".to_string());
+            Some(changed_files) if changed_files > budget.max_files_for_patch_agent => {
+                if level != GuardLevel::Block {
+                    level = GuardLevel::Warning;
+                }
+                reasons.push(format!(
+                    "Many changed files for a patch agent: {} > {}.",
+                    changed_files, budget.max_files_for_patch_agent
+                ));
+                recommendations.push(
+                    "Ask Codex for a very bounded patch or reduce the diff first.".to_string(),
+                );
+            }
+            Some(_) => {}
+            None => {
+                if level != GuardLevel::Block {
+                    level = GuardLevel::Warning;
+                }
+                reasons.push(
+                    "Could not determine how many files are changed (git status failed)."
+                        .to_string(),
+                );
+                recommendations.push(
+                    "Verify git is available and the project path is a valid repository before using a patch agent."
+                        .to_string(),
+                );
+            }
         }
     }
 
@@ -188,18 +204,24 @@ fn expected_prompt_file(run_dir: &Path, agent: &str) -> Option<std::path::PathBu
     }
 }
 
-fn count_changed_files(project_path: &Path) -> usize {
+/// `None` means the count could not be determined (git missing, not a repo,
+/// process error) — the caller must treat that as "unknown", not "zero
+/// files changed", or a broken `git` makes the too-many-files patch-agent
+/// block silently never fire.
+fn count_changed_files(project_path: &Path) -> Option<usize> {
     let output = Command::new("git")
         .args(["status", "--short"])
         .current_dir(project_path)
         .output();
 
     match output {
-        Ok(output) if output.status.success() => String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .count(),
-        _ => 0,
+        Ok(output) if output.status.success() => Some(
+            String::from_utf8_lossy(&output.stdout)
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .count(),
+        ),
+        _ => None,
     }
 }
 
@@ -241,11 +263,14 @@ mod tests {
     }
 
     #[test]
-    fn count_changed_files_returns_zero_outside_git() {
-        // A non-existent directory makes the git invocation fail, which must
-        // degrade safely to zero rather than panicking.
+    fn count_changed_files_reports_unknown_outside_git_rather_than_zero() {
+        // Regression: a non-existent directory (or any git failure) used to
+        // degrade to `0`, which is indistinguishable from "definitely no
+        // changed files" and silently disabled the too-many-files patch-agent
+        // block whenever git was unavailable. It must degrade safely without
+        // panicking, but as an explicit "unknown", not a false "zero".
         let count = count_changed_files(Path::new("/nonexistent/path/for/guard/test"));
-        assert_eq!(count, 0);
+        assert_eq!(count, None);
     }
 
     #[test]

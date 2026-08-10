@@ -208,7 +208,13 @@ fn has_dangerous_delete(tokens: &[String]) -> bool {
         {
             has_rf = true;
         }
-        if token == "/" || token == "." || token == "/*" || token == ".*" || token == ".." {
+        if token == "/"
+            || token == "."
+            || token == "*"
+            || token == "/*"
+            || token == ".*"
+            || token == ".."
+        {
             target_root = true;
         }
     }
@@ -360,6 +366,23 @@ fn is_safe_check(tokens: &[String], _command: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dangerous_delete_flags_bare_glob_star_target() {
+        // Regression: `rm -rf *` deletes everything in the current directory
+        // (shell-expanded before rm even runs) just as destructively as
+        // `rm -rf .`, but the bare `*` token wasn't in the target list.
+        let tokens = |command: &str| {
+            command
+                .split_whitespace()
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        };
+        assert!(has_dangerous_delete(&tokens("rm -rf *")));
+        assert!(has_dangerous_delete(&tokens("rm -rf .")));
+        assert!(has_dangerous_delete(&tokens("rm -rf /")));
+        assert!(!has_dangerous_delete(&tokens("rm -rf build")));
+    }
 
     #[test]
     fn test_has_secret_access_allows_normal_files() {

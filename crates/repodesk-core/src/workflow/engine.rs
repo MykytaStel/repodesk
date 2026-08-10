@@ -1,9 +1,17 @@
 use super::actions::find_action;
 use super::types::*;
 
+/// Detects a blocking verdict in a judge/safety command result.
+///
+/// `judge::format_judgement` emits a `Judgement: BLOCK|WARN|ALLOW` header line —
+/// that is the authoritative signal. The older marker strings are kept as a
+/// defense-in-depth fallback for other check commands that don't go through
+/// the judge formatter but still print their own "safety scan"/"security audit"
+/// verdict lines.
 pub fn has_block_signal(result: &CommandResult) -> bool {
     let text = format!("{}\n{}", result.stdout, result.stderr).to_lowercase();
-    text.contains("safety scan: block")
+    text.contains("judgement: block")
+        || text.contains("safety scan: block")
         || text.contains("security audit: block")
         || text.contains("private key")
         || text.contains("aws_secret_access_key")
@@ -11,7 +19,9 @@ pub fn has_block_signal(result: &CommandResult) -> bool {
 
 pub fn has_warn_signal(result: &CommandResult) -> bool {
     let text = format!("{}\n{}", result.stdout, result.stderr).to_lowercase();
-    text.contains("safety scan: warning") || text.contains("security audit: warning")
+    text.contains("judgement: warn")
+        || text.contains("safety scan: warning")
+        || text.contains("security audit: warning")
 }
 
 /// Whether the recorded checks run passed.
@@ -556,6 +566,42 @@ mod tests {
         assert_eq!(r.status, "warning");
         assert!(r.blockers.is_empty());
         assert_eq!(r.warnings.len(), 2);
+    }
+
+    #[test]
+    fn block_signal_matches_real_judge_output_format() {
+        // Regression: judge::format_judgement emits "Judgement: BLOCK", not the
+        // "safety scan: block" marker this function used to look for, so a real
+        // Block verdict was silently ignored by the workflow/routing gates.
+        let blocked = CommandResult {
+            ok: true,
+            command: "repodesk judge agent --agent codex".into(),
+            stdout: "Judgement: BLOCK\nAgent: codex\n\nReasons:\n  - Safety scanner found blocking content.\n".into(),
+            stderr: String::new(),
+            exit_code: Some(0),
+        };
+        assert!(has_block_signal(&blocked));
+        assert!(!has_warn_signal(&blocked));
+
+        let warned = CommandResult {
+            ok: true,
+            command: "repodesk judge agent --agent codex".into(),
+            stdout: "Judgement: WARN\nAgent: codex\n\nReasons:\n  - Guard preflight warns before using this agent.\n".into(),
+            stderr: String::new(),
+            exit_code: Some(0),
+        };
+        assert!(has_warn_signal(&warned));
+        assert!(!has_block_signal(&warned));
+
+        let allowed = CommandResult {
+            ok: true,
+            command: "repodesk judge agent --agent codex".into(),
+            stdout: "Judgement: ALLOW\nAgent: codex\n\nReasons:\n  - Guard preflight allows this agent.\n".into(),
+            stderr: String::new(),
+            exit_code: Some(0),
+        };
+        assert!(!has_block_signal(&allowed));
+        assert!(!has_warn_signal(&allowed));
     }
 
     #[test]

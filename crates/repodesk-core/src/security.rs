@@ -279,7 +279,18 @@ impl Default for SecurityPolicy {
 
 pub fn is_blocked_path(path: &str) -> Option<String> {
     let lower = path.to_lowercase();
-    let blocked_fragments = [".env", "secret", "credential", "private", "token", "id_rsa"];
+
+    // `.env` files specifically follow the dotenv naming convention (`.env`,
+    // `.env.local`, `.env.production`, ...). Matching the raw substring
+    // ".env" anywhere in the path (as the other fragments below still do)
+    // false-positives on unrelated files that merely contain "env" preceded
+    // by a dot, e.g. `message.envelope.ts` or `release.environment.yml`.
+    let file_name = lower.rsplit('/').next().unwrap_or(&lower);
+    if file_name == ".env" || file_name.starts_with(".env.") || file_name.ends_with(".env") {
+        return Some("secret-like path blocked".into());
+    }
+
+    let blocked_fragments = ["secret", "credential", "private", "token", "id_rsa"];
     let blocked_suffixes = [
         ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif", ".webp",
         ".pdf", ".zip",
@@ -405,6 +416,21 @@ mod tests {
     fn blocked_path_is_case_insensitive() {
         assert!(is_blocked_path("Config/.ENV").is_some());
         assert!(is_blocked_path("Server.PEM").is_some());
+    }
+
+    #[test]
+    fn env_fragment_does_not_false_positive_on_unrelated_filenames() {
+        // Regression: a raw substring match for ".env" blocked any path that
+        // happened to contain "env" preceded by a dot, even when it had
+        // nothing to do with dotenv secrets.
+        assert!(is_blocked_path("src/message.envelope.ts").is_none());
+        assert!(is_blocked_path("config/release.environment.yml").is_none());
+        assert!(is_blocked_path("docs/environment.md").is_none());
+        // The real dotenv convention is still blocked.
+        assert!(is_blocked_path(".env").is_some());
+        assert!(is_blocked_path("config/.env.local").is_some());
+        assert!(is_blocked_path("config/.env.production").is_some());
+        assert!(is_blocked_path("legacy/config.env").is_some());
     }
 
     #[test]

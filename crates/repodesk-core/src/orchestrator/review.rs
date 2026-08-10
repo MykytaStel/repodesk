@@ -447,9 +447,13 @@ fn ensure_untracked_destinations_are_free(
     project_path: &Path,
     paths: &[String],
 ) -> RepoDeskResult<()> {
+    // `symlink_metadata` (lstat) rather than `exists`/`Path::is_file`: a dangling
+    // symlink already planted at the destination reports `exists() == false`
+    // (since that follows the link), which would let a subsequent `fs::copy`
+    // write through it to an arbitrary target path. lstat sees the link itself.
     let existing = paths
         .iter()
-        .filter(|path| project_path.join(path).exists())
+        .filter(|path| fs::symlink_metadata(project_path.join(path)).is_ok())
         .cloned()
         .collect::<Vec<_>>();
     if existing.is_empty() {
@@ -512,14 +516,42 @@ fn copy_untracked_file(
 ) -> RepoDeskResult<()> {
     let source = worktree_path.join(path);
     let destination = project_path.join(path);
-    if !source.is_file() {
+
+    // `symlink_metadata` (lstat) instead of `is_file`/`metadata`: a coding agent
+    // running in the isolated worktree can plant a symlink (e.g. `notes.txt ->
+    // ~/.ssh/id_rsa`) that `git status` reports as an ordinary untracked file and
+    // that never shows up in the reviewer's diff. Following it here would copy the
+    // link *target's* contents into the project's git index on Accept, defeating
+    // the isolated-worktree review boundary. Reject the leaf symlink explicitly
+    // for a clear error, then canonicalize + prefix-check to also catch a
+    // symlinked *parent directory* smuggling the real path outside the worktree.
+    let source_metadata =
+        fs::symlink_metadata(&source).map_err(|error| RepoDeskError::RoutingFailed {
+            detail: format!("cannot read isolated untracked path '{path}': {error}"),
+        })?;
+    if source_metadata.file_type().is_symlink() {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!("cannot copy isolated untracked path '{path}' because it is a symlink"),
+        });
+    }
+    if !source_metadata.is_file() {
         return Err(RepoDeskError::RoutingFailed {
             detail: format!(
-                "cannot copy isolated untracked path '{}' because it is not a file",
-                path
+                "cannot copy isolated untracked path '{path}' because it is not a file"
             ),
         });
     }
+
+    let canonical_worktree = worktree_path.canonicalize()?;
+    let canonical_source = source.canonicalize()?;
+    if !canonical_source.starts_with(&canonical_worktree) {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "cannot copy isolated untracked path '{path}' because it escapes the isolated worktree"
+            ),
+        });
+    }
+
     if let Some(parent) = destination.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -821,6 +853,74 @@ mod tests {
         let _ = git_ok(
             repo.path(),
             &["worktree", "remove", "--force", &worktree.path],
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn accept_refuses_to_copy_an_untracked_symlink() {
+        // Regression: a coding agent running in the isolated worktree could plant
+        // a symlink (e.g. pointing at ~/.ssh/id_rsa) that `git status` reports as
+        // an ordinary untracked file. Accepting it must never follow the link and
+        // copy the target's contents into the project's git index.
+        if !git_available() {
+            return;
+        }
+        let repo = init_repo();
+        let parent = tempfile::TempDir::new().unwrap();
+        let worktree = create_worktree(repo.path(), parent.path(), "agent-symlink");
+        let worktree_path = Path::new(&worktree.path);
+
+        let secret_target = tempfile::TempDir::new().unwrap();
+        let secret_path = secret_target.path().join("id_rsa");
+        std::fs::write(&secret_path, "super-secret-key-material\n").unwrap();
+        std::os::unix::fs::symlink(&secret_path, worktree_path.join("notes.txt")).unwrap();
+
+        let result = isolated_result(&["notes.txt"], &worktree);
+        let error = review_isolated_result(repo.path(), &result, &worktree, ReviewAction::Accept)
+            .expect_err("accepting a symlinked untracked file must fail");
+        assert!(
+            error.to_string().contains("symlink"),
+            "expected a symlink-specific error, got: {error}"
+        );
+        assert!(
+            !repo.path().join("notes.txt").exists(),
+            "the secret target must never be copied into the active checkout"
+        );
+
+        let _ = git_ok(
+            repo.path(),
+            &["worktree", "remove", "--force", &worktree.path],
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ensure_untracked_destinations_are_free_rejects_dangling_symlink() {
+        // Regression: this used to call `Path::exists`, which follows symlinks
+        // and reports `false` for a dangling link — letting a subsequent
+        // `fs::copy` write straight through a pre-planted dangling symlink to
+        // an arbitrary path. Exercised directly (rather than through
+        // `review_isolated_result`) because `ensure_active_paths_are_clean`
+        // would otherwise also trip on the same planted path via `git status`,
+        // masking whether this specific guard still works.
+        let project = tempfile::TempDir::new().unwrap();
+        std::os::unix::fs::symlink(
+            project.path().join("does-not-exist-yet"),
+            project.path().join("new.txt"),
+        )
+        .unwrap();
+        assert!(
+            !project.path().join("new.txt").exists(),
+            "sanity: link is dangling"
+        );
+
+        let error =
+            ensure_untracked_destinations_are_free(project.path(), &["new.txt".to_string()])
+                .expect_err("a dangling symlink at the destination must be treated as occupied");
+        assert!(
+            error.to_string().contains("already exist"),
+            "expected the destination-exists error, got: {error}"
         );
     }
 
