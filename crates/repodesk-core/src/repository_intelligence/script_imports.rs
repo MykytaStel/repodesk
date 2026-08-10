@@ -19,14 +19,7 @@ struct ScriptImport {
 #[derive(Debug, Clone)]
 pub(super) struct ScriptIndex {
     facts: BTreeMap<String, Vec<ScriptImport>>,
-    pub(super) bytes_indexed: u64,
     pub(super) truncated: bool,
-}
-
-impl ScriptIndex {
-    pub(super) fn files_indexed(&self) -> usize {
-        self.facts.len()
-    }
 }
 
 pub(super) fn index_script_files(
@@ -58,11 +51,7 @@ pub(super) fn index_script_files(
         facts.insert(file.path.clone(), import_specifiers(&source));
     }
 
-    ScriptIndex {
-        facts,
-        bytes_indexed: indexed_bytes,
-        truncated,
-    }
+    ScriptIndex { facts, truncated }
 }
 
 pub(super) fn extend_dependency_map(
@@ -341,7 +330,11 @@ fn resolve_script_import(
         .next()
         .unwrap_or(specifier)
         .trim();
-    if !(specifier.starts_with("./") || specifier.starts_with("../") || specifier == "." || specifier == "..") {
+    if !(specifier.starts_with("./")
+        || specifier.starts_with("../")
+        || specifier == "."
+        || specifier == "..")
+    {
         return None;
     }
 
@@ -370,7 +363,10 @@ fn resolve_script_import(
 }
 
 fn normalize_relative_import(current: &str, specifier: &str) -> Option<String> {
-    let parent = current.rsplit_once('/').map(|(parent, _)| parent).unwrap_or("");
+    let parent = current
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .unwrap_or("");
     let mut parts = parent
         .split('/')
         .filter(|part| !part.is_empty())
@@ -426,8 +422,16 @@ mod tests {
                 "./value",
             ])
         );
-        assert!(values.iter().any(|value| value.reason == "dynamic import ./lazy"));
-        assert!(values.iter().any(|value| value.reason == "require ./legacy"));
+        assert!(
+            values
+                .iter()
+                .any(|value| value.reason == "dynamic import ./lazy")
+        );
+        assert!(
+            values
+                .iter()
+                .any(|value| value.reason == "require ./legacy")
+        );
     }
 
     #[test]
