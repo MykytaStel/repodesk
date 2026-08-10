@@ -12,8 +12,9 @@ use crate::engineering::instrumentation::VerificationFinishedTelemetry;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::receipt::{
-    CheckReceipt, FinishReceipt, ReviewDecision, VerificationReceipt, commit_exists, head_sha,
-    index_tree_sha, load_receipt, save_receipt, staged_paths,
+    CheckReceipt, FinishReceipt, ReviewDecision, VerificationReceipt, commit_exists,
+    commit_tree_sha, head_sha, index_tree_sha, load_receipt, reviewed_tree_sha_for, save_receipt,
+    staged_paths,
 };
 
 /// Result of running final verification.
@@ -35,8 +36,9 @@ fn active_project_path() -> RepoDeskResult<std::path::PathBuf> {
 }
 
 /// Run the project's checks and record a [`VerificationReceipt`] bound to the
-/// current run, HEAD, staged index tree, and reviewed changeset. The Verify
-/// phase only counts this as done while none of those have moved since.
+/// current run, HEAD, staged index tree, and reviewed changeset. When the run
+/// has changes, the current staged tree must still be the *exact* tree captured
+/// by Accept; a path-only digest is never sufficient.
 pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     let mut receipt = load_receipt()?.ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "no run to verify — run the agent first".to_string(),
@@ -50,8 +52,13 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     let tree = index_tree_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "could not read the staged index tree".to_string(),
     })?;
-    // Bind to the reviewed changeset (the run's recorded files), so re-reviewing
-    // a different changeset invalidates this verification.
+
+    // For runs that changed files, Verify is permitted only while the current
+    // index is byte-for-byte the tree the human accepted. For no-change runs,
+    // Review is intentionally vacuous and there is no accepted tree to require.
+    let reviewed_tree = reviewed_tree_sha_for(&receipt, &tree)?;
+    debug_assert!(reviewed_tree.as_deref().is_none_or(|accepted| accepted == tree));
+
     let digest = receipt
         .execution
         .changeset_digest
@@ -107,7 +114,9 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     receipt.verification = Some(VerificationReceipt {
         run_id: receipt.run_id.clone(),
         head_sha: head,
-        index_tree_sha: tree,
+        // `reviewed_tree_sha_for` proved this is still the accepted tree for a
+        // changed run. Persist that exact SHA as the verification target.
+        index_tree_sha: reviewed_tree.unwrap_or(tree),
         changeset_digest: digest,
         commands: commands.clone(),
         success,
@@ -136,9 +145,8 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
 }
 
 /// Commit **only** the already-staged, reviewed changeset — never `git add -A`.
-/// Refuses unless the exact run changeset was accepted, its Engineering Contract
-/// policy allows those reviewed paths (or has a current explicit override), and
-/// verification is still fresh against the current HEAD/index/digest.
+/// Refuses unless Review, Verification, the current index, and the resulting
+/// commit all resolve to the same exact tree SHA.
 pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let message = message.trim();
     if message.is_empty() {
@@ -159,15 +167,16 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let run_digest = receipt.execution.changeset_digest.clone();
 
     // 1. The run's changeset must have been accepted (this run, this digest).
-    // This canonical receipt remains authoritative even if optional engineering
-    // telemetry could not be appended.
+    // `load_receipt` already invalidates an unfinished Accepted review when the
+    // staged tree changed, so a stale Accept cannot reach this point as current
+    // evidence.
     let review = receipt
         .review
         .as_ref()
         .filter(|r| r.decision == ReviewDecision::Accepted && r.run_id == receipt.run_id)
         .filter(|r| Some(&r.changeset_digest) == run_digest.as_ref())
         .ok_or_else(|| RepoDeskError::RoutingFailed {
-            detail: "commit blocked: the run's changes have not been reviewed and accepted"
+            detail: "commit blocked: the run's exact changes have not been reviewed and accepted"
                 .to_string(),
         })?;
     let reviewed: HashSet<&str> = review.reviewed_paths.iter().map(String::as_str).collect();
@@ -183,13 +192,18 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         return Err(RepoDeskError::RoutingFailed { detail });
     }
 
-    // 3. Verification must still be valid against the current tree. This is the
-    // hard freshness proof: event-ledger "passed" telemetry alone is never enough.
+    // 3. Resolve the current tree and prove it is exactly the one accepted in
+    // Review. Then require Verification to be fresh against that same tree.
     let head = head_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "active project is not a git repository with a commit".to_string(),
     })?;
     let tree = index_tree_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "could not read the staged index tree".to_string(),
+    })?;
+    let reviewed_tree = reviewed_tree_sha_for(&receipt, &tree)?.ok_or_else(|| {
+        RepoDeskError::RoutingFailed {
+            detail: "commit blocked: no exact reviewed tree exists for this changeset".to_string(),
+        }
     })?;
     let digest = run_digest
         .clone()
@@ -197,16 +211,22 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let verified = receipt
         .verification
         .as_ref()
-        .map(|v| v.run_id == receipt.run_id && v.valid_for(&head, &tree, &digest))
+        .map(|v| {
+            v.run_id == receipt.run_id
+                && v.index_tree_sha == reviewed_tree
+                && v.valid_for(&head, &tree, &digest)
+        })
         .unwrap_or(false);
     if !verified {
         return Err(RepoDeskError::RoutingFailed {
-            detail: "commit blocked: verification is missing or stale — run verification again"
+            detail: "commit blocked: verification is missing, stale, or belongs to a different reviewed tree — run verification again"
                 .to_string(),
         });
     }
 
-    // 4. The index must hold exactly the reviewed changeset — no stray files.
+    // 4. The index must hold exactly the reviewed path set — no stray files.
+    // Tree equality above is the content proof; this path check remains for a
+    // precise operator-facing error when an unexpected file is staged.
     let staged = staged_paths(&project_path);
     if staged.is_empty() {
         return Err(RepoDeskError::RoutingFailed {
@@ -229,7 +249,11 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         });
     }
 
-    // 5. Commit the existing index (no `git add`), then record the finish.
+    // 5. Commit the existing index (no `git add`). Afterwards, independently
+    // read the tree stored by the new commit and compare it with the reviewed
+    // tree. This catches any hook/unexpected index mutation that happened inside
+    // `git commit`: such a commit exists, but RepoDesk refuses to mint Finish
+    // evidence for content the human did not accept.
     let output = Command::new("git")
         .arg("-C")
         .arg(&project_path)
@@ -251,6 +275,20 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         detail: "commit succeeded but HEAD could not be read".to_string(),
     })?;
     debug_assert!(commit_exists(&project_path, &commit_sha));
+    let committed_tree = commit_tree_sha(&project_path, &commit_sha).ok_or_else(|| {
+        RepoDeskError::RoutingFailed {
+            detail: format!(
+                "commit {commit_sha} was created, but RepoDesk could not verify its tree — Finish remains unproven"
+            ),
+        }
+    })?;
+    if committed_tree != reviewed_tree {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: format!(
+                "commit integrity violation: commit {commit_sha} contains tree {committed_tree}, but the accepted and verified tree was {reviewed_tree}. Finish was not recorded; inspect the commit before continuing."
+            ),
+        });
+    }
 
     receipt.finish = Some(FinishReceipt {
         run_id: receipt.run_id.clone(),
