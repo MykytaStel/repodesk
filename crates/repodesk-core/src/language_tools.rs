@@ -305,7 +305,13 @@ impl LanguageToolInstallService {
     pub fn preview(&self, recipe_id: &str) -> RepoDeskResult<LanguageToolInstallPreview> {
         let project = get_active_project()?;
         let paths = RepoDeskPaths::resolve()?;
-        self.preview_for_project(recipe_id, &project.name, &project.path, &paths.home, Utc::now())
+        self.preview_for_project(
+            recipe_id,
+            &project.name,
+            &project.path,
+            &paths.home,
+            Utc::now(),
+        )
     }
 
     pub fn preview_for_project(
@@ -326,10 +332,13 @@ impl LanguageToolInstallService {
         let sequence = self.sequence.fetch_add(1, Ordering::Relaxed);
         let revision = recipe_revision(recipe);
         let tools_root = repodesk_home.join("tools").join("language-servers");
-        let destination_dir = (recipe.layout == InstallLayout::ManagedDirectory)
-            .then(|| tools_root.join(recipe.id));
-        let staging_dir = (recipe.layout == InstallLayout::ManagedDirectory)
-            .then(|| tools_root.join(".staging").join(format!("{}-{sequence}", recipe.id)));
+        let destination_dir =
+            (recipe.layout == InstallLayout::ManagedDirectory).then(|| tools_root.join(recipe.id));
+        let staging_dir = (recipe.layout == InstallLayout::ManagedDirectory).then(|| {
+            tools_root
+                .join(".staging")
+                .join(format!("{}-{sequence}", recipe.id))
+        });
         let expected_executable = match recipe.layout {
             InstallLayout::ManagedDirectory => executable_in_install_root(
                 staging_dir.as_deref().expect("managed recipe has staging"),
@@ -340,7 +349,11 @@ impl LanguageToolInstallService {
         let install_command = install_command(recipe, staging_dir.as_deref(), repodesk_home)?;
         let probe_command = LanguageToolCommand {
             program: expected_executable.to_string_lossy().into_owned(),
-            args: recipe.probe_args.iter().map(|arg| (*arg).to_string()).collect(),
+            args: recipe
+                .probe_args
+                .iter()
+                .map(|arg| (*arg).to_string())
+                .collect(),
         };
         let expires_at = now + Duration::minutes(CONFIRMATION_TTL_MINUTES);
         let token = confirmation_token(
@@ -360,7 +373,11 @@ impl LanguageToolInstallService {
             recipe_revision: revision,
             server_id: recipe.server_id.into(),
             server_label: recipe.server_label.into(),
-            languages: recipe.languages.iter().map(|value| (*value).into()).collect(),
+            languages: recipe
+                .languages
+                .iter()
+                .map(|value| (*value).into())
+                .collect(),
             installer: recipe.installer,
             package: recipe.package.into(),
             version: recipe.version.into(),
@@ -396,7 +413,9 @@ impl LanguageToolInstallService {
         };
         self.pending
             .lock()
-            .map_err(|_| RepoDeskError::Api("Language-tool preview registry is unavailable".into()))?
+            .map_err(|_| {
+                RepoDeskError::Api("Language-tool preview registry is unavailable".into())
+            })?
             .insert(token, pending);
 
         Ok(preview)
@@ -414,7 +433,9 @@ impl LanguageToolInstallService {
         let pending = self
             .pending
             .lock()
-            .map_err(|_| RepoDeskError::Api("Language-tool preview registry is unavailable".into()))?
+            .map_err(|_| {
+                RepoDeskError::Api("Language-tool preview registry is unavailable".into())
+            })?
             .remove(confirmation_token)
             .ok_or_else(|| {
                 RepoDeskError::Api(
@@ -445,7 +466,9 @@ impl LanguageToolInstallService {
         if self
             .running
             .lock()
-            .map_err(|_| RepoDeskError::Api("Language-tool runtime registry is unavailable".into()))?
+            .map_err(|_| {
+                RepoDeskError::Api("Language-tool runtime registry is unavailable".into())
+            })?
             .contains_key(&pending.preview.recipe_id)
         {
             return Err(RepoDeskError::Api(format!(
@@ -457,7 +480,9 @@ impl LanguageToolInstallService {
         let cancel = Arc::new(AtomicBool::new(false));
         self.running
             .lock()
-            .map_err(|_| RepoDeskError::Api("Language-tool runtime registry is unavailable".into()))?
+            .map_err(|_| {
+                RepoDeskError::Api("Language-tool runtime registry is unavailable".into())
+            })?
             .insert(pending.preview.recipe_id.clone(), cancel.clone());
 
         self.set_status(
@@ -478,10 +503,9 @@ impl LanguageToolInstallService {
     }
 
     pub fn cancel(&self, recipe_id: &str) -> RepoDeskResult<bool> {
-        let running = self
-            .running
-            .lock()
-            .map_err(|_| RepoDeskError::Api("Language-tool runtime registry is unavailable".into()))?;
+        let running = self.running.lock().map_err(|_| {
+            RepoDeskError::Api("Language-tool runtime registry is unavailable".into())
+        })?;
         let Some(flag) = running.get(recipe_id) else {
             return Ok(false);
         };
@@ -525,9 +549,9 @@ impl LanguageToolInstallService {
             None,
             None,
         )?;
-        let install_outcome = self
-            .runner
-            .run(&pending.preview.install_command, &work_dir, cancel)?;
+        let install_outcome =
+            self.runner
+                .run(&pending.preview.install_command, &work_dir, cancel)?;
         let mut output = merged_output(&install_outcome);
 
         if install_outcome.cancelled || cancel.load(Ordering::Acquire) {
@@ -566,11 +590,13 @@ impl LanguageToolInstallService {
             });
         }
 
-        if pending.layout == InstallLayout::ManagedDirectory && !pending.expected_executable.is_file()
+        if pending.layout == InstallLayout::ManagedDirectory
+            && !pending.expected_executable.is_file()
         {
             self.cleanup_staging(pending);
-            let detail = "Installer completed but the expected language-server executable was not created"
-                .to_string();
+            let detail =
+                "Installer completed but the expected language-server executable was not created"
+                    .to_string();
             let status = self.set_status(
                 &pending.preview.recipe_id,
                 LanguageToolInstallState::Error,
@@ -781,11 +807,9 @@ fn install_command(
                 staging.to_string_lossy().into_owned(),
             ]
         }
-        LanguageToolInstaller::Rustup => vec![
-            "component".into(),
-            "add".into(),
-            "rust-analyzer".into(),
-        ],
+        LanguageToolInstaller::Rustup => {
+            vec!["component".into(), "add".into(), "rust-analyzer".into()]
+        }
     };
     Ok(LanguageToolCommand {
         program: recipe.installer.executable().into(),

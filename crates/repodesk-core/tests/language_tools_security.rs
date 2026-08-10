@@ -59,7 +59,10 @@ impl LanguageToolCommandRunner for FakeRunner {
                 "vscode-json-language-server",
                 "yaml-language-server",
             ] {
-                fs::write(platform_executable(&bin, executable), b"fake language server")?;
+                fs::write(
+                    platform_executable(&bin, executable),
+                    b"fake language server",
+                )?;
             }
         }
 
@@ -144,11 +147,31 @@ fn preview_builds_pinned_allowlisted_argv_outside_repository() {
             .iter()
             .any(|arg| arg == "typescript@7.0.2")
     );
-    assert!(preview.install_command.args.iter().any(|arg| arg == "--ignore-scripts"));
-    assert!(preview.install_command.args.iter().any(|arg| arg == "--no-audit"));
+    assert!(
+        preview
+            .install_command
+            .args
+            .iter()
+            .any(|arg| arg == "--ignore-scripts")
+    );
+    assert!(
+        preview
+            .install_command
+            .args
+            .iter()
+            .any(|arg| arg == "--no-audit")
+    );
     assert!(preview.confirmation_token.starts_with("lang_install_"));
-    assert!(preview.destination.starts_with(home.path().to_string_lossy().as_ref()));
-    assert!(!preview.destination.starts_with(repo.path().to_string_lossy().as_ref()));
+    assert!(
+        preview
+            .destination
+            .starts_with(home.path().to_string_lossy().as_ref())
+    );
+    assert!(
+        !preview
+            .destination
+            .starts_with(repo.path().to_string_lossy().as_ref())
+    );
     assert_eq!(preview.expires_at, now + Duration::minutes(5));
 }
 
@@ -190,7 +213,10 @@ fn verified_install_promotes_staging_without_repository_writes() {
     let preview = service
         .preview_for_project("taplo", "demo", repo.path(), home.path(), now)
         .expect("preview");
-    assert!(preview.prerequisite_available, "cargo must be available while cargo tests run");
+    assert!(
+        preview.prerequisite_available,
+        "cargo must be available while cargo tests run"
+    );
 
     let result = service
         .install_at(&preview.confirmation_token, now)
@@ -198,7 +224,10 @@ fn verified_install_promotes_staging_without_repository_writes() {
 
     assert_eq!(result.status.state, LanguageToolInstallState::Ready);
     assert_eq!(result.status.progress, 100);
-    assert_eq!(fs::read_to_string(&sentinel).expect("sentinel read"), "unchanged");
+    assert_eq!(
+        fs::read_to_string(&sentinel).expect("sentinel read"),
+        "unchanged"
+    );
     assert!(!final_root.join("old.txt").exists());
     assert!(platform_executable(&final_root.join("bin"), "taplo").is_file());
     assert!(!result.output.contains("do-not-leak"));
@@ -224,7 +253,10 @@ fn cancellation_does_not_promote_partial_installation() {
     let preview = service
         .preview_for_project("taplo", "demo", repo.path(), home.path(), now)
         .expect("preview");
-    assert!(preview.prerequisite_available, "cargo must be available while cargo tests run");
+    assert!(
+        preview.prerequisite_available,
+        "cargo must be available while cargo tests run"
+    );
 
     let token = preview.confirmation_token.clone();
     let worker_service = service.clone();
@@ -245,7 +277,10 @@ fn cancellation_does_not_promote_partial_installation() {
     assert!(started, "install should enter installing state");
     assert!(service.cancel("taplo").expect("cancel"));
 
-    let result = worker.join().expect("worker join").expect("install response");
+    let result = worker
+        .join()
+        .expect("worker join")
+        .expect("install response");
     assert_eq!(result.status.state, LanguageToolInstallState::Cancelled);
     assert!(!home.path().join("tools/language-servers/taplo").exists());
 }
@@ -258,7 +293,13 @@ fn unknown_recipe_is_rejected_before_any_execution() {
     let service = LanguageToolInstallService::new(runner.clone());
 
     let error = service
-        .preview_for_project("curl-pipe-shell", "demo", repo.path(), home.path(), Utc::now())
+        .preview_for_project(
+            "curl-pipe-shell",
+            "demo",
+            repo.path(),
+            home.path(),
+            Utc::now(),
+        )
         .expect_err("unknown recipe must fail");
 
     assert!(matches!(error, RepoDeskError::Api(_)));
