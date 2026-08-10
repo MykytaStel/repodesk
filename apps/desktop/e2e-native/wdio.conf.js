@@ -12,12 +12,14 @@
 //   - a release build:  pnpm --dir apps/desktop tauri build
 //   - REPODESK_HOME pointed at a throwaway dir (first-run state)
 
+import { mkdirSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const artifactsDir = resolve(__dirname, "artifacts");
 
 // RepoDesk is a Cargo *workspace*, so `tauri build` emits the binary to the
 // workspace-root `target/release`, NOT the crate-local `src-tauri/target`. Search
@@ -44,6 +46,10 @@ function resolveApplication() {
     `No built Tauri binary found (looked in: ${releaseDirs.join(", ")}; ` +
       `names: ${names.join(", ")}).\nBuild it first: pnpm --dir apps/desktop tauri build`,
   );
+}
+
+function artifactName(title) {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80) || "native-e2e";
 }
 
 let tauriDriver;
@@ -79,6 +85,28 @@ export const config = {
       stdio: [null, process.stdout, process.stderr],
     });
   },
+
+  // Native failures are otherwise difficult to diagnose from CI logs alone.
+  // Capture both the rendered WebView and its DOM without persisting REPODESK_HOME.
+  async afterTest(test, _context, { passed }) {
+    if (passed) return;
+    mkdirSync(artifactsDir, { recursive: true });
+    const name = `${Date.now()}-${artifactName(test.title)}`;
+
+    try {
+      await browser.saveScreenshot(resolve(artifactsDir, `${name}.png`));
+    } catch (error) {
+      console.warn(`Could not capture native E2E screenshot: ${error}`);
+    }
+
+    try {
+      const source = await browser.getPageSource();
+      writeFileSync(resolve(artifactsDir, `${name}.html`), source, "utf8");
+    } catch (error) {
+      console.warn(`Could not capture native E2E DOM: ${error}`);
+    }
+  },
+
   afterSession() {
     if (tauriDriver) tauriDriver.kill();
   },
