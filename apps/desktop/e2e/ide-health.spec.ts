@@ -140,7 +140,7 @@ test("IDE Health explains impact and requires review before a managed repair", a
   await page.goto("/");
 
   const panel = await openIDEHealth(page);
-  await expect(panel.getByText("Executable was not found")).toBeVisible();
+  await expect(panel.getByText("Executable was not found", { exact: true })).toBeVisible();
   await expect(panel.getByText("Diagnostics", { exact: true })).toBeVisible();
   await expect(panel.getByText("Editing", { exact: true })).toBeVisible();
   await expect(panel.getByText("Language server restart did not become ready")).toBeVisible();
