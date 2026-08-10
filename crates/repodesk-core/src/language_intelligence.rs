@@ -44,7 +44,7 @@ pub enum LanguageServerInitializationProfile {
     Taplo,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LanguageServerCapabilities {
     pub diagnostics: bool,
     pub hover: bool,
@@ -57,7 +57,7 @@ pub struct LanguageServerCapabilities {
 }
 
 impl LanguageServerCapabilities {
-    fn full() -> Self {
+    const fn full() -> Self {
         Self {
             diagnostics: true,
             hover: true,
@@ -65,6 +65,22 @@ impl LanguageServerCapabilities {
             references: true,
             completion: true,
             rename: true,
+            formatting: true,
+            document_symbols: true,
+        }
+    }
+
+    /// Servers with no real "go to definition"/"find references" concept for
+    /// their language (markup/config formats): hover, completion, formatting
+    /// and outline still work, but definition/references/rename don't apply.
+    const fn markup() -> Self {
+        Self {
+            diagnostics: true,
+            hover: true,
+            definition: false,
+            references: false,
+            completion: true,
+            rename: false,
             formatting: true,
             document_symbols: true,
         }
@@ -141,6 +157,12 @@ struct ServerSpec {
     profile_state: LanguageServerProfileState,
     initialization_profile: LanguageServerInitializationProfile,
     install_recipe_id: Option<&'static str>,
+    /// What this specific server binary actually implements. Must not default
+    /// to "supports everything" — the frontend uses these flags to decide
+    /// which LSP requests to send, and a server that doesn't implement a
+    /// method replies with a raw JSON-RPC "Method not found" that would
+    /// otherwise leak straight into the UI (see RD language-server audit).
+    capabilities: LanguageServerCapabilities,
 }
 
 const SERVER_SPECS: &[ServerSpec] = &[
@@ -154,6 +176,7 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::Active,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: Some("rust-analyzer"),
+        capabilities: LanguageServerCapabilities::full(),
     },
     ServerSpec {
         id: "typescript-language-server",
@@ -165,6 +188,7 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::Active,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: Some("typescript-language-server"),
+        capabilities: LanguageServerCapabilities::full(),
     },
     ServerSpec {
         id: "pyright",
@@ -176,6 +200,13 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::DiscoveryOnly,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: None,
+        // Pyright has no rename or formatting provider (formatting is left to
+        // black/ruff); hover/definition/references/completion/symbols work.
+        capabilities: LanguageServerCapabilities {
+            rename: false,
+            formatting: false,
+            ..LanguageServerCapabilities::full()
+        },
     },
     ServerSpec {
         id: "gopls",
@@ -187,6 +218,7 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::DiscoveryOnly,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: None,
+        capabilities: LanguageServerCapabilities::full(),
     },
     ServerSpec {
         id: "clangd",
@@ -198,6 +230,7 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::DiscoveryOnly,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: None,
+        capabilities: LanguageServerCapabilities::full(),
     },
     ServerSpec {
         id: "jdtls",
@@ -209,6 +242,7 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::DiscoveryOnly,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: None,
+        capabilities: LanguageServerCapabilities::full(),
     },
     ServerSpec {
         id: "kotlin-language-server",
@@ -220,6 +254,7 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::DiscoveryOnly,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: None,
+        capabilities: LanguageServerCapabilities::full(),
     },
     ServerSpec {
         id: "sourcekit-lsp",
@@ -231,6 +266,12 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::DiscoveryOnly,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: None,
+        // SourceKit-LSP has no built-in documentFormatting provider (Xcode
+        // shells out to swift-format separately).
+        capabilities: LanguageServerCapabilities {
+            formatting: false,
+            ..LanguageServerCapabilities::full()
+        },
     },
     ServerSpec {
         id: "bash-language-server",
@@ -242,6 +283,12 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::DiscoveryOnly,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: None,
+        // bash-language-server has no references/rename provider.
+        capabilities: LanguageServerCapabilities {
+            references: false,
+            rename: false,
+            ..LanguageServerCapabilities::full()
+        },
     },
     ServerSpec {
         id: "json-language-server",
@@ -253,6 +300,8 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::Active,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: Some("json-language-server"),
+        // JSON has no cross-file "go to definition"/"find references"/rename.
+        capabilities: LanguageServerCapabilities::markup(),
     },
     ServerSpec {
         id: "yaml-language-server",
@@ -264,6 +313,7 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::Active,
         initialization_profile: LanguageServerInitializationProfile::Default,
         install_recipe_id: Some("yaml-language-server"),
+        capabilities: LanguageServerCapabilities::markup(),
     },
     ServerSpec {
         id: "taplo",
@@ -275,6 +325,10 @@ const SERVER_SPECS: &[ServerSpec] = &[
         profile_state: LanguageServerProfileState::Active,
         initialization_profile: LanguageServerInitializationProfile::Taplo,
         install_recipe_id: Some("taplo"),
+        // Taplo implements hover/completion/formatting/documentSymbol but no
+        // definition/references/rename — this is the server that surfaced the
+        // "Method not found" bug when the frontend assumed full support.
+        capabilities: LanguageServerCapabilities::markup(),
     },
 ];
 
@@ -339,7 +393,7 @@ fn descriptor_for(spec: &ServerSpec, project_path: &Path) -> LanguageServerDescr
             .collect(),
         availability,
         source,
-        capabilities: LanguageServerCapabilities::full(),
+        capabilities: spec.capabilities,
         profile_state: spec.profile_state,
         initialization_profile: spec.initialization_profile,
         install_recipe_id: spec.install_recipe_id.map(str::to_string),
@@ -426,6 +480,29 @@ mod tests {
             LanguageServerInitializationProfile::Taplo
         );
         assert_eq!(taplo.install_recipe_id, Some("taplo"));
+        // Regression: taplo has no definition/references/rename provider, so
+        // these must be false even though the server is otherwise "active" —
+        // a blanket `full()` here is exactly what caused the reported
+        // "Method not found" bug (the frontend assumed definition support).
+        assert!(!taplo.capabilities.definition);
+        assert!(!taplo.capabilities.references);
+        assert!(!taplo.capabilities.rename);
+        assert!(taplo.capabilities.hover);
+        assert!(taplo.capabilities.formatting);
+        assert!(taplo.capabilities.document_symbols);
+
+        for markup_id in ["taplo", "json-language-server", "yaml-language-server"] {
+            let spec = SERVER_SPECS
+                .iter()
+                .find(|server| server.id == markup_id)
+                .unwrap_or_else(|| panic!("{markup_id} profile"));
+            assert!(
+                !spec.capabilities.definition
+                    && !spec.capabilities.references
+                    && !spec.capabilities.rename,
+                "{markup_id} must not advertise definition/references/rename support"
+            );
+        }
 
         let typescript = SERVER_SPECS
             .iter()

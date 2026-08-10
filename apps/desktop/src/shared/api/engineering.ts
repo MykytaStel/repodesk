@@ -88,7 +88,8 @@ export type ContextFileExclusionReason =
   | "read_error"
   | "file_limit"
   | "too_large"
-  | "budget_exceeded";
+  | "budget_exceeded"
+  | "contains_secret";
 
 export type ContextFileEntry = {
   path: string;

@@ -50,6 +50,10 @@ pub enum ContextFileExclusionReason {
     FileLimit,
     TooLarge,
     BudgetExceeded,
+    /// The file's *content* (not its path/name) matched a known secret
+    /// pattern. Distinct from `BlockedBySecurity`, which blocks by filename
+    /// before the content is ever read.
+    ContainsSecret,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,6 +243,23 @@ pub fn select_task_scope_files(
             entries.push(entry);
             continue;
         };
+
+        // `is_blocked_path` above only catches secrets by *filename* (`.env`,
+        // `*.pem`, ...). A hardcoded key sitting in an innocuously-named file
+        // like `src/config.rs` would otherwise be read and dumped straight
+        // into context.md — scan actual content before it ever reaches the
+        // rendered candidate, per the "build_context never dumps raw repo
+        // file contents ungated" invariant.
+        if !crate::security::scan_text_for_secrets(&candidate).is_empty() {
+            exclude(
+                &mut entry,
+                ContextFileExclusionReason::ContainsSecret,
+                &mut excluded_files,
+            );
+            entries.push(entry);
+            continue;
+        }
+
         entry.candidate_tokens = Some(estimate_text(&candidate).estimated_tokens);
         append_file_section(&mut candidate_rendered, &path, &candidate);
 
@@ -560,6 +581,36 @@ mod tests {
         assert!(selection.manifest.entries.iter().any(|entry| {
             entry.path == "../escape.rs"
                 && entry.exclusion_reason == Some(ContextFileExclusionReason::InvalidPath)
+        }));
+    }
+
+    #[test]
+    fn secret_in_an_innocuous_filename_is_excluded_by_content_not_just_path() {
+        // Regression: `is_blocked_path` only filters by filename (`.env`,
+        // `*.pem`, ...). A hardcoded AWS key in a normally-named source file
+        // used to be read and dumped straight into context.md unfiltered.
+        let root = tempdir().unwrap();
+        fs::create_dir_all(root.path().join("src")).unwrap();
+        fs::write(
+            root.path().join("src/config.rs"),
+            "pub const KEY: &str = \"AKIAIOSFODNN7EXAMPLE\";\n",
+        )
+        .unwrap();
+
+        let markdown = "## Scope\n- `src/config.rs`\n";
+        let selection = select_task_scope_files("repodesk", "task-1", root.path(), markdown, &[]);
+
+        assert_eq!(selection.manifest.included_files, 0);
+        assert_eq!(selection.manifest.excluded_files, 1);
+        assert!(
+            !selection
+                .candidate_rendered
+                .contains("AKIAIOSFODNN7EXAMPLE")
+        );
+        assert!(!selection.rendered.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(selection.manifest.entries.iter().any(|entry| {
+            entry.path == "src/config.rs"
+                && entry.exclusion_reason == Some(ContextFileExclusionReason::ContainsSecret)
         }));
     }
 
