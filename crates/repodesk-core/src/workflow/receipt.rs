@@ -154,10 +154,11 @@ impl TaskRunReceipt {
     /// Invalidate current review/verification evidence when the staged index no
     /// longer equals the exact tree the human accepted. A completed run is
     /// historical evidence and is not reopened merely because the repository
-    /// later moves on to another commit.
-    fn invalidate_stale_review_tree(&mut self, current_tree: Option<&str>) {
+    /// later moves on to another commit. Returns true only when evidence was
+    /// actually invalidated so callers can durably persist that state change.
+    fn invalidate_stale_review_tree(&mut self, current_tree: Option<&str>) -> bool {
         if self.finish.is_some() {
-            return;
+            return false;
         }
         let stale = self
             .review
@@ -181,6 +182,7 @@ impl TaskRunReceipt {
             self.verification = None;
             self.finish = None;
         }
+        stale
     }
 }
 
@@ -267,8 +269,9 @@ fn validate_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
 /// Load the active task's current run receipt, or `None` when absent/unreadable
 /// (a corrupt file must never break the Work surface). Before returning live
 /// evidence, an unfinished Accepted review is compared with the current index
-/// tree; a changed tree logically invalidates Review + Verification so the Work
-/// phase returns to Review instead of trusting a path-only digest.
+/// tree. The first observed mismatch durably invalidates Review + Verification;
+/// simply restoring the old bytes may not resurrect a human approval that was
+/// invalidated by an intervening tree.
 pub fn load_receipt() -> RepoDeskResult<Option<TaskRunReceipt>> {
     let path = receipt_path()?;
     if !path.exists() {
@@ -286,7 +289,12 @@ pub fn load_receipt() -> RepoDeskResult<Option<TaskRunReceipt>> {
         let current_tree = crate::projects::get_active_project()
             .ok()
             .and_then(|project| index_tree_sha(&project.path));
-        receipt.invalidate_stale_review_tree(current_tree.as_deref());
+        if receipt.invalidate_stale_review_tree(current_tree.as_deref()) {
+            // This is a security/correctness state transition, not a cache. If
+            // we cannot persist invalidation, fail closed rather than allowing a
+            // later load to resurrect the superseded approval.
+            std::fs::write(&path, serde_json::to_string_pretty(&receipt)?)?;
+        }
     }
 
     Ok(Some(receipt))
@@ -627,7 +635,7 @@ mod tests {
     #[test]
     fn staged_tree_change_invalidates_review_and_verification() {
         let mut receipt = reviewed_receipt(Some("tree-t1"));
-        receipt.invalidate_stale_review_tree(Some("tree-t2"));
+        assert!(receipt.invalidate_stale_review_tree(Some("tree-t2")));
         assert!(receipt.review.is_none());
         assert!(receipt.verification.is_none());
         assert!(receipt.finish.is_none());
