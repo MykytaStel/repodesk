@@ -51,9 +51,10 @@ impl LanguageToolCommandRunner for FakeRunner {
             let bin = Path::new(root).join("bin");
             fs::create_dir_all(&bin)?;
             fs::write(platform_executable(&bin, "taplo"), b"fake taplo")?;
-        } else if command.program == "npm" {
+        } else if command.program == "npm" && command.args.first().is_some_and(|arg| arg == "install") {
             let prefix = flag_value(&command.args, "--prefix").expect("npm --prefix");
-            let bin = Path::new(prefix).join("node_modules").join(".bin");
+            let root = Path::new(prefix).join("node_modules");
+            let bin = root.join(".bin");
             fs::create_dir_all(&bin)?;
             for executable in [
                 "typescript-language-server",
@@ -65,15 +66,21 @@ impl LanguageToolCommandRunner for FakeRunner {
                     b"fake language server",
                 )?;
             }
+            write_npm_package(&root, "typescript-language-server", "5.3.0")?;
+            write_npm_package(&root, "typescript", "6.0.3")?;
+            write_npm_package(&root, "vscode-langservers-extracted", "4.10.0")?;
+            write_npm_package(&root, "yaml-language-server", "1.24.0")?;
         }
 
         Ok(CommandOutcome {
             success: true,
             cancelled: false,
-            stdout: if command.program == "cargo" || command.program == "npm" {
+            stdout: if command.program == "cargo"
+                || (command.program == "npm" && command.args.first().is_some_and(|arg| arg == "install"))
+            {
                 "installed\nNPM_TOKEN=do-not-leak".into()
             } else {
-                "1.0.0".into()
+                "verified".into()
             },
             stderr: String::new(),
         })
@@ -183,20 +190,22 @@ fn incompatible_managed_typescript_is_not_reported_ready() {
     let install_root = home
         .path()
         .join("tools/language-servers/typescript-language-server");
-    let bin = install_root.join("node_modules/.bin");
-    let typescript = install_root.join("node_modules/typescript");
+    let node_modules = install_root.join("node_modules");
+    let bin = node_modules.join(".bin");
     fs::create_dir_all(&bin).expect("create bin");
-    fs::create_dir_all(&typescript).expect("create TypeScript package");
     fs::write(
         platform_executable(&bin, "typescript-language-server"),
         b"fake language server",
     )
     .expect("write executable");
-    fs::write(
-        typescript.join("package.json"),
-        r#"{"name":"typescript","version":"7.0.2"}"#,
+    write_npm_package(
+        &node_modules,
+        "typescript-language-server",
+        "5.3.0",
     )
-    .expect("write TypeScript package metadata");
+    .expect("write primary package metadata");
+    write_npm_package(&node_modules, "typescript", "7.0.2")
+        .expect("write incompatible TypeScript metadata");
 
     unsafe { std::env::set_var("REPODESK_HOME", home.path()) };
     assert_eq!(managed_executable_path("typescript-language-server"), None);
@@ -372,6 +381,16 @@ fn flag_value<'a>(args: &'a [String], flag: &str) -> Option<&'a str> {
     args.windows(2)
         .find(|pair| pair[0] == flag)
         .map(|pair| pair[1].as_str())
+}
+
+fn write_npm_package(node_modules: &Path, package: &str, version: &str) -> RepoDeskResult<()> {
+    let package_root = node_modules.join(package);
+    fs::create_dir_all(&package_root)?;
+    fs::write(
+        package_root.join("package.json"),
+        format!(r#"{{"name":"{package}","version":"{version}"}}"#),
+    )?;
+    Ok(())
 }
 
 fn platform_executable(directory: &Path, executable: &str) -> std::path::PathBuf {
