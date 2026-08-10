@@ -2,9 +2,9 @@
 //!
 //! This module deliberately prefers small explainable neighborhoods over a
 //! repository-wide in-memory graph. Rust import/module relationships come from
-//! `syn`; Git co-change relationships come from bounded history. Other
-//! languages remain eligible for history/test proximity without pretending
-//! RepoDesk has parsed symbols it cannot yet resolve.
+//! `syn`; TypeScript and JavaScript local literal imports come from a bounded
+//! lexical scanner; Git co-change relationships come from bounded history.
+//! Unsupported package aliases remain unresolved rather than guessed.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -17,6 +17,8 @@ use syn::{Item, UseTree};
 use crate::code_workspace::{CodeWorkspaceFile, language_for_path, load_code_workspace};
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
+
+mod script_imports;
 
 pub const REPOSITORY_INTELLIGENCE_VERSION: u32 = 1;
 const MAX_RUST_FILES: usize = 4_000;
@@ -110,7 +112,9 @@ pub fn build_repository_intelligence(
 
     let (rust_facts, rust_bytes_indexed, rust_truncated) =
         index_rust_files(&root, &workspace.files, &all_paths);
-    let dependencies = build_dependency_map(&rust_facts, &all_paths);
+    let script_index = script_imports::index_script_files(&root, &workspace.files, &all_paths);
+    let mut dependencies = build_dependency_map(&rust_facts, &all_paths);
+    script_imports::extend_dependency_map(&mut dependencies, &script_index, &all_paths);
     let dependents = reverse_relations(&dependencies);
 
     let focus_path = focus_path
@@ -137,7 +141,7 @@ pub fn build_repository_intelligence(
         indexed_files: workspace.files.len(),
         rust_files_indexed: rust_facts.len(),
         rust_bytes_indexed,
-        truncated: workspace.truncated || rust_truncated,
+        truncated: workspace.truncated || rust_truncated || script_index.truncated,
         git_history_available,
         focus,
     })

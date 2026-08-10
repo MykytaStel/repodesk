@@ -204,10 +204,9 @@ fn expected_prompt_file(run_dir: &Path, agent: &str) -> Option<std::path::PathBu
     }
 }
 
-/// `None` means the count could not be determined (git missing, not a repo,
-/// process error) — the caller must treat that as "unknown", not "zero
-/// files changed", or a broken `git` makes the too-many-files patch-agent
-/// block silently never fire.
+/// `None` means the changed-file count could not be determined (git missing,
+/// not a repository, process error). The only safe zero fallback is a project
+/// directory that can be proven empty independently of Git.
 fn count_changed_files(project_path: &Path) -> Option<usize> {
     let output = Command::new("git")
         .args(["status", "--short"])
@@ -221,13 +220,22 @@ fn count_changed_files(project_path: &Path) -> Option<usize> {
                 .filter(|line| !line.trim().is_empty())
                 .count(),
         ),
+        _ if directory_is_provably_empty(project_path) => Some(0),
         _ => None,
+    }
+}
+
+fn directory_is_provably_empty(path: &Path) -> bool {
+    match fs::read_dir(path) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(_) => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     #[test]
     fn level_labels_are_stable() {
@@ -264,13 +272,23 @@ mod tests {
 
     #[test]
     fn count_changed_files_reports_unknown_outside_git_rather_than_zero() {
-        // Regression: a non-existent directory (or any git failure) used to
-        // degrade to `0`, which is indistinguishable from "definitely no
-        // changed files" and silently disabled the too-many-files patch-agent
-        // block whenever git was unavailable. It must degrade safely without
-        // panicking, but as an explicit "unknown", not a false "zero".
+        // Regression: a non-existent directory (or any git failure) must not
+        // silently become zero changed files.
         let count = count_changed_files(Path::new("/nonexistent/path/for/guard/test"));
         assert_eq!(count, None);
+    }
+
+    #[test]
+    fn count_changed_files_can_prove_an_empty_non_git_workspace_is_zero() {
+        let root = tempdir().expect("tempdir");
+        assert_eq!(count_changed_files(root.path()), Some(0));
+    }
+
+    #[test]
+    fn count_changed_files_keeps_non_empty_non_git_workspace_unknown() {
+        let root = tempdir().expect("tempdir");
+        fs::write(root.path().join("untracked.txt"), "content").expect("write fixture");
+        assert_eq!(count_changed_files(root.path()), None);
     }
 
     #[test]
