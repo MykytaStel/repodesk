@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "identifier": "dev.repodesk.desktop",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm run desktop:icon && npm run dev",
     "devUrl": "http://127.0.0.1:5177",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run desktop:icon && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -37,7 +37,7 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.icns",
+      "generated-icons/icon.icns",
       "icons/icon.ico"
     ],
     "createUpdaterArtifacts": true
