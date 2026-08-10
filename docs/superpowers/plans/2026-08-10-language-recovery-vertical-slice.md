@@ -137,7 +137,7 @@ git commit -m "fix: validate managed TypeScript runtime"
 - Consumes: `chrono::{DateTime, Utc}`, `serde::{Deserialize, Serialize}`.
 - Produces: `RecoveryEngine::new(project: String, history_limit: usize)`, `observe(RecoveryObservation) -> ObserveOutcome`, `begin_repair(&str, &str, DateTime<Utc>) -> RepoDeskResult<RecoveryRecord>`, `finish_repair(&str, RepairCompletion) -> RepoDeskResult<RecoveryRecord>`, `prune_history(DateTime<Utc>)`, `snapshot() -> RecoverySnapshot`, `history() -> Vec<RecoveryAttempt>`, `RecoveryStore::load(&Path, String, usize)`, and `RecoveryStore::save(&Path, &RecoveryEngine)`.
 
-- [ ] **Step 1: Write failing public contract tests**
+- [x] **Step 1: Write failing public contract tests**
 
 Create `crates/repodesk-core/tests/recovery_engine.rs` with these test cases and shared helpers:
 
@@ -203,7 +203,7 @@ fn failed_verification_never_becomes_healthy() {
 
 Also add tests named `healthy_records_are_not_actionable`, `automatic_attempt_budget_stops_after_two_failures`, `history_is_bounded`, and `unknown_failure_has_no_guessed_recipe`.
 
-- [ ] **Step 2: Run the test target and verify the missing module failure**
+- [x] **Step 2: Run the test target and verify the missing module failure**
 
 Run:
 
@@ -213,7 +213,7 @@ REPODESK_HOME=/tmp/repodesk-dev cargo test -p repodesk-core --test recovery_engi
 
 Expected: FAIL because `repodesk_core::recovery` does not exist.
 
-- [ ] **Step 3: Add the serialized contracts**
+- [x] **Step 3: Add the serialized contracts**
 
 Create `types.rs` with these exact public names:
 
@@ -355,11 +355,11 @@ pub struct RecoveryRepairPreview {
 }
 ```
 
-- [ ] **Step 4: Implement the minimum deterministic engine**
+- [x] **Step 4: Implement the minimum deterministic engine**
 
 Implement `RecoveryEngine` with `BTreeMap<String, RecoveryRecord>` and `VecDeque<RecoveryAttempt>`. `observe` ignores lower generations, derives `diagnosis_revision` from capability/generation/code, and resets the automatic-attempt count only when that revision changes. `begin_repair` validates the advertised action. `finish_repair` sets `healthy` only for `RepairCompletion::Verified` and records every completion in bounded history.
 
-- [ ] **Step 5: Export the module and run focused tests**
+- [x] **Step 5: Export the module and run focused tests**
 
 Add `store.rs` with an internal serialized state version `1`. `save` writes a sibling staging file, flushes it, and renames it over `recovery-state.json`; `load` rejects an unknown version or corrupt JSON and never silently discards it. `prune_history` removes attempts finished before the supplied cutoff before enforcing the count limit. Add tests proving records/history survive reload, retention is the newest 100 attempts within 30 days, and corrupt JSON returns an error while a fresh in-memory engine can still be created by the caller.
 
@@ -372,7 +372,7 @@ cargo clippy -p repodesk-core --tests -- -D warnings
 
 Expected: PASS with no warnings.
 
-- [ ] **Step 6: Commit the recovery domain**
+- [x] **Step 6: Commit the recovery domain**
 
 ```bash
 git add crates/repodesk-core/src/lib.rs crates/repodesk-core/src/recovery crates/repodesk-core/tests/recovery_engine.rs crates/repodesk-core/tests/recovery_store.rs
