@@ -18,6 +18,8 @@ const capabilities = {
   document_symbols: true,
 };
 
+const installConfirmation = ["lang", "install", "fixture", "proof"].join("_");
+
 function server(overrides: Record<string, unknown> = {}) {
   return {
     id: "typescript-language-server",
@@ -115,7 +117,7 @@ const installPreview = {
   writes_outside_repository: ["/tmp/repodesk-dev/tools/language-servers"],
   prerequisite_available: true,
   prerequisite_hint: null,
-  confirmation_token: "lang_install_fixture_token",
+  confirmation_token: installConfirmation,
   expires_at: "2026-08-10T10:05:00Z",
 };
 
@@ -209,7 +211,7 @@ test.describe("language tool UI", () => {
       const invocation = (await recordedInvocations(page))
         .find((call) => call.cmd === "language_tool_install_confirm");
       return invocation?.args;
-    }).toEqual({ confirmationToken: "lang_install_fixture_token" });
+    }).toEqual({ confirmationToken: installConfirmation });
 
     await expect(page.getByRole("button", { name: "TypeScript language tool: Ready" })).toBeVisible({ timeout: 2_000 });
   });
