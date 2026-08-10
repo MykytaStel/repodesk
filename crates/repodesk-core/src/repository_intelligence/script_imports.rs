@@ -193,7 +193,9 @@ fn find_from_specifier(
     cursor: usize,
     reason_prefix: &str,
 ) -> Option<(ScriptImport, usize)> {
-    let limit = bytes.len().min(cursor.saturating_add(MAX_IMPORT_SCAN_BYTES));
+    let limit = bytes
+        .len()
+        .min(cursor.saturating_add(MAX_IMPORT_SCAN_BYTES));
     let mut cursor = cursor;
 
     while cursor < limit {
