@@ -112,7 +112,7 @@ test("Repository intelligence explains semantic coverage and graph confidence", 
   await installMockIpc(page, repositoryIntelligenceFixtures);
   await page.goto("/");
   await page.getByRole("button", { name: /^Code —/ }).click();
-  await page.getByRole("treeitem", { name: "src", exact: true }).click();
+  await page.getByRole("treeitem", { name: /src/ }).click();
   await page.getByRole("treeitem", { name: /app\.ts/ }).click();
   await expect(page.locator(".semantic-code-editor-host .cm-editor")).toBeVisible();
 
