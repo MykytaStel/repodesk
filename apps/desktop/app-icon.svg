@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="RepoDesk">
+  <rect x="64" y="64" width="896" height="896" rx="180" fill="#ffffff"/>
+  <path fill="#0f1c2e" d="M280 224h290c120 0 216 96 216 224 0 82-40 153-104 193l158 159H703L544 641h26c66 0 120-86 120-193 0-70-54-126-120-126H280V224Z"/>
+  <path fill="#0f1c2e" d="M280 562 520 800H280V562Z"/>
+</svg>
