@@ -30,6 +30,7 @@ pub struct RepositoryLanguageCoverage {
     pub semantic_bytes_indexed: u64,
     pub strategy: RepositorySemanticStrategy,
     pub evidence_level: RepositoryEvidenceLevel,
+    pub truncated: bool,
     pub limitations: Vec<String>,
 }
 
@@ -50,6 +51,28 @@ pub struct RepositoryGraphEvidence {
     pub limitations: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct SemanticIndexBounds {
+    pub(super) workspace: bool,
+    pub(super) rust: bool,
+    pub(super) scripts: bool,
+}
+
+impl SemanticIndexBounds {
+    pub(super) fn any(self) -> bool {
+        self.workspace || self.rust || self.scripts
+    }
+
+    fn truncated_for(self, strategy: RepositorySemanticStrategy) -> bool {
+        self.workspace
+            || match strategy {
+                RepositorySemanticStrategy::RustAst => self.rust,
+                RepositorySemanticStrategy::ScriptLiteralImports => self.scripts,
+                RepositorySemanticStrategy::Unavailable => false,
+            }
+    }
+}
+
 #[derive(Default)]
 struct MutableLanguageCoverage {
     visible_files: usize,
@@ -60,7 +83,7 @@ struct MutableLanguageCoverage {
 pub(super) fn build_semantic_coverage(
     files: &[CodeWorkspaceFile],
     dependencies: &BTreeMap<String, Vec<RepositoryRelation>>,
-    semantic_truncated: bool,
+    bounds: SemanticIndexBounds,
 ) -> RepositorySemanticCoverage {
     let mut languages = BTreeMap::<String, MutableLanguageCoverage>::new();
     let mut semantic_files_eligible = 0_usize;
@@ -89,15 +112,17 @@ pub(super) fn build_semantic_coverage(
         .into_iter()
         .map(|(language, counts)| {
             let strategy = strategy_for_language(&language);
-            let evidence_level = language_evidence_level(strategy, &counts, semantic_truncated);
+            let truncated = bounds.truncated_for(strategy);
+            let evidence_level = language_evidence_level(strategy, &counts, truncated);
             RepositoryLanguageCoverage {
-                limitations: limitations_for_strategy(strategy, semantic_truncated),
+                limitations: limitations_for_strategy(strategy, bounds),
                 language,
                 visible_files: counts.visible_files,
                 semantic_files_indexed: counts.semantic_files_indexed,
                 semantic_bytes_indexed: counts.semantic_bytes_indexed,
                 strategy,
                 evidence_level,
+                truncated,
             }
         })
         .collect::<Vec<_>>();
@@ -120,7 +145,7 @@ pub(super) fn graph_evidence_for_focus(
     focus: &str,
     language: &str,
     dependencies: &BTreeMap<String, Vec<RepositoryRelation>>,
-    semantic_truncated: bool,
+    bounds: SemanticIndexBounds,
 ) -> RepositoryGraphEvidence {
     let strategy = strategy_for_language(language);
     if strategy == RepositorySemanticStrategy::Unavailable {
@@ -131,12 +156,12 @@ pub(super) fn graph_evidence_for_focus(
             reasons: vec![format!(
                 "RepoDesk does not yet build dependency edges for {language} files."
             )],
-            limitations: limitations_for_strategy(strategy, semantic_truncated),
+            limitations: limitations_for_strategy(strategy, bounds),
         };
     }
 
     if !dependencies.contains_key(focus) {
-        let mut limitations = limitations_for_strategy(strategy, semantic_truncated);
+        let mut limitations = limitations_for_strategy(strategy, bounds);
         limitations.push(
             "The focus file was not included in the semantic index; it may be oversized, unreadable, unparsable, or outside a bounded scan."
                 .to_string(),
@@ -150,14 +175,15 @@ pub(super) fn graph_evidence_for_focus(
         };
     }
 
+    let truncated = bounds.truncated_for(strategy);
     let (level, reason) = match strategy {
-        RepositorySemanticStrategy::RustAst if !semantic_truncated => (
+        RepositorySemanticStrategy::RustAst if !truncated => (
             RepositoryEvidenceLevel::Strong,
             "The focus file was parsed with the Rust AST index.".to_string(),
         ),
         RepositorySemanticStrategy::RustAst => (
             RepositoryEvidenceLevel::Bounded,
-            "The focus file was parsed with the Rust AST index, but repository coverage was bounded."
+            "The focus file was parsed with the Rust AST index, but Rust graph coverage was bounded."
                 .to_string(),
         ),
         RepositorySemanticStrategy::ScriptLiteralImports => (
@@ -173,7 +199,7 @@ pub(super) fn graph_evidence_for_focus(
         level,
         indexed: true,
         reasons: vec![reason],
-        limitations: limitations_for_strategy(strategy, semantic_truncated),
+        limitations: limitations_for_strategy(strategy, bounds),
     }
 }
 
@@ -188,7 +214,7 @@ fn strategy_for_language(language: &str) -> RepositorySemanticStrategy {
 fn language_evidence_level(
     strategy: RepositorySemanticStrategy,
     counts: &MutableLanguageCoverage,
-    semantic_truncated: bool,
+    truncated: bool,
 ) -> RepositoryEvidenceLevel {
     if strategy == RepositorySemanticStrategy::Unavailable || counts.semantic_files_indexed == 0 {
         return RepositoryEvidenceLevel::Unavailable;
@@ -196,7 +222,7 @@ fn language_evidence_level(
 
     match strategy {
         RepositorySemanticStrategy::RustAst
-            if !semantic_truncated && counts.semantic_files_indexed == counts.visible_files =>
+            if !truncated && counts.semantic_files_indexed == counts.visible_files =>
         {
             RepositoryEvidenceLevel::Strong
         }
@@ -209,7 +235,7 @@ fn language_evidence_level(
 
 fn limitations_for_strategy(
     strategy: RepositorySemanticStrategy,
-    semantic_truncated: bool,
+    bounds: SemanticIndexBounds,
 ) -> Vec<String> {
     let mut limitations = match strategy {
         RepositorySemanticStrategy::RustAst => vec![
@@ -226,11 +252,22 @@ fn limitations_for_strategy(
         ],
     };
 
-    if semantic_truncated {
+    if bounds.workspace {
         limitations.push(
-            "The repository semantic index hit a bound, so reverse edges and coverage may be incomplete."
+            "The visible workspace listing hit its repository-wide bound, so semantic coverage may omit files of this language."
                 .to_string(),
         );
+    }
+    match strategy {
+        RepositorySemanticStrategy::RustAst if bounds.rust => limitations.push(
+            "The Rust AST semantic index hit its bound, so Rust reverse edges and coverage may be incomplete."
+                .to_string(),
+        ),
+        RepositorySemanticStrategy::ScriptLiteralImports if bounds.scripts => limitations.push(
+            "The TypeScript/JavaScript literal-import semantic index hit its bound, so script reverse edges and coverage may be incomplete."
+                .to_string(),
+        ),
+        _ => {}
     }
     limitations
 }
@@ -265,7 +302,8 @@ mod tests {
             ("src/app.ts".to_string(), Vec::new()),
         ]);
 
-        let coverage = build_semantic_coverage(&files, &dependencies, false);
+        let coverage =
+            build_semantic_coverage(&files, &dependencies, SemanticIndexBounds::default());
         assert_eq!(coverage.semantic_files_eligible, 2);
         assert_eq!(coverage.semantic_files_indexed, 2);
         assert_eq!(coverage.semantic_bytes_indexed, 300);
@@ -277,6 +315,7 @@ mod tests {
             .expect("rust coverage");
         assert_eq!(rust.visible_files, 1);
         assert_eq!(rust.evidence_level, RepositoryEvidenceLevel::Strong);
+        assert!(!rust.truncated);
 
         let html = coverage
             .languages
@@ -288,17 +327,103 @@ mod tests {
     }
 
     #[test]
-    fn bounded_repository_downgrades_rust_graph_evidence() {
+    fn script_bound_does_not_downgrade_complete_rust_coverage() {
+        let files = vec![
+            file("src/lib.rs", "rust", 100, false),
+            file("src/app.ts", "typescript", 200, false),
+        ];
+        let dependencies = BTreeMap::from([
+            ("src/lib.rs".to_string(), Vec::new()),
+            ("src/app.ts".to_string(), Vec::new()),
+        ]);
+        let bounds = SemanticIndexBounds {
+            scripts: true,
+            ..SemanticIndexBounds::default()
+        };
+
+        let coverage = build_semantic_coverage(&files, &dependencies, bounds);
+        let rust = coverage
+            .languages
+            .iter()
+            .find(|item| item.language == "rust")
+            .expect("rust coverage");
+        let typescript = coverage
+            .languages
+            .iter()
+            .find(|item| item.language == "typescript")
+            .expect("typescript coverage");
+
+        assert_eq!(rust.evidence_level, RepositoryEvidenceLevel::Strong);
+        assert!(!rust.truncated);
+        assert!(typescript.truncated);
+        assert!(
+            !rust
+                .limitations
+                .iter()
+                .any(|item| item.contains("literal-import semantic index"))
+        );
+    }
+
+    #[test]
+    fn rust_bound_does_not_contaminate_script_limitations() {
+        let dependencies = BTreeMap::from([("src/app.ts".to_string(), Vec::new())]);
+        let bounds = SemanticIndexBounds {
+            rust: true,
+            ..SemanticIndexBounds::default()
+        };
+        let evidence = graph_evidence_for_focus("src/app.ts", "typescript", &dependencies, bounds);
+
+        assert!(evidence.indexed);
+        assert_eq!(evidence.level, RepositoryEvidenceLevel::Bounded);
+        assert!(
+            !evidence
+                .limitations
+                .iter()
+                .any(|item| item.contains("Rust AST semantic index"))
+        );
+    }
+
+    #[test]
+    fn rust_bound_downgrades_rust_graph_evidence() {
         let dependencies = BTreeMap::from([("src/lib.rs".to_string(), Vec::new())]);
-        let evidence = graph_evidence_for_focus("src/lib.rs", "rust", &dependencies, true);
+        let bounds = SemanticIndexBounds {
+            rust: true,
+            ..SemanticIndexBounds::default()
+        };
+        let evidence = graph_evidence_for_focus("src/lib.rs", "rust", &dependencies, bounds);
         assert!(evidence.indexed);
         assert_eq!(evidence.level, RepositoryEvidenceLevel::Bounded);
         assert!(
             evidence
                 .limitations
                 .iter()
-                .any(|item| item.contains("hit a bound"))
+                .any(|item| item.contains("Rust AST semantic index hit its bound"))
         );
+    }
+
+    #[test]
+    fn workspace_bound_applies_to_every_supported_language() {
+        let files = vec![
+            file("src/lib.rs", "rust", 100, false),
+            file("src/app.ts", "typescript", 200, false),
+        ];
+        let dependencies = BTreeMap::from([
+            ("src/lib.rs".to_string(), Vec::new()),
+            ("src/app.ts".to_string(), Vec::new()),
+        ]);
+        let bounds = SemanticIndexBounds {
+            workspace: true,
+            ..SemanticIndexBounds::default()
+        };
+
+        let coverage = build_semantic_coverage(&files, &dependencies, bounds);
+        assert!(coverage.languages.iter().all(|item| item.truncated));
+        let rust = coverage
+            .languages
+            .iter()
+            .find(|item| item.language == "rust")
+            .expect("rust coverage");
+        assert_eq!(rust.evidence_level, RepositoryEvidenceLevel::Bounded);
     }
 
     #[test]
@@ -307,7 +432,7 @@ mod tests {
             "src/index.html",
             "html",
             &BTreeMap::<String, Vec<RepositoryRelation>>::new(),
-            false,
+            SemanticIndexBounds::default(),
         );
         assert!(!evidence.indexed);
         assert_eq!(evidence.level, RepositoryEvidenceLevel::Unavailable);

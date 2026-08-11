@@ -12,6 +12,7 @@ export type RepositoryLanguageCoverage = {
   semantic_bytes_indexed: number;
   strategy: RepositorySemanticStrategy;
   evidence_level: RepositoryEvidenceLevel;
+  truncated: boolean;
   limitations: string[];
 };
 

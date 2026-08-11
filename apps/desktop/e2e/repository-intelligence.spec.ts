@@ -33,7 +33,7 @@ const repositoryIntelligenceFixtures = {
     fingerprint: "repo-intel-fixture",
   },
   repository_intelligence_snapshot: {
-    version: 2,
+    version: 3,
     project: "RepoDesk",
     focus_path: "src/app.ts",
     indexed_files: 7,
@@ -51,6 +51,7 @@ const repositoryIntelligenceFixtures = {
           semantic_bytes_indexed: 520,
           strategy: "script_literal_imports",
           evidence_level: "bounded",
+          truncated: false,
           limitations: [
             "Only relative literal imports are resolved; package imports, aliases, and computed imports remain unknown.",
           ],
@@ -61,9 +62,11 @@ const repositoryIntelligenceFixtures = {
           semantic_files_indexed: 1,
           semantic_bytes_indexed: 240,
           strategy: "rust_ast",
-          evidence_level: "strong",
+          evidence_level: "bounded",
+          truncated: true,
           limitations: [
             "Only local Rust module/use relationships are resolved; macros and external crates are not expanded.",
+            "The Rust AST semantic index hit its bound, so Rust reverse edges and coverage may be incomplete.",
           ],
         },
         {
@@ -73,13 +76,14 @@ const repositoryIntelligenceFixtures = {
           semantic_bytes_indexed: 0,
           strategy: "unavailable",
           evidence_level: "unavailable",
+          truncated: false,
           limitations: [
             "Dependency/dependent lists can be empty even when real relationships exist.",
           ],
         },
       ],
     },
-    truncated: false,
+    truncated: true,
     git_history_available: true,
     focus: {
       path: "src/app.ts",
@@ -121,19 +125,23 @@ test("Repository intelligence explains semantic coverage and graph confidence", 
   const drawer = page.getByRole("complementary", { name: "Repository intelligence" });
   await expect(drawer).toBeVisible();
   await expect(drawer.locator(".repo-intel-meta")).toContainText("3/4 semantic files indexed");
+  await expect(drawer.locator(".repo-intel-meta")).toContainText("bounded index");
 
   const evidence = drawer.locator(".repo-intel-evidence");
   await expect(evidence).toContainText("Graph evidence");
   await expect(evidence).toContainText("Bounded");
   await expect(evidence).toContainText("Local literal imports");
   await expect(evidence).toContainText("package imports, aliases, and computed imports remain unknown");
+  await expect(evidence).not.toContainText("Rust AST semantic index hit its bound");
 
   const coverage = drawer.locator(".repo-intel-coverage");
   await expect(coverage).toContainText("Semantic coverage");
-  await expect(coverage).toContainText("typescript");
-  await expect(coverage).toContainText("2/3");
-  await expect(coverage).toContainText("rust");
-  await expect(coverage).toContainText("1/1");
+  const typescript = coverage.locator(".repo-intel-coverage-row").filter({ hasText: "typescript" });
+  await expect(typescript).toContainText("2/3");
+  await expect(typescript).not.toContainText("index capped");
+  const rust = coverage.locator(".repo-intel-coverage-row").filter({ hasText: "rust" });
+  await expect(rust).toContainText("1/1");
+  await expect(rust).toContainText("index capped");
   await expect(drawer).toContainText("src/api.ts");
 
   const invocation = (await recordedInvocations(page))

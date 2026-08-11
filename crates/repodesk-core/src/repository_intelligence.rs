@@ -26,7 +26,7 @@ pub use semantic_coverage::{
     RepositorySemanticCoverage, RepositorySemanticStrategy,
 };
 
-pub const REPOSITORY_INTELLIGENCE_VERSION: u32 = 2;
+pub const REPOSITORY_INTELLIGENCE_VERSION: u32 = 3;
 const MAX_RUST_FILES: usize = 4_000;
 const MAX_RUST_INDEX_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_SINGLE_INDEX_FILE_BYTES: u64 = 384 * 1024;
@@ -124,11 +124,15 @@ pub fn build_repository_intelligence(
     let mut dependencies = build_dependency_map(&rust_facts, &all_paths);
     script_imports::extend_dependency_map(&mut dependencies, &script_index, &all_paths);
     let dependents = reverse_relations(&dependencies);
-    let semantic_truncated = workspace.truncated || rust_truncated || script_index.truncated;
+    let semantic_bounds = semantic_coverage::SemanticIndexBounds {
+        workspace: workspace.truncated,
+        rust: rust_truncated,
+        scripts: script_index.truncated,
+    };
     let coverage = semantic_coverage::build_semantic_coverage(
         &workspace.files,
         &dependencies,
-        semantic_truncated,
+        semantic_bounds,
     );
 
     let focus_path = focus_path
@@ -145,7 +149,7 @@ pub fn build_repository_intelligence(
             &dependencies,
             &dependents,
             git_history_available,
-            semantic_truncated,
+            semantic_bounds,
         )
     });
 
@@ -157,7 +161,7 @@ pub fn build_repository_intelligence(
         rust_files_indexed: rust_facts.len(),
         rust_bytes_indexed,
         coverage,
-        truncated: semantic_truncated,
+        truncated: semantic_bounds.any(),
         git_history_available,
         focus,
     })
@@ -445,7 +449,7 @@ fn build_focus_intelligence(
     dependencies: &BTreeMap<String, Vec<RepositoryRelation>>,
     dependents: &BTreeMap<String, Vec<RepositoryRelation>>,
     git_history_available: bool,
-    semantic_truncated: bool,
+    semantic_bounds: semantic_coverage::SemanticIndexBounds,
 ) -> RepositoryFileIntelligence {
     let direct_dependencies = dependencies.get(focus).cloned().unwrap_or_default();
     let direct_dependents = dependents.get(focus).cloned().unwrap_or_default();
@@ -467,7 +471,7 @@ fn build_focus_intelligence(
         focus,
         &language,
         dependencies,
-        semantic_truncated,
+        semantic_bounds,
     );
 
     RepositoryFileIntelligence {
