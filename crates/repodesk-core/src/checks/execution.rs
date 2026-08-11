@@ -226,14 +226,7 @@ fn finish_completed_check(
         Ok(output) => output,
         Err(error) => {
             return output_drain_failure_result(
-                command,
-                started,
-                status,
-                child,
-                rx_out,
-                rx_err,
-                "stdout",
-                error,
+                command, started, status, child, rx_out, rx_err, "stdout", error,
             );
         }
     };
@@ -241,14 +234,7 @@ fn finish_completed_check(
         Ok(output) => output,
         Err(error) => {
             return output_drain_failure_result(
-                command,
-                started,
-                status,
-                child,
-                rx_out,
-                rx_err,
-                "stderr",
-                error,
+                command, started, status, child, rx_out, rx_err, "stderr", error,
             );
         }
     };
