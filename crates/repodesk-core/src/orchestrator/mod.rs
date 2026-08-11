@@ -14,7 +14,8 @@ pub mod context;
 pub mod manual_import;
 pub mod plan;
 pub mod preview;
-pub mod review;
+mod review;
+mod review_transaction;
 pub mod runner;
 pub mod types;
 
@@ -25,7 +26,8 @@ pub use plan::{
     plan_has_paid_step, route_steps, step_uses_paid_provider,
 };
 pub use preview::{ExecutionPreview, ExecutionPreviewStep, execution_preview, preview_plan};
-pub use review::{ReviewAction, ReviewedFile, RunReview, record_review, review_run};
+pub use review::{ReviewAction, ReviewedFile, RunReview, record_review};
+pub use review_transaction::review_run;
 pub use runner::{
     AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, list_runs, load_latest_run, load_run,
     run_plan,
