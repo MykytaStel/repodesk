@@ -60,6 +60,35 @@ fn save_requires_the_fingerprint_that_was_opened() {
 }
 
 #[test]
+fn binary_like_save_is_rejected_before_the_live_file_is_changed() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    let path = dir.path().join("src/lib.rs");
+    let original = b"pub fn value() -> u8 { 1 }\n";
+    fs::write(&path, original).unwrap();
+
+    let opened = read_code_document(dir.path(), "src/lib.rs").unwrap();
+    let error = save_code_document(
+        dir.path(),
+        CodeWorkspaceSaveInput {
+            path: "src/lib.rs".into(),
+            content: "pub fn value() -> u8 { 2 }\0trailing binary marker".into(),
+            expected_fingerprint: opened.fingerprint,
+        },
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("Binary-like content"));
+    assert_eq!(fs::read(&path).unwrap(), original);
+    assert_eq!(
+        read_code_document(dir.path(), "src/lib.rs")
+            .unwrap()
+            .content,
+        String::from_utf8(original.to_vec()).unwrap()
+    );
+}
+
+#[test]
 fn successful_save_returns_a_new_clean_document_fingerprint() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join("src")).unwrap();
@@ -82,6 +111,31 @@ fn successful_save_returns_a_new_clean_document_fingerprint() {
     assert_ne!(result.document.fingerprint, result.previous_fingerprint);
     assert_eq!(result.document.content, "pub fn value() -> u8 { 2 }\n");
     assert_eq!(fs::read_to_string(path).unwrap(), result.document.content);
+}
+
+#[cfg(unix)]
+#[test]
+fn atomic_save_preserves_existing_unix_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    let path = dir.path().join("src/script.sh");
+    fs::write(&path, "#!/bin/sh\necho before\n").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let opened = read_code_document(dir.path(), "src/script.sh").unwrap();
+    save_code_document(
+        dir.path(),
+        CodeWorkspaceSaveInput {
+            path: "src/script.sh".into(),
+            content: "#!/bin/sh\necho after\n".into(),
+            expected_fingerprint: opened.fingerprint,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o755);
 }
 
 #[test]
