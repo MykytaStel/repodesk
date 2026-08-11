@@ -151,7 +151,9 @@ fn validate_run_id(run_id: &str) -> RepoDeskResult<()> {
     if valid {
         Ok(())
     } else {
-        Err(routing_error("invalid orchestration run id for review intent"))
+        Err(routing_error(
+            "invalid orchestration run id for review intent",
+        ))
     }
 }
 
