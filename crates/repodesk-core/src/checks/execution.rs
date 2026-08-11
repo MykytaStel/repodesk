@@ -379,7 +379,7 @@ fn terminate_process_tree(child: &mut Child) -> Result<(), String> {
         .ok_or_else(|| "process-group kill executable disappeared after preflight".to_string())?;
     let process_group = format!("-{}", child.id());
     let group_status = Command::new(kill_binary)
-        .args(["-KILL", &process_group])
+        .args(["-KILL", "--", &process_group])
         .status()
         .map_err(|error| format!("failed to invoke process-group kill: {error}"))?;
 
