@@ -14,7 +14,7 @@ pub mod context;
 pub mod manual_import;
 pub mod plan;
 pub mod preview;
-pub mod review;
+mod review;
 mod review_transaction;
 pub mod runner;
 pub mod types;
