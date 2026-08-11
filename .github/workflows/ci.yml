@@ -5,9 +5,11 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel superseded runs on the same ref within this workflow.
+# Cancel superseded runs on the same ref within this workflow. The namespace is
+# explicit so runs created before the check process-tree fix cannot block the
+# corrected workflow if an old child process ignored cancellation.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: repodesk-ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
