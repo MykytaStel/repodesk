@@ -139,7 +139,10 @@ export function RepositoryIntelligenceDrawer({
                   <i className={`repo-intel-evidence-badge ${item.evidence_level}`}>
                     {evidenceLabel(item.evidence_level)}
                   </i>
-                  <small>{item.semantic_files_indexed}/{item.visible_files}</small>
+                  <small>
+                    {item.semantic_files_indexed}/{item.visible_files}
+                    {item.truncated ? " · index capped" : ""}
+                  </small>
                 </span>
               </div>
             ))}
