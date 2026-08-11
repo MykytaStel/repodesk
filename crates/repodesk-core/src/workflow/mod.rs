@@ -1,6 +1,7 @@
 pub mod actions;
 pub mod engine;
 pub mod finish;
+mod finish_recovery;
 pub mod legacy;
 pub mod phase;
 pub mod receipt;
@@ -8,7 +9,8 @@ pub mod types;
 
 pub use actions::*;
 pub use engine::*;
-pub use finish::{CommitOutcome, VerificationOutcome, commit_reviewed_index, run_verification};
+pub use finish::{CommitOutcome, VerificationOutcome, run_verification};
+pub use finish_recovery::commit_reviewed_index;
 pub use legacy::*;
 pub use phase::{
     Evidence, ExecutionMode, Phase, PhaseCta, PhaseProgress, PhaseSignals, PhaseStatus, PhaseView,
