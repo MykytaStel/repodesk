@@ -452,13 +452,13 @@ mod tests {
                 id = "deepseek"
                 label = "DeepSeek"
                 base_url = "https://api.deepseek.com"
-                api_key = "fixture-old-plaintext"
+                api_key = "fixture"
                 default_model = "deepseek-chat"
                 enabled = true
             "#,
         )
         .unwrap();
-        assert_eq!(config.providers[0].api_key, "fixture-old-plaintext");
+        assert_eq!(config.providers[0].api_key, "fixture");
     }
 
     #[test]
