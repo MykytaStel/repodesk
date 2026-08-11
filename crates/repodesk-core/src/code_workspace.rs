@@ -11,17 +11,19 @@
 //! - binary/oversized files are rejected;
 //! - saves use an optimistic fingerprint so concurrent external edits are never
 //!   overwritten silently;
+//! - saves replace validated text atomically instead of truncating the live file;
 //! - repository enumeration is bounded and prefers Git's already-optimized
 //!   tracked/untracked index instead of recursively walking generated folders.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tempfile::NamedTempFile;
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::projects::get_active_project;
@@ -178,22 +180,21 @@ pub fn save_code_document(
     project_path: &Path,
     input: CodeWorkspaceSaveInput,
 ) -> RepoDeskResult<CodeWorkspaceSaveResult> {
-    if input.content.len() as u64 > MAX_EDITABLE_FILE_BYTES {
-        return Err(RepoDeskError::Api(format!(
-            "Code editor content exceeds the {} byte limit",
-            MAX_EDITABLE_FILE_BYTES
-        )));
-    }
+    validate_save_content(&input.content)?;
 
     let safe = resolve_existing_editable_file(project_path, &input.path)?;
     let current_bytes = fs::read(&safe.canonical)?;
     let current_content = String::from_utf8(current_bytes.clone())
         .map_err(|_| RepoDeskError::Api("Code workspace only edits UTF-8 text files".into()))?;
+    if current_content.contains('\0') {
+        return Err(RepoDeskError::Api(
+            "Binary-like file cannot be edited in Code Workspace".into(),
+        ));
+    }
+
     let current_fingerprint = fingerprint(&current_bytes);
     if input.expected_fingerprint.trim() != current_fingerprint {
-        return Err(RepoDeskError::Api(
-            "File changed outside RepoDesk after it was opened; reload before saving".into(),
-        ));
+        return Err(stale_editor_error());
     }
 
     if current_content == input.content {
@@ -205,12 +206,7 @@ pub fn save_code_document(
         });
     }
 
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(&safe.canonical)?;
-    file.write_all(input.content.as_bytes())?;
-    file.flush()?;
+    atomic_replace_validated_text(&safe.canonical, input.content.as_bytes(), &current_fingerprint)?;
 
     let document = document_from_path(project_path, &safe.relative, &safe.canonical)?;
     Ok(CodeWorkspaceSaveResult {
@@ -218,6 +214,76 @@ pub fn save_code_document(
         previous_fingerprint: current_fingerprint,
         changed: true,
     })
+}
+
+fn validate_save_content(content: &str) -> RepoDeskResult<()> {
+    if content.len() as u64 > MAX_EDITABLE_FILE_BYTES {
+        return Err(RepoDeskError::Api(format!(
+            "Code editor content exceeds the {} byte limit",
+            MAX_EDITABLE_FILE_BYTES
+        )));
+    }
+    if content.contains('\0') {
+        return Err(RepoDeskError::Api(
+            "Binary-like content cannot be saved in Code Workspace".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn stale_editor_error() -> RepoDeskError {
+    RepoDeskError::Api(
+        "File changed outside RepoDesk after it was opened; reload before saving".into(),
+    )
+}
+
+fn atomic_replace_validated_text(
+    path: &Path,
+    content: &[u8],
+    expected_fingerprint: &str,
+) -> RepoDeskResult<()> {
+    let parent = path.parent().ok_or_else(|| {
+        RepoDeskError::Api("Code workspace file has no writable parent directory".into())
+    })?;
+    let original_metadata = fs::metadata(path)?;
+    if original_metadata.permissions().readonly() {
+        return Err(RepoDeskError::Api(
+            "Code workspace file is read-only".into(),
+        ));
+    }
+
+    let mut temporary = NamedTempFile::new_in(parent)?;
+    temporary.write_all(content)?;
+    temporary.flush()?;
+    temporary.as_file().sync_all()?;
+    temporary
+        .as_file()
+        .set_permissions(original_metadata.permissions())?;
+
+    // Re-check immediately before replacement so slow temporary-file I/O does
+    // not widen the optimistic-concurrency window and silently overwrite an
+    // external edit made after the document was opened.
+    let latest_bytes = fs::read(path)?;
+    if fingerprint(&latest_bytes) != expected_fingerprint {
+        return Err(stale_editor_error());
+    }
+
+    temporary
+        .persist(path)
+        .map_err(|error| RepoDeskError::Io(error.error))?;
+    sync_parent_directory(parent)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) -> RepoDeskResult<()> {
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_parent: &Path) -> RepoDeskResult<()> {
+    Ok(())
 }
 
 struct SafeEditableFile {
@@ -554,5 +620,11 @@ mod tests {
         assert!(skip_fallback_directory("node_modules"));
         assert!(skip_fallback_directory("target"));
         assert!(!skip_fallback_directory("src"));
+    }
+
+    #[test]
+    fn save_content_validation_rejects_binary_like_text_before_io() {
+        let error = validate_save_content("before\0after").unwrap_err();
+        assert!(error.to_string().contains("Binary-like content"));
     }
 }
