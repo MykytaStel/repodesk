@@ -131,8 +131,7 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
         .results
         .iter()
         .any(|result| result.workspace.is_some() && !result.changed_files.is_empty());
-    let transaction =
-        AcceptTransaction::begin(&project.path, &touched_paths, restore_worktree)?;
+    let transaction = AcceptTransaction::begin(&project.path, &touched_paths, restore_worktree)?;
 
     match review::review_run(run_id, action) {
         Ok(review) => {
@@ -436,12 +435,21 @@ mod tests {
         .unwrap();
 
         git(dir.path(), &["add", "--", "a.txt"]);
-        assert_eq!(git(dir.path(), &["diff", "--cached", "--name-only"]), "a.txt");
+        assert_eq!(
+            git(dir.path(), &["diff", "--cached", "--name-only"]),
+            "a.txt"
+        );
 
         transaction.rollback().unwrap();
         assert!(git(dir.path(), &["diff", "--cached", "--name-only"]).is_empty());
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "a1\n");
-        assert_eq!(fs::read_to_string(dir.path().join("b.txt")).unwrap(), "b1\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "a1\n"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("b.txt")).unwrap(),
+            "b1\n"
+        );
     }
 
     #[test]
@@ -461,7 +469,10 @@ mod tests {
 
         transaction.rollback().unwrap();
         assert_eq!(git(dir.path(), &["write-tree"]), original_tree);
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "a0\n");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "a0\n"
+        );
         assert!(!dir.path().join("new.txt").exists());
     }
 
@@ -479,8 +490,14 @@ mod tests {
         transaction.rollback().unwrap();
 
         assert_eq!(git(dir.path(), &["write-tree"]), original_tree);
-        assert_eq!(git(dir.path(), &["diff", "--cached", "--name-only"]), "c.txt");
-        assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "partial accept\n");
+        assert_eq!(
+            git(dir.path(), &["diff", "--cached", "--name-only"]),
+            "c.txt"
+        );
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "partial accept\n"
+        );
     }
 
     #[test]
@@ -500,10 +517,7 @@ mod tests {
             "agent new\n",
         )
         .unwrap();
-        git(
-            dir.path(),
-            &["add", "--", "existing-empty/nested/new.txt"],
-        );
+        git(dir.path(), &["add", "--", "existing-empty/nested/new.txt"]);
 
         transaction.rollback().unwrap();
         assert!(dir.path().join("existing-empty").is_dir());
