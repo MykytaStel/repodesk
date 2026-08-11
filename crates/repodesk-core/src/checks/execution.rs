@@ -2,13 +2,15 @@ use std::io::Read;
 use std::path::Path;
 #[cfg(windows)]
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
 use wait_timeout::ChildExt;
 
 use super::CheckCommandResult;
+
+const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 const ALLOWED_CHECK_BINARIES: [&str; 26] = [
     "cargo",
@@ -168,14 +170,14 @@ pub(super) fn run_parsed_check_with_timeout(
 
     let timeout = Duration::from_secs(timeout_secs);
     match child.wait_timeout(timeout) {
-        Ok(Some(status)) => CheckCommandResult {
-            command: display_command.to_string(),
-            status: if status.success() { "passed" } else { "failed" }.to_string(),
-            exit_code: status.code(),
-            duration_ms: started.elapsed().as_millis(),
-            stdout: rx_out.recv().unwrap_or_default(),
-            stderr: rx_err.recv().unwrap_or_default(),
-        },
+        Ok(Some(status)) => finish_completed_check(
+            display_command,
+            started,
+            status,
+            &mut child,
+            &rx_out,
+            &rx_err,
+        ),
         Ok(None) => {
             let termination_error = terminate_process_tree(&mut child).err();
             let mut stderr = format!(
@@ -209,6 +211,102 @@ pub(super) fn run_parsed_check_with_timeout(
                 stderr,
             }
         }
+    }
+}
+
+fn finish_completed_check(
+    command: &str,
+    started: Instant,
+    status: ExitStatus,
+    child: &mut Child,
+    rx_out: &Receiver<String>,
+    rx_err: &Receiver<String>,
+) -> CheckCommandResult {
+    let stdout = match rx_out.recv_timeout(OUTPUT_DRAIN_TIMEOUT) {
+        Ok(output) => output,
+        Err(error) => {
+            return output_drain_failure_result(
+                command,
+                started,
+                status,
+                child,
+                rx_out,
+                rx_err,
+                "stdout",
+                error,
+            );
+        }
+    };
+    let stderr = match rx_err.recv_timeout(OUTPUT_DRAIN_TIMEOUT) {
+        Ok(output) => output,
+        Err(error) => {
+            return output_drain_failure_result(
+                command,
+                started,
+                status,
+                child,
+                rx_out,
+                rx_err,
+                "stderr",
+                error,
+            );
+        }
+    };
+
+    CheckCommandResult {
+        command: command.to_string(),
+        status: if status.success() { "passed" } else { "failed" }.to_string(),
+        exit_code: status.code(),
+        duration_ms: started.elapsed().as_millis(),
+        stdout,
+        stderr,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn output_drain_failure_result(
+    command: &str,
+    started: Instant,
+    status: ExitStatus,
+    child: &mut Child,
+    rx_out: &Receiver<String>,
+    rx_err: &Receiver<String>,
+    pipe: &str,
+    drain_error: RecvTimeoutError,
+) -> CheckCommandResult {
+    let termination_error = terminate_process_tree(child).err();
+    let stdout = rx_out
+        .recv_timeout(OUTPUT_DRAIN_TIMEOUT)
+        .unwrap_or_default();
+    let captured_stderr = rx_err
+        .recv_timeout(OUTPUT_DRAIN_TIMEOUT)
+        .unwrap_or_default();
+    let reason = match drain_error {
+        RecvTimeoutError::Timeout => format!(
+            "Check leader exited but the {pipe} pipe stayed open; a descendant process likely outlived the approved check leader"
+        ),
+        RecvTimeoutError::Disconnected => {
+            format!("Check leader exited but the {pipe} capture worker disconnected unexpectedly")
+        }
+    };
+    let mut stderr = if captured_stderr.is_empty() {
+        reason
+    } else {
+        format!("{captured_stderr}\n{reason}")
+    };
+    if let Some(error) = termination_error {
+        stderr.push_str(&format!(". Process-tree termination reported: {error}"));
+    } else {
+        stderr.push_str(". RepoDesk terminated the remaining check process tree");
+    }
+
+    CheckCommandResult {
+        command: command.to_string(),
+        status: "failed".to_string(),
+        exit_code: status.code(),
+        duration_ms: started.elapsed().as_millis(),
+        stdout,
+        stderr,
     }
 }
 
@@ -390,6 +488,43 @@ mod tests {
         assert!(
             !marker.exists(),
             "descendant outlived the timed-out check process group"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn completed_leader_cannot_leave_descendant_holding_stdio_open() {
+        if Command::new("python3").arg("--version").output().is_err() {
+            return;
+        }
+
+        let dir = tempdir().unwrap();
+        let marker = dir.path().join("background-descendant-survived.txt");
+        let child_code = format!(
+            "import pathlib,time; time.sleep(4); pathlib.Path({:?}).write_text('survived')",
+            marker.to_string_lossy()
+        );
+        let parent_code = format!(
+            "import subprocess,sys; subprocess.Popen([sys.executable,'-c',{:?}])",
+            child_code
+        );
+        let parsed = ParsedCheckCommand {
+            executable: "python3".to_string(),
+            args: vec!["-c".to_string(), parent_code],
+        };
+
+        let result = run_parsed_check_with_timeout(
+            "python background descendant fixture",
+            &parsed,
+            dir.path(),
+            10,
+        );
+        assert_eq!(result.status, "failed", "stderr: {}", result.stderr);
+        assert!(result.stderr.contains("pipe stayed open"));
+        std::thread::sleep(Duration::from_secs(3));
+        assert!(
+            !marker.exists(),
+            "descendant outlived a completed check leader after pipe-drain cleanup"
         );
     }
 }
