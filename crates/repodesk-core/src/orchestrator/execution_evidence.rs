@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -486,11 +486,11 @@ fn routing_error(detail: impl Into<String>) -> RepoDeskError {
 
 #[cfg(test)]
 mod tests {
+    use super::super::types::{RunStatus, SubAgentResult, SubAgentStatus, SubAgentTask};
     use super::*;
     use crate::api_clients::ThinkingLevel;
     use crate::routing::types::{ExecutorKind, TaskKind};
     use crate::worktree::RunWorktree;
-    use super::super::types::{RunStatus, SubAgentResult, SubAgentStatus, SubAgentTask};
 
     fn task(id: &str, allow_write: bool) -> SubAgentTask {
         SubAgentTask {
