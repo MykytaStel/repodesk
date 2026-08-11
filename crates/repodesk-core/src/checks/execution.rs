@@ -383,12 +383,8 @@ mod tests {
             args: vec!["-c".to_string(), parent_code],
         };
 
-        let result = run_parsed_check_with_timeout(
-            "python descendant fixture",
-            &parsed,
-            dir.path(),
-            1,
-        );
+        let result =
+            run_parsed_check_with_timeout("python descendant fixture", &parsed, dir.path(), 1);
         assert_eq!(result.status, "timeout", "stderr: {}", result.stderr);
         std::thread::sleep(Duration::from_secs(3));
         assert!(
