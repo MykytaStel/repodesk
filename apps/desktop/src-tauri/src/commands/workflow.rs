@@ -197,8 +197,7 @@ pub async fn work_set_execution_mode(mode: String) -> Result<PhaseProgress, Erro
 #[tauri::command]
 pub async fn work_review(run_id: String, action: String) -> Result<PhaseProgress, ErrorPayload> {
     let action = ReviewAction::from_label(&action).map_err(ErrorPayload::from)?;
-    let review = orchestrator::review_run(&run_id, action).map_err(ErrorPayload::from)?;
-    orchestrator::record_review(&run_id, action, &review).map_err(ErrorPayload::from)?;
+    orchestrator::review_run(&run_id, action).map_err(ErrorPayload::from)?;
     Ok(current_progress())
 }
 

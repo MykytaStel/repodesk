@@ -1,11 +1,13 @@
-//! Transaction boundary for human Accept.
+//! Transaction boundary for human review side effects.
 //!
 //! The review engine contains the path-, symlink-, rename-, and isolated-worktree
-//! apply logic. This module wraps that engine so an Accept is all-or-nothing from
-//! the active checkout's point of view: the exact pre-Accept Git index is saved,
-//! and any apply error or skipped path rolls the index back. Isolated-worktree
-//! Accept also restores the touched working-tree paths because that flow copies
-//! or applies bytes into the active checkout.
+//! apply logic. Accept is all-or-nothing from the active checkout's point of
+//! view: the exact pre-Accept Git index is saved, and any apply, skipped-path, or
+//! final evidence-persistence failure rolls the index back. Isolated-worktree
+//! Accept also restores touched working-tree paths because that flow copies or
+//! applies bytes into the active checkout. Reject is resumable instead of rolled
+//! back: the caller owns a durable pre-side-effect intent and may safely retry the
+//! idempotent Reject cleanup if final evidence persistence fails.
 
 use std::collections::HashSet;
 use std::fs;
@@ -112,12 +114,35 @@ impl AcceptTransaction {
     }
 }
 
-/// Apply a human review action. Reject keeps the existing bounded behavior.
-/// Accept is wrapped in an explicit transaction so a later file failure cannot
-/// leave an earlier subset staged/applied while Review remains open.
-pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunReview> {
+/// Apply one human review action and persist its evidence through the same
+/// boundary. The caller must durably record the human intent before calling this
+/// function.
+///
+/// Accept keeps its rollback guard alive through `persist`: if final evidence
+/// cannot be saved, the exact pre-Accept index is restored (and isolated-worktree
+/// bytes copied into the active checkout are undone). Reject deliberately does
+/// not recreate discarded bytes after the human decision was durably recorded;
+/// instead a persistence failure is resumable by repeating Reject.
+pub fn review_run_with_persist<F>(
+    run_id: &str,
+    action: ReviewAction,
+    persist: F,
+) -> RepoDeskResult<RunReview>
+where
+    F: FnOnce(&RunReview) -> RepoDeskResult<()>,
+{
     if action == ReviewAction::Reject {
-        return review::review_run(run_id, action);
+        let review = review::review_run(run_id, action)?;
+        let skipped = skipped_paths(&review);
+        if !skipped.is_empty() {
+            return Err(routing_error(format!(
+                "reject is incomplete: {} of the run's files were not discarded ({}). The durable Reject intent remains pending; retry Reject after resolving the filesystem problem",
+                skipped.len(),
+                skipped.join(", ")
+            )));
+        }
+        persist(&review)?;
+        return Ok(review);
     }
 
     let run = load_run(run_id)?.ok_or_else(|| {
@@ -133,19 +158,36 @@ pub fn review_run(run_id: &str, action: ReviewAction) -> RepoDeskResult<RunRevie
         .any(|result| result.workspace.is_some() && !result.changed_files.is_empty());
     let transaction = AcceptTransaction::begin(&project.path, &touched_paths, restore_worktree)?;
 
-    match review::review_run(run_id, action) {
+    finish_accept_transaction(transaction, review::review_run(run_id, action), persist)
+}
+
+fn finish_accept_transaction<F>(
+    transaction: AcceptTransaction,
+    result: RepoDeskResult<RunReview>,
+    persist: F,
+) -> RepoDeskResult<RunReview>
+where
+    F: FnOnce(&RunReview) -> RepoDeskResult<()>,
+{
+    match result {
         Ok(review) => {
             let skipped = skipped_paths(&review);
-            if skipped.is_empty() {
-                Ok(review)
-            } else {
+            if !skipped.is_empty() {
                 let primary = format!(
                     "accept blocked: {} of the run's files were not applied ({})",
                     skipped.len(),
                     skipped.join(", ")
                 );
-                rollback_error(transaction.rollback(), primary)
+                return rollback_error(transaction.rollback(), primary);
             }
+
+            if let Err(error) = persist(&review) {
+                let primary = format!(
+                    "accept side effects completed but review evidence persistence failed ({error}); Accept was rolled back and the durable intent remains pending. Retry Accept to resume without rerunning the agent"
+                );
+                return rollback_error(transaction.rollback(), primary);
+            }
+            Ok(review)
         }
         Err(error) => {
             let primary = error.to_string();
@@ -449,6 +491,40 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dir.path().join("b.txt")).unwrap(),
             "b1\n"
+        );
+    }
+
+    #[test]
+    fn accept_evidence_failure_rolls_back_staging() {
+        let dir = repo();
+        fs::write(dir.path().join("a.txt"), "accepted bytes\n").unwrap();
+        let original_tree = git(dir.path(), &["write-tree"]);
+        let transaction =
+            AcceptTransaction::begin(dir.path(), &["a.txt".to_string()], false).unwrap();
+        git(dir.path(), &["add", "--", "a.txt"]);
+        let review = RunReview {
+            run_id: "run1".into(),
+            action: ReviewAction::Accept,
+            project: "demo".into(),
+            processed: vec![super::super::review::ReviewedFile {
+                path: "a.txt".into(),
+                outcome: "staged".into(),
+            }],
+            warnings: vec![],
+        };
+
+        let error = finish_accept_transaction(transaction, Ok(review), |_| {
+            Err(routing_error("fixture receipt failure"))
+        })
+        .expect_err("receipt failure must roll Accept back");
+
+        assert!(error.to_string().contains("rolled back"));
+        assert_eq!(git(dir.path(), &["write-tree"]), original_tree);
+        assert!(git(dir.path(), &["diff", "--cached", "--name-only"]).is_empty());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("a.txt")).unwrap(),
+            "accepted bytes\n",
+            "in-place agent worktree bytes remain available for a retry"
         );
     }
 
