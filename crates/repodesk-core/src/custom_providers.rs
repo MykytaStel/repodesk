@@ -415,20 +415,20 @@ mod tests {
 
     #[test]
     fn custom_provider_serialization_never_contains_api_key() {
-        let provider = provider_with_key("sk-plaintext-must-not-persist");
+        let provider = provider_with_key("fixture-plaintext-must-not-persist");
         let serialized = toml::to_string_pretty(&CustomProvidersConfig {
             providers: vec![provider],
         })
         .unwrap();
         assert!(!serialized.contains("api_key"));
-        assert!(!serialized.contains("sk-plaintext-must-not-persist"));
+        assert!(!serialized.contains("fixture-plaintext-must-not-persist"));
     }
 
     #[test]
     fn legacy_plaintext_key_migrates_and_is_cleared_only_after_verification() {
         let resolver = MemoryResolver::default();
         let mut config = CustomProvidersConfig {
-            providers: vec![provider_with_key("sk-legacy-secret")],
+            providers: vec![provider_with_key("fixture-legacy-secret")],
         };
 
         assert!(migrate_plaintext_credentials(&mut config, &resolver).unwrap());
@@ -436,11 +436,11 @@ mod tests {
         let credential_key = credential_key_for_provider("Deep Seek");
         assert_eq!(
             resolver.get(&credential_key).unwrap().as_deref(),
-            Some("sk-legacy-secret")
+            Some("fixture-legacy-secret")
         );
 
         let sanitized = toml::to_string_pretty(&config).unwrap();
-        assert!(!sanitized.contains("sk-legacy-secret"));
+        assert!(!sanitized.contains("fixture-legacy-secret"));
         assert!(!sanitized.contains("api_key"));
     }
 
@@ -452,13 +452,13 @@ mod tests {
                 id = "deepseek"
                 label = "DeepSeek"
                 base_url = "https://api.deepseek.com"
-                api_key = "sk-old-plaintext"
+                api_key = "fixture-old-plaintext"
                 default_model = "deepseek-chat"
                 enabled = true
             "#,
         )
         .unwrap();
-        assert_eq!(config.providers[0].api_key, "sk-old-plaintext");
+        assert_eq!(config.providers[0].api_key, "fixture-old-plaintext");
     }
 
     #[test]
