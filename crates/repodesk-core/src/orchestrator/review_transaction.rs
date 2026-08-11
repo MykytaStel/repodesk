@@ -23,6 +23,7 @@ struct PathSnapshot {
     path: String,
     tracked_before: bool,
     existed_before: bool,
+    missing_parents_before: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -55,6 +56,7 @@ impl AcceptTransaction {
                     &["ls-files", "--error-unmatch", "--", path],
                 ),
                 existed_before: fs::symlink_metadata(project_path.join(path)).is_ok(),
+                missing_parents_before: missing_parent_directories(project_path, path)?,
             });
         }
 
@@ -91,7 +93,11 @@ impl AcceptTransaction {
                 .iter()
                 .filter(|path| !path.tracked_before && !path.existed_before)
             {
-                remove_transaction_created_path(&self.project_path, &snapshot.path)?;
+                remove_transaction_created_path(
+                    &self.project_path,
+                    &snapshot.path,
+                    &snapshot.missing_parents_before,
+                )?;
             }
         }
 
@@ -221,7 +227,47 @@ fn is_safe_relative(path: &str) -> bool {
         .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
-fn remove_transaction_created_path(project_path: &Path, relative: &str) -> RepoDeskResult<()> {
+fn missing_parent_directories(project_path: &Path, relative: &str) -> RepoDeskResult<Vec<PathBuf>> {
+    if !is_safe_relative(relative) {
+        return Err(routing_error(format!(
+            "accept transaction refused unsafe path '{relative}'"
+        )));
+    }
+
+    let mut cursor = project_path.to_path_buf();
+    let mut missing = Vec::new();
+    let components = Path::new(relative).components().collect::<Vec<_>>();
+    for component in components.iter().take(components.len().saturating_sub(1)) {
+        let Component::Normal(part) = component else {
+            continue;
+        };
+        cursor.push(part);
+        match fs::symlink_metadata(&cursor) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(routing_error(format!(
+                    "accept transaction refused '{relative}' because a parent path is a symlink"
+                )));
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(routing_error(format!(
+                    "accept transaction refused '{relative}' because a parent path is not a directory"
+                )));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(cursor.clone());
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(missing)
+}
+
+fn remove_transaction_created_path(
+    project_path: &Path,
+    relative: &str,
+    missing_parents_before: &[PathBuf],
+) -> RepoDeskResult<()> {
     assert_safe_parent_chain(project_path, relative)?;
     let target = project_path.join(relative);
     let metadata = match fs::symlink_metadata(&target) {
@@ -239,7 +285,7 @@ fn remove_transaction_created_path(project_path: &Path, relative: &str) -> RepoD
         )));
     }
 
-    cleanup_empty_parents(project_path, target.parent());
+    cleanup_transaction_created_parents(project_path, missing_parents_before);
     Ok(())
 }
 
@@ -278,15 +324,14 @@ fn assert_safe_parent_chain(project_path: &Path, relative: &str) -> RepoDeskResu
     Ok(())
 }
 
-fn cleanup_empty_parents(project_path: &Path, mut parent: Option<&Path>) {
-    while let Some(path) = parent {
+fn cleanup_transaction_created_parents(project_path: &Path, missing_parents_before: &[PathBuf]) {
+    for path in missing_parents_before.iter().rev() {
         if path == project_path || !path.starts_with(project_path) {
-            break;
+            continue;
         }
-        match fs::remove_dir(path) {
-            Ok(()) => parent = path.parent(),
-            Err(_) => break,
-        }
+        // remove_dir is deliberately non-recursive: a parent is removed only if
+        // it was absent before Accept and is empty after transaction rollback.
+        let _ = fs::remove_dir(path);
     }
 }
 
@@ -436,6 +481,33 @@ mod tests {
         assert_eq!(git(dir.path(), &["write-tree"]), original_tree);
         assert_eq!(git(dir.path(), &["diff", "--cached", "--name-only"]), "c.txt");
         assert_eq!(fs::read_to_string(dir.path().join("a.txt")).unwrap(), "partial accept\n");
+    }
+
+    #[test]
+    fn rollback_preserves_preexisting_empty_parent_directory() {
+        let dir = repo();
+        fs::create_dir(dir.path().join("existing-empty")).unwrap();
+        let transaction = AcceptTransaction::begin(
+            dir.path(),
+            &["existing-empty/nested/new.txt".to_string()],
+            true,
+        )
+        .unwrap();
+
+        fs::create_dir_all(dir.path().join("existing-empty/nested")).unwrap();
+        fs::write(
+            dir.path().join("existing-empty/nested/new.txt"),
+            "agent new\n",
+        )
+        .unwrap();
+        git(
+            dir.path(),
+            &["add", "--", "existing-empty/nested/new.txt"],
+        );
+
+        transaction.rollback().unwrap();
+        assert!(dir.path().join("existing-empty").is_dir());
+        assert!(!dir.path().join("existing-empty/nested").exists());
     }
 
     #[test]
