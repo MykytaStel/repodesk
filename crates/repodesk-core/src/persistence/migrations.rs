@@ -421,7 +421,9 @@ mod tests {
             .unwrap();
         assert_eq!(event_count, 0);
         let meta_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM event_ledger_meta", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM event_ledger_meta", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(meta_count, 0);
     }
