@@ -556,6 +556,7 @@ mod tests {
     use crate::memory::store;
     use crate::memory::test_support::with_temp_home;
     use crate::projects::{AddProjectInput, add_project, use_project};
+    use serial_test::serial;
 
     fn activate_project(repo: &TempDir) -> ProjectConfig {
         let config = add_project(AddProjectInput {
@@ -570,6 +571,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn scan_detects_known_ai_instruction_files() {
         with_temp_home(|| {
             let repo = TempDir::new().unwrap();
@@ -603,6 +605,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn secret_files_are_redacted_and_not_imported() {
         with_temp_home(|| {
             let repo = TempDir::new().unwrap();
@@ -630,6 +633,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn import_appends_clean_instruction_file_to_memory() {
         with_temp_home(|| {
             let repo = TempDir::new().unwrap();
