@@ -232,7 +232,7 @@ fn full_path_execute_accept_verify_commit_completes() {
 
 #[test]
 #[serial]
-fn commit_refuses_files_outside_the_reviewed_changeset() {
+fn verification_refuses_tree_changes_after_accept() {
     if !git_available() {
         return;
     }
@@ -249,28 +249,47 @@ fn commit_refuses_files_outside_the_reviewed_changeset() {
     )
     .expect("accept");
 
-    // A stray file also gets staged, then the user verifies the (now larger)
-    // index — verification is fresh, but the index holds a path outside the
-    // reviewed changeset, so the bounded commit must still refuse.
+    // Accept bound Review to tree T1. Staging any additional content creates
+    // tree T2, so the old review must become stale before checks can run.
     std::fs::write(repo.join("stray.txt"), "stray\n").unwrap();
     git_ok(repo, &["add", "stray.txt"]);
-    run_verification().expect("verify");
 
-    let err = commit_reviewed_index("done").expect_err("stray must block the commit");
+    assert_eq!(
+        derive_progress(&derive_signals(&evidence(repo)), ExecutionMode::AgentRun).current,
+        Phase::Review,
+        "changing the staged tree after Accept reopens Review"
+    );
+    let err = run_verification().expect_err("stale reviewed tree must block verification");
     assert!(
-        err.to_string().contains("outside the reviewed changeset"),
+        err.to_string().contains("review is missing or stale"),
         "unexpected error: {err}"
     );
+    assert!(
+        load_receipt().unwrap().unwrap().verification.is_none(),
+        "a blocked Verify must not mint verification evidence"
+    );
+
     // Nothing was committed: HEAD is still the initial commit.
     let log = git(repo, &["log", "--oneline"]);
     assert_eq!(String::from_utf8_lossy(&log.stdout).lines().count(), 1);
 
-    // Unstage the stray file → the bounded commit now succeeds.
+    // Returning to the old path set is not enough to resurrect the previous
+    // Accept. Review evidence was invalidated by T2, so the user must explicitly
+    // Accept the current tree again before Verify can proceed.
     git_ok(repo, &["restore", "--staged", "stray.txt"]);
-    // The index tree changed, so re-verify before committing.
-    run_verification().expect("re-verify");
-    let outcome = commit_reviewed_index("done").expect("commit after unstaging stray");
+    let err = run_verification().expect_err("old Accept must stay invalidated");
+    assert!(err.to_string().contains("review is missing or stale"));
+
+    record_review(
+        "run1",
+        ReviewAction::Accept,
+        &run_review(&[("a.txt", "applied and staged")]),
+    )
+    .expect("re-accept current tree");
+    run_verification().expect("verify re-accepted tree");
+    let outcome = commit_reviewed_index("done").expect("commit re-accepted tree");
     assert_eq!(outcome.committed_paths, vec!["a.txt".to_string()]);
+
     // The stray file was never committed.
     let files = git(repo, &["show", "--name-only", "--pretty=format:", "HEAD"]);
     let listed = String::from_utf8_lossy(&files.stdout);

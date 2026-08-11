@@ -16,7 +16,7 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::errors::RepoDeskResult;
+use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::tasks::show_active_task;
 
 use super::phase::ExecutionMode;
@@ -40,7 +40,9 @@ pub struct StepReceipt {
 pub struct ExecutionReceipt {
     pub status: RunStatus,
     pub required_steps: Vec<StepReceipt>,
-    /// Digest of the run's changeset (sorted-unique repo-relative paths).
+    /// Digest of the run's path set. This is an identity for *which paths* the
+    /// run reported, not proof of their bytes. Exact accepted content is bound
+    /// separately by [`ReviewReceipt::index_tree_after_accept`].
     #[serde(default)]
     pub changeset_digest: Option<String>,
 }
@@ -78,14 +80,16 @@ pub enum ReviewDecision {
 }
 
 /// Proof the exact changeset was reviewed and (on accept) staged. Bound to the
-/// run and to the changeset digest, so a later run cannot inherit this review.
+/// run, the path-set digest, and — critically — the exact Git index tree after
+/// Accept. The path digest says *which files*; the tree SHA says *which bytes*.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewReceipt {
     pub run_id: String,
     pub decision: ReviewDecision,
     pub reviewed_paths: Vec<String>,
     pub changeset_digest: String,
-    /// The index tree sha after the accepted changeset was staged.
+    /// The exact index tree SHA after the accepted changeset was staged.
+    /// Accepted reviews without this proof are invalid and may not be saved.
     #[serde(default)]
     pub index_tree_after_accept: Option<String>,
 }
@@ -146,6 +150,41 @@ pub struct TaskRunReceipt {
     pub finish: Option<FinishReceipt>,
 }
 
+impl TaskRunReceipt {
+    /// Invalidate current review/verification evidence when the staged index no
+    /// longer equals the exact tree the human accepted. A completed run is
+    /// historical evidence and is not reopened merely because the repository
+    /// later moves on to another commit. Returns true only when evidence was
+    /// actually invalidated so callers can durably persist that state change.
+    fn invalidate_stale_review_tree(&mut self, current_tree: Option<&str>) -> bool {
+        if self.finish.is_some() {
+            return false;
+        }
+        let stale = self
+            .review
+            .as_ref()
+            .filter(|review| review.decision == ReviewDecision::Accepted)
+            .map(|review| {
+                let run_matches = review.run_id == self.run_id;
+                let digest_matches = self.execution.changeset_digest.as_deref()
+                    == Some(review.changeset_digest.as_str());
+                let tree_matches = match (review.index_tree_after_accept.as_deref(), current_tree) {
+                    (Some(reviewed), Some(current)) => reviewed == current,
+                    _ => false,
+                };
+                !run_matches || !digest_matches || !tree_matches
+            })
+            .unwrap_or(false);
+
+        if stale {
+            self.review = None;
+            self.verification = None;
+            self.finish = None;
+        }
+        stale
+    }
+}
+
 // ── Persistence ──────────────────────────────────────────────────────────────
 
 fn receipt_path() -> RepoDeskResult<PathBuf> {
@@ -155,16 +194,111 @@ fn receipt_path() -> RepoDeskResult<PathBuf> {
         .join("task-run-receipt.json"))
 }
 
-/// Load the active task's run receipt, or `None` when absent/unreadable (a
-/// corrupt file must never break the Work surface).
+fn validate_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
+    if let Some(review) = receipt.review.as_ref() {
+        if review.run_id != receipt.run_id {
+            return Err(RepoDeskError::RoutingFailed {
+                detail: "review receipt does not belong to the current run".to_string(),
+            });
+        }
+        if review.decision == ReviewDecision::Accepted {
+            let execution_digest = receipt.execution.changeset_digest.as_deref();
+            if execution_digest != Some(review.changeset_digest.as_str()) {
+                return Err(RepoDeskError::RoutingFailed {
+                    detail: "accepted review does not match the run changeset".to_string(),
+                });
+            }
+            if review
+                .index_tree_after_accept
+                .as_deref()
+                .map(str::trim)
+                .filter(|tree| !tree.is_empty())
+                .is_none()
+            {
+                return Err(RepoDeskError::RoutingFailed {
+                    detail:
+                        "accept blocked: could not bind the reviewed changes to an exact index tree"
+                            .to_string(),
+                });
+            }
+        }
+    }
+
+    if let Some(verification) = receipt.verification.as_ref() {
+        if verification.run_id != receipt.run_id {
+            return Err(RepoDeskError::RoutingFailed {
+                detail: "verification receipt does not belong to the current run".to_string(),
+            });
+        }
+        if let Some(run_digest) = receipt.execution.changeset_digest.as_deref() {
+            let review = receipt
+                .review
+                .as_ref()
+                .filter(|review| review.decision == ReviewDecision::Accepted)
+                .ok_or_else(|| RepoDeskError::RoutingFailed {
+                    detail: "verification cannot be saved without an accepted review".to_string(),
+                })?;
+            let reviewed_tree = review.index_tree_after_accept.as_deref().ok_or_else(|| {
+                RepoDeskError::RoutingFailed {
+                    detail: "verification cannot be saved without an exact reviewed tree"
+                        .to_string(),
+                }
+            })?;
+            if review.changeset_digest != run_digest
+                || verification.changeset_digest != run_digest
+                || verification.index_tree_sha != reviewed_tree
+            {
+                return Err(RepoDeskError::RoutingFailed {
+                    detail: "verification receipt is not bound to the exact reviewed tree"
+                        .to_string(),
+                });
+            }
+        }
+    }
+
+    if let Some(finish) = receipt.finish.as_ref()
+        && finish.run_id != receipt.run_id
+    {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: "finish receipt does not belong to the current run".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+/// Load the active task's current run receipt, or `None` when absent/unreadable
+/// (a corrupt file must never break the Work surface). Before returning live
+/// evidence, an unfinished Accepted review is compared with the current index
+/// tree. The first observed mismatch durably invalidates Review + Verification;
+/// simply restoring the old bytes may not resurrect a human approval that was
+/// invalidated by an intervening tree.
 pub fn load_receipt() -> RepoDeskResult<Option<TaskRunReceipt>> {
     let path = receipt_path()?;
     if !path.exists() {
         return Ok(None);
     }
-    Ok(std::fs::read_to_string(&path)
+    let mut receipt: TaskRunReceipt = match std::fs::read_to_string(&path)
         .ok()
-        .and_then(|content| serde_json::from_str(&content).ok()))
+        .and_then(|content| serde_json::from_str(&content).ok())
+    {
+        Some(receipt) => receipt,
+        None => return Ok(None),
+    };
+
+    if receipt.finish.is_none() && receipt.review.is_some() {
+        let current_tree = crate::projects::get_active_project()
+            .ok()
+            .and_then(|project| index_tree_sha(&project.path));
+        if receipt.invalidate_stale_review_tree(current_tree.as_deref()) {
+            // This is a security/correctness state transition, not a cache. If
+            // we cannot persist invalidation, fail closed rather than allowing a
+            // later load to resurrect the superseded approval.
+            std::fs::write(&path, serde_json::to_string_pretty(&receipt)?)?;
+        }
+    }
+
+    Ok(Some(receipt))
 }
 
 fn review_changed(previous: Option<&TaskRunReceipt>, current: &TaskRunReceipt) -> bool {
@@ -186,8 +320,11 @@ fn review_changed(previous: Option<&TaskRunReceipt>, current: &TaskRunReceipt) -
     }
 }
 
-/// Persist the run receipt for the active task.
+/// Persist the run receipt for the active task. Receipt invariants are checked
+/// before any write so Accepted/Verified cannot be stored without exact tree
+/// evidence.
 pub fn save_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
+    validate_receipt(receipt)?;
     let previous = load_receipt().ok().flatten();
     let should_record_review = review_changed(previous.as_ref(), receipt);
 
@@ -223,10 +360,50 @@ pub fn load_receipt_for_run(run_id: &str) -> RepoDeskResult<Option<TaskRunReceip
     Ok(load_receipt()?.filter(|receipt| receipt.run_id == run_id))
 }
 
+/// Return the exact accepted tree for a run that has changes, and prove it still
+/// equals the current index tree. Runs with no changes return `Ok(None)` because
+/// Review is intentionally vacuous for them.
+pub fn reviewed_tree_sha_for(
+    receipt: &TaskRunReceipt,
+    current_index_tree: &str,
+) -> RepoDeskResult<Option<String>> {
+    let Some(run_digest) = receipt.execution.changeset_digest.as_deref() else {
+        return Ok(None);
+    };
+    let review = receipt
+        .review
+        .as_ref()
+        .filter(|review| review.decision == ReviewDecision::Accepted)
+        .filter(|review| review.run_id == receipt.run_id)
+        .filter(|review| review.changeset_digest == run_digest)
+        .ok_or_else(|| RepoDeskError::RoutingFailed {
+            detail:
+                "review is missing or stale — accept the exact changeset again before verification"
+                    .to_string(),
+        })?;
+    let reviewed_tree = review
+        .index_tree_after_accept
+        .as_deref()
+        .map(str::trim)
+        .filter(|tree| !tree.is_empty())
+        .ok_or_else(|| RepoDeskError::RoutingFailed {
+            detail: "review is missing exact tree evidence — accept the changeset again"
+                .to_string(),
+        })?;
+    if reviewed_tree != current_index_tree {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: "review is stale: the staged tree changed after Accept — review and accept the changes again"
+                .to_string(),
+        });
+    }
+    Ok(Some(reviewed_tree.to_string()))
+}
+
 // ── Digest + git facts (argv-only, no shell) ─────────────────────────────────
 
-/// Stable digest of a changeset: SHA-256 over sorted-unique repo-relative paths.
-/// Equal path sets always hash equal; any add/remove changes the digest.
+/// Stable digest of a changeset's path set: SHA-256 over sorted-unique
+/// repo-relative paths. Equal path sets always hash equal; this deliberately
+/// does **not** prove content identity — the accepted index tree SHA does that.
 pub fn changeset_digest(paths: &[String]) -> String {
     let mut unique: Vec<&str> = paths
         .iter()
@@ -267,6 +444,24 @@ pub fn index_tree_sha(project_path: &Path) -> Option<String> {
     git_capture(project_path, &["write-tree"])
 }
 
+/// Tree SHA stored by a specific commit object.
+pub fn commit_tree_sha(project_path: &Path, commit_sha: &str) -> Option<String> {
+    if commit_sha.trim().is_empty() {
+        return None;
+    }
+    let spec = format!("{commit_sha}^{{tree}}");
+    let output = Command::new("git")
+        .args(["rev-parse", &spec])
+        .current_dir(project_path)
+        .output()
+        .ok()?;
+    if output.status.success() {
+        Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        None
+    }
+}
+
 /// Repo-relative paths currently staged in the index.
 pub fn staged_paths(project_path: &Path) -> Vec<String> {
     git_capture(project_path, &["diff", "--cached", "--name-only"])
@@ -303,6 +498,39 @@ mod tests {
             status,
             allow_write,
             changed_files: Vec::new(),
+        }
+    }
+
+    fn reviewed_receipt(tree: Option<&str>) -> TaskRunReceipt {
+        let paths = vec!["src/a.rs".to_string()];
+        let digest = changeset_digest(&paths);
+        TaskRunReceipt {
+            task_id: "t1".into(),
+            run_id: "r1".into(),
+            execution_mode: ExecutionMode::AgentRun,
+            base_commit: Some("base".into()),
+            execution: ExecutionReceipt {
+                status: RunStatus::Completed,
+                required_steps: vec![step("impl", SubAgentStatus::Ok, true)],
+                changeset_digest: Some(digest.clone()),
+            },
+            review: Some(ReviewReceipt {
+                run_id: "r1".into(),
+                decision: ReviewDecision::Accepted,
+                reviewed_paths: paths,
+                changeset_digest: digest.clone(),
+                index_tree_after_accept: tree.map(str::to_string),
+            }),
+            verification: Some(VerificationReceipt {
+                run_id: "r1".into(),
+                head_sha: "head".into(),
+                index_tree_sha: tree.unwrap_or_default().into(),
+                changeset_digest: digest,
+                commands: vec![],
+                success: true,
+                verified_at: "now".into(),
+            }),
+            finish: None,
         }
     }
 
@@ -363,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    fn digest_is_order_independent_and_sensitive() {
+    fn digest_is_order_independent_and_path_sensitive() {
         let a = changeset_digest(&["src/b.rs".into(), "src/a.rs".into()]);
         let b = changeset_digest(&["src/a.rs".into(), "src/b.rs".into()]);
         assert_eq!(a, b);
@@ -391,5 +619,34 @@ mod tests {
             ..v
         };
         assert!(!failed.valid_for("head", "tree", "dig"));
+    }
+
+    #[test]
+    fn accepted_review_is_bound_to_exact_tree_not_only_paths() {
+        let receipt = reviewed_receipt(Some("tree-t1"));
+        assert_eq!(
+            reviewed_tree_sha_for(&receipt, "tree-t1")
+                .unwrap()
+                .as_deref(),
+            Some("tree-t1")
+        );
+        // Same run + same path digest, but different staged bytes => different
+        // tree. Verification/commit must not inherit the old Accept.
+        assert!(reviewed_tree_sha_for(&receipt, "tree-t2").is_err());
+    }
+
+    #[test]
+    fn staged_tree_change_invalidates_review_and_verification() {
+        let mut receipt = reviewed_receipt(Some("tree-t1"));
+        assert!(receipt.invalidate_stale_review_tree(Some("tree-t2")));
+        assert!(receipt.review.is_none());
+        assert!(receipt.verification.is_none());
+        assert!(receipt.finish.is_none());
+    }
+
+    #[test]
+    fn accepted_review_without_tree_proof_is_rejected() {
+        let receipt = reviewed_receipt(None);
+        assert!(validate_receipt(&receipt).is_err());
     }
 }
