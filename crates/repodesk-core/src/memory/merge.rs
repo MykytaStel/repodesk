@@ -411,8 +411,10 @@ fn polarity_conflict(a: &str, b: &str) -> bool {
 mod tests {
     use super::*;
     use crate::memory::test_support::with_temp_home;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn detects_exact_duplicates_and_accept_supersedes() {
         with_temp_home(|| {
             let project = "merge_demo";
@@ -438,6 +440,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn reject_leaves_brain_unchanged() {
         with_temp_home(|| {
             let project = "merge_reject";
@@ -453,6 +456,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn scan_is_idempotent_no_duplicate_proposals() {
         with_temp_home(|| {
             let project = "merge_idem";
