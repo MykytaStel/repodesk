@@ -1,154 +1,242 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
+
+use crate::cli::OrchestrateCommand;
 use repodesk_core::api_clients::ProviderSettings;
 use repodesk_core::orchestrator::{
-    AgentWorkspacePolicy, ExecutionAuthorization, LoopOptions, LoopRun, OrchestrationPlan,
-    OrchestrationRun, ReviewAction, RunOptions, build_plan, execution_preview, list_runs,
-    load_latest_run, load_run, review_run, run_loop, run_plan,
+    self, AgentWorkspacePolicy, ExecutionAuthorization, LoopOptions, LoopRun, OrchestrationPlan,
+    OrchestrationRun, RunOptions, SubAgentTask, plan_has_paid_step,
 };
+use repodesk_core::worktree::{RunWorktreeCleanup, RunWorktreeStatus};
 
-use crate::cli::{OrchestrateAction, OrchestrateArgs};
-
-pub async fn run(args: OrchestrateArgs) -> Result<String> {
-    match args.action {
-        OrchestrateAction::Plan {
-            goal,
-            provider,
-            model,
-        } => {
+pub fn handle_orchestrate_command(command: OrchestrateCommand) -> Result<()> {
+    match command {
+        OrchestrateCommand::Plan { goal } => {
             let settings = ProviderSettings::from_env();
-            let plan = build_plan(goal, &settings, provider, model)?;
-            Ok(format_plan(&plan))
+            let plan = orchestrator::build_plan(goal, &settings, None, None)?;
+            print!("{}", format_plan(&plan));
         }
-        OrchestrateAction::Preview {
-            goal,
-            provider,
-            model,
-        } => {
-            let settings = ProviderSettings::from_env();
-            let preview = execution_preview(goal, &settings, provider, model)?;
-            Ok(serde_json::to_string_pretty(&preview)?)
-        }
-        OrchestrateAction::Run {
+        OrchestrateCommand::Run {
             goal,
             dry_run,
             max_cost,
             yes,
-            provider,
-            model,
+            worktree,
         } => {
+            let _legacy_worktree_flag = worktree;
             let settings = ProviderSettings::from_env();
-            let plan = build_plan(goal, &settings, provider, model)?;
-            let run = run_plan(
-                &plan,
-                &RunOptions {
-                    dry_run,
-                    max_cost,
-                    settings,
-                    authorization: ExecutionAuthorization {
-                        allow_paid_providers: yes,
-                        allow_coding_agents: yes,
-                        allow_workspace_writes: yes,
-                    },
-                    coding_agent_timeout_secs: 600,
-                    agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
+            let plan = orchestrator::build_plan(goal, &settings, None, None)?;
+
+            // The human stays the operator: paid/API and coding-agent runs need confirmation.
+            if !dry_run && !yes && plan_has_paid_step(&plan) {
+                print!("{}", format_plan(&plan));
+                return Err(anyhow!(
+                    "This plan includes paid provider or coding-agent steps. Re-run with --yes to execute, \
+                     or use --dry-run to preview cost and routing without calling any provider."
+                ));
+            }
+
+            let opts = RunOptions {
+                dry_run,
+                max_cost,
+                settings,
+                authorization: ExecutionAuthorization {
+                    allow_paid_providers: yes,
+                    allow_coding_agents: yes,
+                    allow_workspace_writes: yes,
                 },
-            )
-            .await?;
-            Ok(format_run(&run))
+                coding_agent_timeout_secs: 600,
+                agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
+            };
+            let rt = tokio::runtime::Runtime::new()?;
+            let run = rt.block_on(orchestrator::run_plan(&plan, &opts))?;
+            print!("{}", format_run(&run));
         }
-        OrchestrateAction::Loop {
+        OrchestrateCommand::Loop {
             goal,
             max_iterations,
             max_cost,
             dry_run,
             yes,
-            provider,
-            model,
         } => {
-            let loop_run = run_loop(
-                goal,
-                &LoopOptions {
-                    max_iterations,
-                    max_total_cost: max_cost,
-                    dry_run,
-                    approve_paid: yes,
-                    approve_coding_agents: yes,
-                    coding_agent_timeout_secs: 600,
-                    override_provider: provider,
-                    override_model: model,
-                    settings: ProviderSettings::from_env(),
-                    agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
-                },
-            )
-            .await?;
-            Ok(format_loop(&loop_run))
+            let settings = ProviderSettings::from_env();
+            let opts = LoopOptions {
+                max_iterations,
+                max_total_cost: max_cost,
+                dry_run,
+                approve_paid: yes,
+                approve_coding_agents: yes,
+                coding_agent_timeout_secs: 600,
+                override_provider: None,
+                override_model: None,
+                settings,
+                agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
+            };
+            let rt = tokio::runtime::Runtime::new()?;
+            let loop_run = rt.block_on(orchestrator::run_loop(goal, &opts))?;
+            print!("{}", format_loop(&loop_run));
         }
-        OrchestrateAction::Status => Ok(load_latest_run()?
-            .map(|run| format_run(&run))
-            .unwrap_or_else(|| "No orchestration runs for the active task.\n".to_string())),
-        OrchestrateAction::Show { run_id } => Ok(load_run(&run_id)?
-            .map(|run| format_run(&run))
-            .unwrap_or_else(|| format!("No orchestration run '{run_id}' for the active task.\n"))),
-        OrchestrateAction::List => {
-            let runs = list_runs()?;
-            if runs.is_empty() {
-                return Ok("No orchestration runs for the active task.\n".to_string());
-            }
-            let mut out = String::from("Orchestration runs\n\n");
-            for run in runs {
-                out.push_str(&format!(
-                    "  {}  {:?}  steps={}  cost={:.3}  {}\n",
-                    run.run_id, run.status, run.step_count, run.total_cost_units, run.goal
-                ));
-            }
-            Ok(out)
+        OrchestrateCommand::Status => match orchestrator::load_latest_run()? {
+            Some(run) => print!("{}", format_run(&run)),
+            None => println!("No orchestration runs yet for the active task."),
+        },
+        OrchestrateCommand::Show { run_id } => match orchestrator::load_run(&run_id)? {
+            Some(run) => print!("{}", format_run(&run)),
+            None => println!("No run '{run_id}' found for the active task."),
+        },
+        OrchestrateCommand::Review { run_id, action } => {
+            let action = orchestrator::ReviewAction::from_label(&action)?;
+            let review = orchestrator::review_run(&run_id, action)?;
+            print!("{}", format_review(&review));
         }
-        OrchestrateAction::Review { run_id, action } => {
-            let action = ReviewAction::from_label(&action)?;
-            let review = review_run(&run_id, action)?;
-            Ok(serde_json::to_string_pretty(&review)?)
+        OrchestrateCommand::Worktrees => {
+            let (project_path, parent) = active_worktree_context()?;
+            let worktrees = repodesk_core::worktree::list_run_worktree_statuses(
+                project_path.as_path(),
+                parent.as_path(),
+            )?;
+            print!("{}", format_worktrees(&worktrees));
+        }
+        OrchestrateCommand::CleanupWorktree { workspace_id } => {
+            let (project_path, parent) = active_worktree_context()?;
+            let cleanup = repodesk_core::worktree::cleanup_run_worktree(
+                project_path.as_path(),
+                parent.as_path(),
+                &workspace_id,
+            )?;
+            print!("{}", format_worktree_cleanup(&cleanup));
         }
     }
+    Ok(())
 }
 
-fn format_plan(plan: &OrchestrationPlan) -> String {
+fn active_worktree_context() -> Result<(std::path::PathBuf, std::path::PathBuf)> {
+    let project = repodesk_core::projects::get_active_project()?;
+    let task = repodesk_core::tasks::show_active_task()?;
+    let parent = repodesk_core::worktree::worktrees_parent(&task.config.run_dir);
+    Ok((project.path, parent))
+}
+
+fn format_review(review: &repodesk_core::orchestrator::RunReview) -> String {
+    let verb = match review.action {
+        repodesk_core::orchestrator::ReviewAction::Accept => "Accepted",
+        repodesk_core::orchestrator::ReviewAction::Reject => "Rejected",
+    };
     let mut out = format!(
-        "Orchestration plan\nProject: {}\nTask: {}\nGoal: {}\n\n",
-        plan.project, plan.task_id, plan.goal
+        "{verb} changeset for run {} (project {})\n",
+        review.run_id, review.project
     );
-    for (idx, step) in plan.steps.iter().enumerate() {
-        out.push_str(&format!(
-            "{}. {} [{:?}]\n   executor={} provider={} model={} budget={} write={}\n",
-            idx + 1,
-            step.title,
-            step.kind,
-            step.resolved_executor_id(),
-            step.resolved_provider_id().unwrap_or("—"),
-            step.model.as_deref().unwrap_or("default"),
-            step.budget_tokens,
-            step.allow_write,
-        ));
-        if !step.depends_on.is_empty() {
-            out.push_str(&format!("   depends_on={}\n", step.depends_on.join(", ")));
-        }
-        out.push_str(&format!("   {}\n", step.instruction));
+    if review.processed.is_empty() {
+        out.push_str("  (no files processed)\n");
+    }
+    for file in &review.processed {
+        out.push_str(&format!("  • {} — {}\n", file.path, file.outcome));
+    }
+    for warning in &review.warnings {
+        out.push_str(&format!("  ! {warning}\n"));
     }
     out
 }
 
-fn format_run(run: &OrchestrationRun) -> String {
+fn format_worktrees(worktrees: &[RunWorktreeStatus]) -> String {
+    if worktrees.is_empty() {
+        return "No RepoDesk-managed isolated worktrees for the active task.\n".to_string();
+    }
+
+    let mut out = String::from("RepoDesk-managed isolated worktrees:\n");
+    for worktree in worktrees {
+        let run = worktree.run_id.as_deref().unwrap_or("unknown run");
+        let step = worktree.step_id.as_deref().unwrap_or("unknown step");
+        let state = if worktree.dirty { "dirty" } else { "clean" };
+        out.push_str(&format!(
+            "  - {} ({run}/{step}, {state}, {} changed)\n",
+            worktree.workspace_id,
+            worktree.changed_files.len()
+        ));
+        out.push_str(&format!("    path: {}\n", worktree.path));
+        if !worktree.changed_files.is_empty() {
+            out.push_str(&format!(
+                "    changed: {}\n",
+                worktree.changed_files.join(", ")
+            ));
+        }
+        for warning in &worktree.warnings {
+            out.push_str(&format!("    ! {warning}\n"));
+        }
+    }
+    out
+}
+
+fn format_worktree_cleanup(cleanup: &RunWorktreeCleanup) -> String {
     let mut out = format!(
-        "Orchestration run {} — {:?}\nProject: {}  Task: {}\nGoal: {}\n\n",
-        run.run_id, run.status, run.project, run.task_id, run.goal,
+        "Removed worktree {} at {}\n",
+        cleanup.workspace_id, cleanup.path
     );
+    if cleanup.metadata_removed {
+        out.push_str("Removed recovery metadata.\n");
+    }
+    for warning in &cleanup.warnings {
+        out.push_str(&format!("! {warning}\n"));
+    }
+    out
+}
+
+fn format_plan(plan: &OrchestrationPlan) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Orchestration plan for '{}' (task {})\nGoal: {}\n\nSteps:\n",
+        plan.project, plan.task_id, plan.goal
+    ));
+    match plan.ordered() {
+        Ok(steps) => {
+            for step in steps {
+                out.push_str(&format_step(step));
+            }
+        }
+        Err(error) => out.push_str(&format!("  (plan ordering error: {error})\n")),
+    }
+    out
+}
+
+fn format_step(step: &SubAgentTask) -> String {
+    let model = step.model.as_deref().unwrap_or("(provider default)");
+    let deps = if step.depends_on.is_empty() {
+        "none".to_string()
+    } else {
+        step.depends_on.join(", ")
+    };
+    format!(
+        "  • {id}: {title}\n      executor/provider: {executor} → {provider} → model: {model}\n      thinking: {thinking:?}  write: {write}  depends on: {deps}\n",
+        id = step.id,
+        title = step.title,
+        executor = step.resolved_executor_id(),
+        provider = step.resolved_provider_id().unwrap_or("(none)"),
+        thinking = step.thinking,
+        write = step.allow_write,
+    )
+}
+
+fn format_run(run: &OrchestrationRun) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "Orchestration run {} — {:?}{}\nProject: {}  Task: {}\nGoal: {}\n\n",
+        run.run_id,
+        run.status,
+        if run.dry_run { " (dry run)" } else { "" },
+        run.project,
+        run.task_id,
+        run.goal,
+    ));
     for result in &run.results {
         out.push_str(&format!(
-            "  {} [{:?}] executor={} provider={} model={} tokens={input}/{output} cost={cost:.3} captured={captured}\n",
-            result.task_id,
-            result.status,
-            result.agent,
-            result.provider,
-            result.model,
+            "  [{status:?}] {task} — {provider}/{model}\n      tokens: {input} in / {output} out  cost: {cost:.3}  captured: {captured}\n",
+            status = result.status,
+            task = result.task_id,
+            provider = result.provider,
+            model = if result.model.is_empty() {
+                "(default)"
+            } else {
+                &result.model
+            },
             input = result.input_tokens,
             output = result.output_tokens,
             cost = result.cost_units,
