@@ -10,17 +10,22 @@
 //! The receipt is the single source of post-execution truth:
 //! `run evidence → exact changeset review → fresh verification → bounded commit`.
 
+use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tempfile::NamedTempFile;
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::tasks::show_active_task;
 
 use super::phase::ExecutionMode;
 use crate::orchestrator::types::{RunStatus, SubAgentStatus};
+
+const MAX_RECEIPT_BYTES: u64 = 1024 * 1024;
 
 /// One step's contribution to a run, as recorded for evidence. `allow_write`
 /// marks the implementation steps whose success is *required* for the run to
@@ -267,23 +272,110 @@ fn validate_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
     Ok(())
 }
 
-/// Load the active task's current run receipt, or `None` when absent/unreadable
-/// (a corrupt file must never break the Work surface). Before returning live
-/// evidence, an unfinished Accepted review is compared with the current index
-/// tree. The first observed mismatch durably invalidates Review + Verification;
-/// simply restoring the old bytes may not resurrect a human approval that was
-/// invalidated by an intervening tree.
+fn receipt_storage_error(detail: impl Into<String>) -> RepoDeskError {
+    RepoDeskError::RoutingFailed {
+        detail: detail.into(),
+    }
+}
+
+fn read_receipt_file(path: &Path) -> RepoDeskResult<Option<TaskRunReceipt>> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if metadata.file_type().is_symlink() {
+        return Err(receipt_storage_error(format!(
+            "run receipt path is a symlink: {}",
+            path.display()
+        )));
+    }
+    if !metadata.is_file() {
+        return Err(receipt_storage_error(format!(
+            "run receipt path is not a regular file: {}",
+            path.display()
+        )));
+    }
+    if metadata.len() > MAX_RECEIPT_BYTES {
+        return Err(receipt_storage_error(format!(
+            "run receipt exceeds the {MAX_RECEIPT_BYTES} byte limit"
+        )));
+    }
+
+    let bytes = fs::read(path)?;
+    let receipt: TaskRunReceipt = serde_json::from_slice(&bytes).map_err(|error| {
+        receipt_storage_error(format!(
+            "run receipt is corrupt or invalid JSON at {}: {error}",
+            path.display()
+        ))
+    })?;
+    validate_receipt(&receipt)?;
+    Ok(Some(receipt))
+}
+
+fn persist_receipt_file(path: &Path, receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
+    validate_receipt(receipt)?;
+    let bytes = serde_json::to_vec_pretty(receipt)?;
+    if bytes.len() as u64 > MAX_RECEIPT_BYTES {
+        return Err(receipt_storage_error(format!(
+            "run receipt exceeds the {MAX_RECEIPT_BYTES} byte limit"
+        )));
+    }
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| receipt_storage_error("run receipt path has no parent directory"))?;
+    fs::create_dir_all(parent)?;
+
+    if let Ok(metadata) = fs::symlink_metadata(path) {
+        if metadata.file_type().is_symlink() {
+            return Err(receipt_storage_error(format!(
+                "refusing to replace symlinked run receipt: {}",
+                path.display()
+            )));
+        }
+        if !metadata.is_file() {
+            return Err(receipt_storage_error(format!(
+                "refusing to replace non-file run receipt: {}",
+                path.display()
+            )));
+        }
+    }
+
+    let mut temporary = NamedTempFile::new_in(parent)?;
+    temporary.write_all(&bytes)?;
+    temporary.flush()?;
+    temporary.as_file().sync_all()?;
+    temporary
+        .persist(path)
+        .map_err(|error| RepoDeskError::Io(error.error))?;
+    sync_parent_directory(parent)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_parent_directory(parent: &Path) -> RepoDeskResult<()> {
+    fs::File::open(parent)?.sync_all()?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn sync_parent_directory(_parent: &Path) -> RepoDeskResult<()> {
+    Ok(())
+}
+
+/// Load the active task's current run receipt. Absence is `None`; corruption,
+/// unsafe file types, oversized content, invalid JSON, or invalid receipt
+/// invariants are explicit errors so the Work surface cannot confuse damaged
+/// evidence with a fresh workflow. Before returning live evidence, an unfinished
+/// Accepted review is compared with the current index tree. The first observed
+/// mismatch durably invalidates Review + Verification; simply restoring the old
+/// bytes may not resurrect a human approval that was invalidated by an
+/// intervening tree.
 pub fn load_receipt() -> RepoDeskResult<Option<TaskRunReceipt>> {
     let path = receipt_path()?;
-    if !path.exists() {
+    let Some(mut receipt) = read_receipt_file(&path)? else {
         return Ok(None);
-    }
-    let mut receipt: TaskRunReceipt = match std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
-    {
-        Some(receipt) => receipt,
-        None => return Ok(None),
     };
 
     if receipt.finish.is_none() && receipt.review.is_some() {
@@ -294,7 +386,7 @@ pub fn load_receipt() -> RepoDeskResult<Option<TaskRunReceipt>> {
             // This is a security/correctness state transition, not a cache. If
             // we cannot persist invalidation, fail closed rather than allowing a
             // later load to resurrect the superseded approval.
-            std::fs::write(&path, serde_json::to_string_pretty(&receipt)?)?;
+            persist_receipt_file(&path, &receipt)?;
         }
     }
 
@@ -321,18 +413,15 @@ fn review_changed(previous: Option<&TaskRunReceipt>, current: &TaskRunReceipt) -
 }
 
 /// Persist the run receipt for the active task. Receipt invariants are checked
-/// before any write so Accepted/Verified cannot be stored without exact tree
-/// evidence.
+/// before any write; replacement is sibling-temp + fsync + atomic persist so a
+/// failed write cannot truncate the last valid evidence file.
 pub fn save_receipt(receipt: &TaskRunReceipt) -> RepoDeskResult<()> {
     validate_receipt(receipt)?;
-    let previous = load_receipt().ok().flatten();
+    let previous = load_receipt()?;
     let should_record_review = review_changed(previous.as_ref(), receipt);
 
     let path = receipt_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&path, serde_json::to_string_pretty(receipt)?)?;
+    persist_receipt_file(&path, receipt)?;
 
     if should_record_review
         && let Some(review) = receipt.review.as_ref()
@@ -491,6 +580,7 @@ pub fn commit_exists(project_path: &Path, sha: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
     fn step(id: &str, status: SubAgentStatus, allow_write: bool) -> StepReceipt {
         StepReceipt {
@@ -648,5 +738,45 @@ mod tests {
     fn accepted_review_without_tree_proof_is_rejected() {
         let receipt = reviewed_receipt(None);
         assert!(validate_receipt(&receipt).is_err());
+    }
+
+    #[test]
+    fn receipt_file_round_trips_through_atomic_storage() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("task-run-receipt.json");
+        let receipt = reviewed_receipt(Some("tree-t1"));
+
+        persist_receipt_file(&path, &receipt).unwrap();
+        let loaded = read_receipt_file(&path).unwrap().unwrap();
+        assert_eq!(loaded.run_id, receipt.run_id);
+        assert_eq!(
+            loaded.review.unwrap().index_tree_after_accept.as_deref(),
+            Some("tree-t1")
+        );
+    }
+
+    #[test]
+    fn corrupt_receipt_is_an_error_not_missing_evidence() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("task-run-receipt.json");
+        fs::write(&path, b"{not-json").unwrap();
+
+        let error = read_receipt_file(&path).expect_err("corruption must fail closed");
+        assert!(error.to_string().contains("corrupt or invalid JSON"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_receipt_is_rejected() {
+        use std::os::unix::fs::symlink;
+
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("target.json");
+        let link = dir.path().join("task-run-receipt.json");
+        fs::write(&target, b"{}").unwrap();
+        symlink(&target, &link).unwrap();
+
+        let error = read_receipt_file(&link).expect_err("symlink must fail closed");
+        assert!(error.to_string().contains("symlink"));
     }
 }
