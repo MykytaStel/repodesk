@@ -25,8 +25,7 @@ hex = "0.4"
 keyring = "4"
 ureq = { version = "3.3.0", features = ["json"] }
 syn = { version = "2", features = ["full", "visit"] }
+tempfile = "3"
 
 [dev-dependencies]
-tempfile = "3"
 serial_test = "3"
-
