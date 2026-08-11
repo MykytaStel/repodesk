@@ -92,9 +92,11 @@ pub async fn run_plan(
 /// Inspect whether Review may trust execution evidence for `run_id`.
 pub fn evidence_state_for_run(run_id: &str) -> RepoDeskResult<ExecutionEvidenceState> {
     validate_run_id(run_id)?;
-    let run = runner::load_run(run_id)?.ok_or_else(|| routing_error(format!(
-        "no orchestration run '{run_id}' for the active task"
-    )))?;
+    let run = runner::load_run(run_id)?.ok_or_else(|| {
+        routing_error(format!(
+            "no orchestration run '{run_id}' for the active task"
+        ))
+    })?;
 
     if run.dry_run {
         return Ok(ExecutionEvidenceState {
@@ -129,15 +131,20 @@ pub fn evidence_state_for_run(run_id: &str) -> RepoDeskResult<ExecutionEvidenceS
         }
     }
 
-    recovery_state(run_id, "execution completed but its workflow receipt is missing")
+    recovery_state(
+        run_id,
+        "execution completed but its workflow receipt is missing",
+    )
 }
 
 /// Replay a durable recovery payload without launching the agent again.
 pub fn repair_execution_evidence(run_id: &str) -> RepoDeskResult<ExecutionEvidenceState> {
     validate_run_id(run_id)?;
-    let run = runner::load_run(run_id)?.ok_or_else(|| routing_error(format!(
-        "no orchestration run '{run_id}' for the active task"
-    )))?;
+    let run = runner::load_run(run_id)?.ok_or_else(|| {
+        routing_error(format!(
+            "no orchestration run '{run_id}' for the active task"
+        ))
+    })?;
     if run.dry_run {
         return Ok(ExecutionEvidenceState {
             run_id: run_id.to_string(),
@@ -472,7 +479,9 @@ fn log_recovery_required(run_id: &str, detail: Option<&str>) {
             ("run_id".to_string(), run_id.to_string()),
             (
                 "detail".to_string(),
-                detail.unwrap_or("execution receipt is unavailable").to_string(),
+                detail
+                    .unwrap_or("execution receipt is unavailable")
+                    .to_string(),
             ),
         ],
     });
@@ -553,12 +562,8 @@ mod tests {
             goal: run.goal.clone(),
             steps: vec![task("impl", true)],
         };
-        let receipt = build_execution_receipt(
-            &plan,
-            &run,
-            ExecutionMode::AgentRun,
-            Some("base".into()),
-        );
+        let receipt =
+            build_execution_receipt(&plan, &run, ExecutionMode::AgentRun, Some("base".into()));
 
         assert_eq!(receipt.execution.status, RunStatus::Completed);
         assert!(receipt.execution.required_steps[0].allow_write);
@@ -578,12 +583,8 @@ mod tests {
             goal: run.goal.clone(),
             steps: vec![task("impl", true)],
         };
-        let mut receipt = build_execution_receipt(
-            &plan,
-            &run,
-            ExecutionMode::AgentRun,
-            Some("base".into()),
-        );
+        let mut receipt =
+            build_execution_receipt(&plan, &run, ExecutionMode::AgentRun, Some("base".into()));
         receipt.execution.required_steps[0].changed_files = vec!["src/other.rs".into()];
         assert!(!execution_receipt_matches_run(&receipt, &run));
     }
