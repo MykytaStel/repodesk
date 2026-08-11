@@ -206,7 +206,11 @@ pub fn save_code_document(
         });
     }
 
-    atomic_replace_validated_text(&safe.canonical, input.content.as_bytes(), &current_fingerprint)?;
+    atomic_replace_validated_text(
+        &safe.canonical,
+        input.content.as_bytes(),
+        &current_fingerprint,
+    )?;
 
     let document = document_from_path(project_path, &safe.relative, &safe.canonical)?;
     Ok(CodeWorkspaceSaveResult {
