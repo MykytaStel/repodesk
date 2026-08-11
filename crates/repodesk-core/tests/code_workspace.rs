@@ -135,7 +135,10 @@ fn atomic_save_preserves_existing_unix_permissions() {
     )
     .unwrap();
 
-    assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o755);
+    assert_eq!(
+        fs::metadata(path).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
 }
 
 #[test]
