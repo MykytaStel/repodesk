@@ -1,5 +1,7 @@
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -8,7 +10,7 @@ use wait_timeout::ChildExt;
 
 use super::CheckCommandResult;
 
-const ALLOWED_CHECK_BINARIES: [&str; 27] = [
+const ALLOWED_CHECK_BINARIES: [&str; 26] = [
     "cargo",
     "npm",
     "pnpm",
@@ -35,7 +37,6 @@ const ALLOWED_CHECK_BINARIES: [&str; 27] = [
     "sonar-scanner",
     "trivy",
     "checkmarx",
-    "cargo-nextest",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,7 +92,10 @@ pub(super) fn run_parsed_check_with_timeout(
     timeout_secs: u64,
 ) -> CheckCommandResult {
     if let Err(error) = ensure_tree_termination_available() {
-        return failed_without_spawn(display_command, format!("Execution boundary unavailable: {error}"));
+        return failed_without_spawn(
+            display_command,
+            format!("Execution boundary unavailable: {error}"),
+        );
     }
 
     let started = Instant::now();
@@ -379,7 +383,12 @@ mod tests {
             args: vec!["-c".to_string(), parent_code],
         };
 
-        let result = run_parsed_check_with_timeout("python descendant fixture", &parsed, dir.path(), 1);
+        let result = run_parsed_check_with_timeout(
+            "python descendant fixture",
+            &parsed,
+            dir.path(),
+            1,
+        );
         assert_eq!(result.status, "timeout", "stderr: {}", result.stderr);
         std::thread::sleep(Duration::from_secs(3));
         assert!(
