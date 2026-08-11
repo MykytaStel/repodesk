@@ -41,9 +41,7 @@ pub struct LogUiEventInput {
 /// Integrity/database errors are returned to the frontend instead of being
 /// flattened into an empty journal.
 #[tauri::command]
-pub fn get_event_journal(
-    input: GetJournalInput,
-) -> Result<EventJournalSnapshot, ErrorPayload> {
+pub fn get_event_journal(input: GetJournalInput) -> Result<EventJournalSnapshot, ErrorPayload> {
     let limit = input.limit.unwrap_or(50).min(500);
     try_journal_snapshot(limit).map_err(ErrorPayload::from)
 }
