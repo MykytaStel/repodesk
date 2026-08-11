@@ -495,6 +495,7 @@ fn review_run_accepts_isolated_worktree_changesets() {
     let dir = fx.run_dir.join("orchestrate");
     std::fs::create_dir_all(&dir).expect("orchestrate dir");
     let run_id = "run-isolated";
+    let task_id = show_active_task().expect("active task").config.id;
     let parent = repodesk_core::worktree::worktrees_parent(&fx.run_dir);
     let worktree = repodesk_core::worktree::create_run_worktree(
         &fx.project_path,
@@ -506,11 +507,12 @@ fn review_run_accepts_isolated_worktree_changesets() {
     let worktree_path = Path::new(&worktree.path);
     std::fs::write(worktree_path.join("seed.txt"), "seed\nagent\n").expect("edit worktree");
     std::fs::write(worktree_path.join("added.txt"), "new\n").expect("add worktree file");
+    let changed_files = vec!["seed.txt".to_string(), "added.txt".to_string()];
 
     let run = OrchestrationRun {
         run_id: run_id.to_string(),
         project: "demo".to_string(),
-        task_id: "task".to_string(),
+        task_id,
         goal: "isolated".to_string(),
         status: RunStatus::Completed,
         dry_run: false,
@@ -527,7 +529,7 @@ fn review_run_accepts_isolated_worktree_changesets() {
             output_tokens: 5,
             cost_units: 0.0,
             captured_proposals: 0,
-            changed_files: vec!["seed.txt".to_string(), "added.txt".to_string()],
+            changed_files: changed_files.clone(),
             diff_path: None,
             workspace: Some(worktree.clone()),
             notes: Vec::new(),
@@ -538,6 +540,27 @@ fn review_run_accepts_isolated_worktree_changesets() {
     };
     let json = serde_json::to_string_pretty(&run).expect("serialize run");
     std::fs::write(dir.join(format!("{run_id}.json")), &json).expect("write run");
+
+    let receipt = repodesk_core::workflow::TaskRunReceipt {
+        task_id: run.task_id.clone(),
+        run_id: run.run_id.clone(),
+        execution_mode: repodesk_core::workflow::ExecutionMode::AgentRun,
+        base_commit: repodesk_core::workflow::head_sha(&fx.project_path),
+        execution: repodesk_core::workflow::ExecutionReceipt {
+            status: run.status,
+            required_steps: vec![repodesk_core::workflow::StepReceipt {
+                task_id: "implement".to_string(),
+                status: SubAgentStatus::Ok,
+                allow_write: true,
+                changed_files: changed_files.clone(),
+            }],
+            changeset_digest: Some(repodesk_core::workflow::changeset_digest(&changed_files)),
+        },
+        review: None,
+        verification: None,
+        finish: None,
+    };
+    repodesk_core::workflow::save_receipt(&receipt).expect("write execution receipt");
 
     let review = review_run(run_id, ReviewAction::Accept).expect("isolated accept");
 
