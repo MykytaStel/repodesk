@@ -302,7 +302,8 @@ mod tests {
             ("src/app.ts".to_string(), Vec::new()),
         ]);
 
-        let coverage = build_semantic_coverage(&files, &dependencies, SemanticIndexBounds::default());
+        let coverage =
+            build_semantic_coverage(&files, &dependencies, SemanticIndexBounds::default());
         assert_eq!(coverage.semantic_files_eligible, 2);
         assert_eq!(coverage.semantic_files_indexed, 2);
         assert_eq!(coverage.semantic_bytes_indexed, 300);
