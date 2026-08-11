@@ -283,6 +283,9 @@ fn format_loop(loop_run: &LoopRun) -> String {
         loop_run.iterations.len(),
     ));
     match loop_run.status {
+        repodesk_core::orchestrator::LoopStatus::EvidenceRecoveryRequired => out.push_str(
+            "Stopped: execution finished, but its workflow evidence needs repair. Repair the existing run evidence before Review; do not re-run the agent.\n",
+        ),
         repodesk_core::orchestrator::LoopStatus::NeedsApproval => out.push_str(
             "Paused: the plan includes paid or coding-agent steps. Re-run with --yes to allow execution.\n",
         ),

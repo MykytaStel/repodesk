@@ -23,8 +23,9 @@ use serde::{Deserialize, Serialize};
 use crate::api_clients::ProviderSettings;
 use crate::errors::RepoDeskResult;
 
+use super::execution_evidence::{ExecutionEvidenceStatus, evidence_state_for_run, run_plan};
 use super::plan::{build_plan, plan_has_coding_agent_step, plan_has_paid_provider_step};
-use super::runner::{AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, run_plan};
+use super::runner::{AgentWorkspacePolicy, ExecutionAuthorization, RunOptions};
 use super::types::{RunStatus, SubAgentStatus};
 
 /// Default attempt cap when the caller does not specify one.
@@ -79,8 +80,12 @@ impl Default for LoopOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoopStatus {
-    /// An attempt completed every step successfully.
+    /// An attempt completed every step successfully and its execution evidence
+    /// is durable enough to enter Review.
     Succeeded,
+    /// The agent finished, but its execution receipt is not durable yet. This is
+    /// terminal: repair evidence rather than spending again on another attempt.
+    EvidenceRecoveryRequired,
     /// A gated plan needs human approval before spend or CLI launch.
     NeedsApproval,
     /// A safety/budget guardrail blocked a step — needs human intervention, not
@@ -211,8 +216,16 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
                 && (result.notes.iter().any(|n| n.contains(SAFETY_BLOCK_MARKER))
                     || result.notes.iter().any(|n| n.contains(BUDGET_BLOCK_MARKER)))
         });
+        let evidence_recovery_required = !opts.dry_run
+            && evidence_state_for_run(&run.run_id)?.status
+                == ExecutionEvidenceStatus::RecoveryRequired;
 
-        let (note, terminal) = classify(&run.status, guardrail_hit, opts.dry_run);
+        let (note, terminal) = classify(
+            &run.status,
+            guardrail_hit,
+            opts.dry_run,
+            evidence_recovery_required,
+        );
         iterations.push(LoopIteration {
             index,
             run_id: run.run_id.clone(),
@@ -256,11 +269,18 @@ fn classify(
     run_status: &RunStatus,
     guardrail_hit: bool,
     dry_run: bool,
+    evidence_recovery_required: bool,
 ) -> (&'static str, Option<LoopStatus>) {
     if dry_run {
         return (
             "dry run preview — nothing executed",
             Some(LoopStatus::DryRun),
+        );
+    }
+    if evidence_recovery_required {
+        return (
+            "execution completed but evidence persistence needs repair — do not rerun the agent",
+            Some(LoopStatus::EvidenceRecoveryRequired),
         );
     }
     if guardrail_hit {
@@ -288,25 +308,31 @@ mod tests {
 
     #[test]
     fn dry_run_is_terminal_in_a_single_pass() {
-        let (_, terminal) = classify(&RunStatus::DryRun, false, true);
+        let (_, terminal) = classify(&RunStatus::DryRun, false, true, false);
         assert_eq!(terminal, Some(LoopStatus::DryRun));
     }
 
     #[test]
     fn completed_run_succeeds() {
-        let (_, terminal) = classify(&RunStatus::Completed, false, false);
+        let (_, terminal) = classify(&RunStatus::Completed, false, false, false);
         assert_eq!(terminal, Some(LoopStatus::Succeeded));
     }
 
     #[test]
+    fn evidence_recovery_stops_without_retrying_execution() {
+        let (_, terminal) = classify(&RunStatus::Completed, false, false, true);
+        assert_eq!(terminal, Some(LoopStatus::EvidenceRecoveryRequired));
+    }
+
+    #[test]
     fn guardrail_block_stops_without_retry() {
-        let (_, terminal) = classify(&RunStatus::Partial, true, false);
+        let (_, terminal) = classify(&RunStatus::Partial, true, false, false);
         assert_eq!(terminal, Some(LoopStatus::GuardrailBlocked));
     }
 
     #[test]
     fn partial_run_without_guardrail_retries() {
-        let (_, terminal) = classify(&RunStatus::Partial, false, false);
+        let (_, terminal) = classify(&RunStatus::Partial, false, false, false);
         assert_eq!(terminal, None);
     }
 }
