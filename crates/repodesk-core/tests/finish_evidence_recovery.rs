@@ -187,7 +187,10 @@ fn retry_after_commit_without_finish_receipt_repairs_evidence_without_recommitti
     let receipt = load_receipt().unwrap().unwrap();
     let finish = receipt.finish.expect("FinishReceipt repaired");
     assert_eq!(finish.commit_sha, committed_sha);
-    assert!(!intent_path.exists(), "resolved intent should be cleaned up");
+    assert!(
+        !intent_path.exists(),
+        "resolved intent should be cleaned up"
+    );
 }
 
 #[test]
