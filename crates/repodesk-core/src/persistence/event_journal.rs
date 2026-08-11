@@ -405,7 +405,9 @@ fn append_pending(tx: &Transaction<'_>, pending: PendingEvent) -> RepoDeskResult
 // ── Legacy JSONL migration ───────────────────────────────────────────────────
 
 fn legacy_journal_path() -> RepoDeskResult<PathBuf> {
-    Ok(RepoDeskPaths::resolve()?.logs_dir.join("event-journal.jsonl"))
+    Ok(RepoDeskPaths::resolve()?
+        .logs_dir
+        .join("event-journal.jsonl"))
 }
 
 fn import_marker(conn: &Connection) -> RepoDeskResult<Option<String>> {
@@ -868,7 +870,10 @@ mod tests {
             "message": "must-not-import",
             "metadata": {}
         });
-        let mut file = OpenOptions::new().append(true).open(&legacy).expect("append");
+        let mut file = OpenOptions::new()
+            .append(true)
+            .open(&legacy)
+            .expect("append");
         writeln!(file, "{fake}").expect("append fake");
         assert_eq!(read_events(10).expect("read canonical").len(), 2);
     }
@@ -889,7 +894,9 @@ mod tests {
         let error = log_event(input("must fail")).expect_err("tampered ledger must fail closed");
         assert!(error.to_string().contains("hash mismatch"));
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM engineering_events", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM engineering_events", [], |row| {
+                row.get(0)
+            })
             .expect("count");
         assert_eq!(count, 1, "failed append must not create a second event");
     }
