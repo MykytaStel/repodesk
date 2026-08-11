@@ -54,7 +54,7 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         return Ok(outcome);
     }
 
-    let mut intent = if let Some(existing) = read_finish_intent_file(&intent_path)? {
+    if let Some(existing) = read_finish_intent_file(&intent_path)? {
         validate_intent_against_receipt(&existing, &receipt)?;
         if let Some(commit_sha) = recoverable_commit_sha(&project_path, &intent_path, &existing)? {
             return persist_recovered_finish(
@@ -72,7 +72,6 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
                 "finish blocked: the durable pending Finish intent no longer matches the current reviewed and verified boundary",
             ));
         }
-        existing
     } else {
         let prepared = prepare_finish_intent(&receipt, &project_path)?;
         write_finish_intent_file(&intent_path, &prepared)?;
@@ -84,8 +83,7 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
                 "finish intent verification failed after persistence",
             ));
         }
-        prepared
-    };
+    }
 
     match finish::commit_reviewed_index(message) {
         Ok(outcome) => {
@@ -98,10 +96,9 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
             // The inner Finish may have failed before commit, or after a real
             // commit when evidence persistence failed. Inspect the durable
             // boundary before deciding whether a retry would be safe.
-            let Some(latest) = read_finish_intent_file(&intent_path)? else {
+            let Some(intent) = read_finish_intent_file(&intent_path)? else {
                 return Err(primary);
             };
-            intent = latest;
 
             match recoverable_commit_sha(&project_path, &intent_path, &intent) {
                 Ok(Some(commit_sha)) => {
