@@ -45,7 +45,8 @@ struct FinishIntentRecord {
 /// RepoDesk never issues a second `git commit` for the same pending Finish.
 pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let project_path = crate::projects::get_active_project()?.path;
-    let mut receipt = load_receipt()?.ok_or_else(|| routing_error("no run to commit — run the agent first"))?;
+    let mut receipt =
+        load_receipt()?.ok_or_else(|| routing_error("no run to commit — run the agent first"))?;
     let intent_path = finish_intent_path()?;
 
     if let Some(outcome) = existing_finish_outcome(&receipt, &project_path)? {
@@ -56,7 +57,13 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let mut intent = if let Some(existing) = read_finish_intent_file(&intent_path)? {
         validate_intent_against_receipt(&existing, &receipt)?;
         if let Some(commit_sha) = recoverable_commit_sha(&project_path, &intent_path, &existing)? {
-            return persist_recovered_finish(&project_path, &intent_path, &mut receipt, &existing, &commit_sha);
+            return persist_recovered_finish(
+                &project_path,
+                &intent_path,
+                &mut receipt,
+                &existing,
+                &commit_sha,
+            );
         }
 
         let current = prepare_finish_intent(&receipt, &project_path)?;
@@ -141,23 +148,27 @@ fn prepare_finish_intent(
         .filter(|review| review.decision == ReviewDecision::Accepted)
         .filter(|review| review.run_id == receipt.run_id)
         .ok_or_else(|| {
-            routing_error("commit blocked: the run's exact changes have not been reviewed and accepted")
+            routing_error(
+                "commit blocked: the run's exact changes have not been reviewed and accepted",
+            )
         })?;
     let digest = receipt
         .execution
         .changeset_digest
         .as_deref()
         .filter(|digest| *digest == review.changeset_digest)
-        .ok_or_else(|| routing_error("commit blocked: accepted review does not match the run changeset"))?
+        .ok_or_else(|| {
+            routing_error("commit blocked: accepted review does not match the run changeset")
+        })?
         .to_string();
 
-    let parent_head_sha = head_sha(project_path).ok_or_else(|| {
-        routing_error("active project is not a git repository with a commit")
-    })?;
+    let parent_head_sha = head_sha(project_path)
+        .ok_or_else(|| routing_error("active project is not a git repository with a commit"))?;
     let current_tree = index_tree_sha(project_path)
         .ok_or_else(|| routing_error("could not read the staged index tree"))?;
-    let reviewed_tree_sha = reviewed_tree_sha_for(receipt, &current_tree)?
-        .ok_or_else(|| routing_error("commit blocked: no exact reviewed tree exists for this changeset"))?;
+    let reviewed_tree_sha = reviewed_tree_sha_for(receipt, &current_tree)?.ok_or_else(|| {
+        routing_error("commit blocked: no exact reviewed tree exists for this changeset")
+    })?;
 
     let verified = receipt
         .verification
@@ -229,9 +240,13 @@ fn validate_intent_against_receipt(
         .filter(|review| review.decision == ReviewDecision::Accepted)
         .filter(|review| review.run_id == receipt.run_id)
         .filter(|review| review.changeset_digest == intent.changeset_digest)
-        .filter(|review| review.index_tree_after_accept.as_deref() == Some(intent.reviewed_tree_sha.as_str()))
+        .filter(|review| {
+            review.index_tree_after_accept.as_deref() == Some(intent.reviewed_tree_sha.as_str())
+        })
         .ok_or_else(|| {
-            routing_error("finish blocked: pending Finish intent no longer has matching Accepted review evidence")
+            routing_error(
+                "finish blocked: pending Finish intent no longer has matching Accepted review evidence",
+            )
         })?;
 
     let intent_paths: HashSet<&str> = intent.committed_paths.iter().map(String::as_str).collect();
@@ -295,9 +310,8 @@ fn recoverable_commit_sha(
     let mut committed = intent.clone();
     committed.commit_sha = Some(current_head.clone());
     write_finish_intent_file(intent_path, &committed)?;
-    let persisted = read_finish_intent_file(intent_path)?.ok_or_else(|| {
-        routing_error("committed Finish intent disappeared after persistence")
-    })?;
+    let persisted = read_finish_intent_file(intent_path)?
+        .ok_or_else(|| routing_error("committed Finish intent disappeared after persistence"))?;
     if persisted != committed {
         return Err(routing_error(
             "committed Finish intent verification failed after persistence",
@@ -414,9 +428,7 @@ fn validate_finish_intent(intent: &FinishIntentRecord) -> RepoDeskResult<()> {
         ("changeset digest", intent.changeset_digest.as_str()),
     ] {
         if value.trim().is_empty() {
-            return Err(routing_error(format!(
-                "finish intent has an empty {label}"
-            )));
+            return Err(routing_error(format!("finish intent has an empty {label}")));
         }
     }
     if intent.committed_paths.is_empty()
@@ -456,7 +468,9 @@ fn validate_run_id(run_id: &str) -> RepoDeskResult<()> {
     if valid {
         Ok(())
     } else {
-        Err(routing_error("invalid orchestration run id for Finish intent"))
+        Err(routing_error(
+            "invalid orchestration run id for Finish intent",
+        ))
     }
 }
 
