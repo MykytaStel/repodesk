@@ -2,11 +2,11 @@
 //!
 //! The event journal is a persistent, append-only log of all significant
 //! actions performed by RepoDesk (agent runs, sandbox blocks, secret detections,
-//! provider switches, etc.).  The UI calls these commands to display an audit
+//! provider switches, etc.). The UI calls these commands to display an audit
 //! trail and to record its own user-initiated events.
 
 use repodesk_core::persistence::event_journal::{
-    EventJournalSnapshot, LogEventInput, journal_snapshot, log_event,
+    EventJournalSnapshot, LogEventInput, log_event, try_journal_snapshot,
 };
 use serde::{Deserialize, Serialize};
 
@@ -30,17 +30,20 @@ pub struct LogUiEventInput {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-/// Return a paginated snapshot of the event journal.
+/// Return a paginated snapshot of the canonical event ledger.
 ///
 /// The snapshot contains:
-/// - `total_entries`  — total lines in the journal file
-/// - `returned`       — number of entries in this response
+/// - `total_entries` — total verified entries in SQLite
+/// - `returned` — number of entries in this response
 /// - `counts_by_severity` — `{ "info": 10, "error": 2, … }`
-/// - `entries`        — the most-recent `limit` entries (newest first)
+/// - `entries` — the most-recent `limit` entries (newest first)
+///
+/// Integrity/database errors are returned to the frontend instead of being
+/// flattened into an empty journal.
 #[tauri::command]
-pub fn get_event_journal(input: GetJournalInput) -> EventJournalSnapshot {
+pub fn get_event_journal(input: GetJournalInput) -> Result<EventJournalSnapshot, ErrorPayload> {
     let limit = input.limit.unwrap_or(50).min(500);
-    journal_snapshot(limit)
+    try_journal_snapshot(limit).map_err(ErrorPayload::from)
 }
 
 /// Log an event that originated in the desktop UI (e.g. "user clicked Run",
@@ -85,7 +88,7 @@ pub fn log_ui_event(input: LogUiEventInput) -> Result<EventJournalSnapshot, Erro
         metadata,
     })?;
 
-    Ok(journal_snapshot(50))
+    try_journal_snapshot(50).map_err(ErrorPayload::from)
 }
 
 /// Structured error payload sent from Tauri commands to the frontend.

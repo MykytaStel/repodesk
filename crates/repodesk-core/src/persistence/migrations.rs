@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 /// The schema version the current binary expects.
-pub const TARGET_VERSION: i64 = 4;
+pub const TARGET_VERSION: i64 = 5;
 
 fn db_err(context: &str, e: impl std::fmt::Display) -> RepoDeskError {
     RepoDeskError::Database(format!("{context}: {e}"))
@@ -46,6 +46,11 @@ pub fn run_migrations(conn: &Connection) -> RepoDeskResult<()> {
     if current < 4 {
         migrate_to_v4(conn)?;
         set_version(conn, 4)?;
+    }
+
+    if current < 5 {
+        migrate_to_v5(conn)?;
+        set_version(conn, 5)?;
     }
 
     Ok(())
@@ -231,6 +236,72 @@ fn migrate_to_v4(conn: &Connection) -> RepoDeskResult<()> {
     Ok(())
 }
 
+/// Migration 5 — canonical engineering-event ledger.
+///
+/// The historical `events` table was part of the original base schema but the
+/// event journal never wrote to it; production event history lived in a JSONL
+/// file instead. The new ledger is intentionally separate so its stronger
+/// invariants are explicit: monotonically increasing sequence numbers, event
+/// schema versioning, first-class work-item/run/kind fields, canonical payloads,
+/// and a SHA-256 hash chain. JSONL is now only an import/export representation.
+fn migrate_to_v5(conn: &Connection) -> RepoDeskResult<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS engineering_events (
+            sequence INTEGER PRIMARY KEY,
+            schema_version INTEGER NOT NULL,
+            timestamp TEXT NOT NULL,
+            project TEXT NOT NULL,
+            work_item_id TEXT NOT NULL,
+            run_id TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL,
+            module_name TEXT NOT NULL,
+            level TEXT NOT NULL,
+            message TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            prev_hash TEXT NOT NULL,
+            event_hash TEXT NOT NULL UNIQUE
+        )",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create engineering_events table", e))?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS event_ledger_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create event_ledger_meta table", e))?;
+
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engineering_events_project_sequence
+            ON engineering_events (project, sequence)",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create project event index", e))?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engineering_events_work_item_sequence
+            ON engineering_events (work_item_id, sequence)",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create work-item event index", e))?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engineering_events_run_sequence
+            ON engineering_events (run_id, sequence)",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create run event index", e))?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_engineering_events_kind_sequence
+            ON engineering_events (kind, sequence)",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create kind event index", e))?;
+
+    Ok(())
+}
+
 fn column_exists(conn: &Connection, table: &str, column: &str) -> RepoDeskResult<bool> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -341,5 +412,19 @@ mod tests {
             })
             .unwrap();
         assert_eq!(emb_count, 0);
+
+        // v5: canonical engineering-event ledger + migration metadata exist.
+        let event_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM engineering_events", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(event_count, 0);
+        let meta_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM event_ledger_meta", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(meta_count, 0);
     }
 }

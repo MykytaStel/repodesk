@@ -77,8 +77,10 @@ fn render(project_name: &str, entries: &[MemoryEntry]) -> String {
 mod tests {
     use super::*;
     use crate::memory::test_support::with_temp_home;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn consolidate_groups_by_category_with_tags() {
         with_temp_home(|| {
             let project = "test_memory_project";

@@ -387,8 +387,10 @@ pub fn count_pending(project: &str) -> RepoDeskResult<usize> {
 mod tests {
     use super::*;
     use crate::memory::test_support::with_temp_home;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn add_list_update_pin_status_delete() {
         with_temp_home(|| {
             let project = "store_demo";
