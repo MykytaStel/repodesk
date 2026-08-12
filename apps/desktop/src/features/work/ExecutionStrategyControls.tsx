@@ -30,6 +30,10 @@ function formatDelta(value: number, currency: string): string {
   return `${sign}${Math.abs(value).toFixed(2)} ${currency}`;
 }
 
+function shortFingerprint(value: string): string {
+  return value.length > 18 ? `${value.slice(0, 12)}…${value.slice(-5)}` : value;
+}
+
 export function ExecutionStrategyControls({
   mode,
   preview,
@@ -82,7 +86,7 @@ export function ExecutionStrategyControls({
         ))}
       </div>
 
-      {strategy && comparison ? (
+      {strategy && comparison && preview ? (
         <>
           <div className="ai-strategy-comparison">
             <div>
@@ -111,12 +115,18 @@ export function ExecutionStrategyControls({
             </div>
           </div>
 
+          <div className="ai-strategy-plan-lock">
+            <span>Plan lock</span>
+            <code title={preview.plan_fingerprint}>{shortFingerprint(preview.plan_fingerprint)}</code>
+            <small>Launch stops if routing, strategy, or prepared context changes after this preview.</small>
+          </div>
+
           <details className="ai-strategy-reasons" open={mode === "auto"}>
             <summary>Why RepoDesk chose this strategy</summary>
             <div>
               {strategy.reasons.slice(0, 6).map((reason) => (
                 <p key={`${reason.code}:${reason.detail}`}>
-                  <span>{reason.code.replaceAll("_", " ")}</span>
+                  <span>{reason.code.replace(/_/g, " ")}</span>
                   <small>{reason.detail}</small>
                 </p>
               ))}
