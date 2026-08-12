@@ -16,6 +16,7 @@ use sha2::{Digest, Sha256};
 use crate::engineering::acceptance_evidence::active_verification_is_fresh;
 use crate::engineering::domain::{EngineeringKnowledgeId, EvidenceKind, EvidenceRef, WorkItemId};
 use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, append_event};
+use crate::engineering::knowledge_lifecycle::engineering_knowledge_context_eligible_at;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
@@ -288,15 +289,48 @@ pub fn accept_active_engineering_knowledge(
     set_active_knowledge_status(knowledge_id, EngineeringKnowledgeStatus::Accepted)
 }
 
+/// Explicitly renew human trust in an already-accepted record. Reconfirmation
+/// does not change its content or durable status; it only advances `updated_at`,
+/// which is the lifecycle review clock. Reusing `KnowledgeAccepted` with an
+/// `accepted -> accepted` previous-status attribute keeps the existing event
+/// ledger backward-compatible while still making the re-review auditable.
+pub fn reconfirm_active_engineering_knowledge(
+    knowledge_id: &str,
+) -> RepoDeskResult<EngineeringKnowledgeSnapshot> {
+    let project = get_active_project()?;
+    let mut store = read_store(&project.name)?;
+    let record = store
+        .records
+        .iter_mut()
+        .find(|record| record.id.as_str() == knowledge_id)
+        .ok_or_else(|| RepoDeskError::Api("Engineering Knowledge record not found".into()))?;
+    if record.status != EngineeringKnowledgeStatus::Accepted {
+        return Err(RepoDeskError::Api(
+            "Only accepted Engineering Knowledge can be reconfirmed".into(),
+        ));
+    }
+
+    record.updated_at = Utc::now();
+    let changed = record.clone();
+    write_store(&store)?;
+    record_knowledge_event(
+        EngineeringEventKind::KnowledgeAccepted,
+        &changed,
+        Some(EngineeringKnowledgeStatus::Accepted),
+    );
+    Ok(snapshot_from_store(store))
+}
+
 pub fn archive_active_engineering_knowledge(
     knowledge_id: &str,
 ) -> RepoDeskResult<EngineeringKnowledgeSnapshot> {
     set_active_knowledge_status(knowledge_id, EngineeringKnowledgeStatus::Archived)
 }
 
-/// Build a deterministic, bounded slice of accepted Project Knowledge for an
-/// agent context. Ranking is lexical + category-priority only; there is no AI
-/// relevance score and no candidate/archived record can enter the context.
+/// Build a deterministic, bounded slice of human-reviewed Project Knowledge for
+/// an agent context. Ranking is lexical + category-priority only; there is no AI
+/// relevance score. Candidate/archived records and accepted records whose
+/// lifecycle reached `review_required` fail closed and cannot enter context.
 pub fn engineering_knowledge_context(
     project_name: &str,
     query: &str,
@@ -304,10 +338,11 @@ pub fn engineering_knowledge_context(
 ) -> RepoDeskResult<EngineeringKnowledgeContext> {
     let store = read_store(project_name)?;
     let query_terms = terms(query);
+    let now = Utc::now();
     let mut accepted = store
         .records
         .iter()
-        .filter(|record| record.status == EngineeringKnowledgeStatus::Accepted)
+        .filter(|record| engineering_knowledge_context_eligible_at(record, now))
         .collect::<Vec<_>>();
 
     accepted.sort_by(|left, right| {
@@ -351,7 +386,7 @@ pub fn engineering_knowledge_context(
     }
 
     let markdown = if blocks.is_empty() {
-        "No accepted Engineering Knowledge is available within the current context budget."
+        "No current reviewed Engineering Knowledge is available within the context budget."
             .to_string()
     } else {
         blocks.join("\n\n")
@@ -667,7 +702,7 @@ fn knowledge_score(record: &EngineeringKnowledgeRecord, query_terms: &BTreeSet<S
 
 fn render_records(records: &[&EngineeringKnowledgeRecord]) -> String {
     if records.is_empty() {
-        return "No accepted Engineering Knowledge is available for this project.".to_string();
+        return "No current reviewed Engineering Knowledge is available for this project.".to_string();
     }
     records
         .iter()
@@ -707,6 +742,7 @@ fn render_record(record: &EngineeringKnowledgeRecord) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
 
     fn record(
         id: &str,
@@ -747,12 +783,27 @@ mod tests {
             EngineeringKnowledgeStatus::Candidate,
         );
         let query = terms("token validation auth");
+        let now = Utc::now();
         let mut records = vec![&accepted, &candidate];
-        records.retain(|record| record.status == EngineeringKnowledgeStatus::Accepted);
+        records.retain(|record| engineering_knowledge_context_eligible_at(record, now));
         let rendered = render_records(&records);
         assert!(rendered.contains("Never bypass token validation"));
         assert!(!rendered.contains("must not enter context"));
         assert!(knowledge_score(&accepted, &query) > 0);
+    }
+
+    #[test]
+    fn expired_accepted_knowledge_is_not_renderable_context() {
+        let now = Utc::now();
+        let mut expired = record(
+            "knowledge-expired",
+            EngineeringKnowledgeCategory::Testing,
+            "Old test command",
+            "cargo test --workspace",
+            EngineeringKnowledgeStatus::Accepted,
+        );
+        expired.updated_at = now - Duration::days(61);
+        assert!(!engineering_knowledge_context_eligible_at(&expired, now));
     }
 
     #[test]
