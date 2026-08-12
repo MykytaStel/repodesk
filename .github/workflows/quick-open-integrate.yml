@@ -1,0 +1,75 @@
+name: Quick Open Integrate
+
+on:
+  push:
+    branches:
+      - feat/code-quick-open-index-v2
+    paths:
+      - .github/workflows/quick-open-integrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/code-quick-open-index-v2
+          fetch-depth: 0
+
+      - name: Integrate async Quick Open provider
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("apps/desktop/src/app/App.tsx")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '''import {\n  CODE_WORKSPACE_KEY,\n  codeWorkspaceSnapshot,\n  requestCodeWorkspaceOpen,\n} from "../shared/api/codeWorkspace";''',
+                  '''import {\n  codeWorkspaceQuickOpen,\n  requestCodeWorkspaceOpen,\n} from "../shared/api/codeWorkspace";''',
+              ),
+              (
+                  '''\n  // Quick Open deliberately shares CodeTab's query key. Opening the palette can\n  // reuse the repository snapshot already in cache, and only indexes when the\n  // palette actually needs file commands for an active project.\n  const { data: paletteWorkspace } = useQuery({\n    queryKey: [...CODE_WORKSPACE_KEY, projectName ?? "none"],\n    queryFn: codeWorkspaceSnapshot,\n    enabled: paletteOpen && hasProject,\n    staleTime: 15_000,\n  });\n''',
+                  '''\n''',
+              ),
+              (
+                  '''\n  const commands = useMemo<Command[]>(() => {''',
+                  '''\n  const searchFileCommands = useCallback(\n    async (query: string): Promise<Command[]> => {\n      if (!hasProject) return [];\n      const matches = await codeWorkspaceQuickOpen(query, 50);\n      return matches.map((file) => ({\n        id: `file:${file.path}`,\n        label: `Open file: ${file.name}`,\n        hint: file.path,\n        group: "Files",\n        keywords: [file.path, file.language, file.status],\n        priority: file.status === "clean" ? 0 : 20,\n        run: () => {\n          requestCodeWorkspaceOpen(file.path);\n          navigateTo("code", `Open ${file.path}.`);\n        },\n      }));\n    },\n    [hasProject, navigateTo],\n  );\n\n  const commands = useMemo<Command[]>(() => {''',
+              ),
+              (
+                  '''\n    const fileCommands: Command[] = (paletteWorkspace?.files ?? [])\n      .filter((file) => !file.blocked)\n      .slice(0, 160)\n      .map((file) => ({\n        id: `file:${file.path}`,\n        label: `Open file: ${file.name}`,\n        hint: file.path,\n        group: "Files",\n        keywords: [file.path, file.language, file.extension ?? "", file.status],\n        priority: file.status === "clean" ? 0 : 20,\n        run: () => {\n          requestCodeWorkspaceOpen(file.path);\n          navigateTo("code", `Open ${file.path}.`);\n        },\n      }));\n''',
+                  '''\n''',
+              ),
+              (
+                  '''      ...currentCommands,\n      ...fileCommands,\n      ...tabCommands,''',
+                  '''      ...currentCommands,\n      ...tabCommands,''',
+              ),
+              (
+                  '''    navigateTo,\n    paletteWorkspace?.files,\n    projectName,''',
+                  '''    navigateTo,\n    projectName,''',
+              ),
+              (
+                  '''      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />''',
+                  '''      <CommandPalette\n        open={paletteOpen}\n        onClose={() => setPaletteOpen(false)}\n        commands={commands}\n        searchCommands={searchFileCommands}\n      />''',
+              ),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f"Expected App.tsx fragment not found:\n{old[:180]}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src/app/App.tsx
+          git diff --cached --check
+          git commit -m "feat(code): connect async whole-repo quick open"
+          git push origin HEAD:feat/code-quick-open-index-v2
