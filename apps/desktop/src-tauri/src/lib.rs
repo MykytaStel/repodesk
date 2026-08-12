@@ -87,11 +87,7 @@ use tauri_plugin_global_shortcut::ShortcutState;
 pub fn run() {
     tauri::Builder::default()
         .manage(terminal::TerminalManager::default())
-        // Auto-updater: enabled with a real signing key + GitHub Releases endpoint
-        // (see tauri.conf.json plugins.updater). The plugin only verifies/installs
-        // signed update bundles; it is not triggered automatically on launch.
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Native file/folder pickers (used to choose a project directory).
         .plugin(tauri_plugin_dialog::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -247,7 +243,9 @@ pub fn run() {
             commands::memory_reconcile_conflict,
             commands::orchestrate_plan,
             commands::work_execution_preview,
+            commands::work_strategy_execution_preview,
             commands::orchestrate_run,
+            commands::orchestrate_strategy_run,
             commands::orchestrate_loop,
             commands::orchestrate_status,
             commands::orchestrate_show,
@@ -363,10 +361,6 @@ mod tests {
 
     #[test]
     fn run_action_executes_whitelisted_action() {
-        // The action catalog *is* the allowlist now: a registered action maps to
-        // a direct `repodesk-core` call with a typed result — no CLI reparse and
-        // no process-global stdout capture (the old flaky-test source). Routing
-        // needs no project/task state, so it is a stable positive case.
         let action = commands::find_action("runtime-route-patch").expect("action is registered");
         let result = tauri::async_runtime::block_on(commands::action_service::run_action(&action));
         assert!(result.ok, "whitelisted action should run: {result:?}");
