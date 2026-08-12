@@ -1,0 +1,106 @@
+name: Engineering Projection Cache V2 Integrate
+
+on:
+  push:
+    branches:
+      - perf/engineering-projection-cache-v2
+    paths:
+      - .github/workflows/engineering-projection-cache-v2-integrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/engineering-projection-cache-v2
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Route Work read-models through the projection cache
+        shell: python
+        run: |
+          from pathlib import Path
+
+          mod = Path("apps/desktop/src-tauri/src/commands/mod.rs")
+          text = mod.read_text()
+          old = "pub mod engineering;\n"
+          new = old + "mod engineering_projection_cache;\n"
+          if old not in text:
+              raise SystemExit("commands engineering module marker not found")
+          if "mod engineering_projection_cache;" in text:
+              raise SystemExit("projection cache already registered")
+          mod.write_text(text.replace(old, new, 1))
+
+          engineering = Path("apps/desktop/src-tauri/src/commands/engineering.rs")
+          text = engineering.read_text()
+          old = '''    capture_active_verified_command, derive_ai_usage_report, derive_change_governance,\n    derive_engineering_intelligence, derive_engineering_knowledge_lifecycle,\n    derive_run_observability, derive_strategy_feedback, derive_work_item_contract_snapshot,'''
+          new = '''    capture_active_verified_command, derive_change_governance,\n    derive_engineering_knowledge_lifecycle, derive_run_observability,\n    derive_work_item_contract_snapshot,'''
+          if old not in text:
+              raise SystemExit("engineering derive imports target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    propose_active_engineering_knowledge, read_events, read_work_item_contract,'''
+          new = '''    propose_active_engineering_knowledge, read_work_item_contract,'''
+          if old not in text:
+              raise SystemExit("engineering read_events import target not found")
+          text = text.replace(old, new, 1)
+
+          marker = '''use super::ErrorPayload;\n'''
+          if marker not in text:
+              raise SystemExit("engineering ErrorPayload import marker not found")
+          text = text.replace(
+              marker,
+              '''use super::engineering_projection_cache::load_engineering_projection;\nuse super::ErrorPayload;\n''',
+              1,
+          )
+
+          old = '''    let events = read_events(&task.config.run_dir).map_err(ErrorPayload::from)?;\n    let intelligence = derive_engineering_intelligence(&events);\n    let ai_usage_report = derive_ai_usage_report(&events, &intelligence);\n    let strategy_feedback = derive_strategy_feedback(&events);'''
+          new = '''    let projection =\n        load_engineering_projection(&task.config.run_dir).map_err(ErrorPayload::from)?;\n    let events = projection.events.as_slice();\n    let intelligence = projection.intelligence.clone();\n    let ai_usage_report = projection.ai_usage_report.clone();\n    let strategy_feedback = projection.strategy_feedback.clone();'''
+          if old not in text:
+              raise SystemExit("engineering projection derivation block not found")
+          text = text.replace(old, new, 1)
+
+          replacements = {
+              'derive_work_item_contract_snapshot(&task, stored_contract, &events)':
+                  'derive_work_item_contract_snapshot(&task, stored_contract, events)',
+              'derive_change_governance(&task.config.id, &events, &work_item_contract)':
+                  'derive_change_governance(&task.config.id, events, &work_item_contract)',
+              'load_active_run_evidence_from_events(&run_id, &events)':
+                  'load_active_run_evidence_from_events(&run_id, events)',
+              'derive_run_observability(evidence, &events)':
+                  'derive_run_observability(evidence, events)',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"engineering slice target not found: {old}")
+              text = text.replace(old, new, 1)
+          engineering.write_text(text)
+
+          Path(".github/workflows/engineering-projection-cache-v2-integrate.yml").unlink()
+
+      - name: Focused projection-cache verification
+        run: |
+          cargo fmt --all
+          cargo test -p repodesk-desktop engineering_projection_cache
+          cargo clippy -p repodesk-desktop --all-targets -- -D warnings
+
+      - name: Commit only intended product files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src-tauri/src/commands/mod.rs \
+            apps/desktop/src-tauri/src/commands/engineering.rs \
+            apps/desktop/src-tauri/src/commands/engineering_projection_cache.rs \
+            .github/workflows/engineering-projection-cache-v2-integrate.yml
+          git diff --cached --check
+          git commit -m "perf(engineering): cache stable observability projections"
+          git push origin HEAD:perf/engineering-projection-cache-v2
