@@ -6,7 +6,7 @@
 //! A draft is always bound to the disk fingerprint it was edited from so a
 //! changed file can never be silently overwritten during recovery.
 
-use std::fs::{self, File};
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -264,7 +264,7 @@ fn fingerprint(bytes: &[u8]) -> String {
 
 #[cfg(unix)]
 fn sync_parent_directory(parent: &Path) -> RepoDeskResult<()> {
-    File::open(parent)?.sync_all()?;
+    fs::File::open(parent)?.sync_all()?;
     Ok(())
 }
 
@@ -413,20 +413,20 @@ mod tests {
             "RepoDesk",
             &project,
             CodeDraftSaveInput {
-                path: "src/private name.rs".into(),
+                path: "src/notes file.rs".into(),
                 content: "draft".into(),
                 base_fingerprint: sha("disk"),
             },
             Utc::now(),
         )
         .unwrap();
-        assert_eq!(record.path, "src/private name.rs");
+        assert_eq!(record.path, "src/notes file.rs");
 
         let identity = project_identity("RepoDesk", &project).unwrap();
         let stored = draft_file_path(&cache, &identity, &record.path);
         assert!(stored.starts_with(cache.join(CODE_DRAFTS_DIR)));
         assert!(!stored.starts_with(&project));
-        assert!(!stored.to_string_lossy().contains("private name"));
+        assert!(!stored.to_string_lossy().contains("notes file"));
     }
 
     #[test]
