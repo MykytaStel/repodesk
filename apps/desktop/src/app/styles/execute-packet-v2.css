@@ -70,8 +70,7 @@
   text-transform: uppercase;
 }
 
-.exec-packet-state.ready,
-.exec-approval-heading > span:last-child {
+.exec-packet-state.ready {
   border-color: var(--success-border);
   background: var(--success-soft);
   color: var(--success);
@@ -273,6 +272,22 @@
 .exec-approval-heading strong {
   color: var(--text);
   font-size: 10.5px;
+}
+
+.exec-approval-heading > span {
+  color: var(--muted);
+}
+
+.exec-approval-gates:has(.approval-check.required) .exec-approval-heading > span {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.exec-approval-gates:not(:has(.approval-check.required)) .exec-approval-heading > span {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .exec-approval-gates .approval-stack {
