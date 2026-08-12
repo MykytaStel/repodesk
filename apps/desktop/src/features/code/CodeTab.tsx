@@ -222,11 +222,12 @@ export function CodeTab({
   const persistDraft = useCallback((tab: EditorTab): Promise<void> => {
     if (tab.kind !== "workspace" || !tab.dirty) return Promise.resolve();
 
-    const write = saveCodeWorkspaceDraft({
+    const previous = draftWritesRef.current.get(tab.path) ?? Promise.resolve();
+    const write = previous.then(() => saveCodeWorkspaceDraft({
       path: tab.path,
       content: tab.content,
       base_fingerprint: tab.fingerprint,
-    }).then(() => {
+    })).then(() => {
       setDraftError(null);
     }).catch((error) => {
       setDraftError(`Draft recovery backup failed for ${fileName(tab.path)}: ${errorToMessage(error)}`);
