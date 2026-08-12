@@ -114,10 +114,18 @@ use repodesk_core::workflow::{
 /// workflow engine's `*_ok` flags; everything past Prepare comes only from the
 /// task run receipt + current git state — never a stale run or a stray index.
 /// The CLI builds the same `Evidence`, so the two surfaces can't drift.
-fn build_evidence() -> Evidence {
+fn build_evidence() -> Result<Evidence, ErrorPayload> {
     let state = load_phase_state().unwrap_or_default();
     let wf = build_product_workflow_state();
-    let receipt = repodesk_core::workflow::load_receipt().ok().flatten();
+    // Missing evidence is a valid pre-execution state, but damaged authoritative
+    // evidence must never be downgraded to absence. Only attempt to load the
+    // receipt once an active task is known to exist; otherwise the empty Work
+    // surface remains renderable.
+    let receipt = if wf.task_ok {
+        repodesk_core::workflow::load_receipt().map_err(ErrorPayload::from)?
+    } else {
+        None
+    };
     let project_path = repodesk_core::projects::get_active_project()
         .ok()
         .map(|project| project.path);
@@ -138,7 +146,7 @@ fn build_evidence() -> Evidence {
         _ => false,
     };
 
-    Evidence {
+    Ok(Evidence {
         project_ok: wf.project_ok,
         task_ok: wf.task_ok,
         goal_defined: wf.task_ok,
@@ -155,14 +163,14 @@ fn build_evidence() -> Evidence {
         head_sha,
         index_tree_sha,
         finish_commit_exists,
-    }
+    })
 }
 
-fn current_progress() -> PhaseProgress {
-    let evidence = build_evidence();
+fn current_progress() -> Result<PhaseProgress, ErrorPayload> {
+    let evidence = build_evidence()?;
     let mode = evidence.mode;
     let signals = derive_signals(&evidence);
-    derive_progress(&signals, mode)
+    Ok(derive_progress(&signals, mode))
 }
 
 /// The current six-phase progression for the active task: derived phase
@@ -170,7 +178,7 @@ fn current_progress() -> PhaseProgress {
 /// execution mode. This is the Work tab's source of truth.
 #[tauri::command]
 pub async fn work_phase_state() -> Result<PhaseProgress, ErrorPayload> {
-    Ok(current_progress())
+    current_progress()
 }
 
 /// Persist the Execute-phase mode (Agent run vs Manual handoff) and return the
@@ -187,7 +195,7 @@ pub async fn work_set_execution_mode(mode: String) -> Result<PhaseProgress, Erro
         }
     };
     set_execution_mode(mode)?;
-    Ok(current_progress())
+    current_progress()
 }
 
 /// Review the run's changeset and record the decision atomically: accept stages
@@ -198,7 +206,7 @@ pub async fn work_set_execution_mode(mode: String) -> Result<PhaseProgress, Erro
 pub async fn work_review(run_id: String, action: String) -> Result<PhaseProgress, ErrorPayload> {
     let action = ReviewAction::from_label(&action).map_err(ErrorPayload::from)?;
     orchestrator::review_run(&run_id, action).map_err(ErrorPayload::from)?;
-    Ok(current_progress())
+    current_progress()
 }
 
 /// Import the result of a manual handoff (a pasted unified diff, or the changes
@@ -214,7 +222,7 @@ pub async fn work_import_manual_changes(
         _ => orchestrator::ManualImportSource::Worktree,
     };
     orchestrator::import_manual_changes(source).map_err(ErrorPayload::from)?;
-    Ok(current_progress())
+    current_progress()
 }
 
 /// Run final verification and record a receipt bound to the current run, HEAD,
@@ -222,7 +230,7 @@ pub async fn work_import_manual_changes(
 #[tauri::command]
 pub async fn work_verify() -> Result<PhaseProgress, ErrorPayload> {
     repodesk_core::workflow::run_verification().map_err(ErrorPayload::from)?;
-    Ok(current_progress())
+    current_progress()
 }
 
 pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
