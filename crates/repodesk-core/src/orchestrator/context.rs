@@ -1,26 +1,27 @@
-//! Per-sub-agent context assembly. The shared base pack is built once (reusing
-//! the smart-context builder, which already injects the Memory Brain slice), and
-//! each sub-agent gets that base plus its own assignment and the in-run results
-//! of its dependencies. This is what keeps the orchestrator's own context lean:
-//! each sub-agent reasons in its own pack, not in the orchestrator's.
+//! Per-sub-agent context assembly. The canonical RepoDesk context is built once
+//! per orchestration run and reused by every sub-agent; each step then receives
+//! only its own assignment plus bounded in-run dependency results.
+//!
+//! This is intentionally a consumer of `crate::context`, not another context
+//! builder. The Context Evidence UI and executed agents therefore describe the
+//! same selected source set, token packing, trust, relevance, and freshness.
 
 use tokio::fs;
 
 use crate::errors::RepoDeskResult;
-use crate::smart_context::build_smart_context;
 
 use super::types::{SubAgentResult, SubAgentTask};
 
 /// Cap on how much of each upstream result is forwarded, to keep the pack bounded.
 const MAX_UPSTREAM_CHARS: usize = 3_000;
 
-/// Build the shared base context pack once per run (task + Memory Brain slice +
-/// repo map + changed files). Reuses [`build_smart_context`] so every sub-agent
-/// reads the same bounded, brain-injected pack.
+/// Build the shared base context once per run from the canonical Context
+/// Pipeline. `build_context` performs source selection, relevance/freshness
+/// scoring and deterministic token packing, persists `context.md` plus
+/// `context-pipeline.json`, and returns only after that snapshot validates.
 pub async fn build_base_context() -> RepoDeskResult<String> {
-    let result = build_smart_context().await?;
-    let content = fs::read_to_string(&result.context_file).await?;
-    Ok(content)
+    let result = crate::context::build_context()?;
+    Ok(fs::read_to_string(&result.context_file).await?)
 }
 
 /// System prompt: the sub-agent's role plus the bounded-context house rules.
@@ -40,8 +41,8 @@ pub fn step_system_prompt(step: &SubAgentTask) -> String {
     )
 }
 
-/// Compose the full prompt for a sub-agent: the shared base pack, this
-/// sub-agent's assignment, and the (in-run) results of its dependencies.
+/// Compose the full prompt for a sub-agent: the shared canonical base pack, this
+/// sub-agent's assignment, and the bounded in-run results of its dependencies.
 pub fn compose_step_prompt(
     base: &str,
     goal: &str,
@@ -129,8 +130,8 @@ mod tests {
     #[test]
     fn prompt_includes_base_goal_instruction_and_handoff() {
         let up = upstream_result("the analysis");
-        let prompt = compose_step_prompt("BASE PACK", "ship feature X", &sample_step(true), &[&up]);
-        assert!(prompt.contains("BASE PACK"));
+        let prompt = compose_step_prompt("CANONICAL CONTEXT", "ship feature X", &sample_step(true), &[&up]);
+        assert!(prompt.contains("CANONICAL CONTEXT"));
         assert!(prompt.contains("ship feature X"));
         assert!(prompt.contains("Do the thing."));
         assert!(prompt.contains("From 'analyze'"));
