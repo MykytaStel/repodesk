@@ -22,6 +22,7 @@ mod review_evidence_gate;
 mod review_transaction;
 mod runner;
 pub mod strategy;
+pub mod strategy_preview;
 pub mod types;
 
 pub use auto_loop::{LoopIteration, LoopOptions, LoopRun, LoopStatus, run_loop};
@@ -41,6 +42,10 @@ pub use runner::{
     AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, list_runs, load_latest_run, load_run,
 };
 pub use strategy::{build_strategy_plan, derive_active_ai_strategy};
+pub use strategy_preview::{
+    PreparedStrategyExecution, StrategyBaselineComparison, StrategyExecutionPreview,
+    prepare_strategy_execution,
+};
 pub use types::{
     OrchestrationPlan, OrchestrationRun, RunStatus, RunSummary, SubAgentResult, SubAgentStatus,
     SubAgentTask, topological_order,
