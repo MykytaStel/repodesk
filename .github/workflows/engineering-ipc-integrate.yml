@@ -1,0 +1,71 @@
+name: Engineering IPC Integrate
+
+on:
+  push:
+    branches:
+      - refactor/engineering-ipc-boundary
+    paths:
+      - .github/workflows/engineering-ipc-integrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/engineering-ipc-boundary
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Extract inline engineering adapters
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("apps/desktop/src-tauri/src/lib.rs")
+          text = path.read_text()
+          marker = "use tauri::Emitter;"
+          if not text.startswith("pub mod ai_discovery_commands") or marker not in text:
+              raise SystemExit("Unexpected desktop lib engineering-adapter layout")
+
+          suffix = text[text.index(marker):]
+          prefix = '''mod code_library;\nmod code_workspace;\npub mod commands;\nmod engineering_ipc;\nmod store;\nmod terminal;\n\n'''
+          text = prefix + suffix
+
+          replacements = {
+              "code_workbench_commands::read_code_file": "engineering_ipc::read_code_file",
+              "code_workbench_commands::code_workbench_snapshot": "engineering_ipc::code_workbench_snapshot",
+              "git_workspace_commands::git_workspace_snapshot": "engineering_ipc::git_workspace_snapshot",
+              "git_workspace_commands::git_file_diff": "engineering_ipc::git_file_diff",
+              "ai_discovery_commands::ai_discovery_scan": "engineering_ipc::ai_discovery_scan",
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f"Expected handler path not found: {old}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          Path(".github/workflows/engineering-ipc-integrate.yml").unlink()
+
+      - name: Focused desktop verification
+        run: |
+          cargo fmt --all
+          cargo test -p repodesk-desktop engineering_transport_keeps_compatibility_command_shapes
+          cargo clippy -p repodesk-desktop --all-targets -- -D warnings
+
+      - name: Commit boundary extraction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "refactor(desktop): isolate engineering IPC adapters"
+          git push origin HEAD:refactor/engineering-ipc-boundary
