@@ -4,12 +4,13 @@ import type { TabId } from "../../shared/types/api";
 import * as orchestrateApi from "../../shared/api/orchestrate";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { ContextInspectorCard } from "./ContextInspectorCard";
+import { WorkIntelligenceCard, WorkIntelligenceRailSummary } from "./WorkIntelligenceCard";
 import { WorkItemContractCard } from "./WorkItemContractCard";
 import { WorkTab } from "./WorkTab";
 
 const PHASE_KEY = ["work", "phase-state"] as const;
 
-type Inspector = "contract" | "context" | null;
+type Inspector = "contract" | "context" | "intelligence" | null;
 
 const PHASE_LABELS: Record<orchestrateApi.Phase, string> = {
   scope: "Scope",
@@ -18,6 +19,21 @@ const PHASE_LABELS: Record<orchestrateApi.Phase, string> = {
   review: "Review",
   verify: "Verify",
   finish: "Finish",
+};
+
+const INSPECTOR_META: Record<Exclude<Inspector, null>, { title: string; hint: string }> = {
+  contract: {
+    title: "Engineering Contract",
+    hint: "Scope, protected paths and acceptance criteria for this Work Item.",
+  },
+  context: {
+    title: "Context Evidence",
+    hint: "The exact bounded context decisions RepoDesk can hand to workers.",
+  },
+  intelligence: {
+    title: "AI Usage Intelligence",
+    hint: "Explainable context, orchestration and outcome-efficiency signals from Work Item evidence.",
+  },
 };
 
 export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => void }) {
@@ -44,10 +60,7 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
     setInspector((current) => (current === next ? null : next));
   };
 
-  const inspectorTitle = inspector === "contract" ? "Engineering Contract" : "Context Evidence";
-  const inspectorHint = inspector === "contract"
-    ? "Scope, protected paths and acceptance criteria for this Work Item."
-    : "The exact bounded context decisions RepoDesk can hand to workers.";
+  const inspectorMeta = inspector ? INSPECTOR_META[inspector] : null;
 
   return (
     <div className={`work-workbench-v3${inspector ? " inspector-open" : ""}`}>
@@ -77,6 +90,8 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
           </small>
         </section>
 
+        {hasTask ? <WorkIntelligenceRailSummary /> : null}
+
         <nav className="work-rail-section" aria-label="Work Item evidence">
           <span className="work-rail-label">Inspect</span>
           <button
@@ -98,6 +113,16 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
           >
             <span>Context</span>
             <small>AI packet evidence</small>
+          </button>
+          <button
+            type="button"
+            className={inspector === "intelligence" ? "active" : ""}
+            onClick={() => toggleInspector("intelligence")}
+            disabled={!hasTask}
+            aria-pressed={inspector === "intelligence"}
+          >
+            <span>Intelligence</span>
+            <small>Tokens + agents + outcomes</small>
           </button>
         </nav>
 
@@ -131,20 +156,26 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
         <WorkTab setActiveTab={setActiveTab} />
       </main>
 
-      {inspector ? (
-        <aside className="work-inspector-pane" aria-label={inspectorTitle}>
+      {inspector && inspectorMeta ? (
+        <aside className="work-inspector-pane" aria-label={inspectorMeta.title}>
           <header className="work-inspector-header">
             <div>
               <span className="eyebrow">Inspector</span>
-              <strong>{inspectorTitle}</strong>
-              <small>{inspectorHint}</small>
+              <strong>{inspectorMeta.title}</strong>
+              <small>{inspectorMeta.hint}</small>
             </div>
             <button type="button" className="work-inspector-close" onClick={() => setInspector(null)} aria-label="Close inspector">
               ×
             </button>
           </header>
           <div className="work-inspector-body">
-            {inspector === "contract" ? <WorkItemContractCard /> : <ContextInspectorCard />}
+            {inspector === "contract" ? (
+              <WorkItemContractCard />
+            ) : inspector === "context" ? (
+              <ContextInspectorCard />
+            ) : (
+              <WorkIntelligenceCard />
+            )}
           </div>
         </aside>
       ) : null}

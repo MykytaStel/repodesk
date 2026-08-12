@@ -4,6 +4,7 @@
 //! models adapt into these types until later migration slices move call sites.
 
 pub mod acceptance_evidence;
+pub mod ai_usage_intelligence;
 pub mod algorithmic_profile;
 pub mod change_governance;
 pub mod commit_policy;
@@ -17,6 +18,7 @@ pub mod intelligence;
 pub mod knowledge;
 pub mod knowledge_lifecycle;
 pub mod run_evidence;
+pub mod run_observability;
 pub mod work_item_contract;
 
 pub use acceptance_evidence::{
@@ -25,6 +27,10 @@ pub use acceptance_evidence::{
     AcceptanceEvidenceStore, acceptance_evidence_path, active_verification_is_fresh, criterion_id,
     derive_acceptance_evidence, link_active_acceptance_evidence, load_active_acceptance_evidence,
     read_acceptance_evidence,
+};
+pub use ai_usage_intelligence::{
+    AiContextEfficiency, AiOrchestrationEfficiency, AiOutcomeEfficiency, AiUsageReport,
+    AiUsageSignal, AiUsageSignalCode, AiUsageSignalSeverity, derive_ai_usage_report,
 };
 pub use algorithmic_profile::{
     AlgorithmicEvidence, AlgorithmicEvidenceKind, AlgorithmicProfile, AlgorithmicProfileError,
@@ -92,6 +98,10 @@ pub use run_evidence::{
     RunCommitEvidence, RunContextEvidence, RunEvidenceSnapshot, RunReviewEvidence,
     RunVerificationEvidence, RunWorkerEvidence, derive_run_evidence, load_active_run_evidence,
     load_active_run_evidence_from_events,
+};
+pub use run_observability::{
+    RunContextObservability, RunDisposition, RunDispositionStage, RunDispositionState,
+    RunEfficiency, RunObservabilityReport, derive_run_observability,
 };
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,

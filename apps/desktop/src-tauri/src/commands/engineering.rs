@@ -1,13 +1,15 @@
 use repodesk_core::engineering::{
-    ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
+    AiUsageReport, ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
     EngineeringKnowledgeLifecycleReport, EngineeringKnowledgeProposalInput,
-    EngineeringKnowledgeSnapshot, RunEvidenceSnapshot, WorkItemContractSnapshot,
-    WorkItemContractUpdate, accept_active_engineering_knowledge, archive_active_engineering_knowledge,
-    capture_active_verified_command, derive_change_governance, derive_engineering_intelligence,
-    derive_engineering_knowledge_lifecycle, derive_work_item_contract_snapshot,
-    link_active_acceptance_evidence, load_active_engineering_knowledge,
-    load_active_run_evidence_from_events, load_context_inspector, propose_active_engineering_knowledge,
-    read_events, read_work_item_contract, reconfirm_active_engineering_knowledge,
+    EngineeringKnowledgeSnapshot, RunEvidenceSnapshot, RunObservabilityReport,
+    WorkItemContractSnapshot, WorkItemContractUpdate, accept_active_engineering_knowledge,
+    archive_active_engineering_knowledge, capture_active_verified_command,
+    derive_ai_usage_report, derive_change_governance, derive_engineering_intelligence,
+    derive_engineering_knowledge_lifecycle, derive_run_observability,
+    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
+    load_active_engineering_knowledge, load_active_run_evidence_from_events,
+    load_context_inspector, propose_active_engineering_knowledge, read_events,
+    read_work_item_contract, reconfirm_active_engineering_knowledge,
     record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
@@ -41,19 +43,21 @@ pub struct WorkEngineeringSnapshot {
     /// transport can serve project-level Knowledge when no Work Item is active.
     /// Normal Work/Changes/Inspector calls still receive every field populated.
     pub intelligence: Option<EngineeringIntelligence>,
+    pub ai_usage_report: Option<AiUsageReport>,
     pub context_inspector: Option<ContextInspectorReport>,
     pub work_item_contract: Option<WorkItemContractSnapshot>,
     pub change_governance: Option<ChangeGovernanceSnapshot>,
     pub run_evidence: Option<RunEvidenceSnapshot>,
+    pub run_observability: Option<RunObservabilityReport>,
     pub knowledge: Option<EngineeringKnowledgeSnapshot>,
     pub knowledge_lifecycle: Option<EngineeringKnowledgeLifecycleReport>,
 }
 
 /// Temporary RepoDesk 2 engineering transport. Task-local Work projections and
 /// project-local Knowledge share one registered IPC boundary while the domain is
-/// still migrating. This deliberately avoids adding five parallel handler
-/// commands. A future transport cleanup can split queries/mutations without
-/// changing the underlying core semantics.
+/// still migrating. This deliberately avoids adding parallel handler commands.
+/// AI-usage and run-observability projections reuse the same event replay so the
+/// frontend does not need to issue extra ledger reads for explanatory metrics.
 #[tauri::command]
 pub fn work_engineering_intelligence(
     contract_update: Option<WorkItemContractUpdate>,
@@ -113,10 +117,12 @@ pub fn work_engineering_intelligence(
         Err(_) if knowledge.is_some() => {
             return Ok(WorkEngineeringSnapshot {
                 intelligence: None,
+                ai_usage_report: None,
                 context_inspector: None,
                 work_item_contract: None,
                 change_governance: None,
                 run_evidence: None,
+                run_observability: None,
                 knowledge,
                 knowledge_lifecycle,
             });
@@ -126,6 +132,7 @@ pub fn work_engineering_intelligence(
 
     let events = read_events(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let intelligence = derive_engineering_intelligence(&events);
+    let ai_usage_report = derive_ai_usage_report(&events, &intelligence);
     let context_inspector = load_context_inspector(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let stored_contract =
         read_work_item_contract(&task.config.run_dir).map_err(ErrorPayload::from)?;
@@ -137,13 +144,18 @@ pub fn work_engineering_intelligence(
         ),
         None => None,
     };
+    let run_observability = run_evidence
+        .as_ref()
+        .map(|evidence| derive_run_observability(evidence, &events));
 
     Ok(WorkEngineeringSnapshot {
         intelligence: Some(intelligence),
+        ai_usage_report: Some(ai_usage_report),
         context_inspector: Some(context_inspector),
         work_item_contract: Some(work_item_contract),
         change_governance: Some(change_governance),
         run_evidence,
+        run_observability,
         knowledge,
         knowledge_lifecycle,
     })

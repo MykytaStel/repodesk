@@ -1,13 +1,16 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { orchestrationRuns, type RunSummary } from "../../shared/api/orchestrate";
-import {
-  linkAcceptanceEvidence,
-  runEvidenceSnapshot,
-  type AcceptanceCriterionEvidence,
-  type RunEvidenceSnapshot,
-  type VerificationCommandEvidence,
+import type {
+  AcceptanceCriterionEvidence,
+  RunEvidenceSnapshot,
+  VerificationCommandEvidence,
 } from "../../shared/api/engineering";
+import {
+  linkAcceptanceEvidenceBundle,
+  runEvidenceBundle,
+  type RunObservabilityReport,
+} from "../../shared/api/observability";
 import "./runs.css";
 
 const OutcomesTab = lazy(() => import("../outcomes/OutcomesTab").then((m) => ({ default: m.OutcomesTab })));
@@ -27,13 +30,21 @@ function fmtTime(value: string): string {
 }
 
 function statusTone(value: string): "ok" | "danger" | "neutral" {
-  if (["completed", "accepted", "passed", "proven"].includes(value)) return "ok";
-  if (["failed", "rejected"].includes(value)) return "danger";
+  if (["completed", "accepted", "passed", "proven", "complete", "ready"].includes(value)) return "ok";
+  if (["failed", "rejected", "blocked"].includes(value)) return "danger";
   return "neutral";
 }
 
 function shortId(value: string): string {
   return value.length > 24 ? `${value.slice(0, 21)}…` : value;
+}
+
+function pct(value: number | null): string {
+  return value == null ? "—" : `${Math.round(value * 100)}%`;
+}
+
+function compactNumber(value: number | null, digits = 1): string {
+  return value == null ? "—" : value.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
 function RunListItem({ run, selected, onSelect }: {
@@ -118,12 +129,47 @@ function AcceptanceRow({
   );
 }
 
+function RunObservability({ report }: { report: RunObservabilityReport }) {
+  const { disposition, efficiency, context } = report;
+  const dispositionTone = disposition.state === "blocked"
+    ? "danger"
+    : disposition.state === "complete"
+      ? "ok"
+      : disposition.state === "attention"
+        ? "warn"
+        : "neutral";
+
+  return (
+    <>
+      <section className={`run-disposition ${disposition.state}`}>
+        <div>
+          <span className="eyebrow">Current disposition · {disposition.stage}</span>
+          <h3>{disposition.title}</h3>
+          <p>{disposition.detail}</p>
+        </div>
+        <span className={`pill ${dispositionTone}`}>{disposition.state}</span>
+      </section>
+
+      <section className="run-observability-grid" aria-label="Run efficiency">
+        <div><span>Workers</span><strong>{efficiency.workers}</strong><small>{efficiency.successful_workers} successful</small></div>
+        <div><span>Failed / blocked</span><strong>{efficiency.failed_workers + efficiency.blocked_workers}</strong><small>{efficiency.skipped_workers} skipped</small></div>
+        <div><span>Handoffs</span><strong>{efficiency.handoffs}</strong><small>{efficiency.unique_providers} provider(s)</small></div>
+        <div><span>Tokens / changed file</span><strong>{compactNumber(efficiency.tokens_per_changed_file, 0)}</strong><small>{efficiency.total_tokens.toLocaleString()} total</small></div>
+        <div><span>Input / output</span><strong>{efficiency.input_output_ratio == null ? "—" : `${compactNumber(efficiency.input_output_ratio)}:1`}</strong><small>{efficiency.unique_models} model(s)</small></div>
+        <div><span>Repeated context</span><strong>{pct(context.repeated_context_ratio)}</strong><small>{context.repeated_tokens?.toLocaleString() ?? "—"} tokens</small></div>
+      </section>
+    </>
+  );
+}
+
 function RunEvidenceDetail({
   evidence,
+  observability,
   linking,
   onLink,
 }: {
   evidence: RunEvidenceSnapshot;
+  observability: RunObservabilityReport;
   linking: boolean;
   onLink: (criterionId: string, command: string) => void;
 }) {
@@ -150,13 +196,18 @@ function RunEvidenceDetail({
         <span>{fmtTime(evidence.started_at)}</span>
       </div>
 
+      <RunObservability report={observability} />
+
       <section className="evidence-section">
         <div className="evidence-section-title">
           <h3>Context</h3>
           <span className="evidence-source">{evidence.context.source}</span>
         </div>
-        <div className="evidence-row-meta">
-          <span>{evidence.context.estimated_tokens?.toLocaleString() ?? "Unknown"} estimated tokens</span>
+        <div className="evidence-row-meta run-context-metrics">
+          <span>{observability.context.included_tokens?.toLocaleString() ?? evidence.context.estimated_tokens?.toLocaleString() ?? "Unknown"} included</span>
+          <span>{observability.context.candidate_tokens?.toLocaleString() ?? "Unknown"} candidate</span>
+          <span>{observability.context.compacted_tokens?.toLocaleString() ?? "Unknown"} compacted</span>
+          <span>{pct(observability.context.repeated_context_ratio)} repeated</span>
           <span>{evidence.context.evidence.length} evidence refs</span>
         </div>
       </section>
@@ -289,8 +340,8 @@ function RunsWorkspace() {
   }, [runs.data, selectedRunId]);
 
   const detail = useQuery({
-    queryKey: ["runs", "evidence", selectedRunId],
-    queryFn: () => runEvidenceSnapshot(selectedRunId!),
+    queryKey: ["runs", "observability", selectedRunId],
+    queryFn: () => runEvidenceBundle(selectedRunId!),
     enabled: Boolean(selectedRunId),
     staleTime: 2_000,
     refetchOnWindowFocus: true,
@@ -298,9 +349,9 @@ function RunsWorkspace() {
 
   const link = useMutation({
     mutationFn: ({ criterionId, command }: { criterionId: string; command: string }) =>
-      linkAcceptanceEvidence(selectedRunId!, criterionId, command),
+      linkAcceptanceEvidenceBundle(selectedRunId!, criterionId, command),
     onSuccess: (next) => {
-      queryClient.setQueryData(["runs", "evidence", selectedRunId], next);
+      queryClient.setQueryData(["runs", "observability", selectedRunId], next);
     },
   });
 
@@ -342,10 +393,11 @@ function RunsWorkspace() {
       {detail.isLoading ? (
         <div className="run-evidence-detail muted">Loading run evidence…</div>
       ) : detail.isError || !detail.data ? (
-        <div className="run-evidence-detail danger">Run evidence could not be reconstructed.</div>
+        <div className="run-evidence-detail danger">Run evidence or observability could not be reconstructed.</div>
       ) : (
         <RunEvidenceDetail
-          evidence={detail.data}
+          evidence={detail.data.evidence}
+          observability={detail.data.observability}
           linking={link.isPending}
           onLink={(criterionId, command) => link.mutate({ criterionId, command })}
         />

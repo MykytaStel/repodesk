@@ -1,0 +1,302 @@
+/* AI-usage intelligence + run observability. Kept late in App.css so these
+   workbench-specific density rules do not mutate the legacy dashboard surfaces. */
+
+.work-ai-rail-summary {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+
+.work-ai-rail-summary.warning {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.work-ai-rail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.work-ai-rail-head strong {
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.work-ai-rail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 8px;
+}
+
+.work-ai-rail-grid span {
+  min-width: 0;
+  color: var(--muted-2);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.work-ai-rail-grid strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.work-ai-intelligence {
+  display: grid;
+  gap: 14px;
+}
+
+.work-ai-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.work-ai-summary h3 {
+  margin: 4px 0 5px;
+  font-size: 18px;
+}
+
+.work-ai-summary p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.work-ai-cost {
+  min-width: 92px;
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.work-ai-cost span,
+.work-ai-metric span {
+  color: var(--muted-2);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.work-ai-cost strong {
+  font-family: var(--font-mono);
+  font-size: 16px;
+}
+
+.work-ai-section {
+  display: grid;
+  gap: 9px;
+}
+
+.work-ai-section > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.work-ai-section > header > strong {
+  font-size: var(--text-sm);
+}
+
+.work-ai-section > header > span {
+  color: var(--muted-2);
+  font-size: var(--text-xs);
+}
+
+.work-ai-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.work-ai-metric {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+
+.work-ai-metric strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-overflow: ellipsis;
+}
+
+.work-ai-metric small {
+  color: var(--muted-2);
+  font-size: 10px;
+}
+
+.work-ai-signals {
+  padding-top: 3px;
+}
+
+.work-ai-signal {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+
+.work-ai-signal.warning {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.work-ai-signal header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.work-ai-signal header strong {
+  font-size: var(--text-sm);
+}
+
+.work-ai-signal p,
+.work-ai-signal small {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.work-ai-signal p {
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.work-ai-signal small {
+  color: var(--muted);
+}
+
+.work-ai-empty {
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.run-disposition {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  margin: 2px 0 14px;
+  padding: 13px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.run-disposition.blocked {
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.run-disposition.attention {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+}
+
+.run-disposition.complete {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+}
+
+.run-disposition h3 {
+  margin: 3px 0 4px;
+  font-size: 16px;
+}
+
+.run-disposition p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+.run-observability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.run-observability-grid > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+
+.run-observability-grid span {
+  color: var(--muted-2);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.run-observability-grid strong {
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-overflow: ellipsis;
+}
+
+.run-observability-grid small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-context-metrics {
+  flex-wrap: wrap;
+  gap: 7px 14px;
+}
+
+@media (max-width: 1180px) {
+  .run-observability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .work-ai-summary,
+  .run-disposition {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .work-ai-cost {
+    justify-items: start;
+  }
+
+  .work-ai-metrics,
+  .run-observability-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
