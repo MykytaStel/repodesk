@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::code_workspace::{language_for_path, MAX_EDITABLE_FILE_BYTES};
+use crate::code_workspace::{MAX_EDITABLE_FILE_BYTES, language_for_path};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::projects::get_active_project;
 use crate::security::is_blocked_path;
