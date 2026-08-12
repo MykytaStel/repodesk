@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { onboardedFixtures } from "./fixtures";
+import { currentOnboardedFixtures } from "./current-fixtures";
 import { installMockIpc } from "./mock-ipc";
 
 test.describe("balanced Knowledge layout", () => {
   test.beforeEach(async ({ page }) => {
-    await installMockIpc(page, onboardedFixtures);
+    await installMockIpc(page, currentOnboardedFixtures);
     await page.goto("/");
     await page.getByRole("button", { name: "Show workspace sidebar" }).click();
     await page.locator(".workspace-sidebar").getByRole("button", { name: /^Knowledge/ }).click();
