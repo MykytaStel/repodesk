@@ -52,7 +52,8 @@ pub fn derive_ai_strategy_with_feedback(
     // A repeatedly weak Lean history vetoes automatic fan-out collapse. Explicit
     // Lean remains available to the human, but Auto falls back to Balanced.
     if recommendation.profile == AiStrategyProfile::Lean && history_is_weak(lean) {
-        apply_profile(&mut recommendation, AiStrategyProfile::Balanced, false);
+        let detail = feedback_detail("Lean", lean, "underperformed, so Auto kept the balanced AI review pipeline");
+        apply_profile(&mut recommendation, AiStrategyProfile::Balanced, false, detail);
         return recommendation;
     }
 
@@ -63,14 +64,16 @@ pub fn derive_ai_strategy_with_feedback(
         && narrow_scope
         && history_is_strong(lean)
     {
-        apply_profile(&mut recommendation, AiStrategyProfile::Lean, true);
+        let detail = feedback_detail("Lean", lean, "has reliable settled outcomes, so Auto reused the lean one-writer shape");
+        apply_profile(&mut recommendation, AiStrategyProfile::Lean, true, detail);
         return recommendation;
     }
 
     // Prompt-heavy Auto normally prefers Local-first. A settled weak Local-first
     // history vetoes that optimization until the user explicitly chooses it.
     if recommendation.profile == AiStrategyProfile::LocalFirst && history_is_weak(local) {
-        apply_profile(&mut recommendation, AiStrategyProfile::Balanced, false);
+        let detail = feedback_detail("Local-first", local, "underperformed, so Auto returned to balanced routing");
+        apply_profile(&mut recommendation, AiStrategyProfile::Balanced, false, detail);
     }
 
     recommendation
@@ -95,6 +98,22 @@ fn history_is_weak(value: Option<&StrategyProfileFeedback>) -> bool {
     })
 }
 
+fn feedback_detail(
+    label: &str,
+    value: Option<&StrategyProfileFeedback>,
+    outcome: &str,
+) -> String {
+    match value {
+        Some(value) => format!(
+            "Historical {label} evidence: {}/{} settled runs succeeded ({:.0}%); {outcome}.",
+            value.succeeded_runs,
+            value.settled_runs,
+            value.success_rate.unwrap_or(0.0) * 100.0,
+        ),
+        None => format!("Historical {label} evidence {outcome}."),
+    }
+}
+
 fn has_current_instability(usage: &AiUsageReport) -> bool {
     usage.signals.iter().any(|signal| {
         matches!(
@@ -110,6 +129,7 @@ fn apply_profile(
     recommendation: &mut AiStrategyRecommendation,
     profile: AiStrategyProfile,
     narrow_scope: bool,
+    feedback_detail: String,
 ) {
     recommendation.profile = profile;
     recommendation.economy_mode = profile.economy_mode().to_string();
@@ -126,6 +146,8 @@ fn apply_profile(
         AiPlanShape::AnalyzeWriterReview => 3,
     };
     recommendation.independent_ai_review = recommendation.plan_shape != AiPlanShape::SingleWriter;
+    recommendation.feedback_influenced = true;
+    recommendation.feedback_detail = Some(feedback_detail);
 }
 
 #[cfg(test)]
@@ -181,6 +203,8 @@ mod tests {
         );
         assert_eq!(recommendation.profile, AiStrategyProfile::Lean);
         assert_eq!(recommendation.plan_shape, AiPlanShape::SingleWriter);
+        assert!(recommendation.feedback_influenced);
+        assert!(recommendation.feedback_detail.as_deref().unwrap().contains("5/5"));
     }
 
     #[test]
@@ -207,6 +231,7 @@ mod tests {
             &feedback,
         );
         assert_eq!(recommendation.profile, AiStrategyProfile::Balanced);
+        assert!(recommendation.feedback_influenced);
     }
 
     #[test]
@@ -225,5 +250,6 @@ mod tests {
             &feedback,
         );
         assert_eq!(recommendation.profile, AiStrategyProfile::Lean);
+        assert!(!recommendation.feedback_influenced);
     }
 }
