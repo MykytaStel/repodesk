@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../../shared/api/orchestrate";
 import { invalidateQueryDomains } from "../../shared/api/cacheInvalidation";
@@ -11,11 +11,6 @@ import { PromptsPanel } from "../workflow/PromptsPanel";
 import { ReviewPanel } from "./ReviewPanel";
 import type { ExecutionPreview, Phase, PhaseProgress, PhaseStatus } from "../../shared/api/orchestrate";
 import type { TabId } from "../../shared/types/api";
-import { ChevronIcon } from "../../app/NavIcons";
-
-const OrchestrateTab = lazy(() =>
-  import("../orchestrate/OrchestrateTab").then((module) => ({ default: module.OrchestrateTab })),
-);
 
 const PHASE_KEY = ["work", "phase-state"] as const;
 const LATEST_RUN_KEY = ["work", "latest-run"] as const;
@@ -64,7 +59,6 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const queryClient = useQueryClient();
   const { hasProject, hasTask, projectName } = useWorkspace();
   const { git } = useGit();
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [approveCodingAgents, setApproveCodingAgents] = useState(false);
   const [approvePaid, setApprovePaid] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
@@ -156,6 +150,24 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     },
   });
 
+  if (phase.isError) {
+    const detail = phase.error instanceof Error ? phase.error.message : String(phase.error);
+    return (
+      <section className="work-phase-error" role="alert">
+        <p className="eyebrow">Work evidence unavailable</p>
+        <h2>RepoDesk stopped instead of guessing</h2>
+        <p>
+          The current workflow evidence could not be read safely. Progress is intentionally hidden until the evidence is valid again.
+        </p>
+        <code>{detail}</code>
+        <div className="work-error-actions">
+          <button className="primary-cta" onClick={() => void phase.refetch()}>Retry</button>
+          <button className="secondary-cta" onClick={() => setActiveTab("history")}>Open Runs</button>
+        </div>
+      </section>
+    );
+  }
+
   if (phase.isLoading || !phase.data) {
     return <div className="focus-empty">Loading Work Item flow…</div>;
   }
@@ -206,7 +218,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
       setActiveTab("changes");
       return;
     }
-    setShowAdvanced(true);
+    setActiveTab("orchestrate");
   }
 
   return (
@@ -214,7 +226,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
       <section className="work-focus-card">
         <header className="work-phase-header">
           <div>
-            <p className="eyebrow">Current Work Item</p>
+            <p className="eyebrow">Current step</p>
             <h2>{progress.complete ? "Task complete" : current.title}</h2>
             <p className="muted">{current.summary}</p>
           </div>
@@ -364,16 +376,12 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
         {mutationError ? <p className="work-error">{mutationError}</p> : null}
       </section>
 
-      <section className="work-advanced-shell">
-        <button className="disclosure" aria-expanded={showAdvanced} onClick={() => setShowAdvanced((open) => !open)}>
-          <span className="disclosure-icon" aria-hidden="true"><ChevronIcon open={showAdvanced} /></span>
-          Advanced orchestration
-        </button>
-        {showAdvanced ? (
-          <Suspense fallback={<p className="muted">Loading orchestrator…</p>}>
-            <OrchestrateTab setActiveTab={setActiveTab} />
-          </Suspense>
-        ) : null}
+      <section className="work-tools-strip">
+        <div>
+          <strong>Need lower-level control?</strong>
+          <small>Routing, workers and multi-agent details live in Orchestrate so the main Work flow stays focused.</small>
+        </div>
+        <button className="secondary-cta" onClick={() => setActiveTab("orchestrate")}>Open Orchestrate</button>
       </section>
     </div>
   );
