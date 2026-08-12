@@ -7,6 +7,7 @@ import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { EmptyState, stringifyPreview } from "../../shared/ui/SharedComponents";
 import { callCommand, queryKeys } from "../../shared/api/queries";
 import { requestCodeWorkspaceOpen } from "../../shared/api/codeWorkspace";
+import { consumeChangesOpenRequest } from "../../shared/api/changesNavigation";
 import {
   WORK_ENGINEERING_SNAPSHOT_KEY,
   workEngineeringSnapshot,
@@ -59,6 +60,8 @@ export function ChangesTab({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("diff");
   const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [pendingFocus, setPendingFocus] = useState<string | null>(() => consumeChangesOpenRequest());
+  const [navigationWarning, setNavigationWarning] = useState<string | null>(null);
 
   const staged = listFromRecord(git, ["staged", "staged_files"]);
   const unstaged = listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"]);
@@ -119,6 +122,31 @@ export function ChangesTab({
     if (selectedFile) void loadPreview(selectedFile, viewMode);
   }, [viewMode]);
 
+  useEffect(() => {
+    if (rows.length === 0) return;
+
+    if (pendingFocus) {
+      const requested = pendingFocus;
+      const target = rows.includes(requested) ? requested : rows[0];
+      setPendingFocus(null);
+      setViewMode("diff");
+      setNavigationWarning(
+        target === requested
+          ? null
+          : `${requested} has no current Git delta. Showing ${target} instead.`,
+      );
+      void loadPreview(target, "diff");
+      return;
+    }
+
+    if (!selectedFile || !rows.includes(selectedFile)) {
+      setNavigationWarning(null);
+      void loadPreview(rows[0], viewMode);
+    }
+    // Selection changes are deliberately driven by the changed-file identity set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, pendingFocus]);
+
   const refreshWorkspace = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.git.snapshot });
     void queryClient.invalidateQueries({ queryKey: WORK_ENGINEERING_SNAPSHOT_KEY });
@@ -176,6 +204,13 @@ export function ChangesTab({
           <span>Governance</span><strong>No Work Item</strong><small>Changes are not attributed to a task.</small>
         </div>
       )}
+
+      {navigationWarning ? (
+        <div className="notice warning" role="status">
+          {navigationWarning}
+          <button type="button" className="link-cta" onClick={() => setNavigationWarning(null)}>Dismiss</button>
+        </div>
+      ) : null}
 
       {evidenceOpen && hasTask ? (
         <ChangeGovernancePanel
