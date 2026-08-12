@@ -12,6 +12,7 @@ pub mod checks;
 pub mod code_library;
 pub mod code_workspace;
 pub mod context;
+pub mod context_packing;
 pub mod context_pipeline;
 pub mod context_relevance;
 pub mod credentials;
