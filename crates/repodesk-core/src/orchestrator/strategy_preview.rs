@@ -30,6 +30,8 @@ pub struct StrategyBaselineComparison {
     pub baseline_estimated_tokens: usize,
     pub planned_estimated_tokens: usize,
     pub estimated_saved_tokens: usize,
+    pub baseline_estimated_cost_units: f64,
+    pub planned_estimated_cost_units: f64,
     /// Positive means the selected strategy is estimated to cost more than the
     /// baseline; negative means it is cheaper.
     pub estimated_cost_delta_units: f64,
@@ -75,6 +77,8 @@ pub fn prepare_strategy_execution(
         estimated_saved_tokens: baseline
             .total_estimated_tokens
             .saturating_sub(execution.total_estimated_tokens),
+        baseline_estimated_cost_units: baseline.total_estimated_cost_units,
+        planned_estimated_cost_units: execution.total_estimated_cost_units,
         estimated_cost_delta_units: execution.total_estimated_cost_units
             - baseline.total_estimated_cost_units,
     };
@@ -195,8 +199,8 @@ mod tests {
     use super::*;
     use crate::api_clients::ThinkingLevel;
     use crate::engineering::{AiPlanShape, AiStrategyProfile, AiStrategyReason};
-    use crate::routing::types::{ExecutorKind, TaskKind};
     use crate::orchestrator::types::SubAgentTask;
+    use crate::routing::types::{ExecutorKind, TaskKind};
 
     fn plan() -> OrchestrationPlan {
         OrchestrationPlan {
@@ -261,6 +265,8 @@ mod tests {
             baseline_estimated_tokens: 10_000,
             planned_estimated_tokens: 10_000,
             estimated_saved_tokens: 0,
+            baseline_estimated_cost_units: 0.4,
+            planned_estimated_cost_units: 0.6,
             estimated_cost_delta_units: 0.2,
         };
         assert!(comparison.estimated_cost_delta_units > 0.0);
