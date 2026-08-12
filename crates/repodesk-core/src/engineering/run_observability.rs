@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use super::context_compactness::derive_context_compactness;
 use super::events::{EngineeringEvent, EngineeringEventKind};
@@ -52,6 +53,18 @@ pub struct RunContextObservability {
     pub repeated_context_ratio: Option<f64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RunStrategyObservability {
+    pub requested_mode: String,
+    pub resolved_profile: String,
+    pub plan_shape: String,
+    pub plan_fingerprint: String,
+    pub baseline_steps: usize,
+    pub planned_steps: usize,
+    pub estimated_saved_tokens: usize,
+    pub context_fingerprint: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct RunEfficiency {
     pub workers: usize,
@@ -72,6 +85,7 @@ pub struct RunEfficiency {
 pub struct RunObservabilityReport {
     pub run_id: String,
     pub disposition: RunDisposition,
+    pub strategy: Option<RunStrategyObservability>,
     pub context: RunContextObservability,
     pub efficiency: RunEfficiency,
 }
@@ -108,14 +122,10 @@ pub fn derive_run_observability(
     let handoffs = events
         .iter()
         .filter(|event| event.kind == EngineeringEventKind::WorkerHandoff)
-        .filter(|event| {
-            event
-                .execution_id
-                .as_ref()
-                .is_some_and(|id| id.as_str() == evidence.run_id)
-        })
+        .filter(|event| event_belongs_to_run(event, &evidence.run_id))
         .count();
 
+    let strategy = strategy_observability_for_run(events, &evidence.run_id);
     let context = context_observability_for_run(events, evidence);
     let efficiency = RunEfficiency {
         workers: evidence.workers.len(),
@@ -139,9 +149,53 @@ pub fn derive_run_observability(
     RunObservabilityReport {
         run_id: evidence.run_id.clone(),
         disposition,
+        strategy,
         context,
         efficiency,
     }
+}
+
+fn strategy_observability_for_run(
+    events: &[EngineeringEvent],
+    run_id: &str,
+) -> Option<RunStrategyObservability> {
+    let event = events.iter().rev().find(|event| {
+        event.kind == EngineeringEventKind::AiStrategySelected && event_belongs_to_run(event, run_id)
+    })?;
+
+    Some(RunStrategyObservability {
+        requested_mode: attribute_string(event, "requested_mode")?,
+        resolved_profile: attribute_string(event, "resolved_profile")?,
+        plan_shape: attribute_string(event, "plan_shape")?,
+        plan_fingerprint: attribute_string(event, "plan_fingerprint")?,
+        baseline_steps: attribute_usize(event, "baseline_steps")?,
+        planned_steps: attribute_usize(event, "planned_steps")?,
+        estimated_saved_tokens: attribute_usize(event, "estimated_saved_tokens").unwrap_or(0),
+        context_fingerprint: attribute_string(event, "context_fingerprint"),
+    })
+}
+
+fn event_belongs_to_run(event: &EngineeringEvent, run_id: &str) -> bool {
+    event
+        .execution_id
+        .as_ref()
+        .is_some_and(|id| id.as_str() == run_id)
+}
+
+fn attribute_string(event: &EngineeringEvent, key: &str) -> Option<String> {
+    event
+        .attributes
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn attribute_usize(event: &EngineeringEvent, key: &str) -> Option<usize> {
+    event
+        .attributes
+        .get(key)
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
 }
 
 fn context_observability_for_run(
@@ -152,10 +206,7 @@ fn context_observability_for_run(
         .iter()
         .find(|event| {
             event.kind == EngineeringEventKind::ExecutionStarted
-                && event
-                    .execution_id
-                    .as_ref()
-                    .is_some_and(|id| id.as_str() == evidence.run_id)
+                && event_belongs_to_run(event, &evidence.run_id)
         })
         .map(|event| event.occurred_at)
     else {
@@ -381,7 +432,9 @@ fn ratio(numerator: f64, denominator: usize) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use crate::engineering::acceptance_evidence::AcceptanceEvidenceReport;
+    use crate::engineering::domain::{ExecutionId, WorkItemId};
     use crate::engineering::run_evidence::{
         RunCommitEvidence, RunContextEvidence, RunReviewEvidence, RunVerificationEvidence,
         RunWorkerEvidence,
@@ -454,6 +507,7 @@ mod tests {
         assert_eq!(report.disposition.code, "awaiting_review");
         assert_eq!(report.disposition.state, RunDispositionState::Ready);
         assert_eq!(report.efficiency.tokens_per_changed_file, Some(2_500.0));
+        assert!(report.strategy.is_none());
     }
 
     #[test]
@@ -474,5 +528,30 @@ mod tests {
         assert_eq!(report.disposition.code, "execution_failed");
         assert_eq!(report.efficiency.failed_workers, 1);
         assert_eq!(report.disposition.state, RunDispositionState::Blocked);
+    }
+
+    #[test]
+    fn selected_strategy_is_bound_to_the_same_execution() {
+        let strategy_event = EngineeringEvent::new(
+            "repodesk",
+            WorkItemId::try_new("task-1").unwrap(),
+            EngineeringEventKind::AiStrategySelected,
+        )
+        .with_execution(ExecutionId::try_new("run-1").unwrap())
+        .with_attribute("requested_mode", json!("auto"))
+        .with_attribute("resolved_profile", json!("lean"))
+        .with_attribute("plan_shape", json!("single_writer"))
+        .with_attribute("plan_fingerprint", json!("fingerprint"))
+        .with_attribute("baseline_steps", json!(3))
+        .with_attribute("planned_steps", json!(1))
+        .with_attribute("estimated_saved_tokens", json!(5000));
+
+        let report = derive_run_observability(&base_evidence(), &[strategy_event]);
+        let strategy = report.strategy.expect("strategy evidence");
+        assert_eq!(strategy.requested_mode, "auto");
+        assert_eq!(strategy.resolved_profile, "lean");
+        assert_eq!(strategy.baseline_steps, 3);
+        assert_eq!(strategy.planned_steps, 1);
+        assert_eq!(strategy.estimated_saved_tokens, 5_000);
     }
 }

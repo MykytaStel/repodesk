@@ -31,6 +31,7 @@ pub enum EngineeringEventKind {
     ScopeChanged,
     ContextBuilt,
     ContextEdited,
+    AiStrategySelected,
     ExecutionStarted,
     ExecutionFinished,
     WorkerHandoff,

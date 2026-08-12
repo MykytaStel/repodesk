@@ -4,6 +4,7 @@
 //! models adapt into these types until later migration slices move call sites.
 
 pub mod acceptance_evidence;
+pub mod ai_strategy;
 pub mod ai_usage_intelligence;
 pub mod algorithmic_profile;
 pub mod change_governance;
@@ -27,6 +28,10 @@ pub use acceptance_evidence::{
     AcceptanceEvidenceStore, acceptance_evidence_path, active_verification_is_fresh, criterion_id,
     derive_acceptance_evidence, link_active_acceptance_evidence, load_active_acceptance_evidence,
     read_acceptance_evidence,
+};
+pub use ai_strategy::{
+    AiPlanShape, AiStrategyInputs, AiStrategyMode, AiStrategyProfile, AiStrategyReason,
+    AiStrategyReasonCode, AiStrategyRecommendation, derive_ai_strategy,
 };
 pub use ai_usage_intelligence::{
     AiContextEfficiency, AiOrchestrationEfficiency, AiOutcomeEfficiency, AiUsageReport,
@@ -101,7 +106,7 @@ pub use run_evidence::{
 };
 pub use run_observability::{
     RunContextObservability, RunDisposition, RunDispositionStage, RunDispositionState,
-    RunEfficiency, RunObservabilityReport, derive_run_observability,
+    RunEfficiency, RunObservabilityReport, RunStrategyObservability, derive_run_observability,
 };
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,

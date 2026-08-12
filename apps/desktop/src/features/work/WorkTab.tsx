@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../../shared/api/orchestrate";
+import * as strategyApi from "../../shared/api/strategy";
 import { invalidateQueryDomains } from "../../shared/api/cacheInvalidation";
 import { callCommand } from "../../shared/api/queries";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
@@ -8,8 +9,10 @@ import { useGit } from "../git/useGit";
 import { codeChangedFiles } from "../../shared/utils/helpers";
 import { TaskSwitcher } from "../workflow/TaskSwitcher";
 import { PromptsPanel } from "../workflow/PromptsPanel";
+import { ExecutionStrategyControls } from "./ExecutionStrategyControls";
 import { ReviewPanel } from "./ReviewPanel";
 import type { ExecutionPreview, Phase, PhaseProgress, PhaseStatus } from "../../shared/api/orchestrate";
+import type { AiStrategyMode } from "../../shared/api/strategy";
 import type { TabId } from "../../shared/types/api";
 
 const PHASE_KEY = ["work", "phase-state"] as const;
@@ -75,6 +78,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const { git } = useGit();
   const [approveCodingAgents, setApproveCodingAgents] = useState(false);
   const [approvePaid, setApprovePaid] = useState(false);
+  const [strategyMode, setStrategyMode] = useState<AiStrategyMode>("auto");
   const [commitMessage, setCommitMessage] = useState("");
   const [importPatch, setImportPatch] = useState("");
 
@@ -91,8 +95,8 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     refetchOnWindowFocus: true,
   });
   const executePreview = useQuery({
-    queryKey: ["work", "exec-preview"],
-    queryFn: () => api.workExecutionPreview(),
+    queryKey: ["work", "exec-preview", strategyMode],
+    queryFn: () => strategyApi.workStrategyExecutionPreview(strategyMode),
     enabled: phase.data?.current === "execute" && phase.data?.execution_mode === "agent_run",
     staleTime: 5_000,
   });
@@ -115,7 +119,12 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   });
 
   const runAgent = useMutation({
-    mutationFn: () => api.orchestrateRun(undefined, false, null, approvePaid, approveCodingAgents),
+    mutationFn: () => strategyApi.orchestrateStrategyRun({
+      strategyMode,
+      expectedPlanFingerprint: executePreview.data?.plan_fingerprint ?? null,
+      approvePaid,
+      approveCodingAgents,
+    }),
     onSuccess: (run) => {
       queryClient.setQueryData(LATEST_RUN_KEY, run);
       void refreshWork(["work", "git", "code", "runs"]);
@@ -196,11 +205,16 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     : 0;
   const busy =
     runCta.isPending || runAgent.isPending || review.isPending || verify.isPending || importManual.isPending || commit.isPending;
-  const preview = (executePreview.data as ExecutionPacketPreview | undefined) ?? null;
+  const strategyPreview = executePreview.data ?? null;
+  const preview = (strategyPreview?.execution as ExecutionPacketPreview | undefined) ?? null;
   const executeApprovalsMet =
+    Boolean(preview) &&
     (!preview?.requires_coding_agent_approval || approveCodingAgents) &&
     (!preview?.requires_paid_approval || approvePaid);
-  const executeBlocked = progress.current === "execute" && isAgentRun && !executeApprovalsMet;
+  const executeBlocked =
+    progress.current === "execute" &&
+    isAgentRun &&
+    (!executeApprovalsMet || executePreview.isLoading || executePreview.isFetching || executePreview.isError);
 
   const mutationError =
     (runAgent.error as Error | null)?.message ??
@@ -209,6 +223,12 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     (importManual.error as Error | null)?.message ??
     (commit.error as Error | null)?.message ??
     null;
+
+  function changeStrategy(next: AiStrategyMode) {
+    setApproveCodingAgents(false);
+    setApprovePaid(false);
+    setStrategyMode(next);
+  }
 
   function handlePrimary() {
     const { action_id: actionId, phase: ctaPhase } = progress.cta;
@@ -304,9 +324,15 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
 
             {isAgentRun ? (
               <>
+                <ExecutionStrategyControls
+                  mode={strategyMode}
+                  preview={strategyPreview}
+                  loading={executePreview.isLoading || executePreview.isFetching}
+                  onModeChange={changeStrategy}
+                />
                 <ExecutionPreviewCompact
                   preview={preview}
-                  loading={executePreview.isLoading}
+                  loading={executePreview.isLoading || executePreview.isFetching}
                   error={(executePreview.error as Error | null)?.message ?? null}
                 />
                 <div className="exec-approval-gates">
@@ -403,7 +429,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           <button className="primary-cta" onClick={handlePrimary} disabled={progress.complete || busy || executeBlocked}>
             {busy ? "Working…" : progress.cta.label}
           </button>
-          {executeBlocked ? <span className="muted">Grant required approvals before launch.</span> : null}
+          {executeBlocked ? <span className="muted">Refresh the strategy packet and grant its required approvals before launch.</span> : null}
         </div>
 
         {mutationError ? <p className="work-error">{mutationError}</p> : null}
