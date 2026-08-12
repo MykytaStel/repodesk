@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installMockIpc, recordedCommands } from "./mock-ipc";
-import { onboardedFixtures } from "./fixtures";
+import { currentOnboardedFixtures } from "./current-fixtures";
 
 // Tab entries are `.nav-item`; deep tabs live under collapsible group toggles
 // (Work / AI / System). Helpers scope to those so a group name (e.g. "Work")
@@ -18,7 +18,7 @@ async function openGroup(page: Page, _group: string) {
 }
 async function openFromPalette(page: Page, title: string) {
   await page.getByRole("button", { name: "Command palette" }).click();
-  const input = page.getByPlaceholder("Search tabs and actions…");
+  const input = page.getByRole("textbox", { name: "Search commands" });
   await input.fill(title);
   await page.keyboard.press("Enter");
 }
@@ -27,7 +27,7 @@ async function openFromPalette(page: Page, title: string) {
 // and carries the six-phase task flow end to end.
 test.describe("daily loop (onboarded)", () => {
   test.beforeEach(async ({ page }) => {
-    await installMockIpc(page, onboardedFixtures);
+    await installMockIpc(page, currentOnboardedFixtures);
     await page.goto("/");
   });
 
@@ -87,7 +87,9 @@ test.describe("daily loop (onboarded)", () => {
     await expect(page.locator(".phase-rail")).toBeVisible();
     await page.locator("body").click();
     await page.keyboard.press("ControlOrMeta+k");
-    const input = page.getByPlaceholder("Search tabs and actions…");
+    const palette = page.getByRole("dialog", { name: "RepoDesk command palette" });
+    const input = page.getByRole("textbox", { name: "Search commands" });
+    await expect(palette).toHaveAttribute("aria-modal", "true");
     await expect(input).toBeVisible();
     await input.fill("Repository explorer");
     await page.keyboard.press("Enter");
@@ -118,7 +120,7 @@ test.describe("daily loop (onboarded)", () => {
   test("Knowledge shows reviewed engineering memory", async ({ page }) => {
     await openFromPalette(page, "Knowledge");
     await expect(page.getByRole("heading", { name: "Engineering knowledge" })).toBeVisible();
-    await expect(page.getByText("Reviewed rules, decisions and commands RepoDesk can reuse in future work.")).toBeVisible();
+    await expect(page.getByText(/Reviewed rules, decisions and commands RepoDesk can reuse only while their review lifecycle remains valid/)).toBeVisible();
   });
 
   test("frontend actually issued the daily-loop commands through IPC", async ({ page }) => {
