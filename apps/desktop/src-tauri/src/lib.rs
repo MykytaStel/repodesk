@@ -18,12 +18,20 @@ mod git_workspace_commands {
         Ok(repodesk_core::git_workspace::build_git_workspace_snapshot())
     }
 
+    /// Unified diff for a single changed file in the active project. `cached`
+    /// selects the staged diff; the path is repo-relative and traversal-guarded
+    /// in core.
     #[tauri::command]
     pub fn git_file_diff(path: String, cached: bool) -> Result<String, String> {
-        Ok(repodesk_core::git_workspace::active_file_diff(&path, cached))
+        Ok(repodesk_core::git_workspace::active_file_diff(
+            &path, cached,
+        ))
     }
 }
 
+/// Transitional compatibility commands used by the existing Changes/RepoPilot
+/// hooks. Filesystem safety and status parsing are now owned by the typed core
+/// Code Workspace instead of being duplicated in this Tauri entrypoint.
 mod code_workbench_commands {
     use repodesk_core::code_workspace::{
         CodeWorkspaceFileStatus, load_active_code_workspace, read_active_code_document,
@@ -139,7 +147,6 @@ pub fn run() {
             code_workspace::code_workspace_snapshot,
             code_workspace::code_workspace_read,
             code_workspace::code_workspace_save,
-            code_workspace::code_workspace_quick_open,
             code_workspace::code_workspace_create_file,
             code_workspace::code_workspace_create_directory,
             code_workspace::code_workspace_rename,
