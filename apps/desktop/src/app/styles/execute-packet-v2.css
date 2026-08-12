@@ -1,0 +1,389 @@
+/* Execute packet preview -----------------------------------------------------
+   Execute is a decision moment, so present one bounded contract instead of a
+   row of unrelated metrics. The packet owns context, route, workspace, spend
+   and write scope; approvals follow as explicit capability grants. */
+
+.exec-packet,
+.exec-approval-gates {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.exec-packet {
+  display: grid;
+}
+
+.exec-packet-heading,
+.exec-approval-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.exec-packet-heading {
+  padding: 13px 14px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.exec-packet-heading > div,
+.exec-approval-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.exec-packet-heading .eyebrow {
+  margin: 0;
+}
+
+.exec-packet-heading strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-packet-heading small,
+.exec-approval-heading small {
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+.exec-packet-state,
+.exec-approval-heading > span {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 780;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.exec-packet-state.ready {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.exec-packet-state.warning {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.exec-packet-grid {
+  display: grid;
+  grid-template-columns: 1.25fr repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+}
+
+.exec-packet-grid > div {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-height: 78px;
+  padding: 11px 12px;
+  background: var(--bg);
+}
+
+.exec-packet-grid > div > span,
+.exec-packet-boundary small {
+  color: var(--muted-2);
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.exec-packet-grid > div > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-packet-grid > div > small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-packet-primary-fact {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.exec-packet-primary-fact > strong {
+  color: var(--accent-2) !important;
+  font-size: 12px !important;
+}
+
+.exec-packet-boundary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) repeat(2, minmax(0, .8fr));
+  gap: 8px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.exec-packet-boundary > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.exec-packet-boundary code,
+.exec-packet-boundary strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-packet-warning {
+  margin: 0;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--text);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.exec-packet-routing {
+  background: var(--surface);
+}
+
+.exec-packet-routing > summary {
+  padding: 9px 12px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 720;
+}
+
+.exec-packet-routing[open] > summary {
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.exec-packet-step-list {
+  display: grid;
+}
+
+.exec-packet-step-list > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1.4fr) minmax(125px, .75fr) minmax(80px, auto);
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.exec-packet-step-list > div:last-child {
+  border-bottom: 0;
+}
+
+.exec-packet-step-list > div > span:first-child {
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+}
+
+.exec-packet-step-list > div > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.exec-packet-step-list strong,
+.exec-packet-step-list small,
+.exec-packet-step-list code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exec-packet-step-list strong {
+  color: var(--text);
+  font-size: 9.5px;
+}
+
+.exec-packet-step-list small {
+  color: var(--muted);
+  font-size: 8.5px;
+}
+
+.exec-packet-step-list code {
+  color: var(--muted);
+  font-size: 8.5px;
+  text-align: right;
+}
+
+.exec-packet-step-list > div > span:last-child {
+  justify-self: end;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 730;
+  text-transform: uppercase;
+}
+
+.exec-approval-gates {
+  display: grid;
+  gap: 0;
+  margin-top: 8px;
+}
+
+.exec-approval-heading {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.exec-approval-heading strong {
+  color: var(--text);
+  font-size: 10.5px;
+}
+
+.exec-approval-heading > span {
+  color: var(--muted);
+}
+
+.exec-approval-gates:has(.approval-check.required) .exec-approval-heading > span {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.exec-approval-gates:not(:has(.approval-check.required)) .exec-approval-heading > span {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.exec-approval-gates .approval-stack {
+  gap: 0;
+}
+
+.work-tab .exec-approval-gates .approval-check {
+  min-height: 50px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 11px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+}
+
+.work-tab .exec-approval-gates .approval-check:last-child {
+  border-bottom: 0;
+}
+
+.work-tab .exec-approval-gates .approval-check.required {
+  background: color-mix(in srgb, var(--warning-soft) 58%, var(--bg));
+}
+
+.exec-approval-gates .approval-check > span:not(.approval-required) {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.exec-approval-gates .approval-check strong {
+  color: var(--text);
+  font-size: 9.5px;
+}
+
+.exec-approval-gates .approval-check small {
+  color: var(--muted);
+  font-size: 8.5px;
+  line-height: 1.35;
+}
+
+.exec-packet-skeleton {
+  min-height: 112px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+@media (max-width: 860px) {
+  .exec-packet-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .exec-packet-boundary {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .exec-packet-boundary > span:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 620px) {
+  .exec-packet-heading,
+  .exec-approval-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .exec-packet-grid,
+  .exec-packet-boundary {
+    grid-template-columns: 1fr;
+  }
+
+  .exec-packet-boundary > span:first-child {
+    grid-column: auto;
+  }
+
+  .exec-packet-step-list > div {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+  }
+
+  .exec-packet-step-list code {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .exec-packet *,
+  .exec-approval-gates * {
+    transition: none !important;
+  }
+}
