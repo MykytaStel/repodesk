@@ -12,6 +12,7 @@ pub mod checks;
 pub mod code_library;
 pub mod code_workspace;
 pub mod code_workspace_ops;
+pub mod code_workspace_search;
 pub mod context;
 pub mod context_freshness;
 pub mod context_packing;

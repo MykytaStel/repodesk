@@ -56,6 +56,13 @@ export type CodeWorkspaceMutationResult = {
   language: string | null;
 };
 
+export type CodeQuickOpenResult = {
+  path: string;
+  name: string;
+  language: string;
+  status: CodeWorkspaceFileStatus;
+};
+
 export type CodeLibraryDocument = {
   handle: string;
   display_path: string;
@@ -81,6 +88,10 @@ export type CodeWorkspaceLocation = {
 
 export async function codeWorkspaceSnapshot(): Promise<CodeWorkspaceSnapshot> {
   return invoke("code_workspace_snapshot");
+}
+
+export async function codeWorkspaceQuickOpen(query: string, limit = 50): Promise<CodeQuickOpenResult[]> {
+  return invoke("code_workspace_quick_open", { query, limit });
 }
 
 export async function readCodeWorkspaceDocument(path: string): Promise<CodeWorkspaceDocument> {
@@ -127,11 +138,6 @@ export async function readCodeLibraryDocument(handle: string): Promise<CodeLibra
   return invoke("code_library_read", { handle });
 }
 
-/**
- * Lightweight hand-off between separately mounted workspace routes. Only the
- * repository-relative path and optional cursor location are persisted for the
- * one-shot transition. Rust still fully revalidates the path before reading it.
- */
 export function requestCodeWorkspaceOpen(
   path: string,
   location?: {
