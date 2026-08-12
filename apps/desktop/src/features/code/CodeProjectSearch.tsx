@@ -1,10 +1,11 @@
-import { FormEvent, useState } from "react";
+import { useState, type FormEvent } from "react";
 import {
   searchCodeWorkspaceProject,
   type CodeProjectSearchMatch,
   type CodeProjectSearchResult,
 } from "../../shared/api/codeWorkspace";
 import { errorToMessage } from "../../shared/utils/helpers";
+import "./code-project-search.css";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

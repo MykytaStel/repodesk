@@ -150,7 +150,7 @@ fn validate_project_search_query(query: &str) -> RepoDeskResult<&str> {
             "Project search query exceeds the {MAX_PROJECT_SEARCH_QUERY_CHARS} character limit"
         )));
     }
-    if query.contains(['\0', '\n', '\r']) {
+    if query.contains('\0') || query.contains('\n') || query.contains('\r') {
         return Err(RepoDeskError::Api(
             "Project search v1 accepts a single-line literal query".into(),
         ));
