@@ -26,7 +26,7 @@ pub struct ContextPackingResult {
 
 /// Pack candidates into a deterministic token budget.
 ///
-/// Ordering is intentionally stable and explainable:
+/// Inclusion priority is intentionally stable and explainable:
 /// 1. required material
 /// 2. relevance score
 /// 3. provenance trust
@@ -36,7 +36,8 @@ pub struct ContextPackingResult {
 ///
 /// The packer selects whole candidates. Source-specific safe trimming happens
 /// before this layer; this layer never invents partial content without owning the
-/// corresponding renderer.
+/// corresponding renderer. Included `order` follows the original candidate
+/// order, which is also the render order of the caller.
 pub fn pack_context_candidates(
     candidates: &[ContextCandidate],
     policy: ContextPackingPolicy,
@@ -48,7 +49,6 @@ pub fn pack_context_candidates(
     let mut included_tokens = 0usize;
     let mut excluded_tokens = 0usize;
     let mut selections = Vec::with_capacity(candidates.len());
-    let mut order = 0usize;
 
     for candidate in ranked {
         if candidate.candidate_tokens <= remaining {
@@ -60,9 +60,8 @@ pub fn pack_context_candidates(
                 included_tokens: candidate.candidate_tokens,
                 trimmed: false,
                 exclusion_reason: None,
-                order: Some(order),
+                order: None,
             });
-            order += 1;
         } else {
             excluded_tokens = excluded_tokens.saturating_add(candidate.candidate_tokens);
             selections.push(ContextSelection {
@@ -76,15 +75,20 @@ pub fn pack_context_candidates(
         }
     }
 
-    // Snapshot validation requires a complete selection set, but not rank order.
-    // Return decisions in candidate order so serialized evidence stays stable
-    // even if the ranking algorithm evolves in a future schema version.
     selections.sort_by_key(|selection| {
         candidates
             .iter()
             .position(|candidate| candidate.id == selection.candidate_id)
             .unwrap_or(usize::MAX)
     });
+
+    let mut render_order = 0usize;
+    for selection in &mut selections {
+        if selection.state == ContextSelectionState::Included {
+            selection.order = Some(render_order);
+            render_order += 1;
+        }
+    }
 
     ContextPackingResult {
         token_budget: policy.token_budget,
@@ -149,7 +153,7 @@ mod tests {
         }
     }
 
-    fn included<'a>(result: &'a ContextPackingResult, id: &str) -> &'a ContextSelection {
+    fn selection<'a>(result: &'a ContextPackingResult, id: &str) -> &'a ContextSelection {
         result
             .selections
             .iter()
@@ -169,8 +173,8 @@ mod tests {
             ContextPackingPolicy { token_budget: 80 },
         );
 
-        assert_eq!(included(&result, "required").state, ContextSelectionState::Included);
-        assert_eq!(included(&result, "optional").state, ContextSelectionState::Excluded);
+        assert_eq!(selection(&result, "required").state, ContextSelectionState::Included);
+        assert_eq!(selection(&result, "optional").state, ContextSelectionState::Excluded);
     }
 
     #[test]
@@ -185,7 +189,7 @@ mod tests {
             ContextPackingPolicy { token_budget: 60 },
         );
 
-        assert_eq!(included(&result, "relevant").state, ContextSelectionState::Included);
+        assert_eq!(selection(&result, "relevant").state, ContextSelectionState::Included);
     }
 
     #[test]
@@ -200,7 +204,7 @@ mod tests {
             ContextPackingPolicy { token_budget: 60 },
         );
 
-        assert_eq!(included(&result, "small").state, ContextSelectionState::Included);
+        assert_eq!(selection(&result, "small").state, ContextSelectionState::Included);
         assert_eq!(result.included_tokens, 40);
         assert_eq!(result.excluded_tokens, 90);
     }
@@ -220,10 +224,26 @@ mod tests {
         assert_eq!(result.selections.len(), 2);
         assert_eq!(result.selections[0].candidate_id, "b");
         assert_eq!(result.selections[1].candidate_id, "a");
-        assert_eq!(included(&result, "a").order, Some(0));
+        assert_eq!(selection(&result, "a").order, Some(0));
         assert_eq!(
-            included(&result, "b").exclusion_reason,
+            selection(&result, "b").exclusion_reason,
             Some(ContextExclusionReason::Budget)
         );
+    }
+
+    #[test]
+    fn included_order_matches_candidate_render_order_not_priority_order() {
+        let candidates = vec![
+            candidate("first", 20, 0.5, ContextTrust::Observed, false),
+            candidate("second", 20, 1.0, ContextTrust::Authoritative, false),
+        ];
+
+        let result = pack_context_candidates(
+            &candidates,
+            ContextPackingPolicy { token_budget: 40 },
+        );
+
+        assert_eq!(selection(&result, "first").order, Some(0));
+        assert_eq!(selection(&result, "second").order, Some(1));
     }
 }
