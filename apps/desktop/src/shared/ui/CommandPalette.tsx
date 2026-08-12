@@ -11,6 +11,8 @@ export type Command = {
   run: () => void | Promise<void>;
 };
 
+export type CommandSearchProvider = (query: string) => Promise<Command[]>;
+
 const GROUP_ORDER = ["Current", "Files", "Navigate", "Work", "Projects", "View", "Appearance", "Other"];
 
 function groupRank(group: string): number {
@@ -19,18 +21,64 @@ function groupRank(group: string): number {
 }
 
 /** IDE-style command + quick-open palette (⌘K / Ctrl-K, or ⌘⇧P / Ctrl-Shift-P). */
-export function CommandPalette({ open, onClose, commands }: { open: boolean; onClose: () => void; commands: Command[] }) {
+export function CommandPalette({
+  open,
+  onClose,
+  commands,
+  searchCommands,
+}: {
+  open: boolean;
+  onClose: () => void;
+  commands: Command[];
+  searchCommands?: CommandSearchProvider;
+}) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [remoteCommands, setRemoteCommands] = useState<Command[]>([]);
+  const [remoteLoading, setRemoteLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchSerialRef = useRef(0);
 
   useEffect(() => {
     if (open) {
       setQuery("");
       setActive(0);
+      setRemoteCommands([]);
       requestAnimationFrame(() => inputRef.current?.focus());
+    } else {
+      searchSerialRef.current += 1;
+      setRemoteCommands([]);
+      setRemoteLoading(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !searchCommands) return;
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      searchSerialRef.current += 1;
+      setRemoteCommands([]);
+      setRemoteLoading(false);
+      return;
+    }
+
+    const serial = ++searchSerialRef.current;
+    setRemoteCommands([]);
+    const timer = window.setTimeout(() => {
+      setRemoteLoading(true);
+      void searchCommands(normalized)
+        .then((results) => {
+          if (serial === searchSerialRef.current) setRemoteCommands(results);
+        })
+        .catch(() => {
+          if (serial === searchSerialRef.current) setRemoteCommands([]);
+        })
+        .finally(() => {
+          if (serial === searchSerialRef.current) setRemoteLoading(false);
+        });
+    }, 100);
+    return () => window.clearTimeout(timer);
+  }, [open, query, searchCommands]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -55,7 +103,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
       return null;
     };
 
-    return commands
+    return [...commands, ...remoteCommands]
       .map((command, index) => ({
         command,
         index,
@@ -71,7 +119,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
         return priorityDelta || a.index - b.index;
       })
       .map((entry) => entry.command);
-  }, [commands, query]);
+  }, [commands, query, remoteCommands]);
 
   const grouped = useMemo(() => {
     const groups: Array<{ name: string; commands: Array<{ command: Command; flatIndex: number }> }> = [];
@@ -138,10 +186,10 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
           />
           <kbd>esc</kbd>
         </div>
-        <div className="cmdk-list cmdk-list-v2">
+        <div className="cmdk-list cmdk-list-v2" aria-busy={remoteLoading}>
           {filtered.length === 0 ? (
             <div className="cmdk-zero-state">
-              <strong>No matching command</strong>
+              <strong>{remoteLoading ? "Searching repository…" : "No matching command"}</strong>
               <span>Try a surface name, repository path, project, or action.</span>
             </div>
           ) : (
@@ -169,7 +217,7 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
         <div className="cmdk-footer">
           <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
           <span><kbd>↵</kbd> run</span>
-          <span>{filtered.length} result{filtered.length === 1 ? "" : "s"}</span>
+          <span>{remoteLoading ? "searching…" : `${filtered.length} result${filtered.length === 1 ? "" : "s"}`}</span>
         </div>
       </div>
     </div>

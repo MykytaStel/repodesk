@@ -147,6 +147,7 @@ pub fn run() {
             code_workspace::code_workspace_snapshot,
             code_workspace::code_workspace_read,
             code_workspace::code_workspace_save,
+            code_workspace::code_workspace_quick_open,
             code_workspace::code_workspace_create_file,
             code_workspace::code_workspace_create_directory,
             code_workspace::code_workspace_rename,

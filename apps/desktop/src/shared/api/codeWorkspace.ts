@@ -56,6 +56,13 @@ export type CodeWorkspaceMutationResult = {
   language: string | null;
 };
 
+export type CodeQuickOpenResult = {
+  path: string;
+  name: string;
+  language: string;
+  status: CodeWorkspaceFileStatus;
+};
+
 export type CodeLibraryDocument = {
   handle: string;
   display_path: string;
@@ -81,6 +88,10 @@ export type CodeWorkspaceLocation = {
 
 export async function codeWorkspaceSnapshot(): Promise<CodeWorkspaceSnapshot> {
   return invoke("code_workspace_snapshot");
+}
+
+export async function codeWorkspaceQuickOpen(query: string, limit = 50): Promise<CodeQuickOpenResult[]> {
+  return invoke("code_workspace_quick_open", { query, limit });
 }
 
 export async function readCodeWorkspaceDocument(path: string): Promise<CodeWorkspaceDocument> {
