@@ -236,6 +236,8 @@ mod tests {
             reuse_prepared_context: true,
             max_agent_steps: 1,
             independent_ai_review: false,
+            feedback_influenced: false,
+            feedback_detail: None,
             reasons: Vec::<AiStrategyReason>::new(),
         }
     }
