@@ -28,6 +28,8 @@ export type AiStrategyRecommendation = {
   reuse_prepared_context: boolean;
   max_agent_steps: number;
   independent_ai_review: boolean;
+  feedback_influenced: boolean;
+  feedback_detail: string | null;
   reasons: AiStrategyReason[];
 };
 
