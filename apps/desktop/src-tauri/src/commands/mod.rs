@@ -10,6 +10,7 @@ pub mod credentials;
 pub mod custom_providers;
 pub mod diagnostic;
 pub mod engineering;
+mod engineering_projection_cache;
 pub mod journal;
 pub mod language_intelligence;
 pub mod language_tools;

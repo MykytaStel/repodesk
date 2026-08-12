@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::SystemTime;
 
+use repodesk_core::RepoDeskResult;
 use repodesk_core::engineering::{
     AiUsageReport, EngineeringEvent, EngineeringIntelligence, StrategyFeedbackReport,
     derive_ai_usage_report, derive_engineering_intelligence, derive_strategy_feedback,
     event_ledger_path, read_events,
 };
-use repodesk_core::RepoDeskResult;
 
 const MAX_STABLE_READ_ATTEMPTS: usize = 3;
 const MAX_CACHED_RUN_DIRS: usize = 16;
@@ -122,10 +122,7 @@ fn cache_snapshot(stamp: LedgerStamp, snapshot: Arc<EngineeringProjectionSnapsho
                 cache.remove(&key);
             }
         }
-        cache.insert(
-            stamp.path.clone(),
-            ProjectionCacheEntry { stamp, snapshot },
-        );
+        cache.insert(stamp.path.clone(), ProjectionCacheEntry { stamp, snapshot });
     }
 }
 
@@ -138,11 +135,7 @@ mod tests {
     use tempfile::tempdir;
 
     fn event(kind: EngineeringEventKind) -> EngineeringEvent {
-        EngineeringEvent::new(
-            "RepoDesk",
-            WorkItemId::try_new("task-cache").unwrap(),
-            kind,
-        )
+        EngineeringEvent::new("RepoDesk", WorkItemId::try_new("task-cache").unwrap(), kind)
     }
 
     #[test]
@@ -171,11 +164,7 @@ mod tests {
         .unwrap();
         let first = load_engineering_projection(run_dir.path()).unwrap();
 
-        append_event(
-            run_dir.path(),
-            &event(EngineeringEventKind::ContextBuilt),
-        )
-        .unwrap();
+        append_event(run_dir.path(), &event(EngineeringEventKind::ContextBuilt)).unwrap();
         let second = load_engineering_projection(run_dir.path()).unwrap();
 
         assert!(!Arc::ptr_eq(&first, &second));
@@ -192,7 +181,11 @@ mod tests {
         .unwrap();
         load_engineering_projection(run_dir.path()).unwrap();
 
-        fs::write(event_ledger_path(run_dir.path()), "{not-json}\nmore-corruption\n").unwrap();
+        fs::write(
+            event_ledger_path(run_dir.path()),
+            "{not-json}\nmore-corruption\n",
+        )
+        .unwrap();
 
         assert!(load_engineering_projection(run_dir.path()).is_err());
     }
