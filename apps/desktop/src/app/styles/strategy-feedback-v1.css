@@ -1,0 +1,181 @@
+/* Strategy feedback ---------------------------------------------------------
+   Historical outcomes are evidence, not a leaderboard. Keep them compact and
+   tabular so users can see why Auto adapted without turning Work into analytics. */
+
+.ai-strategy-feedback-influence {
+  display: grid;
+  gap: 4px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
+
+.ai-strategy-feedback-influence > span {
+  color: var(--accent-2);
+  font-size: 7.5px;
+  font-weight: 780;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.ai-strategy-feedback-influence > strong {
+  color: var(--text);
+  font-size: 9px;
+  font-weight: 620;
+  line-height: 1.45;
+}
+
+.work-ai-rail-learning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+  color: var(--muted-2);
+  font-size: 7.5px;
+}
+
+.work-ai-rail-learning strong {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.strategy-feedback-table {
+  display: grid;
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.strategy-feedback-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 1.4fr) repeat(4, minmax(74px, .75fr));
+  gap: 1px;
+  background: var(--border);
+}
+
+.strategy-feedback-row > div,
+.strategy-feedback-row > span {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  min-height: 48px;
+  padding: 7px 9px;
+  background: var(--bg);
+}
+
+.strategy-feedback-row > div {
+  border-left: 2px solid transparent;
+}
+
+.strategy-feedback-row.adaptation-ready > div {
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, var(--bg));
+}
+
+.strategy-feedback-row strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-feedback-row > div strong {
+  font-family: inherit;
+  font-size: 9.5px;
+}
+
+.strategy-feedback-row small {
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 7.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strategy-feedback-note {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+/* Selected-run strategy evidence. */
+.run-strategy-evidence {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) repeat(3, minmax(90px, .7fr));
+  gap: 1px;
+  margin: 0 0 10px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.run-strategy-evidence > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+}
+
+.run-strategy-evidence span {
+  color: var(--muted-2);
+  font-size: 7.5px;
+  font-weight: 760;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.run-strategy-evidence strong,
+.run-strategy-evidence code {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-strategy-evidence > div:first-child strong {
+  color: var(--accent-2);
+}
+
+@media (max-width: 900px) {
+  .strategy-feedback-row {
+    grid-template-columns: minmax(130px, 1.4fr) repeat(2, minmax(80px, 1fr));
+  }
+
+  .strategy-feedback-row > span:nth-last-child(-n + 2) {
+    display: none;
+  }
+
+  .run-strategy-evidence {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .strategy-feedback-row,
+  .run-strategy-evidence {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .strategy-feedback-row > div {
+    grid-column: 1 / -1;
+  }
+}
