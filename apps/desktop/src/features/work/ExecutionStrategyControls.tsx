@@ -88,6 +88,13 @@ export function ExecutionStrategyControls({
 
       {strategy && comparison && preview ? (
         <>
+          {strategy.feedback_influenced && strategy.feedback_detail ? (
+            <div className="ai-strategy-feedback-influence" role="status">
+              <span>Historical outcomes changed Auto</span>
+              <strong>{strategy.feedback_detail}</strong>
+            </div>
+          ) : null}
+
           <div className="ai-strategy-comparison">
             <div>
               <span>AI calls</span>
