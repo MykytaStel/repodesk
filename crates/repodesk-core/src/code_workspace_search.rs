@@ -183,10 +183,9 @@ fn match_rank(file: &CodeWorkspaceFile, query: &str) -> Option<MatchRank> {
         (5, 0)
     } else if let Some(gap) = subsequence_gap(&name, query) {
         (6, gap)
-    } else if let Some(gap) = subsequence_gap(&path, query) {
-        (7, gap)
     } else {
-        return None;
+        let gap = subsequence_gap(&path, query)?;
+        (7, gap)
     };
 
     Some(MatchRank {
