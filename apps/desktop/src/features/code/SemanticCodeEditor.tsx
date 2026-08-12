@@ -66,7 +66,7 @@ const repodeskHighlight = HighlightStyle.define([
   { tag: tags.invalid, color: "var(--danger)", textDecoration: "underline wavy" },
 ]);
 
-const editorTheme = EditorView.theme({
+const editorThemeSpec = {
   "&": {
     height: "100%",
     color: "var(--text)",
@@ -123,7 +123,21 @@ const editorTheme = EditorView.theme({
     color: "var(--text)",
     border: "1px solid var(--border-strong)",
   },
-}, { dark: true });
+};
+
+type EditorThemeMode = "light" | "dark";
+
+const lightEditorTheme = EditorView.theme(editorThemeSpec);
+const darkEditorTheme = EditorView.theme(editorThemeSpec, { dark: true });
+
+function resolvedEditorThemeMode(): EditorThemeMode {
+  if (typeof document === "undefined") return "dark";
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function editorThemeExtension(mode: EditorThemeMode): Extension {
+  return mode === "light" ? lightEditorTheme : darkEditorTheme;
+}
 
 class GitMarker extends GutterMarker {
   constructor(readonly kind: GitLineKind) {
@@ -279,6 +293,7 @@ export function SemanticCodeEditor({
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const gitCompartmentRef = useRef<Compartment | null>(null);
+  const themeCompartmentRef = useRef<Compartment | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const dirtyRef = useRef(dirty);
@@ -296,7 +311,9 @@ export function SemanticCodeEditor({
   savingRef.current = saving;
 
   if (!gitCompartmentRef.current) gitCompartmentRef.current = new Compartment();
+  if (!themeCompartmentRef.current) themeCompartmentRef.current = new Compartment();
   const gitCompartment = gitCompartmentRef.current;
+  const themeCompartment = themeCompartmentRef.current;
 
   const languageIntelligence = useQuery({
     queryKey: [...LANGUAGE_INTELLIGENCE_KEY, projectName ?? "none"],
@@ -413,7 +430,7 @@ export function SemanticCodeEditor({
         editorLanguageExtension(language, path),
         navigationTargetField,
         definitionLinkField,
-        editorTheme,
+        themeCompartment.of(editorThemeExtension(resolvedEditorThemeMode())),
         EditorState.tabSize.of(2),
         EditorState.readOnly.of(readOnly),
         EditorView.editable.of(!readOnly),
@@ -495,6 +512,18 @@ export function SemanticCodeEditor({
     viewRef.current = view;
     view.dispatch(setDiagnostics(view.state, codeMirrorDiagnostics(view.state, semantic)));
 
+    let themeMode = resolvedEditorThemeMode();
+    host.dataset.editorTheme = themeMode;
+    const syncEditorTheme = () => {
+      const nextMode = resolvedEditorThemeMode();
+      if (nextMode === themeMode) return;
+      themeMode = nextMode;
+      host.dataset.editorTheme = nextMode;
+      view.dispatch({ effects: themeCompartment.reconfigure(editorThemeExtension(nextMode)) });
+    };
+    const themeObserver = new MutationObserver(syncEditorTheme);
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
     const applyPendingLocation = () => {
       const location = consumeCodeWorkspaceLocation(path);
       if (!location) return;
@@ -543,6 +572,7 @@ export function SemanticCodeEditor({
       window.removeEventListener("keydown", onModifierDown);
       window.removeEventListener("keyup", onModifierUp);
       window.removeEventListener("blur", onWindowBlur);
+      themeObserver.disconnect();
       modifierDownRef.current = false;
       clearPreview(null);
       if (navigationTimerRef.current !== null) {
@@ -555,7 +585,7 @@ export function SemanticCodeEditor({
   // A document/language transition gets a clean CodeMirror state and history.
   // Semantic state and external content are updated by dedicated effects below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gitCompartment, language, path, readOnly]);
+  }, [gitCompartment, language, path, readOnly, themeCompartment]);
 
   useEffect(() => {
     const view = viewRef.current;
