@@ -26,6 +26,7 @@ pub mod repository_intelligence;
 pub mod routing;
 pub mod security;
 pub mod settings;
+pub mod strategy;
 pub mod system;
 pub mod task;
 pub mod task_runner;
@@ -58,6 +59,7 @@ pub use repopilot::*;
 pub use repository_intelligence::*;
 pub use security::*;
 pub use settings::*;
+pub use strategy::*;
 pub use task::*;
 pub use task_runner::*;
 
