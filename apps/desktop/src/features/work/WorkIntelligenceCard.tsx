@@ -4,6 +4,8 @@ import {
   workObservabilitySnapshot,
   type AiUsageReport,
   type AiUsageSignal,
+  type StrategyFeedbackReport,
+  type StrategyProfileFeedback,
 } from "../../shared/api/observability";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { errorToMessage } from "../../shared/utils/helpers";
@@ -34,6 +36,7 @@ function useWorkObservability() {
 export function WorkIntelligenceRailSummary() {
   const snapshot = useWorkObservability();
   const report = snapshot.data?.ai_usage_report ?? null;
+  const feedback = snapshot.data?.strategy_feedback ?? null;
 
   if (snapshot.isLoading) {
     return <section className="work-ai-rail-summary muted">Reading AI usage…</section>;
@@ -55,6 +58,12 @@ export function WorkIntelligenceRailSummary() {
         <span><strong>{repeated == null ? "—" : `${Math.round(repeated * 100)}%`}</strong> repeated</span>
         <span><strong>{warnings}</strong> warnings</span>
       </div>
+      {feedback && feedback.strategy_runs > 0 ? (
+        <div className="work-ai-rail-learning">
+          <span>Strategy evidence</span>
+          <strong>{feedback.settled_runs}/{feedback.strategy_runs} settled</strong>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -82,7 +91,57 @@ function SignalRow({ signal }: { signal: AiUsageSignal }) {
   );
 }
 
-function IntelligenceBody({ report }: { report: AiUsageReport }) {
+const PROFILE_LABELS = {
+  lean: "Lean",
+  balanced: "Balanced",
+  local_first: "Local-first",
+  quality: "Quality",
+} as const;
+
+function StrategyProfileRow({ value }: { value: StrategyProfileFeedback }) {
+  return (
+    <div className={`strategy-feedback-row${value.adaptation_ready ? " adaptation-ready" : ""}`}>
+      <div>
+        <strong>{PROFILE_LABELS[value.profile]}</strong>
+        <small>{value.adaptation_ready ? "Auto may use this history" : "Collecting evidence"}</small>
+      </div>
+      <span><strong>{value.settled_runs}</strong><small>settled</small></span>
+      <span><strong>{pct(value.success_rate)}</strong><small>success</small></span>
+      <span><strong>{number(value.average_actual_tokens, 0)}</strong><small>avg tokens</small></span>
+      <span><strong>{pct(value.average_token_estimate_error_ratio)}</strong><small>estimate error</small></span>
+    </div>
+  );
+}
+
+function StrategyFeedbackSection({ feedback }: { feedback: StrategyFeedbackReport | null }) {
+  if (!feedback || feedback.strategy_runs === 0) {
+    return (
+      <section className="work-ai-section strategy-feedback-section">
+        <header><strong>Strategy feedback</strong><span>cold start</span></header>
+        <div className="work-ai-empty">
+          Auto is evidence-aware but has no settled strategy runs yet. Three settled outcomes for a profile are required before history can adapt future Auto decisions.
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="work-ai-section strategy-feedback-section">
+      <header>
+        <strong>Strategy feedback</strong>
+        <span>{feedback.settled_runs} settled · {feedback.pending_runs} pending</span>
+      </header>
+      <div className="strategy-feedback-table">
+        {feedback.profiles.map((profile) => <StrategyProfileRow key={profile.profile} value={profile} />)}
+      </div>
+      <p className="strategy-feedback-note">
+        Pending runs do not count as failures. Current execution/review/verification instability always overrides historical efficiency.
+      </p>
+    </section>
+  );
+}
+
+function IntelligenceBody({ report, feedback }: { report: AiUsageReport; feedback: StrategyFeedbackReport | null }) {
   const context = report.context;
   const orchestration = report.orchestration;
   const outcomes = report.outcomes;
@@ -136,6 +195,8 @@ function IntelligenceBody({ report }: { report: AiUsageReport }) {
         </div>
       </section>
 
+      <StrategyFeedbackSection feedback={feedback} />
+
       <section className="work-ai-section work-ai-signals">
         <header><strong>RepoDesk signals</strong><span>{report.signals.length}</span></header>
         {report.signals.length === 0 ? (
@@ -156,5 +217,5 @@ export function WorkIntelligenceCard() {
   const report = snapshot.data?.ai_usage_report;
   if (!report) return <div className="focus-empty compact">No active Work Item intelligence is available.</div>;
 
-  return <IntelligenceBody report={report} />;
+  return <IntelligenceBody report={report} feedback={snapshot.data?.strategy_feedback ?? null} />;
 }
