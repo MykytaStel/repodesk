@@ -43,10 +43,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      # Keep CI on the exact package-manager line declared by apps/desktop.
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.33.2
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -84,7 +85,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.33.2
 
       - name: Install Node
         uses: actions/setup-node@v4
