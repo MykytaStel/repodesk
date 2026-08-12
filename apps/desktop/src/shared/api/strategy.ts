@@ -76,6 +76,8 @@ export type StrategyBaselineComparison = {
   baseline_estimated_tokens: number;
   planned_estimated_tokens: number;
   estimated_saved_tokens: number;
+  baseline_estimated_cost_units: number;
+  planned_estimated_cost_units: number;
   estimated_cost_delta_units: number;
 };
 
