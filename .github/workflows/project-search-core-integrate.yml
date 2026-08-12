@@ -1,0 +1,60 @@
+name: Project Search Core Integrate
+
+on:
+  push:
+    branches:
+      - feat/code-project-search
+    paths:
+      - .github/workflows/project-search-core-integrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/code-project-search
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Reuse Code Workspace safety for text search
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("crates/repodesk-core/src/code_workspace.rs")
+          text = path.read_text()
+
+          marker = '''#[derive(Clone)]\nstruct GitStatusCacheEntry {'''
+          insert = '''#[derive(Debug, Clone, PartialEq, Eq)]\npub(crate) struct GuardedCodeText {\n    pub content: String,\n    pub bytes: u64,\n}\n\n#[derive(Clone)]\nstruct GitStatusCacheEntry {'''
+          if marker not in text:
+              raise SystemExit("GuardedCodeText insertion point not found")
+          text = text.replace(marker, insert, 1)
+
+          old = '''fn resolve_existing_editable_file(\n    project_path: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let relative = normalize_relative_path(Path::new(relative_path))?;\n    let display = slash_path(&relative);\n    if let Some(reason) = is_blocked_path(&display) {\n        return Err(RepoDeskError::Api(reason));\n    }\n\n    let root = project_path.canonicalize()?;\n    let joined = root.join(&relative);\n    let symlink_metadata = fs::symlink_metadata(&joined)?;\n    if symlink_metadata.file_type().is_symlink() {\n        return Err(RepoDeskError::Api(\n            "Symlink editing is intentionally disabled in Code Workspace v0".into(),\n        ));\n    }\n\n    let canonical = joined.canonicalize()?;\n    if !canonical.starts_with(&root) {\n        return Err(RepoDeskError::Api("Path escapes active project".into()));\n    }\n    let metadata = fs::metadata(&canonical)?;\n    if !metadata.is_file() {\n        return Err(RepoDeskError::Api(\n            "Code workspace path is not a file".into(),\n        ));\n    }\n    if metadata.len() > MAX_EDITABLE_FILE_BYTES {\n        return Err(RepoDeskError::Api(format!(\n            "File exceeds the {} byte editor limit",\n            MAX_EDITABLE_FILE_BYTES\n        )));\n    }\n\n    Ok(SafeEditableFile {\n        relative,\n        canonical,\n    })\n}\n'''
+          new = '''fn resolve_existing_editable_file(\n    project_path: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let root = project_path.canonicalize()?;\n    resolve_existing_editable_file_from_root(&root, relative_path)\n}\n\nfn resolve_existing_editable_file_from_root(\n    canonical_root: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let relative = normalize_relative_path(Path::new(relative_path))?;\n    let display = slash_path(&relative);\n    if let Some(reason) = is_blocked_path(&display) {\n        return Err(RepoDeskError::Api(reason));\n    }\n\n    let joined = canonical_root.join(&relative);\n    let symlink_metadata = fs::symlink_metadata(&joined)?;\n    if symlink_metadata.file_type().is_symlink() {\n        return Err(RepoDeskError::Api(\n            "Symlink editing is intentionally disabled in Code Workspace v0".into(),\n        ));\n    }\n\n    let canonical = joined.canonicalize()?;\n    if !canonical.starts_with(canonical_root) {\n        return Err(RepoDeskError::Api("Path escapes active project".into()));\n    }\n    let metadata = fs::metadata(&canonical)?;\n    if !metadata.is_file() {\n        return Err(RepoDeskError::Api(\n            "Code workspace path is not a file".into(),\n        ));\n    }\n    if metadata.len() > MAX_EDITABLE_FILE_BYTES {\n        return Err(RepoDeskError::Api(format!(\n            "File exceeds the {} byte editor limit",\n            MAX_EDITABLE_FILE_BYTES\n        )));\n    }\n\n    Ok(SafeEditableFile {\n        relative,\n        canonical,\n    })\n}\n'''
+          if old not in text:
+              raise SystemExit("Resolver refactor target not found")
+          text = text.replace(old, new, 1)
+
+          marker = '''fn document_from_path(\n    project_path: &Path,'''
+          helper = '''pub(crate) fn read_guarded_code_text_from_root(\n    canonical_root: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<GuardedCodeText> {\n    let safe = resolve_existing_editable_file_from_root(canonical_root, relative_path)?;\n    let bytes = fs::read(&safe.canonical)?;\n    let content = String::from_utf8(bytes)\n        .map_err(|_| RepoDeskError::Api("Code workspace only opens UTF-8 text files".into()))?;\n    if content.contains('\\0') {\n        return Err(RepoDeskError::Api(\n            "Binary-like file cannot be opened in Code Workspace".into(),\n        ));\n    }\n\n    Ok(GuardedCodeText {\n        bytes: content.len() as u64,\n        content,\n    })\n}\n\nfn document_from_path(\n    project_path: &Path,'''
+          if marker not in text:
+              raise SystemExit("Guarded text helper insertion point not found")
+          text = text.replace(marker, helper, 1)
+
+          path.write_text(text)
+          Path(".github/workflows/project-search-core-integrate.yml").unlink()
+      - name: Format and commit
+        run: |
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(code): reuse guarded reader for project search"
+          git push origin HEAD:feat/code-project-search
