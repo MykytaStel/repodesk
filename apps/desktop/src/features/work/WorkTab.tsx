@@ -15,6 +15,20 @@ import type { TabId } from "../../shared/types/api";
 const PHASE_KEY = ["work", "phase-state"] as const;
 const LATEST_RUN_KEY = ["work", "latest-run"] as const;
 
+type ExecutionPacketPreview = ExecutionPreview & {
+  context: {
+    prepared: boolean;
+    context_tokens: number;
+    candidate_tokens: number;
+    token_budget: number | null;
+    included_sources: number;
+    excluded_sources: number;
+    context_fingerprint: string | null;
+    generated_at: string | null;
+    warning: string | null;
+  };
+};
+
 const PHASE_COPY: Record<Phase, { detail: string; next: string }> = {
   scope: {
     detail: "Bind one project and one Work Item before RepoDesk prepares or delegates anything.",
@@ -182,7 +196,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     : 0;
   const busy =
     runCta.isPending || runAgent.isPending || review.isPending || verify.isPending || importManual.isPending || commit.isPending;
-  const preview = executePreview.data ?? null;
+  const preview = (executePreview.data as ExecutionPacketPreview | undefined) ?? null;
   const executeApprovalsMet =
     (!preview?.requires_coding_agent_approval || approveCodingAgents) &&
     (!preview?.requires_paid_approval || approvePaid);
@@ -290,18 +304,37 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
 
             {isAgentRun ? (
               <>
-                <ExecutionPreviewCompact preview={preview} loading={executePreview.isLoading} error={(executePreview.error as Error | null)?.message ?? null} />
-                <div className="approval-stack">
-                  <label className={`approval-check${preview?.requires_coding_agent_approval && !approveCodingAgents ? " required" : ""}`}>
-                    <input type="checkbox" checked={approveCodingAgents} onChange={(event) => setApproveCodingAgents(event.target.checked)} />
-                    Coding-agent process + workspace writes
-                    {preview?.requires_coding_agent_approval ? <span className="approval-required">required</span> : null}
-                  </label>
-                  <label className={`approval-check${preview?.requires_paid_approval && !approvePaid ? " required" : ""}`}>
-                    <input type="checkbox" checked={approvePaid} onChange={(event) => setApprovePaid(event.target.checked)} />
-                    Paid providers
-                    {preview?.requires_paid_approval ? <span className="approval-required">required</span> : null}
-                  </label>
+                <ExecutionPreviewCompact
+                  preview={preview}
+                  loading={executePreview.isLoading}
+                  error={(executePreview.error as Error | null)?.message ?? null}
+                />
+                <div className="exec-approval-gates">
+                  <div className="exec-approval-heading">
+                    <div>
+                      <strong>Launch approvals</strong>
+                      <small>Nothing gated launches until you grant the matching capability.</small>
+                    </div>
+                    <span>{executeApprovalsMet ? "ready" : "action required"}</span>
+                  </div>
+                  <div className="approval-stack">
+                    <label className={`approval-check${preview?.requires_coding_agent_approval && !approveCodingAgents ? " required" : ""}`}>
+                      <input type="checkbox" checked={approveCodingAgents} onChange={(event) => setApproveCodingAgents(event.target.checked)} />
+                      <span>
+                        <strong>Coding agent + isolated writes</strong>
+                        <small>{preview?.requires_coding_agent_approval ? "Allows the approved CLI to write only in its run worktree." : "Not required by this route."}</small>
+                      </span>
+                      {preview?.requires_coding_agent_approval ? <span className="approval-required">required</span> : null}
+                    </label>
+                    <label className={`approval-check${preview?.requires_paid_approval && !approvePaid ? " required" : ""}`}>
+                      <input type="checkbox" checked={approvePaid} onChange={(event) => setApprovePaid(event.target.checked)} />
+                      <span>
+                        <strong>Paid provider spend</strong>
+                        <small>{preview?.requires_paid_approval ? "Allows the routed paid completion calls shown above." : "This packet does not require paid-provider approval."}</small>
+                      </span>
+                      {preview?.requires_paid_approval ? <span className="approval-required">required</span> : null}
+                    </label>
+                  </div>
                 </div>
               </>
             ) : (
@@ -387,43 +420,100 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   );
 }
 
+function shortFingerprint(value: string | null): string {
+  if (!value) return "—";
+  return value.length <= 18 ? value : `${value.slice(0, 10)}…${value.slice(-6)}`;
+}
+
 function ExecutionPreviewCompact({
   preview,
   loading,
   error,
 }: {
-  preview: ExecutionPreview | null;
+  preview: ExecutionPacketPreview | null;
   loading: boolean;
   error: string | null;
 }) {
-  if (loading) return <p className="muted">Estimating run…</p>;
+  if (loading) return <div className="exec-packet-skeleton">Preparing execution contract…</div>;
   if (error) return <p className="notice danger">Run preview unavailable: {error}</p>;
   if (!preview || preview.steps.length === 0) return null;
 
   const lead = preview.steps.find((step) => step.allow_write) ?? preview.steps[preview.steps.length - 1];
+  const context = preview.context;
+  const budgetCopy = context.prepared
+    ? `${context.context_tokens.toLocaleString()}${context.token_budget ? ` / ${context.token_budget.toLocaleString()}` : ""}`
+    : "build on launch";
+
   return (
-    <div className="exec-preview compact">
-      <div className="exec-preview-facts">
-        <span><small>Executor</small><strong>{lead?.executor_label ?? "—"}</strong></span>
-        <span><small>Model</small><strong>{lead?.model ?? "—"}</strong></span>
-        <span><small>Workspace</small><strong>{preview.isolated_workspace ? "Isolated" : "Active"}</strong></span>
-        <span><small>Tokens</small><strong>{preview.total_estimated_tokens.toLocaleString()}</strong></span>
-        <span><small>Cost</small><strong>{preview.total_estimated_cost_units.toFixed(2)} {preview.currency_label}</strong></span>
+    <section className="exec-packet" aria-label="Execution packet preview">
+      <header className="exec-packet-heading">
+        <div>
+          <span className="eyebrow">Execution packet</span>
+          <strong>{lead?.executor_label ?? "Worker"} · {lead?.model ?? "provider default"}</strong>
+          <small>The approved packet below is the boundary RepoDesk will hand to this run.</small>
+        </div>
+        <span className={`exec-packet-state ${context.prepared ? "ready" : "warning"}`}>
+          {context.prepared ? "prepared" : "rebuild required"}
+        </span>
+      </header>
+
+      <div className="exec-packet-grid">
+        <div className="exec-packet-primary-fact">
+          <span>Context</span>
+          <strong>{budgetCopy}</strong>
+          <small>tokens · {context.included_sources} in / {context.excluded_sources} out</small>
+        </div>
+        <div>
+          <span>Workspace</span>
+          <strong>{preview.isolated_workspace ? "Isolated" : "Active checkout"}</strong>
+          <small>{preview.expected_writes ? "writes expected" : "read-only route"}</small>
+        </div>
+        <div>
+          <span>Run estimate</span>
+          <strong>{preview.total_estimated_tokens.toLocaleString()} tokens</strong>
+          <small>context + planned outputs</small>
+        </div>
+        <div>
+          <span>Cost ceiling view</span>
+          <strong>{preview.total_estimated_cost_units.toFixed(2)} {preview.currency_label}</strong>
+          <small>{preview.requires_paid_approval ? "paid approval required" : "no paid approval"}</small>
+        </div>
       </div>
-      <details className="work-secondary-details">
-        <summary>Routing and packet details</summary>
-        <ul className="exec-preview-steps compact">
-          {preview.steps.map((step) => (
-            <li key={step.step_id}>
-              <code>{step.title}</code> — {step.executor_label} · {step.model}
-              {step.allow_write ? <span className="pill warn">writes</span> : null}
-              {step.paid ? <span className="pill">paid</span> : null}
-            </li>
+
+      <div className="exec-packet-boundary">
+        <span>
+          <small>Packet fingerprint</small>
+          <code title={context.context_fingerprint ?? undefined}>{shortFingerprint(context.context_fingerprint)}</code>
+        </span>
+        <span>
+          <small>Sources</small>
+          <strong>{context.prepared ? `${context.included_sources} selected` : "not prepared"}</strong>
+        </span>
+        <span>
+          <small>Write scope</small>
+          <strong>{preview.expected_writes ? (preview.isolated_workspace ? "run worktree only" : "workspace") : "none"}</strong>
+        </span>
+      </div>
+
+      {context.warning ? <p className="exec-packet-warning">{context.warning}</p> : null}
+
+      <details className="exec-packet-routing">
+        <summary>{preview.steps.length} routed step{preview.steps.length === 1 ? "" : "s"} · inspect routing</summary>
+        <div className="exec-packet-step-list">
+          {preview.steps.map((step, index) => (
+            <div key={step.step_id}>
+              <span>{String(index + 1).padStart(2, "0")}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <small>{step.executor_label} · {step.model}</small>
+              </div>
+              <code>{step.estimated_input_tokens.toLocaleString()} → {step.estimated_output_tokens.toLocaleString()}</code>
+              <span>{step.allow_write ? "write" : "read"}{step.paid ? " · paid" : ""}</span>
+            </div>
           ))}
-        </ul>
-        <p className="muted">Sent: goal, bounded context, reviewed knowledge, instruction and token budget. Repo-wide raw content is not sent automatically.</p>
+        </div>
       </details>
-    </div>
+    </section>
   );
 }
 
