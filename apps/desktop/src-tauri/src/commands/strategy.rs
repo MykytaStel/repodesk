@@ -35,13 +35,13 @@ fn strategy_settings() -> ProviderSettings {
 }
 
 fn clean_goal(goal: Option<String>) -> Result<Option<String>, ErrorPayload> {
-    if let Some(value) = &goal
-        && value.len() > MAX_GOAL_LEN
-    {
-        return Err(ErrorPayload::resource_limit(format!(
-            "goal is too long ({} > {MAX_GOAL_LEN} chars)",
-            value.len()
-        )));
+    if let Some(value) = &goal {
+        let chars = value.chars().count();
+        if chars > MAX_GOAL_LEN {
+            return Err(ErrorPayload::resource_limit(format!(
+                "goal is too long ({chars} > {MAX_GOAL_LEN} chars)"
+            )));
+        }
     }
     Ok(goal.filter(|value| !value.trim().is_empty()))
 }
@@ -61,6 +61,29 @@ fn plan_shape_label(shape: AiPlanShape) -> &'static str {
         AiPlanShape::WriterWithReview => "writer_with_review",
         AiPlanShape::AnalyzeWriterReview => "analyze_writer_review",
     }
+}
+
+fn validate_approval_plan_lock(
+    dry_run: bool,
+    requires_approval: bool,
+    plan_fingerprint: &str,
+    approval_plan_fingerprint: Option<&str>,
+) -> Result<(), ErrorPayload> {
+    if dry_run || !requires_approval {
+        return Ok(());
+    }
+
+    let approved = approval_plan_fingerprint
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if approved != Some(plan_fingerprint) {
+        return Err(ErrorPayload::configuration(
+            "Execution approvals are stale or missing: paid/write capabilities must be approved for the exact current plan lock. Refresh the Execution Packet and approve it again."
+                .to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -94,6 +117,7 @@ pub async fn orchestrate_strategy_run(
     override_model: Option<String>,
     strategy_mode: Option<String>,
     expected_plan_fingerprint: Option<String>,
+    approval_plan_fingerprint: Option<String>,
 ) -> Result<OrchestrationRun, ErrorPayload> {
     let goal = clean_goal(goal)?;
     let mode = parse_strategy_mode(strategy_mode)?;
@@ -131,6 +155,15 @@ pub async fn orchestrate_strategy_run(
                 .to_string(),
         ));
     }
+
+    let requires_approval = prepared.preview.execution.requires_coding_agent_approval
+        || prepared.preview.execution.requires_paid_approval;
+    validate_approval_plan_lock(
+        dry_run,
+        requires_approval,
+        &prepared.preview.plan_fingerprint,
+        approval_plan_fingerprint.as_deref(),
+    )?;
 
     let opts = RunOptions {
         dry_run,
@@ -199,5 +232,24 @@ mod tests {
     #[test]
     fn long_goal_is_rejected_before_planning() {
         assert!(clean_goal(Some("x".repeat(MAX_GOAL_LEN + 1))).is_err());
+    }
+
+    #[test]
+    fn goal_limit_counts_unicode_characters_not_utf8_bytes() {
+        assert!(clean_goal(Some("ї".repeat(MAX_GOAL_LEN))).is_ok());
+        assert!(clean_goal(Some("ї".repeat(MAX_GOAL_LEN + 1))).is_err());
+    }
+
+    #[test]
+    fn capability_approval_must_match_exact_plan_lock() {
+        assert!(validate_approval_plan_lock(false, true, "plan-b", Some("plan-a")).is_err());
+        assert!(validate_approval_plan_lock(false, true, "plan-b", None).is_err());
+        assert!(validate_approval_plan_lock(false, true, "plan-b", Some("plan-b")).is_ok());
+    }
+
+    #[test]
+    fn dry_run_or_ungated_plan_does_not_require_capability_approval_lock() {
+        assert!(validate_approval_plan_lock(true, true, "plan-b", None).is_ok());
+        assert!(validate_approval_plan_lock(false, false, "plan-b", None).is_ok());
     }
 }
