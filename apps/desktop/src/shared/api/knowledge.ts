@@ -14,6 +14,12 @@ export type EngineeringKnowledgeCategory =
 
 export type EngineeringKnowledgeStatus = "candidate" | "accepted" | "archived";
 export type EngineeringKnowledgeOrigin = "human" | "verification";
+export type EngineeringKnowledgeLifecycleState =
+  | "pending_review"
+  | "current"
+  | "review_soon"
+  | "review_required"
+  | "archived";
 
 export type KnowledgeEvidenceRef = {
   kind: string;
@@ -49,11 +55,34 @@ export type EngineeringKnowledgeSuggestion = {
   evidence: KnowledgeEvidenceRef[];
 };
 
+export type EngineeringKnowledgeLifecycleEntry = {
+  knowledge_id: string;
+  state: EngineeringKnowledgeLifecycleState;
+  age_days: number;
+  review_after_days: number | null;
+  review_due_at: string | null;
+  reason: string;
+};
+
+export type EngineeringKnowledgeLifecycleReport = {
+  project: string;
+  generated_at: string;
+  counts: {
+    pending_review: number;
+    current: number;
+    review_soon: number;
+    review_required: number;
+    archived: number;
+  };
+  entries: EngineeringKnowledgeLifecycleEntry[];
+};
+
 export type EngineeringKnowledgeSnapshot = {
   project: string;
   records: EngineeringKnowledgeRecord[];
   counts: EngineeringKnowledgeCounts;
   suggestions: EngineeringKnowledgeSuggestion[];
+  lifecycle: EngineeringKnowledgeLifecycleReport;
 };
 
 export type EngineeringKnowledgeProposalInput = {
@@ -66,10 +95,12 @@ type KnowledgeAction =
   | { kind: "propose"; input: EngineeringKnowledgeProposalInput }
   | { kind: "capture_command"; command: string }
   | { kind: "accept"; knowledge_id: string }
+  | { kind: "reconfirm"; knowledge_id: string }
   | { kind: "archive"; knowledge_id: string };
 
 type KnowledgeTransportResponse = {
-  knowledge: EngineeringKnowledgeSnapshot | null;
+  knowledge: Omit<EngineeringKnowledgeSnapshot, "lifecycle"> | null;
+  knowledge_lifecycle: EngineeringKnowledgeLifecycleReport | null;
 };
 
 async function invokeKnowledge(action?: KnowledgeAction): Promise<EngineeringKnowledgeSnapshot> {
@@ -83,7 +114,8 @@ async function invokeKnowledge(action?: KnowledgeAction): Promise<EngineeringKno
     knowledgeAction: action ?? null,
   });
   if (!response.knowledge) throw new Error("Project Engineering Knowledge is unavailable");
-  return response.knowledge;
+  if (!response.knowledge_lifecycle) throw new Error("Project Engineering Knowledge lifecycle is unavailable");
+  return { ...response.knowledge, lifecycle: response.knowledge_lifecycle };
 }
 
 export async function engineeringKnowledgeSnapshot(): Promise<EngineeringKnowledgeSnapshot> {
@@ -106,6 +138,12 @@ export async function acceptEngineeringKnowledge(
   knowledgeId: string,
 ): Promise<EngineeringKnowledgeSnapshot> {
   return invokeKnowledge({ kind: "accept", knowledge_id: knowledgeId });
+}
+
+export async function reconfirmEngineeringKnowledge(
+  knowledgeId: string,
+): Promise<EngineeringKnowledgeSnapshot> {
+  return invokeKnowledge({ kind: "reconfirm", knowledge_id: knowledgeId });
 }
 
 export async function archiveEngineeringKnowledge(

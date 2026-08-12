@@ -7,7 +7,8 @@ use repodesk_core::engineering::{
     derive_engineering_knowledge_lifecycle, derive_work_item_contract_snapshot,
     link_active_acceptance_evidence, load_active_engineering_knowledge,
     load_active_run_evidence_from_events, load_context_inspector, propose_active_engineering_knowledge,
-    read_events, read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
+    read_events, read_work_item_contract, reconfirm_active_engineering_knowledge,
+    record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::{Deserialize, Serialize};
@@ -24,6 +25,9 @@ pub enum EngineeringKnowledgeAction {
         command: String,
     },
     Accept {
+        knowledge_id: String,
+    },
+    Reconfirm {
         knowledge_id: String,
     },
     Archive {
@@ -88,6 +92,9 @@ pub fn work_engineering_intelligence(
         }
         Some(EngineeringKnowledgeAction::Accept { knowledge_id }) => {
             Some(accept_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
+        }
+        Some(EngineeringKnowledgeAction::Reconfirm { knowledge_id }) => {
+            Some(reconfirm_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
         }
         Some(EngineeringKnowledgeAction::Archive { knowledge_id }) => {
             Some(archive_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)

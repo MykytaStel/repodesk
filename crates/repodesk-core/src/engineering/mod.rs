@@ -78,12 +78,14 @@ pub use knowledge::{
     accept_active_engineering_knowledge, archive_active_engineering_knowledge,
     capture_active_verified_command, engineering_knowledge_context, engineering_knowledge_path,
     load_active_engineering_knowledge, propose_active_engineering_knowledge,
+    reconfirm_active_engineering_knowledge,
 };
 pub use knowledge_lifecycle::{
     EngineeringKnowledgeLifecycleCounts, EngineeringKnowledgeLifecycleEntry,
     EngineeringKnowledgeLifecyclePolicy, EngineeringKnowledgeLifecycleReport,
     EngineeringKnowledgeLifecycleState, assess_engineering_knowledge_at,
     derive_engineering_knowledge_lifecycle, derive_engineering_knowledge_lifecycle_at,
+    engineering_knowledge_context_eligible, engineering_knowledge_context_eligible_at,
     engineering_knowledge_lifecycle_policy,
 };
 pub use run_evidence::{
