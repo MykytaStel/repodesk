@@ -175,6 +175,39 @@
   white-space: nowrap;
 }
 
+.ai-strategy-plan-lock {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.ai-strategy-plan-lock > span {
+  color: var(--muted-2);
+  font-size: 7.5px;
+  font-weight: 760;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.ai-strategy-plan-lock code {
+  color: var(--accent-2);
+  font-size: 8.5px;
+}
+
+.ai-strategy-plan-lock small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .ai-strategy-reasons {
   border-top: 1px solid var(--border);
   background: var(--surface);
@@ -257,6 +290,7 @@
     grid-template-columns: 1fr 1fr;
   }
 
+  .ai-strategy-plan-lock,
   .ai-strategy-reasons p {
     grid-template-columns: 1fr;
     gap: 3px;
