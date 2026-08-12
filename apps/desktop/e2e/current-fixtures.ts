@@ -7,7 +7,7 @@ const engineeringSnapshot = onboardedFixtures.work_engineering_intelligence as R
  * Current-product overrides for the long-lived onboarded fixture.
  *
  * Keep the base fixture useful for legacy/advanced surfaces while this layer
- * tracks the canonical Work Strategy and Engineering Knowledge read models.
+ * tracks the canonical Work Strategy, Engineering Knowledge and Runs read models.
  * That makes contract migrations explicit instead of teaching the mock IPC
  * transport to silently translate deprecated commands.
  */
@@ -92,6 +92,39 @@ export const currentOnboardedFixtures: CommandFixtures = {
         archived: 0,
       },
       entries: [],
+    },
+    run_observability: {
+      run_id: "run-20260616-101500",
+      disposition: {
+        state: "ready",
+        stage: "commit",
+        code: "ready_to_commit",
+        title: "Ready to commit",
+        detail: "The reviewed ChangeSet is verified and ready for the bounded commit step.",
+      },
+      strategy: null,
+      context: {
+        candidate_tokens: 7_100,
+        included_tokens: 4_200,
+        compacted_tokens: 2_900,
+        compactness_ratio: 0.5915,
+        repeated_tokens: 756,
+        repeated_context_ratio: 0.18,
+      },
+      efficiency: {
+        workers: 1,
+        successful_workers: 1,
+        failed_workers: 0,
+        blocked_workers: 0,
+        skipped_workers: 0,
+        handoffs: 0,
+        unique_providers: 1,
+        unique_models: 1,
+        total_tokens: 5_100,
+        tokens_per_changed_file: 2_550,
+        cost_per_changed_file: 0,
+        input_output_ratio: 4.6667,
+      },
     },
   },
 };

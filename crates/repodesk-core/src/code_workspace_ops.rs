@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::code_workspace::{language_for_path, MAX_EDITABLE_FILE_BYTES};
+use crate::code_workspace::{MAX_EDITABLE_FILE_BYTES, language_for_path};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::projects::get_active_project;
 use crate::security::is_blocked_path;
@@ -80,7 +80,9 @@ pub fn create_code_file(
     validate_text_content(&input.content)?;
     let target = resolve_new_path(project_path, &input.path)?;
     if target.path.exists() {
-        return Err(RepoDeskError::Api("Code workspace path already exists".into()));
+        return Err(RepoDeskError::Api(
+            "Code workspace path already exists".into(),
+        ));
     }
 
     let mut file = OpenOptions::new()
@@ -106,7 +108,9 @@ pub fn create_code_directory(
 ) -> RepoDeskResult<CodeWorkspaceMutationResult> {
     let target = resolve_new_path(project_path, path)?;
     if target.path.exists() {
-        return Err(RepoDeskError::Api("Code workspace path already exists".into()));
+        return Err(RepoDeskError::Api(
+            "Code workspace path already exists".into(),
+        ));
     }
 
     fs::create_dir(&target.path)?;
@@ -127,7 +131,9 @@ pub fn rename_code_path(
     let source = resolve_existing_path(project_path, &input.path)?;
     let destination = resolve_new_path(project_path, &input.new_path)?;
     if destination.path.exists() {
-        return Err(RepoDeskError::Api("Rename destination already exists".into()));
+        return Err(RepoDeskError::Api(
+            "Rename destination already exists".into(),
+        ));
     }
 
     if source.metadata.is_file() {
@@ -270,7 +276,9 @@ fn resolve_new_path(project_path: &Path, value: &str) -> RepoDeskResult<NewPath>
 fn validate_relative_path(value: &str) -> RepoDeskResult<PathBuf> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Err(RepoDeskError::Api("Expected a project-relative path".into()));
+        return Err(RepoDeskError::Api(
+            "Expected a project-relative path".into(),
+        ));
     }
     if trimmed.contains('\0') || trimmed.contains('\n') || trimmed.contains('\r') {
         return Err(RepoDeskError::Api(
@@ -280,7 +288,9 @@ fn validate_relative_path(value: &str) -> RepoDeskResult<PathBuf> {
 
     let raw = Path::new(trimmed);
     if raw.is_absolute() {
-        return Err(RepoDeskError::Api("Expected a project-relative path".into()));
+        return Err(RepoDeskError::Api(
+            "Expected a project-relative path".into(),
+        ));
     }
 
     let mut normalized = PathBuf::new();
@@ -294,7 +304,9 @@ fn validate_relative_path(value: &str) -> RepoDeskResult<PathBuf> {
         }
     }
     if normalized.as_os_str().is_empty() {
-        return Err(RepoDeskError::Api("Expected a project-relative path".into()));
+        return Err(RepoDeskError::Api(
+            "Expected a project-relative path".into(),
+        ));
     }
 
     let display = slash_path(&normalized);
@@ -310,7 +322,11 @@ fn validate_relative_path(value: &str) -> RepoDeskResult<PathBuf> {
     Ok(normalized)
 }
 
-fn reject_symlink_components(root: &Path, relative: &Path, allow_missing_final: bool) -> RepoDeskResult<()> {
+fn reject_symlink_components(
+    root: &Path,
+    relative: &Path,
+    allow_missing_final: bool,
+) -> RepoDeskResult<()> {
     let mut current = root.to_path_buf();
     let components = relative.components().collect::<Vec<_>>();
     for (index, component) in components.iter().enumerate() {
