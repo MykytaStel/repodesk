@@ -226,30 +226,6 @@ pub fn format_agent_context_pack(input: &AgentContextPackInput) -> String {
     out
 }
 
-fn pack_artifacts(task: &TaskConfig) -> Vec<PackArtifact> {
-    [
-        ("Task", "task.md"),
-        ("Context", "context.md"),
-        ("Context pipeline", "context-pipeline.json"),
-        ("Smart context", "smart-context.md"),
-        ("Codex prompt", "prompt.codex.md"),
-        ("ChatGPT prompt", "prompt.chatgpt.md"),
-        ("Review prompt", "prompt.review.md"),
-        ("Checks summary", "checks-summary.md"),
-        ("Token estimate", "token-estimate.txt"),
-    ]
-    .into_iter()
-    .map(|(label, file)| {
-        let path = task.run_dir.join(file);
-        PackArtifact {
-            label: label.to_string(),
-            path: path.display().to_string(),
-            exists: path.exists(),
-        }
-    })
-    .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -334,12 +310,5 @@ mod tests {
     fn canonical_fingerprint_is_stable_for_same_context() {
         assert_eq!(sha256_hex("same"), sha256_hex("same"));
         assert_ne!(sha256_hex("same"), sha256_hex("different"));
-    }
-
-    #[test]
-    fn artifact_inventory_names_context_pipeline() {
-        let task = sample_input().task;
-        let artifacts = pack_artifacts(&task);
-        assert!(artifacts.iter().any(|artifact| artifact.label == "Context pipeline"));
     }
 }
