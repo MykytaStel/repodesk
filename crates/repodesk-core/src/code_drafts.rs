@@ -18,7 +18,7 @@ use tempfile::NamedTempFile;
 use crate::code_workspace::{MAX_EDITABLE_FILE_BYTES, guard_code_relative_path};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::paths::RepoDeskPaths;
-use crate::projects::get_active_project;
+use crate::projects::{ProjectConfig, get_active_project};
 
 const CODE_DRAFT_VERSION: u32 = 1;
 const CODE_DRAFTS_DIR: &str = "code-drafts";
@@ -66,7 +66,13 @@ struct PersistedCodeDraft {
 }
 
 pub fn save_active_code_draft(input: CodeDraftSaveInput) -> RepoDeskResult<CodeDraftRecord> {
-    let project = get_active_project()?;
+    save_project_code_draft(get_active_project()?, input)
+}
+
+pub fn save_project_code_draft(
+    project: ProjectConfig,
+    input: CodeDraftSaveInput,
+) -> RepoDeskResult<CodeDraftRecord> {
     let paths = RepoDeskPaths::resolve()?;
     save_code_draft(
         &paths.cache_dir,
@@ -80,13 +86,22 @@ pub fn save_active_code_draft(input: CodeDraftSaveInput) -> RepoDeskResult<CodeD
 pub fn load_active_code_draft(
     input: CodeDraftLoadInput,
 ) -> RepoDeskResult<Option<CodeDraftRecovery>> {
-    let project = get_active_project()?;
+    load_project_code_draft(get_active_project()?, input)
+}
+
+pub fn load_project_code_draft(
+    project: ProjectConfig,
+    input: CodeDraftLoadInput,
+) -> RepoDeskResult<Option<CodeDraftRecovery>> {
     let paths = RepoDeskPaths::resolve()?;
     load_code_draft(&paths.cache_dir, &project.name, &project.path, input)
 }
 
 pub fn delete_active_code_draft(path: &str) -> RepoDeskResult<bool> {
-    let project = get_active_project()?;
+    delete_project_code_draft(get_active_project()?, path)
+}
+
+pub fn delete_project_code_draft(project: ProjectConfig, path: &str) -> RepoDeskResult<bool> {
     let paths = RepoDeskPaths::resolve()?;
     delete_code_draft(&paths.cache_dir, &project.name, &project.path, path)
 }
