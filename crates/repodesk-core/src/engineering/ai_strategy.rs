@@ -112,6 +112,9 @@ pub struct AiStrategyInputs {
     /// Number of explicit allowed paths in the typed Work Item Contract. Zero
     /// means unknown/unconfigured, not an empty write permission set.
     pub scope_path_count: usize,
+    /// True only when every allowed path is conservatively classified as an
+    /// individual file target rather than a directory/prefix boundary.
+    pub scope_file_bounded: bool,
     pub protected_path_count: usize,
     pub context_prepared: bool,
 }
@@ -132,7 +135,7 @@ pub struct AiStrategyRecommendation {
 ///
 /// Priority for `auto` is intentionally conservative:
 /// 1. churn/rejection/verification instability -> quality/full pipeline;
-/// 2. repeated context or hand-off fan-out on a narrow scope -> lean;
+/// 2. repeated context or hand-off fan-out on a narrow file-bounded scope -> lean;
 /// 3. strongly input-heavy usage -> local-first;
 /// 4. otherwise keep the existing balanced three-step pipeline.
 pub fn derive_ai_strategy(
@@ -146,7 +149,7 @@ pub fn derive_ai_strategy(
     let repeated = has_signal(usage, AiUsageSignalCode::RepeatedContext);
     let fanout = has_signal(usage, AiUsageSignalCode::AgentFanout);
     let prompt_heavy = has_signal(usage, AiUsageSignalCode::PromptHeavy);
-    let narrow_scope = (1..=4).contains(&inputs.scope_path_count);
+    let narrow_scope = inputs.scope_file_bounded && (1..=4).contains(&inputs.scope_path_count);
 
     let profile = match requested_mode {
         AiStrategyMode::Lean => AiStrategyProfile::Lean,
@@ -187,7 +190,7 @@ pub fn derive_ai_strategy(
         reasons.push(AiStrategyReason {
             code: AiStrategyReasonCode::NarrowScope,
             detail: format!(
-                "The Work Item contract bounds writes to {} explicit path(s).",
+                "The Work Item contract bounds writes to {} explicit file target(s).",
                 inputs.scope_path_count
             ),
         });
@@ -196,9 +199,11 @@ pub fn derive_ai_strategy(
             code: AiStrategyReasonCode::WideOrUnknownScope,
             detail: if inputs.scope_path_count == 0 {
                 "The typed write scope is not explicit, so RepoDesk keeps extra AI review unless another mode is selected.".into()
+            } else if !inputs.scope_file_bounded {
+                "The typed scope contains a directory or prefix-like target, so RepoDesk does not treat the change as narrow enough for a one-writer Auto plan.".into()
             } else {
                 format!(
-                    "The Work Item allows {} paths, so RepoDesk treats it as a wider change boundary.",
+                    "The Work Item allows {} file targets, so RepoDesk treats it as a wider change boundary.",
                     inputs.scope_path_count
                 )
             },
@@ -305,11 +310,12 @@ mod tests {
     }
 
     #[test]
-    fn auto_collapses_fanout_for_narrow_scoped_work() {
+    fn auto_collapses_fanout_for_narrow_file_scoped_work() {
         let recommendation = derive_ai_strategy(
             &report_with(AiUsageSignalCode::AgentFanout),
             AiStrategyInputs {
                 scope_path_count: 2,
+                scope_file_bounded: true,
                 protected_path_count: 1,
                 context_prepared: true,
             },
@@ -320,6 +326,23 @@ mod tests {
         assert_eq!(recommendation.plan_shape, AiPlanShape::SingleWriter);
         assert_eq!(recommendation.max_agent_steps, 1);
         assert!(recommendation.reuse_prepared_context);
+    }
+
+    #[test]
+    fn directory_scope_never_auto_collapses_to_single_writer() {
+        let recommendation = derive_ai_strategy(
+            &report_with(AiUsageSignalCode::AgentFanout),
+            AiStrategyInputs {
+                scope_path_count: 2,
+                scope_file_bounded: false,
+                protected_path_count: 0,
+                context_prepared: true,
+            },
+            AiStrategyMode::Auto,
+        );
+
+        assert_eq!(recommendation.profile, AiStrategyProfile::Balanced);
+        assert_eq!(recommendation.plan_shape, AiPlanShape::AnalyzeWriterReview);
     }
 
     #[test]
@@ -337,6 +360,7 @@ mod tests {
             &report,
             AiStrategyInputs {
                 scope_path_count: 2,
+                scope_file_bounded: true,
                 protected_path_count: 0,
                 context_prepared: true,
             },
@@ -367,6 +391,7 @@ mod tests {
             &report_with(AiUsageSignalCode::PromptHeavy),
             AiStrategyInputs {
                 scope_path_count: 8,
+                scope_file_bounded: true,
                 protected_path_count: 0,
                 context_prepared: true,
             },
