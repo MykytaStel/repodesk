@@ -8,6 +8,11 @@ import { EconomyMode } from "../features/routing/EconomyControl";
 import { IDEHealthIndicator } from "../features/health/IDEHealthIndicator";
 import { IDEHealthPanel } from "../features/health/IDEHealthPanel";
 import { useGit } from "../features/git/useGit";
+import {
+  CODE_WORKSPACE_KEY,
+  codeWorkspaceSnapshot,
+  requestCodeWorkspaceOpen,
+} from "../shared/api/codeWorkspace";
 import { callCommand } from "../shared/api/queries";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import type { TabId, Theme } from "../shared/types/api";
@@ -78,6 +83,16 @@ export default function App() {
     queryKey: ["project_list_configs"],
     queryFn: () => invoke<ProjectCommandTarget[]>("project_list_configs").catch(() => []),
     staleTime: 60_000,
+  });
+
+  // Quick Open deliberately shares CodeTab's query key. Opening the palette can
+  // reuse the repository snapshot already in cache, and only indexes when the
+  // palette actually needs file commands for an active project.
+  const { data: paletteWorkspace } = useQuery({
+    queryKey: [...CODE_WORKSPACE_KEY, projectName ?? "none"],
+    queryFn: codeWorkspaceSnapshot,
+    enabled: paletteOpen && hasProject,
+    staleTime: 15_000,
   });
 
   const showFeedback = useCallback(
@@ -196,7 +211,7 @@ export default function App() {
       if (!mod) return;
 
       const key = event.key.toLowerCase();
-      if (key === "k") {
+      if (key === "k" || (key === "p" && event.shiftKey)) {
         event.preventDefault();
         setPaletteOpen((open) => !open);
         return;
@@ -231,38 +246,96 @@ export default function App() {
   }, []);
 
   const commands = useMemo<Command[]>(() => {
-    const tabCommands: Command[] = APP_TABS.map((tab) => ({
-      id: `goto:${tab.id}`,
-      label: `Go to ${tab.title}`,
-      hint: tab.subtitle,
-      run: () => navigateTo(tab.id),
-    }));
+    const currentCommands: Command[] = [];
+    if (hasTask) {
+      currentCommands.push({
+        id: "current:work",
+        label: `Open Work Item: ${taskTitle || "active task"}`,
+        hint: projectName ? `Project · ${projectName}` : "Active bounded engineering task",
+        group: "Current",
+        keywords: ["task", "work item", "scope", "phase"],
+        priority: 100,
+        run: () => navigateTo("work", "Opened the active Work Item."),
+      });
+    }
+    if (dirty) {
+      currentCommands.push({
+        id: "current:changes",
+        label: `Review ${dirtyCount} workspace change${dirtyCount === 1 ? "" : "s"}`,
+        hint: "Git delta · governance · findings",
+        group: "Current",
+        keywords: ["diff", "git", "review", "changed files"],
+        priority: 90,
+        run: () => navigateTo("changes", "Review the current workspace delta."),
+      });
+    }
+
+    const fileCommands: Command[] = (paletteWorkspace?.files ?? [])
+      .filter((file) => !file.blocked)
+      .slice(0, 160)
+      .map((file) => ({
+        id: `file:${file.path}`,
+        label: `Open file: ${file.name}`,
+        hint: file.path,
+        group: "Files",
+        keywords: [file.path, file.language, file.extension ?? "", file.status],
+        priority: file.status === "clean" ? 0 : 20,
+        run: () => {
+          requestCodeWorkspaceOpen(file.path);
+          navigateTo("code", `Open ${file.path}.`);
+        },
+      }));
+
+    const tabCommands: Command[] = APP_TABS.map((tab) => {
+      const primaryIndex = PRIMARY_TABS.findIndex((candidate) => candidate.id === tab.id);
+      return {
+        id: `goto:${tab.id}`,
+        label: `Go to ${tab.title}`,
+        hint: tab.subtitle,
+        group: "Navigate",
+        keywords: [tab.group, tab.title, tab.subtitle],
+        shortcut: primaryIndex >= 0 ? `⌘${primaryIndex + 1}` : undefined,
+        priority: tab.id === activeTab ? 10 : 0,
+        run: () => navigateTo(tab.id),
+      };
+    });
 
     const shellCommands: Command[] = [
       {
         id: "shell:sidebar",
         label: "Toggle workspace drawer",
-        hint: "⌘/Ctrl+B",
+        hint: "Project, current work and related tools",
+        group: "View",
+        shortcut: "⌘B",
+        keywords: ["sidebar", "drawer", "project"],
         run: () => setSidebarOpen((open) => !open),
       },
       {
         id: "shell:inspector",
         label: "Toggle inspector drawer",
+        hint: "Contextual workspace inspector",
+        group: "View",
+        keywords: ["inspector", "right panel"],
         run: () => setInspectorOpen((open) => !open),
       },
       {
         id: "shell:bottom-panel",
         label: "Toggle bottom panel",
-        hint: "⌘/Ctrl+J",
+        hint: "Terminal and verification output",
+        group: "View",
+        shortcut: "⌘J",
+        keywords: ["terminal", "panel", "checks"],
         run: () => setBottomPanelOpen((open) => !open),
       },
     ];
 
-    const actions: Command[] = [
+    const workActions: Command[] = [
       {
         id: "action:refresh",
         label: "Refresh workspace",
-        hint: "reload all data",
+        hint: "Reload cached project and Work Item data",
+        group: "Work",
+        keywords: ["reload", "refresh", "sync"],
         run: () =>
           runWithFeedback({
             pending: "Refreshing workspace",
@@ -272,72 +345,69 @@ export default function App() {
             },
           }),
       },
-      {
-        id: "action:generate-prompts",
-        label: "Generate Prompts",
-        hint: "trigger prompt-all agent",
-        run: () =>
-          runWithFeedback({
-            pending: "Generating prompts",
-            success: "Prompts generated",
-            task: async () => {
-              await callCommand("run_desktop_action", { actionId: "prompt-all" });
-              await queryClient.invalidateQueries();
-              setViewingArtifact("prompt_chatgpt");
-            },
-          }),
-      },
-      {
-        id: "action:build-context",
-        label: "Build Context",
-        hint: "prepare bounded Work Item context",
-        run: () =>
-          runWithFeedback({
-            pending: "Building context",
-            success: "Context built",
-            task: async () => {
-              await callCommand("run_desktop_action", { actionId: "context-build" });
-              await queryClient.invalidateQueries();
-              setViewingArtifact("agent_context_pack");
-            },
-          }),
-      },
-      {
-        id: "action:run-checks",
-        label: "Run Checks",
-        hint: "run configured verification checks",
-        run: () =>
-          runWithFeedback({
-            pending: "Running checks",
-            success: "Checks finished",
-            task: async () => {
-              await callCommand("run_desktop_action", { actionId: "checks-run" });
-              await queryClient.invalidateQueries();
-              setBottomPanelOpen(true);
-            },
-          }),
-      },
-      {
-        id: "action:theme-dark",
-        label: "Theme: Dark",
-        run: () => setTheme("dark"),
-      },
-      {
-        id: "action:theme-light",
-        label: "Theme: Light",
-        run: () => setTheme("light"),
-      },
-      {
-        id: "action:theme-system",
-        label: "Theme: Auto",
-        run: () => setTheme("system"),
-      },
+      ...(hasTask ? [
+        {
+          id: "action:build-context",
+          label: "Build bounded context",
+          hint: "Prepare the canonical Work Item packet",
+          group: "Work",
+          keywords: ["context", "prepare", "packet", "tokens"],
+          priority: 30,
+          run: () =>
+            runWithFeedback({
+              pending: "Building context",
+              success: "Context built",
+              task: async () => {
+                await callCommand("run_desktop_action", { actionId: "context-build" });
+                await queryClient.invalidateQueries();
+                setViewingArtifact("agent_context_pack");
+              },
+            }),
+        },
+        {
+          id: "action:run-checks",
+          label: "Run configured checks",
+          hint: "Execute verification checks for the active Work Item",
+          group: "Work",
+          keywords: ["verify", "tests", "checks", "validation"],
+          priority: 20,
+          run: () =>
+            runWithFeedback({
+              pending: "Running checks",
+              success: "Checks finished",
+              task: async () => {
+                await callCommand("run_desktop_action", { actionId: "checks-run" });
+                await queryClient.invalidateQueries();
+                setBottomPanelOpen(true);
+              },
+            }),
+        },
+        {
+          id: "action:generate-prompts",
+          label: "Generate manual handoff prompts",
+          hint: "Prepare external-agent prompt artifacts",
+          group: "Work",
+          keywords: ["prompt", "handoff", "agent"],
+          run: () =>
+            runWithFeedback({
+              pending: "Generating prompts",
+              success: "Prompts generated",
+              task: async () => {
+                await callCommand("run_desktop_action", { actionId: "prompt-all" });
+                await queryClient.invalidateQueries();
+                setViewingArtifact("prompt_chatgpt");
+              },
+            }),
+        },
+      ] satisfies Command[] : []),
     ];
 
     const projectCommands: Command[] = projects.map((project) => ({
       id: `project:${project.name}`,
-      label: `Switch to project: ${project.name}`,
+      label: `Switch project: ${project.name}`,
       hint: project.path,
+      group: "Projects",
+      keywords: [project.name, project.path],
       run: () =>
         runWithFeedback({
           pending: `Switching to ${project.name}`,
@@ -349,8 +419,49 @@ export default function App() {
         }),
     }));
 
-    return [...tabCommands, ...shellCommands, ...actions, ...projectCommands];
-  }, [navigateTo, projects, queryClient, runWithFeedback]);
+    const appearanceCommands: Command[] = [
+      {
+        id: "action:theme-dark",
+        label: "Theme: Dark",
+        group: "Appearance",
+        run: () => setTheme("dark"),
+      },
+      {
+        id: "action:theme-light",
+        label: "Theme: Light",
+        group: "Appearance",
+        run: () => setTheme("light"),
+      },
+      {
+        id: "action:theme-system",
+        label: "Theme: Auto",
+        group: "Appearance",
+        run: () => setTheme("system"),
+      },
+    ];
+
+    return [
+      ...currentCommands,
+      ...fileCommands,
+      ...tabCommands,
+      ...workActions,
+      ...projectCommands,
+      ...shellCommands,
+      ...appearanceCommands,
+    ];
+  }, [
+    activeTab,
+    dirty,
+    dirtyCount,
+    hasTask,
+    navigateTo,
+    paletteWorkspace?.files,
+    projectName,
+    projects,
+    queryClient,
+    runWithFeedback,
+    taskTitle,
+  ]);
 
   function renderActiveTab() {
     if (booting) return <StartupSkeleton />;

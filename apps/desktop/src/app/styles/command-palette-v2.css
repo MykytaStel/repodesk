@@ -1,0 +1,206 @@
+/* Command palette v2 --------------------------------------------------------
+   One keyboard surface for navigation, quick-open, project switching and
+   bounded engineering actions. Keep the hierarchy dense like an IDE rather
+   than presenting another dashboard modal. */
+
+.cmdk-panel-v2 {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(650px, calc(100vh - 96px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgb(0 0 0 / .42);
+}
+
+.cmdk-search-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.cmdk-search-row > span {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--accent-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cmdk-panel-v2 .cmdk-input {
+  min-width: 0;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.cmdk-panel-v2 .cmdk-input::placeholder {
+  color: var(--muted-2);
+}
+
+.cmdk-panel-v2 kbd {
+  min-width: 20px;
+  display: inline-grid;
+  place-items: center;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-bottom-color: var(--border-strong);
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.cmdk-list-v2 {
+  min-height: 0;
+  overflow: auto;
+  padding: 6px;
+  overscroll-behavior: contain;
+}
+
+.cmdk-group + .cmdk-group {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.cmdk-group-label {
+  padding: 5px 8px 4px;
+  color: var(--muted-2);
+  font-size: 7.5px;
+  font-weight: 820;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.cmdk-panel-v2 .cmdk-item {
+  width: 100%;
+  min-width: 0;
+  min-height: 43px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cmdk-panel-v2 .cmdk-item:hover,
+.cmdk-panel-v2 .cmdk-item.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  transform: none;
+  box-shadow: none;
+}
+
+.cmdk-item-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.cmdk-item-copy strong,
+.cmdk-item-copy small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmdk-item-copy strong {
+  color: var(--text);
+  font-size: 10.5px;
+  font-weight: 730;
+}
+
+.cmdk-item-copy small {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+}
+
+.cmdk-panel-v2 .cmdk-item.active .cmdk-item-copy strong {
+  color: var(--accent-2);
+}
+
+.cmdk-zero-state {
+  min-height: 140px;
+  display: grid;
+  place-content: center;
+  gap: 4px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.cmdk-zero-state strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.cmdk-zero-state span {
+  font-size: 9px;
+}
+
+.cmdk-panel-v2 .cmdk-footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted-2);
+  font-size: 8px;
+}
+
+.cmdk-panel-v2 .cmdk-footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.cmdk-panel-v2 .cmdk-footer > span:last-child {
+  margin-left: auto;
+}
+
+@media (max-width: 620px) {
+  .cmdk-panel-v2 {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 32px);
+  }
+
+  .cmdk-search-row {
+    padding-inline: 9px;
+  }
+
+  .cmdk-panel-v2 .cmdk-footer > span:first-child {
+    display: none;
+  }
+}

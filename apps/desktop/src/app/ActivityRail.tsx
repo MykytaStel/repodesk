@@ -78,16 +78,16 @@ export function ActivityRail({
           RD
         </div>
 
-        <RailButton label={sidebarOpen ? "Hide workspace sidebar" : "Show workspace sidebar"} active={sidebarOpen} onClick={onToggleSidebar}>
+        <RailButton label={`${sidebarOpen ? "Hide" : "Show"} workspace sidebar — ⌘/Ctrl+B`} active={sidebarOpen} onClick={onToggleSidebar}>
           <BurgerIcon />
         </RailButton>
 
         <div className="activity-rail-divider" />
 
-        {tabs.map((tab) => (
+        {tabs.map((tab, index) => (
           <RailButton
             key={tab.id}
-            label={`${tab.title} — ${tab.subtitle}`}
+            label={`${tab.title} — ${tab.subtitle} — ⌘/Ctrl+${index + 1}`}
             active={activeTab === tab.id}
             onClick={() => onSelect(tab.id)}
           >
@@ -97,13 +97,13 @@ export function ActivityRail({
       </div>
 
       <div className="activity-rail-bottom">
-        <RailButton label="Command palette" onClick={onOpenPalette}>
+        <RailButton label="Command palette — ⌘/Ctrl+K or ⌘/Ctrl+Shift+P" onClick={onOpenPalette}>
           <CommandIcon />
         </RailButton>
         <RailButton label={inspectorOpen ? "Hide inspector" : "Show inspector"} active={inspectorOpen} onClick={onToggleInspector}>
           <InspectorIcon />
         </RailButton>
-        <RailButton label={bottomPanelOpen ? "Hide bottom panel" : "Show bottom panel"} active={bottomPanelOpen} onClick={onToggleBottomPanel}>
+        <RailButton label={`${bottomPanelOpen ? "Hide" : "Show"} bottom panel — ⌘/Ctrl+J`} active={bottomPanelOpen} onClick={onToggleBottomPanel}>
           <PanelBottomIcon />
         </RailButton>
       </div>
