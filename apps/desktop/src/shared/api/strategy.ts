@@ -107,6 +107,7 @@ export async function workStrategyExecutionPreview(
 export async function orchestrateStrategyRun(input: {
   strategyMode: AiStrategyMode;
   expectedPlanFingerprint: string | null;
+  approvalPlanFingerprint: string | null;
   approvePaid: boolean;
   approveCodingAgents: boolean;
   goal?: string | null;
@@ -125,5 +126,6 @@ export async function orchestrateStrategyRun(input: {
     overrideModel: input.overrideModel ?? null,
     strategyMode: input.strategyMode,
     expectedPlanFingerprint: input.expectedPlanFingerprint,
+    approvalPlanFingerprint: input.approvalPlanFingerprint,
   });
 }
