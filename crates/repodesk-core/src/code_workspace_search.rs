@@ -110,10 +110,18 @@ pub fn search_active_code_workspace(
 pub fn search_active_code_project(
     input: CodeProjectSearchInput,
 ) -> RepoDeskResult<CodeProjectSearchResult> {
-    let query = validate_project_search_query(&input.query)?;
     let project = get_active_project()?;
-    let root = project.path.canonicalize()?;
-    let index = indexed_workspace(&project.name, &root)?;
+    search_code_project(&project.name, &project.path, input)
+}
+
+pub fn search_code_project(
+    project_name: &str,
+    project_path: &Path,
+    input: CodeProjectSearchInput,
+) -> RepoDeskResult<CodeProjectSearchResult> {
+    let query = validate_project_search_query(&input.query)?;
+    let root = project_path.canonicalize()?;
+    let index = indexed_workspace(project_name, &root)?;
     let matcher = literal_matcher(query, input.case_sensitive)?;
     let limit = input.limit.clamp(1, MAX_PROJECT_SEARCH_RESULTS);
 

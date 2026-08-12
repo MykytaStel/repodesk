@@ -321,15 +321,27 @@ fn resolve_existing_editable_file(
     resolve_existing_editable_file_from_root(&root, relative_path)
 }
 
-fn resolve_existing_editable_file_from_root(
-    canonical_root: &Path,
-    relative_path: &str,
-) -> RepoDeskResult<SafeEditableFile> {
+pub(crate) fn guard_code_relative_path(relative_path: &str) -> RepoDeskResult<PathBuf> {
     let relative = normalize_relative_path(Path::new(relative_path))?;
     let display = slash_path(&relative);
     if let Some(reason) = is_blocked_path(&display) {
         return Err(RepoDeskError::Api(reason));
     }
+    if relative.components().any(|component| {
+        matches!(component, Component::Normal(name) if name.to_string_lossy().eq_ignore_ascii_case(".git"))
+    }) {
+        return Err(RepoDeskError::Api(
+            "Git metadata paths are not editable in Code Workspace".into(),
+        ));
+    }
+    Ok(relative)
+}
+
+fn resolve_existing_editable_file_from_root(
+    canonical_root: &Path,
+    relative_path: &str,
+) -> RepoDeskResult<SafeEditableFile> {
+    let relative = guard_code_relative_path(relative_path)?;
 
     let joined = canonical_root.join(&relative);
     let symlink_metadata = fs::symlink_metadata(&joined)?;

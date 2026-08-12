@@ -5,10 +5,13 @@ import {
   CODE_WORKSPACE_KEY,
   codeWorkspaceSnapshot,
   consumeCodeWorkspaceOpenRequest,
+  deleteCodeWorkspaceDraft,
+  loadCodeWorkspaceDraft,
   requestCodeWorkspaceOpen,
   readCodeLibraryDocument,
   readCodeWorkspaceDocument,
   saveCodeWorkspaceDocument,
+  saveCodeWorkspaceDraft,
   type CodeWorkspaceDocument,
   type CodeWorkspaceFile,
   type CodeWorkspaceFileStatus,
@@ -44,6 +47,7 @@ type EditorTab = {
   bytes: number;
   status: CodeWorkspaceFileStatus;
   dirty: boolean;
+  recoveredDraft: boolean;
 };
 
 type EditorView = "edit" | "diff";
@@ -100,6 +104,7 @@ function toTab(document: CodeWorkspaceDocument): EditorTab {
     bytes: document.bytes,
     status: document.status,
     dirty: false,
+    recoveredDraft: false,
   };
 }
 
@@ -114,6 +119,7 @@ function toLibraryTab(document: Awaited<ReturnType<typeof readCodeLibraryDocumen
     bytes: document.bytes,
     status: "clean",
     dirty: false,
+    recoveredDraft: false,
   };
 }
 
@@ -138,8 +144,10 @@ export function CodeTab({
   const [repoIntelOpen, setRepoIntelOpen] = useState(false);
   const [sideMode, setSideMode] = useState<CodeSideMode>("explorer");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const sessionProjectRef = useRef<string | null>(null);
   const openingRef = useRef(false);
+  const draftWritesRef = useRef(new Map<string, Promise<void>>());
 
   const workspace = useQuery({
     queryKey: [...CODE_WORKSPACE_KEY, projectName ?? "none"],
@@ -211,12 +219,62 @@ export function CodeTab({
     };
   }, [activePath, activeTab?.kind, view]);
 
-  const save = useMutation({
-    mutationFn: (tab: EditorTab) => saveCodeWorkspaceDocument({
+  const persistDraft = useCallback((tab: EditorTab): Promise<void> => {
+    if (tab.kind !== "workspace" || !tab.dirty) return Promise.resolve();
+
+    const previous = draftWritesRef.current.get(tab.path) ?? Promise.resolve();
+    const write = previous.then(() => saveCodeWorkspaceDraft({
       path: tab.path,
       content: tab.content,
-      expected_fingerprint: tab.fingerprint,
-    }),
+      base_fingerprint: tab.fingerprint,
+    })).then(() => {
+      setDraftError(null);
+    }).catch((error) => {
+      setDraftError(`Draft recovery backup failed for ${fileName(tab.path)}: ${errorToMessage(error)}`);
+    });
+
+    let tracked: Promise<void>;
+    tracked = write.finally(() => {
+      if (draftWritesRef.current.get(tab.path) === tracked) {
+        draftWritesRef.current.delete(tab.path);
+      }
+    });
+    draftWritesRef.current.set(tab.path, tracked);
+    return tracked;
+  }, []);
+
+  const discardPersistedDraft = useCallback(async (path: string) => {
+    const pending = draftWritesRef.current.get(path);
+    if (pending) await pending;
+    await deleteCodeWorkspaceDraft(path);
+  }, []);
+
+  useEffect(() => {
+    const dirtyWorkspaceTabs = tabs.filter((tab) => tab.kind === "workspace" && tab.dirty);
+    if (dirtyWorkspaceTabs.length === 0) return;
+
+    const timer = window.setTimeout(() => {
+      for (const tab of dirtyWorkspaceTabs) void persistDraft(tab);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [persistDraft, tabs]);
+
+  const save = useMutation({
+    mutationFn: async (tab: EditorTab) => {
+      const pendingDraft = draftWritesRef.current.get(tab.path);
+      if (pendingDraft) await pendingDraft;
+      const result = await saveCodeWorkspaceDocument({
+        path: tab.path,
+        content: tab.content,
+        expected_fingerprint: tab.fingerprint,
+      });
+      try {
+        await deleteCodeWorkspaceDraft(tab.path);
+      } catch (error) {
+        setDraftError(`Saved ${fileName(tab.path)}, but its recovery draft could not be cleared: ${errorToMessage(error)}`);
+      }
+      return result;
+    },
     onSuccess: (result) => {
       const saved = result.document;
       setTabs((current) => current.map((tab) => tab.path === saved.path ? toTab(saved) : tab));
@@ -237,8 +295,14 @@ export function CodeTab({
       setView("edit");
       return;
     }
-    if (existing?.dirty && forceReload && !window.confirm(`Discard unsaved changes in ${fileName(file.path)} and reload from disk?`)) {
-      return;
+    if (existing?.dirty && forceReload) {
+      if (!window.confirm(`Discard unsaved changes in ${fileName(file.path)} and reload from disk?`)) return;
+      try {
+        await discardPersistedDraft(file.path);
+      } catch (error) {
+        setDraftError(`Could not discard the recovery draft for ${fileName(file.path)}: ${errorToMessage(error)}`);
+        return;
+      }
     }
 
     let evictPath: string | null = null;
@@ -255,15 +319,40 @@ export function CodeTab({
     setWorkspaceError(null);
     try {
       const document = await readCodeWorkspaceDocument(file.path);
+      let openedTab = toTab(document);
+      try {
+        const recovery = await loadCodeWorkspaceDraft({
+          path: document.path,
+          current_fingerprint: document.fingerprint,
+        });
+        if (recovery) {
+          const restore = recovery.state === "safe" || window.confirm(
+            `RepoDesk found an unsaved draft for ${fileName(document.path)}, but this file changed on disk after the draft was created.\n\nChoose OK to restore the draft into the editor without saving it. Choose Cancel to discard the draft and keep the current disk version.`,
+          );
+          if (restore) {
+            openedTab = {
+              ...openedTab,
+              content: recovery.draft.content,
+              bytes: new TextEncoder().encode(recovery.draft.content).length,
+              dirty: true,
+              recoveredDraft: true,
+            };
+          } else {
+            await discardPersistedDraft(document.path);
+          }
+        }
+      } catch (error) {
+        setDraftError(`Draft recovery is unavailable for ${fileName(document.path)}: ${errorToMessage(error)}`);
+      }
       setTabs((current) => {
         const withoutEvicted = evictPath ? current.filter((tab) => tab.path !== evictPath) : current;
         const existingIndex = withoutEvicted.findIndex((tab) => tab.path === document.path);
         if (existingIndex >= 0) {
           const next = [...withoutEvicted];
-          next[existingIndex] = toTab(document);
+          next[existingIndex] = openedTab;
           return next;
         }
-        return [...withoutEvicted, toTab(document)];
+        return [...withoutEvicted, openedTab];
       });
       setActivePath(document.path);
       setView("edit");
@@ -273,7 +362,7 @@ export function CodeTab({
       openingRef.current = false;
       setOpeningPath(null);
     }
-  }, [tabs]);
+  }, [discardPersistedDraft, tabs]);
 
   const openLibrary = useCallback(async (request: CodeWorkspaceOpenRequest) => {
     if (!request.libraryHandle || openingRef.current) return;
@@ -335,9 +424,19 @@ export function CodeTab({
     return () => window.removeEventListener(CODE_OPEN_EVENT, consumeRequest);
   }, [openFile, openLibrary, workspace.data]);
 
-  const closeTab = (path: string) => {
+  const closeTab = async (path: string) => {
     const target = tabs.find((tab) => tab.path === path);
-    if (target?.dirty && !window.confirm(`Discard unsaved changes in ${fileName(path)}?`)) return;
+    if (target?.dirty) {
+      if (!window.confirm(`Discard unsaved changes in ${fileName(path)}?`)) return;
+      if (target.kind === "workspace") {
+        try {
+          await discardPersistedDraft(path);
+        } catch (error) {
+          setDraftError(`Could not discard the recovery draft for ${fileName(path)}: ${errorToMessage(error)}`);
+          return;
+        }
+      }
+    }
     const index = tabs.findIndex((tab) => tab.path === path);
     const nextTabs = tabs.filter((tab) => tab.path !== path);
     setTabs(nextTabs);
@@ -517,6 +616,7 @@ export function CodeTab({
               >
                 <span>{fileName(tab.path)}</span>
                 {tab.kind === "library" ? <LibraryTabBadge /> : null}
+                {tab.recoveredDraft ? <small className="code-draft-badge">recovered</small> : null}
                 {STATUS_LABEL[tab.status] ? <small>{STATUS_LABEL[tab.status]}</small> : null}
                 {tab.dirty ? <i aria-label="Unsaved">●</i> : null}
               </button>
@@ -524,11 +624,18 @@ export function CodeTab({
                 type="button"
                 className="code-tab-close"
                 aria-label={`Close ${fileName(tab.path)}`}
-                onClick={() => closeTab(tab.path)}
+                onClick={() => void closeTab(tab.path)}
               >×</button>
             </div>
           ))}
         </div>
+
+        {draftError ? (
+          <div className="code-workspace-message warn">
+            <span>{draftError}</span>
+            <button type="button" className="tiny-button" onClick={() => setDraftError(null)}>Dismiss</button>
+          </div>
+        ) : null}
 
         {workspaceError ? (
           <div className="code-workspace-message danger">
@@ -550,7 +657,11 @@ export function CodeTab({
         <div className="code-document-toolbar">
           <div className="code-document-location">
             {openingPath ? <span>Opening {openingPath}…</span> : activeTab ? (
-              <><code>{activeTab.path}</code>{activeTab.kind === "library" ? <span className="code-read-only-label">Read only</span> : null}</>
+              <>
+                <code>{activeTab.path}</code>
+                {activeTab.kind === "library" ? <span className="code-read-only-label">Read only</span> : null}
+                {activeTab.recoveredDraft ? <span className="code-recovered-label">Recovered draft · not saved</span> : null}
+              </>
             ) : <span>No file open</span>}
           </div>
           {activeTab?.kind === "workspace" ? (
