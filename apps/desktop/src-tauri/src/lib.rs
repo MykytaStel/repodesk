@@ -1,81 +1,9 @@
-pub mod ai_discovery_commands {
-    #[tauri::command]
-    pub fn ai_discovery_scan() -> Result<repodesk_core::ai_discovery::AiDiscoveryReport, String> {
-        repodesk_core::ai_discovery::write_ai_discovery_report().map_err(|error| error.to_string())
-    }
-}
-
 mod code_library;
 mod code_workspace;
 pub mod commands;
+mod engineering_ipc;
 mod store;
 mod terminal;
-
-mod git_workspace_commands {
-    #[tauri::command]
-    pub fn git_workspace_snapshot()
-    -> Result<repodesk_core::git_workspace::GitWorkspaceSnapshot, String> {
-        Ok(repodesk_core::git_workspace::build_git_workspace_snapshot())
-    }
-
-    /// Unified diff for a single changed file in the active project. `cached`
-    /// selects the staged diff; the path is repo-relative and traversal-guarded
-    /// in core.
-    #[tauri::command]
-    pub fn git_file_diff(path: String, cached: bool) -> Result<String, String> {
-        Ok(repodesk_core::git_workspace::active_file_diff(
-            &path, cached,
-        ))
-    }
-}
-
-/// Transitional compatibility commands used by the existing Changes/RepoPilot
-/// hooks. Filesystem safety and status parsing are now owned by the typed core
-/// Code Workspace instead of being duplicated in this Tauri entrypoint.
-mod code_workbench_commands {
-    use repodesk_core::code_workspace::{
-        CodeWorkspaceFileStatus, load_active_code_workspace, read_active_code_document,
-    };
-    use serde_json::json;
-
-    #[tauri::command]
-    pub fn code_workbench_snapshot() -> serde_json::Value {
-        match load_active_code_workspace() {
-            Ok(snapshot) => {
-                let changed_files = snapshot
-                    .files
-                    .iter()
-                    .filter(|file| file.status != CodeWorkspaceFileStatus::Clean)
-                    .map(|file| file.path.clone())
-                    .collect::<Vec<_>>();
-                json!({
-                    "connected": true,
-                    "changed_files": changed_files,
-                    "source": snapshot.source,
-                    "truncated": snapshot.truncated,
-                })
-            }
-            Err(error) => json!({
-                "connected": false,
-                "error": error.to_string(),
-                "changed_files": [],
-            }),
-        }
-    }
-
-    #[tauri::command]
-    pub fn read_code_file(relative_path: String) -> Result<serde_json::Value, String> {
-        let document =
-            read_active_code_document(&relative_path).map_err(|error| error.to_string())?;
-        Ok(json!({
-            "path": document.path,
-            "bytes": document.bytes,
-            "content": document.content,
-            "language": document.language,
-            "fingerprint": document.fingerprint,
-        }))
-    }
-}
 
 use tauri::Emitter;
 use tauri::Manager;
@@ -157,11 +85,11 @@ pub fn run() {
             code_workspace::code_workspace_rename,
             code_workspace::code_workspace_delete,
             code_library::code_library_read,
-            code_workbench_commands::read_code_file,
-            code_workbench_commands::code_workbench_snapshot,
-            git_workspace_commands::git_workspace_snapshot,
-            git_workspace_commands::git_file_diff,
-            ai_discovery_commands::ai_discovery_scan,
+            engineering_ipc::read_code_file,
+            engineering_ipc::code_workbench_snapshot,
+            engineering_ipc::git_workspace_snapshot,
+            engineering_ipc::git_file_diff,
+            engineering_ipc::ai_discovery_scan,
             commands::desktop_snapshot,
             commands::product_workflow_state,
             commands::work_phase_state,
