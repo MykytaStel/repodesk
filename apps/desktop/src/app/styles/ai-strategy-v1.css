@@ -1,0 +1,270 @@
+/* AI execution strategy ------------------------------------------------------
+   Strategy is a decision surface, not an AI dashboard. It stays visually
+   quieter than the Execution Packet while making the recommended plan shape,
+   token delta and reasons obvious before launch. */
+
+.ai-strategy-card {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.ai-strategy-heading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.ai-strategy-heading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ai-strategy-heading .eyebrow {
+  margin: 0;
+}
+
+.ai-strategy-heading strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.ai-strategy-heading small {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.ai-strategy-badge {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: .035em;
+  white-space: nowrap;
+}
+
+.ai-strategy-badge.profile-lean,
+.ai-strategy-badge.profile-local_first {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  color: var(--accent-2);
+}
+
+.ai-strategy-badge.profile-quality {
+  border-color: var(--warning-border);
+  background: color-mix(in srgb, var(--warning-soft) 42%, var(--bg));
+  color: var(--warning);
+}
+
+.ai-strategy-modes {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px 0;
+  background: var(--border);
+}
+
+.ai-strategy-modes button {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ai-strategy-modes button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.ai-strategy-modes button.selected {
+  position: relative;
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.ai-strategy-modes button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.ai-strategy-modes strong {
+  overflow: hidden;
+  font-size: 9.5px;
+  font-weight: 740;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-strategy-modes small {
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-strategy-comparison {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border-top: 1px solid var(--border);
+}
+
+.ai-strategy-comparison > div {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  min-height: 69px;
+  padding: 9px 11px;
+  background: var(--bg);
+}
+
+.ai-strategy-comparison span {
+  color: var(--muted-2);
+  font-size: 7.5px;
+  font-weight: 760;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.ai-strategy-comparison strong {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-strategy-comparison > div:first-child strong,
+.ai-strategy-comparison > div:nth-child(2) strong {
+  color: var(--accent-2);
+}
+
+.ai-strategy-comparison small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ai-strategy-reasons {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ai-strategy-reasons > summary {
+  padding: 9px 12px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 720;
+}
+
+.ai-strategy-reasons[open] > summary {
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.ai-strategy-reasons > div {
+  display: grid;
+}
+
+.ai-strategy-reasons p {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(105px, .32fr) minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-strategy-reasons p:last-child {
+  border-bottom: 0;
+}
+
+.ai-strategy-reasons p > span {
+  color: var(--muted-2);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.ai-strategy-reasons p > small {
+  color: var(--muted);
+  font-size: 8.5px;
+  line-height: 1.4;
+}
+
+/* Keep the decision surface visually connected to the packet it configures. */
+.ai-strategy-card + .exec-packet,
+.ai-strategy-card + .exec-packet-skeleton,
+.ai-strategy-card + .notice {
+  margin-top: 8px;
+}
+
+@media (max-width: 900px) {
+  .ai-strategy-modes {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ai-strategy-comparison {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .ai-strategy-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-strategy-badge {
+    align-self: flex-start;
+  }
+
+  .ai-strategy-modes,
+  .ai-strategy-comparison {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ai-strategy-reasons p {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-strategy-modes button {
+    transition: none;
+  }
+}
