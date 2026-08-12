@@ -11,6 +11,7 @@ import {
   type CodeWorkspaceDocument,
   type CodeWorkspaceFile,
   type CodeWorkspaceFileStatus,
+  type CodeWorkspaceMutationResult,
   type CodeWorkspaceOpenRequest,
 } from "../../shared/api/codeWorkspace";
 import { requestChangesOpen } from "../../shared/api/changesNavigation";
@@ -21,6 +22,7 @@ import type { TabId } from "../../shared/types/api";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
+import { CodeWorkspaceActions } from "./CodeWorkspaceActions";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
 import { LibraryTabBadge } from "./LibraryTabBadge";
 import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
@@ -356,6 +358,51 @@ export function CodeTab({
     setActiveTab("changes", "Review the current Git delta and evidence.");
   };
 
+  const refreshMutationProjections = useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: CODE_WORKSPACE_KEY }),
+      queryClient.invalidateQueries({ queryKey: ["git"] }),
+      queryClient.invalidateQueries({ queryKey: ["work"] }),
+      queryClient.invalidateQueries({ queryKey: ["repository"] }),
+    ]);
+  }, [queryClient]);
+
+  const handleWorkspaceMutation = useCallback(async (result: CodeWorkspaceMutationResult) => {
+    setWorkspaceError(null);
+
+    if (result.kind === "file_created") {
+      const document = await readCodeWorkspaceDocument(result.path);
+      let evictPath: string | null = null;
+      if (tabs.length >= MAX_OPEN_TABS) {
+        evictPath = tabs.find((tab) => !tab.dirty)?.path ?? null;
+        if (!evictPath) {
+          setWorkspaceError(`Created ${result.path}, but all ${MAX_OPEN_TABS} editor tabs have unsaved changes. Close or save one to open it.`);
+          await refreshMutationProjections();
+          return;
+        }
+      }
+      setTabs((current) => [
+        ...(evictPath ? current.filter((tab) => tab.path !== evictPath) : current),
+        toTab(document),
+      ]);
+      setActivePath(document.path);
+      setView("edit");
+    } else if (result.kind === "file_renamed" && result.previous_path) {
+      const document = await readCodeWorkspaceDocument(result.path);
+      setTabs((current) => current.map((tab) => (
+        tab.path === result.previous_path ? toTab(document) : tab
+      )));
+      setActivePath((current) => current === result.previous_path ? result.path : current);
+      setView("edit");
+    } else if (result.kind === "file_deleted") {
+      setTabs((current) => current.filter((tab) => tab.path !== result.path));
+      setActivePath((current) => current === result.path ? null : current);
+      setView("edit");
+    }
+
+    await refreshMutationProjections();
+  }, [refreshMutationProjections, tabs]);
+
   if (!hasProject) {
     return <div className="focus-empty">Connect a project to open the Code workspace.</div>;
   }
@@ -380,6 +427,15 @@ export function CodeTab({
             {dirtyCount > 0 ? <span className="warn">{dirtyCount} unsaved</span> : null}
           </div>
           <div className="code-workspace-actions">
+            <CodeWorkspaceActions
+              activeDocument={activeTab?.kind === "workspace" ? {
+                path: activeTab.path,
+                fingerprint: activeTab.fingerprint,
+                dirty: activeTab.dirty,
+              } : null}
+              onMutation={handleWorkspaceMutation}
+              onError={setWorkspaceError}
+            />
             {activeTab?.kind === "workspace" ? (
               <button
                 type="button"
