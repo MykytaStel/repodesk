@@ -1,9 +1,10 @@
 use repodesk_core::engineering::{
     ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
-    EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot, RunEvidenceSnapshot,
-    WorkItemContractSnapshot, WorkItemContractUpdate, accept_active_engineering_knowledge,
-    archive_active_engineering_knowledge, capture_active_verified_command,
-    derive_change_governance, derive_engineering_intelligence, derive_work_item_contract_snapshot,
+    EngineeringKnowledgeLifecycleReport, EngineeringKnowledgeProposalInput,
+    EngineeringKnowledgeSnapshot, RunEvidenceSnapshot, WorkItemContractSnapshot,
+    WorkItemContractUpdate, accept_active_engineering_knowledge, archive_active_engineering_knowledge,
+    capture_active_verified_command, derive_change_governance, derive_engineering_intelligence,
+    derive_engineering_knowledge_lifecycle, derive_work_item_contract_snapshot,
     link_active_acceptance_evidence, load_active_engineering_knowledge,
     load_active_run_evidence_from_events, load_context_inspector, propose_active_engineering_knowledge,
     read_events, read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
@@ -41,6 +42,7 @@ pub struct WorkEngineeringSnapshot {
     pub change_governance: Option<ChangeGovernanceSnapshot>,
     pub run_evidence: Option<RunEvidenceSnapshot>,
     pub knowledge: Option<EngineeringKnowledgeSnapshot>,
+    pub knowledge_lifecycle: Option<EngineeringKnowledgeLifecycleReport>,
 }
 
 /// Temporary RepoDesk 2 engineering transport. Task-local Work projections and
@@ -95,6 +97,9 @@ pub fn work_engineering_intelligence(
     if include_knowledge.unwrap_or(false) && knowledge.is_none() {
         knowledge = Some(load_active_engineering_knowledge().map_err(ErrorPayload::from)?);
     }
+    let knowledge_lifecycle = knowledge
+        .as_ref()
+        .map(derive_engineering_knowledge_lifecycle);
 
     let task = match show_active_task() {
         Ok(task) => task,
@@ -106,6 +111,7 @@ pub fn work_engineering_intelligence(
                 change_governance: None,
                 run_evidence: None,
                 knowledge,
+                knowledge_lifecycle,
             });
         }
         Err(error) => return Err(ErrorPayload::from(error)),
@@ -132,5 +138,6 @@ pub fn work_engineering_intelligence(
         change_governance: Some(change_governance),
         run_evidence,
         knowledge,
+        knowledge_lifecycle,
     })
 }
