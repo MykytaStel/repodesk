@@ -152,9 +152,9 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
         </button>
       </aside>
 
-      <main className="work-primary-pane" aria-label="Current Work Item">
+      <section className="work-primary-pane" aria-label="Current Work Item">
         <WorkTab setActiveTab={setActiveTab} />
-      </main>
+      </section>
 
       {inspector && inspectorMeta ? (
         <aside className="work-inspector-pane" aria-label={inspectorMeta.title}>
