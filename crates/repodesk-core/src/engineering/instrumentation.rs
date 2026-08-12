@@ -243,6 +243,58 @@ pub fn record_orchestration_run(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AiStrategyTelemetry<'a> {
+    pub requested_mode: &'a str,
+    pub resolved_profile: &'a str,
+    pub plan_shape: &'a str,
+    pub plan_fingerprint: &'a str,
+    pub baseline_steps: usize,
+    pub planned_steps: usize,
+    pub estimated_saved_tokens: usize,
+    pub context_fingerprint: Option<&'a str>,
+}
+
+/// Record which evidence-backed AI strategy produced a concrete run. This is
+/// best-effort telemetry only: failure to append it must never rewrite the
+/// already-observed execution outcome.
+pub fn record_ai_strategy_selected(
+    run: &OrchestrationRun,
+    telemetry: AiStrategyTelemetry<'_>,
+) -> RepoDeskResult<()> {
+    let task = active_task_for_run(run)?;
+    let event = event_for_task(&task, EngineeringEventKind::AiStrategySelected)?
+        .with_execution(execution_id(&run.run_id)?)
+        .with_attribute(
+            "requested_mode",
+            Value::String(telemetry.requested_mode.to_string()),
+        )
+        .with_attribute(
+            "resolved_profile",
+            Value::String(telemetry.resolved_profile.to_string()),
+        )
+        .with_attribute("plan_shape", Value::String(telemetry.plan_shape.to_string()))
+        .with_attribute(
+            "plan_fingerprint",
+            Value::String(telemetry.plan_fingerprint.to_string()),
+        )
+        .with_attribute("baseline_steps", json!(telemetry.baseline_steps))
+        .with_attribute("planned_steps", json!(telemetry.planned_steps))
+        .with_attribute(
+            "estimated_saved_tokens",
+            json!(telemetry.estimated_saved_tokens),
+        );
+    let event = if let Some(fingerprint) = telemetry.context_fingerprint {
+        event.with_attribute(
+            "context_fingerprint",
+            Value::String(fingerprint.to_string()),
+        )
+    } else {
+        event
+    };
+    append_for_task(&task, event)
+}
+
 pub fn record_changeset_reviewed(
     task: &TaskConfig,
     run_id: &str,
