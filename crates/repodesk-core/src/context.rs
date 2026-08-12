@@ -1,7 +1,10 @@
+use std::collections::HashSet;
 use std::fs;
 
+use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 
+use crate::context_freshness::apply_context_freshness;
 use crate::context_packing::{ContextPackingPolicy, pack_context_candidates};
 use crate::context_pipeline::{
     ContextCandidate, ContextPipelineSnapshot, ContextProvenance, ContextSelection,
@@ -9,9 +12,9 @@ use crate::context_pipeline::{
 };
 use crate::context_relevance::apply_context_relevance;
 use crate::engineering::{
-    ContextBuildTelemetry, ContextComponentTelemetry, WorkItemContract,
-    engineering_knowledge_context, read_work_item_contract, record_context_build,
-    select_task_scope_files, write_context_manifest,
+    ContextBuildTelemetry, ContextComponentTelemetry, EngineeringKnowledgeStatus, WorkItemContract,
+    engineering_knowledge_context, load_active_engineering_knowledge, read_work_item_contract,
+    record_context_build, select_task_scope_files, write_context_manifest,
 };
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::git_workspace::run_git_captured as run_git;
@@ -107,14 +110,22 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
         &knowledge_query,
         ENGINEERING_KNOWLEDGE_BUDGET_TOKENS,
     )?;
+    let engineering_knowledge_observed_at =
+        engineering_knowledge_observed_at(&engineering_knowledge.included_ids);
 
     // Legacy Memory Brain remains temporarily as a lower-priority compatibility
-    // slice. Accepted Engineering Knowledge above is the reviewed project memory
-    // that new RepoDesk 2 features should target.
-    let memory = match crate::memory::retrieval::memory_slice(&project.name, MEMORY_BUDGET_TOKENS) {
-        Ok(slice) if !slice.is_empty() => slice.markdown,
-        _ => read_optional_file(&project_meta_dir.join("memory.md")),
-    };
+    // slice. Keep the selected slice around long enough to attach provenance age
+    // to the shared Context Pipeline; fallback memory.md remains unevaluated.
+    let memory_slice = crate::memory::retrieval::memory_slice(&project.name, MEMORY_BUDGET_TOKENS)
+        .ok()
+        .filter(|slice| !slice.is_empty());
+    let memory_observed_at = memory_slice
+        .as_ref()
+        .and_then(|slice| memory_slice_observed_at(&project.name, &slice.included_ids));
+    let memory = memory_slice
+        .as_ref()
+        .map(|slice| slice.markdown.clone())
+        .unwrap_or_else(|| read_optional_file(&project_meta_dir.join("memory.md")));
     let decisions = read_optional_file(&project_meta_dir.join("decisions.md"));
     let risks = read_optional_file(&project_meta_dir.join("risks.md"));
 
@@ -221,6 +232,16 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     for candidate in &mut pipeline_candidates {
         apply_context_relevance(candidate, &relevance_text, &changed_files);
     }
+    apply_named_freshness(
+        &mut pipeline_candidates,
+        "engineering_knowledge",
+        engineering_knowledge_observed_at,
+    );
+    apply_named_freshness(
+        &mut pipeline_candidates,
+        "legacy_memory",
+        memory_observed_at,
+    );
 
     let budget_config = load_budget_config()?;
     let framing_tokens = estimate_text(&render_context_pack(&ContextPackInput::empty())).estimated_tokens;
@@ -390,6 +411,49 @@ pub fn estimate_active_context() -> RepoDeskResult<(String, TokenEstimate)> {
     let estimate = estimate_text(&content);
 
     Ok((context_file.display().to_string(), estimate))
+}
+
+fn engineering_knowledge_observed_at(included_ids: &[String]) -> Option<DateTime<Utc>> {
+    if included_ids.is_empty() {
+        return None;
+    }
+    let included = included_ids.iter().map(String::as_str).collect::<HashSet<_>>();
+    let snapshot = load_active_engineering_knowledge().ok()?;
+
+    snapshot
+        .records
+        .into_iter()
+        .filter(|record| record.status == EngineeringKnowledgeStatus::Accepted)
+        .filter(|record| included.contains(record.id.as_str()))
+        .map(|record| record.updated_at)
+        .min()
+}
+
+fn memory_slice_observed_at(project: &str, included_ids: &[i64]) -> Option<DateTime<Utc>> {
+    if included_ids.is_empty() {
+        return None;
+    }
+    let included = included_ids.iter().copied().collect::<HashSet<_>>();
+
+    crate::memory::store::list_active(project)
+        .ok()?
+        .into_iter()
+        .filter(|entry| included.contains(&entry.id))
+        .map(|entry| entry.updated_at.unwrap_or(entry.timestamp))
+        .min()
+}
+
+fn apply_named_freshness(
+    candidates: &mut [ContextCandidate],
+    candidate_id: &str,
+    observed_at: Option<DateTime<Utc>>,
+) {
+    if let Some(candidate) = candidates
+        .iter_mut()
+        .find(|candidate| candidate.id == candidate_id)
+    {
+        apply_context_freshness(candidate, observed_at);
+    }
 }
 
 fn build_pipeline_candidates(
@@ -688,7 +752,7 @@ fn fallback_empty<'a>(value: &'a str, fallback: &'a str) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
+    use chrono::{Duration, Utc};
 
     #[test]
     fn component_telemetry_records_trimming_without_raw_text() {
@@ -792,5 +856,40 @@ mod tests {
         }];
 
         assert_eq!(selected_component("legacy_memory", "secret payload", &selections), "");
+    }
+
+    #[test]
+    fn named_freshness_updates_only_the_target_candidate() {
+        let input = ContextPackInput {
+            project_metadata: "project",
+            task_metadata: "task meta",
+            work_item_contract: "contract",
+            task_markdown: "task body",
+            scoped_files: "files",
+            engineering_knowledge: "knowledge",
+            memory: "memory",
+            decisions: "decisions",
+            risks: "risks",
+            checks: "checks",
+            ignore_rules: "ignore",
+            git_state: "git",
+            agent_notes: "notes",
+        };
+        let mut candidates = build_pipeline_candidates(&input, true);
+        let observed_at = Utc::now() - Duration::days(30);
+
+        apply_named_freshness(&mut candidates, "legacy_memory", Some(observed_at));
+
+        let memory = candidates
+            .iter()
+            .find(|candidate| candidate.id == "legacy_memory")
+            .unwrap();
+        let knowledge = candidates
+            .iter()
+            .find(|candidate| candidate.id == "engineering_knowledge")
+            .unwrap();
+        assert_eq!(memory.provenance.observed_at, Some(observed_at));
+        assert_eq!(memory.freshness_score, Some(0.5));
+        assert_eq!(knowledge.freshness_score, None);
     }
 }
