@@ -32,6 +32,12 @@ type ExecutionPacketPreview = ExecutionPreview & {
   };
 };
 
+type ExecutionApproval = {
+  fingerprint: string;
+  approveCodingAgents: boolean;
+  approvePaid: boolean;
+};
+
 const PHASE_COPY: Record<Phase, { detail: string; next: string }> = {
   scope: {
     detail: "Bind one project and one Work Item before RepoDesk prepares or delegates anything.",
@@ -76,8 +82,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const queryClient = useQueryClient();
   const { hasProject, hasTask, projectName } = useWorkspace();
   const { git } = useGit();
-  const [approveCodingAgents, setApproveCodingAgents] = useState(false);
-  const [approvePaid, setApprovePaid] = useState(false);
+  const [executionApproval, setExecutionApproval] = useState<ExecutionApproval | null>(null);
   const [strategyMode, setStrategyMode] = useState<AiStrategyMode>("auto");
   const [commitMessage, setCommitMessage] = useState("");
   const [importPatch, setImportPatch] = useState("");
@@ -109,6 +114,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     mutationFn: (mode: api.ExecutionMode) => api.workSetExecutionMode(mode),
     onSuccess: (next) => {
       setPhase(next);
+      setExecutionApproval(null);
       void queryClient.invalidateQueries({ queryKey: ["work", "exec-preview"] });
     },
   });
@@ -119,14 +125,24 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   });
 
   const runAgent = useMutation({
-    mutationFn: () => strategyApi.orchestrateStrategyRun({
-      strategyMode,
-      expectedPlanFingerprint: executePreview.data?.plan_fingerprint ?? null,
-      approvePaid,
-      approveCodingAgents,
-    }),
+    mutationFn: () => {
+      const planFingerprint = executePreview.data?.plan_fingerprint ?? null;
+      const approvalMatches = Boolean(
+        planFingerprint && executionApproval?.fingerprint === planFingerprint,
+      );
+      return strategyApi.orchestrateStrategyRun({
+        strategyMode,
+        expectedPlanFingerprint: planFingerprint,
+        approvalPlanFingerprint: approvalMatches ? executionApproval?.fingerprint ?? null : null,
+        approvePaid: approvalMatches ? executionApproval?.approvePaid ?? false : false,
+        approveCodingAgents: approvalMatches
+          ? executionApproval?.approveCodingAgents ?? false
+          : false,
+      });
+    },
     onSuccess: (run) => {
       queryClient.setQueryData(LATEST_RUN_KEY, run);
+      setExecutionApproval(null);
       void refreshWork(["work", "git", "code", "runs"]);
     },
   });
@@ -207,6 +223,17 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     runCta.isPending || runAgent.isPending || review.isPending || verify.isPending || importManual.isPending || commit.isPending;
   const strategyPreview = executePreview.data ?? null;
   const preview = (strategyPreview?.execution as ExecutionPacketPreview | undefined) ?? null;
+  const planFingerprint = strategyPreview?.plan_fingerprint ?? null;
+  const approvalMatchesPreview = Boolean(
+    planFingerprint && executionApproval?.fingerprint === planFingerprint,
+  );
+  const approveCodingAgents = approvalMatchesPreview
+    ? executionApproval?.approveCodingAgents ?? false
+    : false;
+  const approvePaid = approvalMatchesPreview ? executionApproval?.approvePaid ?? false : false;
+  const approvalsStale = Boolean(
+    executionApproval && planFingerprint && executionApproval.fingerprint !== planFingerprint,
+  );
   const executeApprovalsMet =
     Boolean(preview) &&
     (!preview?.requires_coding_agent_approval || approveCodingAgents) &&
@@ -225,9 +252,25 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     null;
 
   function changeStrategy(next: AiStrategyMode) {
-    setApproveCodingAgents(false);
-    setApprovePaid(false);
+    setExecutionApproval(null);
     setStrategyMode(next);
+  }
+
+  function updateExecutionApproval(kind: "coding" | "paid", checked: boolean) {
+    const fingerprint = executePreview.data?.plan_fingerprint;
+    if (!fingerprint) return;
+    setExecutionApproval((current) => {
+      const base: ExecutionApproval = current?.fingerprint === fingerprint
+        ? current
+        : {
+            fingerprint,
+            approveCodingAgents: false,
+            approvePaid: false,
+          };
+      return kind === "coding"
+        ? { ...base, approveCodingAgents: checked }
+        : { ...base, approvePaid: checked };
+    });
   }
 
   function handlePrimary() {
@@ -339,13 +382,21 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                   <div className="exec-approval-heading">
                     <div>
                       <strong>Launch approvals</strong>
-                      <small>Nothing gated launches until you grant the matching capability.</small>
+                      <small>
+                        {approvalsStale
+                          ? "The execution packet changed after approval. Re-approve the current plan lock before launch."
+                          : "Nothing gated launches until you grant the matching capability for this exact plan lock."}
+                      </small>
                     </div>
                     <span>{executeApprovalsMet ? "ready" : "action required"}</span>
                   </div>
                   <div className="approval-stack">
                     <label className={`approval-check${preview?.requires_coding_agent_approval && !approveCodingAgents ? " required" : ""}`}>
-                      <input type="checkbox" checked={approveCodingAgents} onChange={(event) => setApproveCodingAgents(event.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={approveCodingAgents}
+                        onChange={(event) => updateExecutionApproval("coding", event.target.checked)}
+                      />
                       <span>
                         <strong>Coding agent + isolated writes</strong>
                         <small>{preview?.requires_coding_agent_approval ? "Allows the approved CLI to write only in its run worktree." : "Not required by this route."}</small>
@@ -353,7 +404,11 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                       {preview?.requires_coding_agent_approval ? <span className="approval-required">required</span> : null}
                     </label>
                     <label className={`approval-check${preview?.requires_paid_approval && !approvePaid ? " required" : ""}`}>
-                      <input type="checkbox" checked={approvePaid} onChange={(event) => setApprovePaid(event.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={approvePaid}
+                        onChange={(event) => updateExecutionApproval("paid", event.target.checked)}
+                      />
                       <span>
                         <strong>Paid provider spend</strong>
                         <small>{preview?.requires_paid_approval ? "Allows the routed paid completion calls shown above." : "This packet does not require paid-provider approval."}</small>
