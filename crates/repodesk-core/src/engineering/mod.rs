@@ -20,6 +20,7 @@ pub mod knowledge;
 pub mod knowledge_lifecycle;
 pub mod run_evidence;
 pub mod run_observability;
+pub mod strategy_adaptation;
 pub mod strategy_feedback;
 pub mod work_item_contract;
 
@@ -33,7 +34,6 @@ pub use acceptance_evidence::{
 pub use ai_strategy::{
     AiPlanShape, AiStrategyInputs, AiStrategyMode, AiStrategyProfile, AiStrategyReason,
     AiStrategyReasonCode, AiStrategyRecommendation, derive_ai_strategy,
-    derive_ai_strategy_with_feedback,
 };
 pub use ai_usage_intelligence::{
     AiContextEfficiency, AiOrchestrationEfficiency, AiOutcomeEfficiency, AiUsageReport,
@@ -110,6 +110,7 @@ pub use run_observability::{
     RunContextObservability, RunDisposition, RunDispositionStage, RunDispositionState,
     RunEfficiency, RunObservabilityReport, RunStrategyObservability, derive_run_observability,
 };
+pub use strategy_adaptation::derive_ai_strategy_with_feedback;
 pub use strategy_feedback::{
     STRATEGY_FEEDBACK_MIN_SETTLED_RUNS, StrategyFeedbackReport, StrategyOutcomeState,
     StrategyProfileFeedback, StrategyRunFeedback, derive_strategy_feedback,
