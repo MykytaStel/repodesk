@@ -63,6 +63,25 @@ export type CodeQuickOpenResult = {
   status: CodeWorkspaceFileStatus;
 };
 
+export type CodeProjectSearchMatch = {
+  path: string;
+  line: number;
+  column: number;
+  end_column: number;
+  preview: string;
+};
+
+export type CodeProjectSearchResult = {
+  query: string;
+  case_sensitive: boolean;
+  matches: CodeProjectSearchMatch[];
+  scanned_files: number;
+  scanned_bytes: number;
+  skipped_files: number;
+  truncated: boolean;
+  workspace_truncated: boolean;
+};
+
 export type CodeLibraryDocument = {
   handle: string;
   display_path: string;
@@ -92,6 +111,20 @@ export async function codeWorkspaceSnapshot(): Promise<CodeWorkspaceSnapshot> {
 
 export async function codeWorkspaceQuickOpen(query: string, limit = 50): Promise<CodeQuickOpenResult[]> {
   return invoke("code_workspace_quick_open", { query, limit });
+}
+
+export async function searchCodeWorkspaceProject(input: {
+  query: string;
+  case_sensitive?: boolean;
+  limit?: number;
+}): Promise<CodeProjectSearchResult> {
+  return invoke("code_workspace_project_search", {
+    input: {
+      query: input.query,
+      case_sensitive: input.case_sensitive ?? false,
+      limit: input.limit ?? 200,
+    },
+  });
 }
 
 export async function readCodeWorkspaceDocument(path: string): Promise<CodeWorkspaceDocument> {
