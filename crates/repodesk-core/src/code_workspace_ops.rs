@@ -44,6 +44,7 @@ pub struct CodeWorkspaceMutationResult {
     pub path: String,
     pub previous_path: Option<String>,
     pub kind: String,
+    pub language: Option<String>,
 }
 
 pub fn create_active_code_file(
@@ -90,8 +91,10 @@ pub fn create_code_file(
     file.sync_all()?;
     sync_directory(&target.parent)?;
 
+    let path = slash_path(&target.relative);
     Ok(CodeWorkspaceMutationResult {
-        path: slash_path(&target.relative),
+        language: Some(language_for_path(&path).to_string()),
+        path,
         previous_path: None,
         kind: "file_created".into(),
     })
@@ -113,6 +116,7 @@ pub fn create_code_directory(
         path: slash_path(&target.relative),
         previous_path: None,
         kind: "directory_created".into(),
+        language: None,
     })
 }
 
@@ -128,22 +132,29 @@ pub fn rename_code_path(
 
     if source.metadata.is_file() {
         validate_expected_fingerprint(&source.path, input.expected_fingerprint.as_deref())?;
-    } else if input.expected_fingerprint.as_deref().is_some_and(|value| !value.trim().is_empty()) {
+    } else if input
+        .expected_fingerprint
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
         return Err(RepoDeskError::Api(
             "Directory rename does not accept a file fingerprint".into(),
         ));
     }
 
+    let is_directory = source.metadata.is_dir();
     fs::rename(&source.path, &destination.path)?;
     sync_directory(&source.parent)?;
     if source.parent != destination.parent {
         sync_directory(&destination.parent)?;
     }
 
+    let path = slash_path(&destination.relative);
     Ok(CodeWorkspaceMutationResult {
-        path: slash_path(&destination.relative),
+        language: (!is_directory).then(|| language_for_path(&path).to_string()),
+        path,
         previous_path: Some(slash_path(&source.relative)),
-        kind: if source.metadata.is_dir() {
+        kind: if is_directory {
             "directory_renamed".into()
         } else {
             "file_renamed".into()
@@ -156,13 +167,21 @@ pub fn delete_code_path(
     input: CodeWorkspaceDeleteInput,
 ) -> RepoDeskResult<CodeWorkspaceMutationResult> {
     let target = resolve_existing_path(project_path, &input.path)?;
+    let display_path = slash_path(&target.relative);
 
-    let kind = if target.metadata.is_file() {
+    let (kind, language) = if target.metadata.is_file() {
         validate_expected_fingerprint(&target.path, input.expected_fingerprint.as_deref())?;
         fs::remove_file(&target.path)?;
-        "file_deleted"
+        (
+            "file_deleted",
+            Some(language_for_path(&display_path).to_string()),
+        )
     } else if target.metadata.is_dir() {
-        if input.expected_fingerprint.as_deref().is_some_and(|value| !value.trim().is_empty()) {
+        if input
+            .expected_fingerprint
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        {
             return Err(RepoDeskError::Api(
                 "Directory delete does not accept a file fingerprint".into(),
             ));
@@ -170,7 +189,7 @@ pub fn delete_code_path(
         // Intentionally non-recursive. A directory with repository content must
         // never disappear because one UI action expanded to `remove_dir_all`.
         fs::remove_dir(&target.path)?;
-        "directory_deleted"
+        ("directory_deleted", None)
     } else {
         return Err(RepoDeskError::Api(
             "Code workspace path is neither a regular file nor directory".into(),
@@ -179,9 +198,10 @@ pub fn delete_code_path(
     sync_directory(&target.parent)?;
 
     Ok(CodeWorkspaceMutationResult {
-        path: slash_path(&target.relative),
+        path: display_path,
         previous_path: None,
         kind: kind.into(),
+        language,
     })
 }
 
@@ -201,7 +221,7 @@ struct NewPath {
 fn resolve_existing_path(project_path: &Path, value: &str) -> RepoDeskResult<ExistingPath> {
     let root = project_path.canonicalize()?;
     let relative = validate_relative_path(value)?;
-    reject_symlink_components(&root, &relative, true)?;
+    reject_symlink_components(&root, &relative, false)?;
     let joined = root.join(&relative);
     let canonical = joined.canonicalize()?;
     if !canonical.starts_with(&root) {
@@ -228,7 +248,7 @@ fn resolve_new_path(project_path: &Path, value: &str) -> RepoDeskResult<NewPath>
         .parent()
         .ok_or_else(|| RepoDeskError::Api("Code workspace path has no parent".into()))?;
 
-    reject_symlink_components(&root, parent_relative, true)?;
+    reject_symlink_components(&root, parent_relative, false)?;
     let parent = root.join(parent_relative).canonicalize()?;
     if !parent.starts_with(&root) {
         return Err(RepoDeskError::Api("Path escapes active project".into()));
@@ -290,11 +310,7 @@ fn validate_relative_path(value: &str) -> RepoDeskResult<PathBuf> {
     Ok(normalized)
 }
 
-fn reject_symlink_components(
-    root: &Path,
-    relative: &Path,
-    allow_missing_final: bool,
-) -> RepoDeskResult<()> {
+fn reject_symlink_components(root: &Path, relative: &Path, allow_missing_final: bool) -> RepoDeskResult<()> {
     let mut current = root.to_path_buf();
     let components = relative.components().collect::<Vec<_>>();
     for (index, component) in components.iter().enumerate() {
@@ -405,6 +421,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(created.path, "src/new.rs");
+        assert_eq!(created.language.as_deref(), Some("rust"));
 
         let content = fs::read(root.path().join("src/new.rs")).unwrap();
         let renamed = rename_code_path(
@@ -484,10 +501,5 @@ mod tests {
         );
         assert!(result.is_err());
         assert!(!outside.path().join("escape.txt").exists());
-    }
-
-    #[test]
-    fn language_mapping_remains_shared_with_editor_documents() {
-        assert_eq!(language_for_path("src/new.rs"), "rust");
     }
 }
