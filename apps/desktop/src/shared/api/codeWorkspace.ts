@@ -49,6 +49,13 @@ export type CodeWorkspaceSaveResult = {
   changed: boolean;
 };
 
+export type CodeWorkspaceMutationResult = {
+  path: string;
+  previous_path: string | null;
+  kind: string;
+  language: string | null;
+};
+
 export type CodeLibraryDocument = {
   handle: string;
   display_path: string;
@@ -86,6 +93,34 @@ export async function saveCodeWorkspaceDocument(input: {
   expected_fingerprint: string;
 }): Promise<CodeWorkspaceSaveResult> {
   return invoke("code_workspace_save", { input });
+}
+
+export async function createCodeWorkspaceFile(input: {
+  path: string;
+  content?: string;
+}): Promise<CodeWorkspaceMutationResult> {
+  return invoke("code_workspace_create_file", {
+    input: { path: input.path, content: input.content ?? "" },
+  });
+}
+
+export async function createCodeWorkspaceDirectory(path: string): Promise<CodeWorkspaceMutationResult> {
+  return invoke("code_workspace_create_directory", { relativePath: path });
+}
+
+export async function renameCodeWorkspacePath(input: {
+  path: string;
+  new_path: string;
+  expected_fingerprint?: string | null;
+}): Promise<CodeWorkspaceMutationResult> {
+  return invoke("code_workspace_rename", { input });
+}
+
+export async function deleteCodeWorkspacePath(input: {
+  path: string;
+  expected_fingerprint?: string | null;
+}): Promise<CodeWorkspaceMutationResult> {
+  return invoke("code_workspace_delete", { input });
 }
 
 export async function readCodeLibraryDocument(handle: string): Promise<CodeLibraryDocument> {
