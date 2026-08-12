@@ -12,9 +12,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::code_workspace::{
-    CodeWorkspaceFile, CodeWorkspaceFileStatus, load_code_workspace,
-};
+use crate::code_workspace::{CodeWorkspaceFile, CodeWorkspaceFileStatus, load_code_workspace};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::projects::get_active_project;
 
@@ -77,10 +75,7 @@ fn quick_open_index() -> &'static Mutex<BTreeMap<PathBuf, QuickOpenIndexEntry>> 
     QUICK_OPEN_INDEX.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
-fn indexed_files(
-    project_name: &str,
-    root: &Path,
-) -> RepoDeskResult<Arc<Vec<CodeWorkspaceFile>>> {
+fn indexed_files(project_name: &str, root: &Path) -> RepoDeskResult<Arc<Vec<CodeWorkspaceFile>>> {
     if let Ok(cache) = quick_open_index().lock()
         && let Some(entry) = cache.get(root)
         && entry.project == project_name
@@ -142,9 +137,7 @@ fn rank_quick_open_results(
         .collect::<Vec<_>>();
 
     ranked.sort_by(|(left_file, left_rank), (right_file, right_rank)| {
-        compare_rank(*left_rank, *right_rank)
-            .then_with(|| normalize(&left_file.path).cmp(&normalize(&right_file.path)))
-            .then_with(|| left_file.path.cmp(&right_file.path))
+        compare_rank(*left_rank, *right_rank).then_with(|| left_file.path.cmp(&right_file.path))
     });
 
     ranked
@@ -216,7 +209,10 @@ fn subsequence_gap(text: &str, query: &str) -> Option<usize> {
     let mut last = 0;
 
     for query_char in &query {
-        let relative = text.get(cursor..)?.iter().position(|candidate| candidate == query_char)?;
+        let relative = text
+            .get(cursor..)?
+            .iter()
+            .position(|candidate| candidate == query_char)?;
         let absolute = cursor + relative;
         first.get_or_insert(absolute);
         last = absolute;

@@ -63,6 +63,7 @@ export function CommandPalette({
     }
 
     const serial = ++searchSerialRef.current;
+    setRemoteCommands([]);
     const timer = window.setTimeout(() => {
       setRemoteLoading(true);
       void searchCommands(normalized)
