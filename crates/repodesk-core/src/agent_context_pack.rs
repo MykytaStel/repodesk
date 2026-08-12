@@ -1,19 +1,19 @@
 //! Agent context packs for Codex/Claude/Cursor handoffs.
 //!
-//! The pack is deliberately structural: it names the task, repo shape, current
-//! Git state, durable artifacts, and verification commands without dumping raw
-//! repository file bodies. That keeps it safe to paste into paid or local agents
-//! as the durable "start here" briefing.
+//! The default pack is now a projection of the canonical Context Pipeline. It
+//! must not rediscover repository structure or inject extra context that is not
+//! visible in Context Evidence. The legacy structural formatter remains public
+//! for compatibility, but `build_agent_context_pack` no longer uses it.
 
 use std::path::PathBuf;
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use crate::errors::RepoDeskResult;
-use crate::git_workspace::{GitFileChange, build_git_workspace_snapshot};
-use crate::projects::get_active_project;
-use crate::repo_map::{RepoMap, build_repo_map, format_hotspots};
+use crate::git_workspace::GitFileChange;
+use crate::repo_map::{RepoMap, format_hotspots};
 use crate::tasks::{TaskConfig, show_active_task};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +23,9 @@ pub struct AgentContextPackResult {
     pub size_bytes: u64,
 }
 
+/// Legacy structural formatter input kept for compatibility with callers that
+/// still render a standalone structural briefing. New agent execution must use
+/// the canonical Context Pipeline via [`build_agent_context_pack`].
 #[derive(Debug, Clone)]
 pub struct AgentContextPackInput {
     pub project_name: String,
@@ -45,32 +48,30 @@ pub struct PackArtifact {
     pub exists: bool,
 }
 
+/// Build a manual agent handoff from the exact same selected `context.md` that
+/// orchestration consumes. `build_context` also persists and validates the
+/// matching `context-pipeline.json`; this wrapper adds metadata only, never a
+/// second repository/context discovery pass.
 pub async fn build_agent_context_pack() -> RepoDeskResult<AgentContextPackResult> {
     crate::init::init_home()?;
 
-    let project = get_active_project()?;
     let task = show_active_task()?.config;
-    let repo_map = build_repo_map().await?;
-    let git = build_git_workspace_snapshot();
-    let artifacts = pack_artifacts(&task);
+    let context = crate::context::build_context()?;
+    let canonical = tokio::fs::read_to_string(&context.context_file).await?;
+    let fingerprint = sha256_hex(&canonical);
+    let pipeline_path = task.run_dir.join("context-pipeline.json");
 
-    let content = format_agent_context_pack(&AgentContextPackInput {
-        project_name: project.name,
-        project_path: project.path.display().to_string(),
-        project_type: project.project_type,
-        main_language: project.main_language,
-        checks: project.checks,
-        task: task.clone(),
-        repo_map,
-        branch: git.branch,
-        last_commit: git.last_commit,
-        changed_files: git.changed_files,
-        artifacts,
-    });
+    let content = format_canonical_agent_context_pack(
+        &canonical,
+        &context.context_file,
+        &pipeline_path.display().to_string(),
+        &fingerprint,
+        context.estimate.estimated_tokens,
+    );
 
     let path = task.run_dir.join("agent-context-pack.md");
-    std::fs::write(&path, &content)?;
-    let size_bytes = std::fs::metadata(&path).map(|metadata| metadata.len())?;
+    tokio::fs::write(&path, &content).await?;
+    let size_bytes = tokio::fs::metadata(&path).await?.len();
 
     Ok(AgentContextPackResult {
         path,
@@ -79,12 +80,43 @@ pub async fn build_agent_context_pack() -> RepoDeskResult<AgentContextPackResult
     })
 }
 
+fn format_canonical_agent_context_pack(
+    canonical: &str,
+    context_path: &str,
+    pipeline_path: &str,
+    fingerprint: &str,
+    estimated_tokens: usize,
+) -> String {
+    format!(
+        "# RepoDesk Agent Context Pack\n\n\
+Generated: `{generated}`\n\
+Source: canonical RepoDesk Context Pipeline\n\
+Context artifact: `{context_path}`\n\
+Pipeline evidence: `{pipeline_path}`\n\
+Context fingerprint: `{fingerprint}`\n\
+Estimated canonical tokens: `{estimated_tokens}`\n\n\
+Boundary: the section below is the exact selected context built by RepoDesk. \
+No repository map, memory, file body, Git fact, or project rule is added outside \
+that canonical selection.\n\n\
+## Canonical selected context\n\n\
+{canonical}",
+        generated = Utc::now().to_rfc3339(),
+    )
+}
+
+fn sha256_hex(value: &str) -> String {
+    hex::encode(Sha256::digest(value.as_bytes()))
+}
+
+/// Legacy structural formatter. Kept so external/internal callers do not break
+/// during the migration, but orchestration and the default handoff builder no
+/// longer use this parallel context projection.
 pub fn format_agent_context_pack(input: &AgentContextPackInput) -> String {
     let mut out = String::new();
     out.push_str("# RepoDesk Agent Context Pack\n\n");
     out.push_str(&format!("Generated: `{}`\n", Utc::now().to_rfc3339()));
     out.push_str(
-        "Purpose: paste this into Codex, Claude Code, Cursor, or a local agent before the task.\n",
+        "Purpose: legacy structural briefing. Prefer the canonical Context Pipeline for execution.\n",
     );
     out.push_str(
         "Boundary: this pack is structural; it does not include raw repository file contents.\n\n",
@@ -194,29 +226,6 @@ pub fn format_agent_context_pack(input: &AgentContextPackInput) -> String {
     out
 }
 
-fn pack_artifacts(task: &TaskConfig) -> Vec<PackArtifact> {
-    [
-        ("Task", "task.md"),
-        ("Context", "context.md"),
-        ("Smart context", "smart-context.md"),
-        ("Codex prompt", "prompt.codex.md"),
-        ("ChatGPT prompt", "prompt.chatgpt.md"),
-        ("Review prompt", "prompt.review.md"),
-        ("Checks summary", "checks-summary.md"),
-        ("Token estimate", "token-estimate.txt"),
-    ]
-    .into_iter()
-    .map(|(label, file)| {
-        let path = task.run_dir.join(file);
-        PackArtifact {
-            label: label.to_string(),
-            path: path.display().to_string(),
-            exists: path.exists(),
-        }
-    })
-    .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -271,11 +280,35 @@ mod tests {
     }
 
     #[test]
-    fn context_pack_is_structural_and_task_scoped() {
+    fn canonical_handoff_contains_exact_selected_context_without_rediscovery() {
+        let canonical = "# RepoDesk Context Pack\n\nONLY SELECTED MATERIAL";
+        let text = format_canonical_agent_context_pack(
+            canonical,
+            "/tmp/context.md",
+            "/tmp/context-pipeline.json",
+            "abc123",
+            321,
+        );
+
+        assert!(text.contains(canonical));
+        assert!(text.contains("Source: canonical RepoDesk Context Pipeline"));
+        assert!(text.contains("Context fingerprint: `abc123`"));
+        assert!(text.contains("Estimated canonical tokens: `321`"));
+        assert!(!text.contains("## Repository Map"));
+    }
+
+    #[test]
+    fn legacy_context_pack_is_structural_and_task_scoped() {
         let text = format_agent_context_pack(&sample_input());
         assert!(text.contains("Fix auth redirect"));
         assert!(text.contains("cargo test --workspace"));
         assert!(text.contains("Boundary: this pack is structural"));
         assert!(text.contains("Cargo.toml"));
+    }
+
+    #[test]
+    fn canonical_fingerprint_is_stable_for_same_context() {
+        assert_eq!(sha256_hex("same"), sha256_hex("same"));
+        assert_ne!(sha256_hex("same"), sha256_hex("different"));
     }
 }
