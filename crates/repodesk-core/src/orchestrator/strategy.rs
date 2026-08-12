@@ -14,7 +14,7 @@ use crate::engineering::{
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
 use crate::routing::engine::route_request_with_bias;
-use crate::routing::types::{RouteRequest, TaskKind};
+use crate::routing::types::RouteRequest;
 use crate::tasks::show_active_task;
 use crate::usage::budget::load_budget_config;
 
@@ -158,8 +158,8 @@ fn reroute_read_only_steps(
 mod tests {
     use super::*;
     use crate::api_clients::ThinkingLevel;
-    use crate::routing::types::ExecutorKind;
     use crate::orchestrator::types::SubAgentTask;
+    use crate::routing::types::{ExecutorKind, TaskKind};
 
     fn step(id: &str, allow_write: bool, depends_on: &[&str]) -> SubAgentTask {
         SubAgentTask {
