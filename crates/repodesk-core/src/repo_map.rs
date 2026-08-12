@@ -1,16 +1,19 @@
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 
 use serde::{Deserialize, Serialize};
 
-use crate::errors::RepoDeskResult;
+use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::projects::get_active_project;
 
 const MAX_SCAN_DEPTH: usize = 8;
 const MAX_FILES_SCANNED: usize = 2_000;
 const HOTSPOT_BYTE_LIMIT: u64 = 80_000;
 const MAX_HOTSPOTS: usize = 15;
+const MAX_CONTEXT_LANGUAGES: usize = 10;
+const MAX_CONTEXT_IMPORTANT_FILES: usize = 20;
+const MAX_CONTEXT_HOTSPOTS: usize = 10;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoMap {
@@ -39,10 +42,31 @@ pub struct FileHotspot {
     pub reason: String,
 }
 
+/// Async adapter for UI/CLI callers. The scanner itself is synchronous so the
+/// canonical context builder can reuse exactly the same algorithm; async callers
+/// run that bounded local filesystem work on Tokio's blocking pool.
 pub async fn build_repo_map() -> RepoDeskResult<RepoMap> {
     let project = get_active_project()?;
-    let mut scanner = RepoScanner::new(project.name.clone(), project.path.clone());
-    scanner.scan_dir(&project.path, 0).await?;
+    let name = project.name;
+    let path = project.path;
+    tokio::task::spawn_blocking(move || build_repo_map_for(name, path))
+        .await
+        .map_err(|error| RepoDeskError::Api(format!("repository map worker failed: {error}")))?
+}
+
+pub fn build_repo_map_sync() -> RepoDeskResult<RepoMap> {
+    let project = get_active_project()?;
+    build_repo_map_for(project.name, project.path)
+}
+
+/// Deterministic repository map for a resolved project.
+///
+/// Directory entries are sorted before traversal, so the 2k-file safety cap
+/// produces the same bounded map across filesystems instead of depending on
+/// `read_dir` iteration order. Symlinks are not followed.
+pub fn build_repo_map_for(project_name: String, project_path: PathBuf) -> RepoDeskResult<RepoMap> {
+    let mut scanner = RepoScanner::new(project_name, project_path.clone());
+    scanner.scan_dir(&project_path, 0)?;
     Ok(scanner.finish())
 }
 
@@ -80,6 +104,66 @@ pub fn format_repo_map(map: &RepoMap) -> String {
 
     output.push_str("\nHotspots:\n");
     output.push_str(&format_hotspots(map));
+
+    output
+}
+
+/// Compact structural projection intended for the Context Pipeline.
+///
+/// It contains repository metadata and paths only — never source-file bodies.
+/// All lists are deterministically bounded so the source remains cheap enough to
+/// compete for context budget rather than acting as an implicit repo dump.
+pub fn format_repo_context(map: &RepoMap) -> String {
+    let mut output = String::new();
+    output.push_str(&format!(
+        "Files scanned: {}{}\nDirectories scanned: {}\nSkipped directories: {}\nApproximate bytes: {}\n",
+        map.files_scanned,
+        if map.files_scanned >= MAX_FILES_SCANNED {
+            " (scan cap reached)"
+        } else {
+            ""
+        },
+        map.dirs_scanned,
+        map.skipped_dirs,
+        map.total_bytes,
+    ));
+
+    output.push_str("\nPrimary languages / file groups:\n");
+    if map.languages.is_empty() {
+        output.push_str("- none detected\n");
+    } else {
+        for language in map.languages.iter().take(MAX_CONTEXT_LANGUAGES) {
+            output.push_str(&format!(
+                "- {}: {} files, {} bytes\n",
+                language.label, language.files, language.bytes
+            ));
+        }
+    }
+
+    output.push_str("\nImportant structural files:\n");
+    if map.important_files.is_empty() {
+        output.push_str("- none detected\n");
+    } else {
+        for path in map
+            .important_files
+            .iter()
+            .take(MAX_CONTEXT_IMPORTANT_FILES)
+        {
+            output.push_str(&format!("- `{path}`\n"));
+        }
+    }
+
+    output.push_str("\nLarge-file hotspots:\n");
+    if map.hotspots.is_empty() {
+        output.push_str("- none detected\n");
+    } else {
+        for hotspot in map.hotspots.iter().take(MAX_CONTEXT_HOTSPOTS) {
+            output.push_str(&format!(
+                "- `{}`: {} bytes — {}\n",
+                hotspot.path, hotspot.bytes, hotspot.reason
+            ));
+        }
+    }
 
     output
 }
@@ -124,8 +208,10 @@ impl RepoScanner {
         }
     }
 
-    #[async_recursion::async_recursion]
-    async fn scan_dir(&mut self, dir: &Path, depth: usize) -> RepoDeskResult<()> {
+    fn scan_dir(&mut self, dir: &Path, depth: usize) -> RepoDeskResult<()> {
+        if self.files_scanned >= MAX_FILES_SCANNED {
+            return Ok(());
+        }
         if depth > MAX_SCAN_DEPTH {
             self.skipped_dirs += 1;
             return Ok(());
@@ -133,40 +219,51 @@ impl RepoScanner {
 
         self.dirs_scanned += 1;
 
-        let mut entries = match fs::read_dir(dir).await {
+        let read_dir = match fs::read_dir(dir) {
             Ok(entries) => entries,
             Err(_) => return Ok(()),
         };
+        let mut entries = read_dir.filter_map(Result::ok).collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
 
-        while let Ok(Some(entry)) = entries.next_entry().await {
+        for entry in entries {
+            if self.files_scanned >= MAX_FILES_SCANNED {
+                break;
+            }
+
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
-
-            let metadata = match fs::metadata(&path).await {
-                Ok(m) => m,
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
                 Err(_) => continue,
             };
 
-            if metadata.is_dir() {
+            // Repository structure must never escape the project through a
+            // symlink. The map is evidence about this checkout, not arbitrary
+            // filesystem reachability.
+            if file_type.is_symlink() {
+                if path.is_dir() {
+                    self.skipped_dirs += 1;
+                }
+                continue;
+            }
+
+            if file_type.is_dir() {
                 if should_skip_dir(&name) {
                     self.skipped_dirs += 1;
                     continue;
                 }
-
-                self.scan_dir(&path, depth + 1).await?;
-            } else if metadata.is_file() {
-                self.scan_file(&path, metadata.len()).await?;
-            }
-
-            if self.files_scanned >= MAX_FILES_SCANNED {
-                break;
+                self.scan_dir(&path, depth + 1)?;
+            } else if file_type.is_file() {
+                let bytes = entry.metadata().map(|metadata| metadata.len()).unwrap_or(0);
+                self.scan_file(&path, bytes);
             }
         }
 
         Ok(())
     }
 
-    async fn scan_file(&mut self, path: &Path, bytes: u64) -> RepoDeskResult<()> {
+    fn scan_file(&mut self, path: &Path, bytes: u64) {
         let relative = relative_path(&self.project_path, path);
 
         self.files_scanned += 1;
@@ -188,8 +285,6 @@ impl RepoScanner {
                 reason: "large file; avoid sending to paid agents without filtering".to_string(),
             });
         }
-
-        Ok(())
     }
 
     fn finish(mut self) -> RepoMap {
@@ -203,9 +298,19 @@ impl RepoScanner {
             })
             .collect::<Vec<_>>();
 
-        languages.sort_by_key(|b| std::cmp::Reverse(b.bytes));
+        languages.sort_by(|left, right| {
+            right
+                .bytes
+                .cmp(&left.bytes)
+                .then_with(|| left.label.cmp(&right.label))
+        });
 
-        self.hotspots.sort_by_key(|b| std::cmp::Reverse(b.bytes));
+        self.hotspots.sort_by(|left, right| {
+            right
+                .bytes
+                .cmp(&left.bytes)
+                .then_with(|| left.path.cmp(&right.path))
+        });
         self.hotspots.truncate(MAX_HOTSPOTS);
         self.important_files.sort();
         self.important_files.dedup();
@@ -286,4 +391,61 @@ fn is_important_file(path: &str) -> bool {
         || path.ends_with("/package.json")
         || path.ends_with("/main.rs")
         || path.ends_with("/lib.rs")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_projection_is_bounded_and_structural() {
+        let map = RepoMap {
+            project_name: "demo".into(),
+            project_path: PathBuf::from("/tmp/demo"),
+            files_scanned: 2_000,
+            dirs_scanned: 50,
+            skipped_dirs: 3,
+            total_bytes: 123_456,
+            languages: (0..20)
+                .map(|index| LanguageStat {
+                    label: format!("lang-{index:02}"),
+                    files: index + 1,
+                    bytes: 20_000 - index as u64,
+                })
+                .collect(),
+            hotspots: (0..15)
+                .map(|index| FileHotspot {
+                    path: format!("src/hot-{index:02}.bin"),
+                    bytes: 90_000 + index as u64,
+                    reason: "large".into(),
+                })
+                .collect(),
+            important_files: (0..30)
+                .map(|index| format!("crate-{index:02}/Cargo.toml"))
+                .collect(),
+        };
+
+        let context = format_repo_context(&map);
+        assert!(context.contains("scan cap reached"));
+        assert!(context.contains("lang-09"));
+        assert!(!context.contains("lang-10"));
+        assert!(context.contains("crate-19/Cargo.toml"));
+        assert!(!context.contains("crate-20/Cargo.toml"));
+        assert!(context.contains("src/hot-09.bin"));
+        assert!(!context.contains("src/hot-10.bin"));
+    }
+
+    #[test]
+    fn finish_uses_stable_tie_breakers() {
+        let mut scanner = RepoScanner::new("demo".into(), PathBuf::from("/tmp/demo"));
+        scanner.languages.insert("zeta".into(), (1, 10));
+        scanner.languages.insert("alpha".into(), (1, 10));
+        scanner.hotspots = vec![
+            FileHotspot { path: "z".into(), bytes: 100, reason: "x".into() },
+            FileHotspot { path: "a".into(), bytes: 100, reason: "x".into() },
+        ];
+        let map = scanner.finish();
+        assert_eq!(map.languages[0].label, "alpha");
+        assert_eq!(map.hotspots[0].path, "a");
+    }
 }
