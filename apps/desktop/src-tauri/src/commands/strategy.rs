@@ -106,10 +106,24 @@ pub async fn orchestrate_strategy_run(
         mode,
     )?;
 
-    if let Some(expected) = expected_plan_fingerprint
+    if !dry_run && !prepared.preview.execution.context.prepared {
+        return Err(ErrorPayload::configuration(
+            "Strategy execution requires a prepared Context Pipeline. Return to Prepare and rebuild the AI context packet before launching."
+                .to_string(),
+        ));
+    }
+
+    let expected_fingerprint = expected_plan_fingerprint
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.is_empty());
+    if !dry_run && expected_fingerprint.is_none() {
+        return Err(ErrorPayload::configuration(
+            "Strategy execution requires an approved preview plan lock. Refresh the Execution Packet before launching."
+                .to_string(),
+        ));
+    }
+    if let Some(expected) = expected_fingerprint
         && expected != prepared.preview.plan_fingerprint
     {
         return Err(ErrorPayload::configuration(
@@ -159,8 +173,14 @@ mod tests {
 
     #[test]
     fn strategy_labels_are_conservative() {
-        assert_eq!(parse_strategy_mode(Some("auto".into())).unwrap(), AiStrategyMode::Auto);
-        assert_eq!(parse_strategy_mode(Some("local-first".into())).unwrap(), AiStrategyMode::LocalFirst);
+        assert_eq!(
+            parse_strategy_mode(Some("auto".into())).unwrap(),
+            AiStrategyMode::Auto
+        );
+        assert_eq!(
+            parse_strategy_mode(Some("local-first".into())).unwrap(),
+            AiStrategyMode::LocalFirst
+        );
         assert!(parse_strategy_mode(Some("YOLO".into())).is_err());
     }
 
