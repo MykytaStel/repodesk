@@ -184,13 +184,7 @@ fn indexed_workspace(project_name: &str, root: &Path) -> RepoDeskResult<IndexedW
 
     let snapshot = load_code_workspace(project_name, root)?;
     let workspace_truncated = snapshot.truncated;
-    let files = Arc::new(
-        snapshot
-            .files
-            .into_iter()
-            .filter(|file| !file.blocked)
-            .collect::<Vec<_>>(),
-    );
+    let files = Arc::new(snapshot.files);
 
     if let Ok(mut cache) = search_index().lock() {
         cache.insert(
