@@ -1,0 +1,159 @@
+name: Draft UI Integrate
+
+on:
+  push:
+    branches:
+      - feat/code-draft-recovery
+    paths:
+      - .github/workflows/draft-ui-integrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/code-draft-recovery
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Integrate draft recovery into CodeTab
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("apps/desktop/src/features/code/CodeTab.tsx")
+          text = path.read_text()
+
+          old = '''  codeWorkspaceSnapshot,\n  consumeCodeWorkspaceOpenRequest,\n  requestCodeWorkspaceOpen,\n  readCodeLibraryDocument,\n  readCodeWorkspaceDocument,\n  saveCodeWorkspaceDocument,'''
+          new = '''  codeWorkspaceSnapshot,\n  consumeCodeWorkspaceOpenRequest,\n  deleteCodeWorkspaceDraft,\n  loadCodeWorkspaceDraft,\n  requestCodeWorkspaceOpen,\n  readCodeLibraryDocument,\n  readCodeWorkspaceDocument,\n  saveCodeWorkspaceDocument,\n  saveCodeWorkspaceDraft,'''
+          if old not in text:
+              raise SystemExit("CodeTab draft API import target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''  status: CodeWorkspaceFileStatus;\n  dirty: boolean;\n};'''
+          new = '''  status: CodeWorkspaceFileStatus;\n  dirty: boolean;\n  recoveredDraft: boolean;\n};'''
+          if old not in text:
+              raise SystemExit("EditorTab target not found")
+          text = text.replace(old, new, 1)
+
+          text = text.replace(
+              '''    status: document.status,\n    dirty: false,\n  };''',
+              '''    status: document.status,\n    dirty: false,\n    recoveredDraft: false,\n  };''',
+              1,
+          )
+          text = text.replace(
+              '''    status: "clean",\n    dirty: false,\n  };''',
+              '''    status: "clean",\n    dirty: false,\n    recoveredDraft: false,\n  };''',
+              1,
+          )
+
+          old = '''  const [sideMode, setSideMode] = useState<CodeSideMode>("explorer");\n  const [workspaceError, setWorkspaceError] = useState<string | null>(null);\n  const sessionProjectRef = useRef<string | null>(null);\n  const openingRef = useRef(false);'''
+          new = '''  const [sideMode, setSideMode] = useState<CodeSideMode>("explorer");\n  const [workspaceError, setWorkspaceError] = useState<string | null>(null);\n  const [draftError, setDraftError] = useState<string | null>(null);\n  const sessionProjectRef = useRef<string | null>(null);\n  const openingRef = useRef(false);\n  const draftWritesRef = useRef(new Map<string, Promise<void>>());'''
+          if old not in text:
+              raise SystemExit("CodeTab draft state target not found")
+          text = text.replace(old, new, 1)
+
+          marker = '''  const save = useMutation({\n'''
+          insert = '''  const persistDraft = useCallback((tab: EditorTab): Promise<void> => {\n    if (tab.kind !== "workspace" || !tab.dirty) return Promise.resolve();\n\n    const write = saveCodeWorkspaceDraft({\n      path: tab.path,\n      content: tab.content,\n      base_fingerprint: tab.fingerprint,\n    }).then(() => {\n      setDraftError(null);\n    }).catch((error) => {\n      setDraftError(`Draft recovery backup failed for ${fileName(tab.path)}: ${errorToMessage(error)}`);\n    });\n\n    let tracked: Promise<void>;\n    tracked = write.finally(() => {\n      if (draftWritesRef.current.get(tab.path) === tracked) {\n        draftWritesRef.current.delete(tab.path);\n      }\n    });\n    draftWritesRef.current.set(tab.path, tracked);\n    return tracked;\n  }, []);\n\n  const discardPersistedDraft = useCallback(async (path: string) => {\n    const pending = draftWritesRef.current.get(path);\n    if (pending) await pending;\n    await deleteCodeWorkspaceDraft(path);\n  }, []);\n\n  useEffect(() => {\n    const dirtyWorkspaceTabs = tabs.filter((tab) => tab.kind === "workspace" && tab.dirty);\n    if (dirtyWorkspaceTabs.length === 0) return;\n\n    const timer = window.setTimeout(() => {\n      for (const tab of dirtyWorkspaceTabs) void persistDraft(tab);\n    }, 600);\n    return () => window.clearTimeout(timer);\n  }, [persistDraft, tabs]);\n\n  const save = useMutation({\n'''
+          if marker not in text:
+              raise SystemExit("CodeTab save insertion target not found")
+          text = text.replace(marker, insert, 1)
+
+          old = '''    mutationFn: (tab: EditorTab) => saveCodeWorkspaceDocument({\n      path: tab.path,\n      content: tab.content,\n      expected_fingerprint: tab.fingerprint,\n    }),'''
+          new = '''    mutationFn: async (tab: EditorTab) => {\n      const pendingDraft = draftWritesRef.current.get(tab.path);\n      if (pendingDraft) await pendingDraft;\n      const result = await saveCodeWorkspaceDocument({\n        path: tab.path,\n        content: tab.content,\n        expected_fingerprint: tab.fingerprint,\n      });\n      try {\n        await deleteCodeWorkspaceDraft(tab.path);\n      } catch (error) {\n        setDraftError(`Saved ${fileName(tab.path)}, but its recovery draft could not be cleared: ${errorToMessage(error)}`);\n      }\n      return result;\n    },'''
+          if old not in text:
+              raise SystemExit("CodeTab save mutation target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    if (existing?.dirty && forceReload && !window.confirm(`Discard unsaved changes in ${fileName(file.path)} and reload from disk?`)) {\n      return;\n    }'''
+          new = '''    if (existing?.dirty && forceReload) {\n      if (!window.confirm(`Discard unsaved changes in ${fileName(file.path)} and reload from disk?`)) return;\n      try {\n        await discardPersistedDraft(file.path);\n      } catch (error) {\n        setDraftError(`Could not discard the recovery draft for ${fileName(file.path)}: ${errorToMessage(error)}`);\n        return;\n      }\n    }'''
+          if old not in text:
+              raise SystemExit("CodeTab force reload target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''      const document = await readCodeWorkspaceDocument(file.path);\n      setTabs((current) => {\n        const withoutEvicted = evictPath ? current.filter((tab) => tab.path !== evictPath) : current;\n        const existingIndex = withoutEvicted.findIndex((tab) => tab.path === document.path);\n        if (existingIndex >= 0) {\n          const next = [...withoutEvicted];\n          next[existingIndex] = toTab(document);\n          return next;\n        }\n        return [...withoutEvicted, toTab(document)];\n      });'''
+          new = '''      const document = await readCodeWorkspaceDocument(file.path);\n      let openedTab = toTab(document);\n      try {\n        const recovery = await loadCodeWorkspaceDraft({\n          path: document.path,\n          current_fingerprint: document.fingerprint,\n        });\n        if (recovery) {\n          const restore = recovery.state === "safe" || window.confirm(\n            `RepoDesk found an unsaved draft for ${fileName(document.path)}, but this file changed on disk after the draft was created.\\n\\nChoose OK to restore the draft into the editor without saving it. Choose Cancel to discard the draft and keep the current disk version.`,\n          );\n          if (restore) {\n            openedTab = {\n              ...openedTab,\n              content: recovery.draft.content,\n              bytes: new TextEncoder().encode(recovery.draft.content).length,\n              dirty: true,\n              recoveredDraft: true,\n            };\n          } else {\n            await discardPersistedDraft(document.path);\n          }\n        }\n      } catch (error) {\n        setDraftError(`Draft recovery is unavailable for ${fileName(document.path)}: ${errorToMessage(error)}`);\n      }\n      setTabs((current) => {\n        const withoutEvicted = evictPath ? current.filter((tab) => tab.path !== evictPath) : current;\n        const existingIndex = withoutEvicted.findIndex((tab) => tab.path === document.path);\n        if (existingIndex >= 0) {\n          const next = [...withoutEvicted];\n          next[existingIndex] = openedTab;\n          return next;\n        }\n        return [...withoutEvicted, openedTab];\n      });'''
+          if old not in text:
+              raise SystemExit("CodeTab open recovery target not found")
+          text = text.replace(old, new, 1)
+          text = text.replace('''  }, [tabs]);\n\n  const openLibrary''', '''  }, [discardPersistedDraft, tabs]);\n\n  const openLibrary''', 1)
+
+          old = '''  const closeTab = (path: string) => {\n    const target = tabs.find((tab) => tab.path === path);\n    if (target?.dirty && !window.confirm(`Discard unsaved changes in ${fileName(path)}?`)) return;\n    const index = tabs.findIndex((tab) => tab.path === path);'''
+          new = '''  const closeTab = async (path: string) => {\n    const target = tabs.find((tab) => tab.path === path);\n    if (target?.dirty) {\n      if (!window.confirm(`Discard unsaved changes in ${fileName(path)}?`)) return;\n      if (target.kind === "workspace") {\n        try {\n          await discardPersistedDraft(path);\n        } catch (error) {\n          setDraftError(`Could not discard the recovery draft for ${fileName(path)}: ${errorToMessage(error)}`);\n          return;\n        }\n      }\n    }\n    const index = tabs.findIndex((tab) => tab.path === path);'''
+          if old not in text:
+              raise SystemExit("CodeTab close target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''                {tab.kind === "library" ? <LibraryTabBadge /> : null}\n                {STATUS_LABEL[tab.status] ? <small>{STATUS_LABEL[tab.status]}</small> : null}\n                {tab.dirty ? <i aria-label="Unsaved">●</i> : null}'''
+          new = '''                {tab.kind === "library" ? <LibraryTabBadge /> : null}\n                {tab.recoveredDraft ? <small className="code-draft-badge">recovered</small> : null}\n                {STATUS_LABEL[tab.status] ? <small>{STATUS_LABEL[tab.status]}</small> : null}\n                {tab.dirty ? <i aria-label="Unsaved">●</i> : null}'''
+          if old not in text:
+              raise SystemExit("CodeTab recovered badge target not found")
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              '''                onClick={() => closeTab(tab.path)}''',
+              '''                onClick={() => void closeTab(tab.path)}''',
+              1,
+          )
+
+          marker = '''        {workspaceError ? (\n'''
+          insert = '''        {draftError ? (\n          <div className="code-workspace-message warn">\n            <span>{draftError}</span>\n            <button type="button" className="tiny-button" onClick={() => setDraftError(null)}>Dismiss</button>\n          </div>\n        ) : null}\n\n        {workspaceError ? (\n'''
+          if marker not in text:
+              raise SystemExit("CodeTab draft warning target not found")
+          text = text.replace(marker, insert, 1)
+
+          old = '''              <><code>{activeTab.path}</code>{activeTab.kind === "library" ? <span className="code-read-only-label">Read only</span> : null}</>'''
+          new = '''              <>\n                <code>{activeTab.path}</code>\n                {activeTab.kind === "library" ? <span className="code-read-only-label">Read only</span> : null}\n                {activeTab.recoveredDraft ? <span className="code-recovered-label">Recovered draft · not saved</span> : null}\n              </>'''
+          if old not in text:
+              raise SystemExit("CodeTab location recovery label target not found")
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          registry = Path("apps/desktop/src-tauri/src/lib.rs")
+          text = registry.read_text()
+          old = '''            code_workspace::code_workspace_save,\n'''
+          new = old + '''            code_workspace::code_workspace_draft_save,\n            code_workspace::code_workspace_draft_load,\n            code_workspace::code_workspace_draft_delete,\n'''
+          if old not in text:
+              raise SystemExit("Tauri draft registry target not found")
+          if 'code_workspace::code_workspace_draft_save,' in text:
+              raise SystemExit("Draft commands already registered")
+          registry.write_text(text.replace(old, new, 1))
+
+          css = Path("apps/desktop/src/features/code/code-workspace.css")
+          text = css.read_text()
+          old = '''.code-file-tab-select small { color: var(--warning); font-size: 9px; }\n'''
+          new = old + '''.code-file-tab-select .code-draft-badge {\n  padding: 1px 4px;\n  border: 1px solid var(--accent-border);\n  border-radius: 999px;\n  background: var(--accent-soft);\n  color: var(--accent);\n  font-size: 8px;\n  font-weight: 700;\n}\n'''
+          if old not in text:
+              raise SystemExit("Draft badge CSS target not found")
+          text = text.replace(old, new, 1)
+          old = '''.code-workspace-message > span { min-width: 0; flex: 1; }\n'''
+          new = old + '''.code-workspace-message.warn {\n  border-bottom-color: var(--accent-border);\n  background: var(--accent-soft);\n  color: var(--warning);\n}\n'''
+          text = text.replace(old, new, 1)
+          old = '''.code-read-only-label {\n'''
+          new = '''.code-recovered-label {\n  margin-left: 8px;\n  color: var(--accent);\n  font-weight: 700;\n}\n.code-read-only-label {\n'''
+          text = text.replace(old, new, 1)
+          css.write_text(text)
+
+          Path(".github/workflows/draft-ui-integrate.yml").unlink()
+
+      - name: Format and basic frontend verification
+        run: |
+          cargo fmt --all
+          cd apps/desktop
+          corepack enable
+          corepack prepare pnpm@10.33.2 --activate
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Commit UI integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(code): recover unsaved editor drafts"
+          git push origin HEAD:feat/code-draft-recovery
