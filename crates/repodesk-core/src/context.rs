@@ -2,18 +2,25 @@ use std::fs;
 
 use sha2::{Digest, Sha256};
 
+use crate::context_packing::{ContextPackingPolicy, pack_context_candidates};
+use crate::context_pipeline::{
+    ContextCandidate, ContextPipelineSnapshot, ContextProvenance, ContextSelection,
+    ContextSelectionState, ContextSourceKind, ContextTrust,
+};
+use crate::context_relevance::apply_context_relevance;
 use crate::engineering::{
     ContextBuildTelemetry, ContextComponentTelemetry, WorkItemContract,
     engineering_knowledge_context, read_work_item_contract, record_context_build,
     select_task_scope_files, write_context_manifest,
 };
-use crate::errors::RepoDeskResult;
+use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::git_workspace::run_git_captured as run_git;
 use crate::init;
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
 use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
+use crate::usage::budget::load_budget_config;
 use crate::utils::format_list;
 
 /// RepoDesk 2 Project Knowledge is the reviewed engineering memory injected
@@ -23,6 +30,11 @@ const ENGINEERING_KNOWLEDGE_BUDGET_TOKENS: usize = 1_400;
 const MEMORY_BUDGET_TOKENS: usize = 800;
 const TASK_BUDGET_CHARS: usize = 8_000;
 const PROJECT_MATERIAL_BUDGET_CHARS: usize = 6_000;
+const CONTEXT_PIPELINE_SNAPSHOT_FILE: &str = "context-pipeline.json";
+/// Component estimates are independent while the final mixed context can use a
+/// slightly different language-cost model. Keep deterministic headroom so the
+/// final rendered pack stays comfortably below the configured OK limit.
+const PACKING_HEADROOM_PERCENT: usize = 10;
 
 #[derive(Debug, Clone)]
 pub struct ContextBuildResult {
@@ -46,6 +58,26 @@ struct ContextPackInput<'a> {
     ignore_rules: &'a str,
     git_state: &'a str,
     agent_notes: &'a str,
+}
+
+impl<'a> ContextPackInput<'a> {
+    fn empty() -> Self {
+        Self {
+            project_metadata: "",
+            task_metadata: "",
+            work_item_contract: "",
+            task_markdown: "",
+            scoped_files: "",
+            engineering_knowledge: "",
+            memory: "",
+            decisions: "",
+            risks: "",
+            checks: "",
+            ignore_rules: "",
+            git_state: "",
+            agent_notes: "",
+        }
+    }
 }
 
 pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
@@ -100,6 +132,12 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     let git_status = run_git(&project.path, &["status", "--short"]);
     let git_diff_stat = run_git(&project.path, &["diff", "--stat"]);
     let git_changed_files = run_git(&project.path, &["diff", "--name-only"]);
+    let changed_files = git_changed_files
+        .lines()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(str::to_string)
+        .collect::<Vec<_>>();
 
     let project_metadata = format!(
         "Name: `{}`\nPath: `{}`\nType: `{}`\nMain language: `{}`",
@@ -158,7 +196,7 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
         git_state: &git_state,
         agent_notes: &agent_notes,
     };
-    let included_input = ContextPackInput {
+    let bounded_input = ContextPackInput {
         task_markdown: &included_task_markdown,
         scoped_files: &scoped_files.rendered,
         engineering_knowledge: &engineering_knowledge.markdown,
@@ -169,41 +207,151 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     };
 
     let candidate_context = render_context_pack(&candidate_input);
-    let context = render_context_pack(&included_input);
     let candidate_estimate = estimate_text(&candidate_context);
+
+    let relevance_text = format!(
+        "{}\n{}",
+        task.config.title,
+        contract
+            .as_ref()
+            .map(|value| value.goal.as_str())
+            .unwrap_or_default()
+    );
+    let mut pipeline_candidates = build_pipeline_candidates(&bounded_input, contract.is_some());
+    for candidate in &mut pipeline_candidates {
+        apply_context_relevance(candidate, &relevance_text, &changed_files);
+    }
+
+    let budget_config = load_budget_config()?;
+    let framing_tokens = estimate_text(&render_context_pack(&ContextPackInput::empty())).estimated_tokens;
+    let raw_content_budget = budget_config.context_ok_limit.saturating_sub(framing_tokens);
+    let content_budget = raw_content_budget
+        .saturating_mul(100usize.saturating_sub(PACKING_HEADROOM_PERCENT))
+        / 100;
+    let packing = pack_context_candidates(
+        &pipeline_candidates,
+        ContextPackingPolicy {
+            token_budget: content_budget,
+        },
+    );
+
+    let packed_input = ContextPackInput {
+        project_metadata: selected_component(
+            "project_metadata",
+            bounded_input.project_metadata,
+            &packing.selections,
+        ),
+        task_metadata: selected_component(
+            "task_metadata",
+            bounded_input.task_metadata,
+            &packing.selections,
+        ),
+        work_item_contract: selected_component(
+            "work_item_contract",
+            bounded_input.work_item_contract,
+            &packing.selections,
+        ),
+        task_markdown: selected_component(
+            "task_document",
+            bounded_input.task_markdown,
+            &packing.selections,
+        ),
+        scoped_files: selected_component(
+            "scoped_files",
+            bounded_input.scoped_files,
+            &packing.selections,
+        ),
+        engineering_knowledge: selected_component(
+            "engineering_knowledge",
+            bounded_input.engineering_knowledge,
+            &packing.selections,
+        ),
+        memory: selected_component(
+            "legacy_memory",
+            bounded_input.memory,
+            &packing.selections,
+        ),
+        decisions: selected_component(
+            "decisions",
+            bounded_input.decisions,
+            &packing.selections,
+        ),
+        risks: selected_component("risks", bounded_input.risks, &packing.selections),
+        checks: selected_component("checks", bounded_input.checks, &packing.selections),
+        ignore_rules: selected_component(
+            "ignore_rules",
+            bounded_input.ignore_rules,
+            &packing.selections,
+        ),
+        git_state: selected_component(
+            "git_state",
+            bounded_input.git_state,
+            &packing.selections,
+        ),
+        agent_notes: selected_component(
+            "agent_notes",
+            bounded_input.agent_notes,
+            &packing.selections,
+        ),
+    };
+
+    let context = render_context_pack(&packed_input);
     let estimate = estimate_text(&context);
+    let context_fingerprint = sha256_hex(&context);
 
     let components = vec![
-        context_component("project_metadata", &project_metadata, &project_metadata),
-        context_component("task_metadata", &task_metadata, &task_metadata),
-        context_component("work_item_contract", &contract_markdown, &contract_markdown),
-        context_component("task", &task_markdown, &included_task_markdown),
+        context_component(
+            "project_metadata",
+            &project_metadata,
+            packed_input.project_metadata,
+        ),
+        context_component("task_metadata", &task_metadata, packed_input.task_metadata),
+        context_component(
+            "work_item_contract",
+            &contract_markdown,
+            packed_input.work_item_contract,
+        ),
+        context_component("task", &task_markdown, packed_input.task_markdown),
         context_component(
             "scoped_files",
             &scoped_files.candidate_rendered,
-            &scoped_files.rendered,
+            packed_input.scoped_files,
         ),
         context_component(
             "engineering_knowledge",
             &engineering_knowledge.candidate_markdown,
-            &engineering_knowledge.markdown,
+            packed_input.engineering_knowledge,
         ),
-        context_component("memory", &memory, &included_memory),
-        context_component("decisions", &decisions, &included_decisions),
-        context_component("risks", &risks, &included_risks),
-        context_component("checks", &checks, &checks),
-        context_component("ignore_rules", &ignore_rules, &ignore_rules),
-        context_component("git_state", &git_state, &git_state),
-        context_component("agent_notes", &agent_notes, &agent_notes),
+        context_component("memory", &memory, packed_input.memory),
+        context_component("decisions", &decisions, packed_input.decisions),
+        context_component("risks", &risks, packed_input.risks),
+        context_component("checks", &checks, packed_input.checks),
+        context_component("ignore_rules", &ignore_rules, packed_input.ignore_rules),
+        context_component("git_state", &git_state, packed_input.git_state),
+        context_component("agent_notes", &agent_notes, packed_input.agent_notes),
     ];
-    let context_fingerprint = sha256_hex(&context);
+
+    let pipeline_snapshot = ContextPipelineSnapshot::new(
+        &project.name,
+        &task.config.id,
+        &context_fingerprint,
+        Some(content_budget),
+        pipeline_candidates,
+        packing.selections,
+    )
+    .map_err(|error| RepoDeskError::Api(format!("context pipeline validation: {error}")))?;
 
     let context_file = task.config.run_dir.join("context.md");
     let token_estimate_file = task.config.run_dir.join("token-estimate.txt");
+    let pipeline_file = task.config.run_dir.join(CONTEXT_PIPELINE_SNAPSHOT_FILE);
     let manifest_file = write_context_manifest(&task.config.run_dir, &scoped_files.manifest)?;
 
     fs::write(&context_file, context)?;
     fs::write(&token_estimate_file, format_estimate(&estimate))?;
+    fs::write(
+        pipeline_file,
+        serde_json::to_string_pretty(&pipeline_snapshot)?,
+    )?;
 
     let context_file = context_file.display().to_string();
     let token_estimate_file = token_estimate_file.display().to_string();
@@ -242,6 +390,155 @@ pub fn estimate_active_context() -> RepoDeskResult<(String, TokenEstimate)> {
     let estimate = estimate_text(&content);
 
     Ok((context_file.display().to_string(), estimate))
+}
+
+fn build_pipeline_candidates(
+    input: &ContextPackInput<'_>,
+    has_contract: bool,
+) -> Vec<ContextCandidate> {
+    vec![
+        pipeline_candidate(
+            "project_metadata",
+            ContextSourceKind::ProjectMetadata,
+            ContextTrust::Observed,
+            "project:metadata",
+            input.project_metadata,
+            true,
+        ),
+        pipeline_candidate(
+            "task_metadata",
+            ContextSourceKind::TaskMetadata,
+            ContextTrust::Authoritative,
+            "task:metadata",
+            input.task_metadata,
+            true,
+        ),
+        pipeline_candidate(
+            "work_item_contract",
+            ContextSourceKind::WorkItemContract,
+            ContextTrust::Authoritative,
+            crate::engineering::WORK_ITEM_CONTRACT_FILE,
+            input.work_item_contract,
+            has_contract,
+        ),
+        pipeline_candidate(
+            "task_document",
+            ContextSourceKind::TaskDocument,
+            ContextTrust::Authoritative,
+            "task.md",
+            input.task_markdown,
+            true,
+        ),
+        pipeline_candidate(
+            "scoped_files",
+            ContextSourceKind::ScopedFile,
+            ContextTrust::Observed,
+            "task-scope:repository-files",
+            input.scoped_files,
+            false,
+        ),
+        pipeline_candidate(
+            "engineering_knowledge",
+            ContextSourceKind::EngineeringKnowledge,
+            ContextTrust::Reviewed,
+            "project:engineering-knowledge",
+            input.engineering_knowledge,
+            false,
+        ),
+        pipeline_candidate(
+            "legacy_memory",
+            ContextSourceKind::LegacyMemory,
+            ContextTrust::Legacy,
+            "project:legacy-memory",
+            input.memory,
+            false,
+        ),
+        pipeline_candidate(
+            "decisions",
+            ContextSourceKind::DecisionLog,
+            ContextTrust::Observed,
+            "project:decisions",
+            input.decisions,
+            false,
+        ),
+        pipeline_candidate(
+            "risks",
+            ContextSourceKind::RiskLog,
+            ContextTrust::Observed,
+            "project:risks",
+            input.risks,
+            false,
+        ),
+        pipeline_candidate(
+            "checks",
+            ContextSourceKind::Checks,
+            ContextTrust::Authoritative,
+            "project:checks",
+            input.checks,
+            false,
+        ),
+        pipeline_candidate(
+            "ignore_rules",
+            ContextSourceKind::AgentRules,
+            ContextTrust::Authoritative,
+            "project:context-ignore",
+            input.ignore_rules,
+            false,
+        ),
+        pipeline_candidate(
+            "git_state",
+            ContextSourceKind::GitState,
+            ContextTrust::Observed,
+            "git:working-tree",
+            input.git_state,
+            false,
+        ),
+        pipeline_candidate(
+            "agent_notes",
+            ContextSourceKind::AgentRules,
+            ContextTrust::Authoritative,
+            "repodesk:agent-notes",
+            input.agent_notes,
+            true,
+        ),
+    ]
+}
+
+fn pipeline_candidate(
+    id: &str,
+    kind: ContextSourceKind,
+    trust: ContextTrust,
+    locator: &str,
+    text: &str,
+    required: bool,
+) -> ContextCandidate {
+    ContextCandidate {
+        id: id.to_string(),
+        provenance: ContextProvenance {
+            kind,
+            locator: locator.to_string(),
+            fingerprint: sha256_hex(text),
+            observed_at: None,
+        },
+        trust,
+        candidate_tokens: estimate_text(text).estimated_tokens,
+        required,
+        relevance_score: None,
+        freshness_score: None,
+    }
+}
+
+fn selected_component<'a>(
+    id: &str,
+    value: &'a str,
+    selections: &[ContextSelection],
+) -> &'a str {
+    selections
+        .iter()
+        .find(|selection| selection.candidate_id == id)
+        .filter(|selection| selection.state == ContextSelectionState::Included)
+        .map(|_| value)
+        .unwrap_or("")
 }
 
 fn render_context_pack(input: &ContextPackInput<'_>) -> String {
@@ -448,5 +745,52 @@ mod tests {
         assert!(source.contains("`src/lib.rs`"));
         assert!(source.contains("`Cargo.toml`"));
         assert!(!source.contains("legacy.rs"));
+    }
+
+    #[test]
+    fn pipeline_candidates_keep_authoritative_material_required() {
+        let input = ContextPackInput {
+            project_metadata: "project",
+            task_metadata: "task meta",
+            work_item_contract: "contract",
+            task_markdown: "task body",
+            scoped_files: "files",
+            engineering_knowledge: "knowledge",
+            memory: "memory",
+            decisions: "decisions",
+            risks: "risks",
+            checks: "checks",
+            ignore_rules: "ignore",
+            git_state: "git",
+            agent_notes: "notes",
+        };
+
+        let candidates = build_pipeline_candidates(&input, true);
+        let required = candidates
+            .iter()
+            .filter(|candidate| candidate.required)
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>();
+
+        assert!(required.contains(&"project_metadata"));
+        assert!(required.contains(&"task_metadata"));
+        assert!(required.contains(&"work_item_contract"));
+        assert!(required.contains(&"task_document"));
+        assert!(required.contains(&"agent_notes"));
+        assert!(!required.contains(&"legacy_memory"));
+    }
+
+    #[test]
+    fn excluded_pipeline_component_renders_no_payload() {
+        let selections = vec![ContextSelection {
+            candidate_id: "legacy_memory".into(),
+            state: ContextSelectionState::Excluded,
+            included_tokens: 0,
+            trimmed: false,
+            exclusion_reason: Some(crate::context_pipeline::ContextExclusionReason::Budget),
+            order: None,
+        }];
+
+        assert_eq!(selected_component("legacy_memory", "secret payload", &selections), "");
     }
 }
