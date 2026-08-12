@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { onboardedFixtures } from "./fixtures";
+import { currentOnboardedFixtures } from "./current-fixtures";
 import { installMockIpc } from "./mock-ipc";
 
 const primaryTabs = ["Work", "Code", "Changes", "Runs", "Projects"];
@@ -14,7 +14,7 @@ for (const viewport of [
       if (message.type() === "error") errors.push(message.text());
     });
     await page.setViewportSize(viewport);
-    await installMockIpc(page, onboardedFixtures);
+    await installMockIpc(page, currentOnboardedFixtures);
     await page.goto("/");
 
     for (const tab of primaryTabs) {
