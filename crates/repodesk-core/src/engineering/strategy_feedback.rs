@@ -108,7 +108,7 @@ pub fn derive_strategy_feedback(events: &[EngineeringEvent]) -> StrategyFeedback
                 facts.requested_mode = attribute_string(event, "requested_mode");
                 facts.profile = attribute_string(event, "resolved_profile")
                     .as_deref()
-                    .and_then(AiStrategyProfile::from_label);
+                    .and_then(parse_profile);
                 facts.plan_shape = attribute_string(event, "plan_shape");
                 facts.baseline_steps = attribute_usize(event, "baseline_steps").unwrap_or(0);
                 facts.planned_steps = attribute_usize(event, "planned_steps").unwrap_or(0);
@@ -148,9 +148,14 @@ pub fn derive_strategy_feedback(events: &[EngineeringEvent]) -> StrategyFeedback
         .collect::<Vec<_>>();
     recent_runs.sort_by(|left, right| left.run_id.cmp(&right.run_id));
 
-    let mut aggregates = BTreeMap::<AiStrategyProfile, ProfileAggregate>::new();
+    // Stable string keys avoid introducing artificial Ord semantics on the
+    // serialized strategy enum purely for this internal aggregation detail.
+    let mut aggregates = BTreeMap::<String, ProfileAggregate>::new();
     for run in &recent_runs {
-        aggregates.entry(run.profile).or_default().observe(run);
+        aggregates
+            .entry(run.profile.as_label().to_string())
+            .or_default()
+            .observe(run);
     }
 
     let profiles = [
@@ -160,14 +165,19 @@ pub fn derive_strategy_feedback(events: &[EngineeringEvent]) -> StrategyFeedback
         AiStrategyProfile::Quality,
     ]
     .into_iter()
-    .filter_map(|profile| aggregates.remove(&profile).map(|value| value.finish(profile)))
+    .filter_map(|profile| {
+        aggregates
+            .remove(profile.as_label())
+            .map(|value| value.finish(profile))
+    })
     .collect::<Vec<_>>();
 
+    let strategy_runs = recent_runs.len();
     let settled_runs = recent_runs
         .iter()
         .filter(|run| run.outcome != StrategyOutcomeState::Pending)
         .count();
-    let pending_runs = recent_runs.len().saturating_sub(settled_runs);
+    let pending_runs = strategy_runs.saturating_sub(settled_runs);
 
     // Bound transport size; aggregation above always sees the full ledger.
     if recent_runs.len() > 20 {
@@ -175,11 +185,21 @@ pub fn derive_strategy_feedback(events: &[EngineeringEvent]) -> StrategyFeedback
     }
 
     StrategyFeedbackReport {
-        strategy_runs: settled_runs.saturating_add(pending_runs),
+        strategy_runs,
         settled_runs,
         pending_runs,
         profiles,
         recent_runs,
+    }
+}
+
+fn parse_profile(value: &str) -> Option<AiStrategyProfile> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "lean" => Some(AiStrategyProfile::Lean),
+        "balanced" => Some(AiStrategyProfile::Balanced),
+        "local_first" | "local-first" => Some(AiStrategyProfile::LocalFirst),
+        "quality" => Some(AiStrategyProfile::Quality),
+        _ => None,
     }
 }
 
@@ -301,7 +321,11 @@ impl ProfileAggregate {
 }
 
 fn attribute_string(event: &EngineeringEvent, key: &str) -> Option<String> {
-    event.attributes.get(key).and_then(Value::as_str).map(str::to_string)
+    event
+        .attributes
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::to_string)
 }
 
 fn attribute_usize(event: &EngineeringEvent, key: &str) -> Option<usize> {
