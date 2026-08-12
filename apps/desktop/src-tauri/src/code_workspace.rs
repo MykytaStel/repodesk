@@ -40,10 +40,13 @@ pub fn code_workspace_quick_open(
 }
 
 #[tauri::command]
-pub fn code_workspace_project_search(
+pub async fn code_workspace_project_search(
     input: CodeProjectSearchInput,
 ) -> Result<CodeProjectSearchResult, String> {
-    search_active_code_project(input).map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || search_active_code_project(input))
+        .await
+        .map_err(|error| format!("Project search worker failed: {error}"))?
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
