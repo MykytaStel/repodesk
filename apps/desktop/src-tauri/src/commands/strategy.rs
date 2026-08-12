@@ -5,7 +5,7 @@
 //! preview and launch the same fingerprinted strategy-shaped plan.
 
 use repodesk_core::api_clients::ProviderSettings;
-use repodesk_core::engineering::{AiPlanShape, AiStrategyMode};
+use repodesk_core::engineering::{AiPlanShape, AiStrategyMode, StrategySelectionTelemetry};
 use repodesk_core::orchestrator::{
     self, AgentWorkspacePolicy, ExecutionAuthorization, OrchestrationRun, RunOptions,
     StrategyExecutionPreview,
@@ -146,20 +146,23 @@ pub async fn orchestrate_strategy_run(
     };
     let run = orchestrator::run_plan(&prepared.plan, &opts).await?;
 
-    // Strategy telemetry is deliberately best-effort. Execution and its
-    // authoritative receipt have already completed; a ledger append failure
-    // must not rewrite that outcome into a failed run.
+    // Full prediction telemetry is best-effort: execution/receipt evidence has
+    // already completed and cannot be downgraded by an observability append.
     let preview = &prepared.preview;
-    let _ = repodesk_core::engineering::instrumentation::record_ai_strategy_selected(
+    let _ = repodesk_core::engineering::record_strategy_selection(
         &run,
-        repodesk_core::engineering::instrumentation::AiStrategyTelemetry {
+        StrategySelectionTelemetry {
             requested_mode: preview.strategy.requested_mode.as_label(),
             resolved_profile: preview.strategy.profile.as_label(),
             plan_shape: plan_shape_label(preview.strategy.plan_shape),
             plan_fingerprint: &preview.plan_fingerprint,
             baseline_steps: preview.comparison.baseline_steps,
             planned_steps: preview.comparison.planned_steps,
+            baseline_estimated_tokens: preview.comparison.baseline_estimated_tokens,
+            planned_estimated_tokens: preview.comparison.planned_estimated_tokens,
             estimated_saved_tokens: preview.comparison.estimated_saved_tokens,
+            baseline_estimated_cost_units: preview.comparison.baseline_estimated_cost_units,
+            planned_estimated_cost_units: preview.comparison.planned_estimated_cost_units,
             context_fingerprint: preview.execution.context.context_fingerprint.as_deref(),
         },
     );
