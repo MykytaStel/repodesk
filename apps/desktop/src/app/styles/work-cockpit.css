@@ -1,0 +1,147 @@
+/* Work cockpit — keep the primary engineering flow dense and task-focused. */
+
+.work-cockpit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.work-cockpit-identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.work-cockpit-identity .eyebrow {
+  margin: 0;
+}
+
+.work-cockpit-identity strong,
+.work-cockpit-identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-cockpit-identity strong {
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.work-cockpit-identity small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.work-cockpit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.work-cockpit-actions button {
+  min-height: var(--control-h-sm);
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: 750;
+}
+
+.work-cockpit-actions button:hover:not(:disabled),
+.work-cockpit-actions button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.work-cockpit-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.work-phase-error {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+
+.work-phase-error .eyebrow,
+.work-phase-error h2,
+.work-phase-error p {
+  margin: 0;
+}
+
+.work-phase-error .eyebrow {
+  color: var(--danger);
+}
+
+.work-phase-error code {
+  overflow-wrap: anywhere;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--code-bg);
+  color: var(--text);
+  font-size: var(--text-xs);
+}
+
+.work-error-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.work-tools-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.work-tools-strip > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.work-tools-strip strong {
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+
+.work-tools-strip small {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 760px) {
+  .work-cockpit-bar,
+  .work-tools-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .work-cockpit-actions {
+    justify-content: flex-start;
+  }
+}
