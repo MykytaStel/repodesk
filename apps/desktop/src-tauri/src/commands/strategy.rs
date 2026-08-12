@@ -5,7 +5,7 @@
 //! preview and launch the same fingerprinted strategy-shaped plan.
 
 use repodesk_core::api_clients::ProviderSettings;
-use repodesk_core::engineering::AiStrategyMode;
+use repodesk_core::engineering::{AiPlanShape, AiStrategyMode};
 use repodesk_core::orchestrator::{
     self, AgentWorkspacePolicy, ExecutionAuthorization, OrchestrationRun, RunOptions,
     StrategyExecutionPreview,
@@ -53,6 +53,14 @@ fn parse_strategy_mode(value: Option<String>) -> Result<AiStrategyMode, ErrorPay
             "unknown AI strategy '{value}'; expected auto, lean, balanced, local_first, or quality"
         ))
     })
+}
+
+fn plan_shape_label(shape: AiPlanShape) -> &'static str {
+    match shape {
+        AiPlanShape::SingleWriter => "single_writer",
+        AiPlanShape::WriterWithReview => "writer_with_review",
+        AiPlanShape::AnalyzeWriterReview => "analyze_writer_review",
+    }
 }
 
 #[tauri::command]
@@ -122,7 +130,27 @@ pub async fn orchestrate_strategy_run(
         coding_agent_timeout_secs: 600,
         agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
     };
-    Ok(orchestrator::run_plan(&prepared.plan, &opts).await?)
+    let run = orchestrator::run_plan(&prepared.plan, &opts).await?;
+
+    // Strategy telemetry is deliberately best-effort. Execution and its
+    // authoritative receipt have already completed; a ledger append failure
+    // must not rewrite that outcome into a failed run.
+    let preview = &prepared.preview;
+    let _ = repodesk_core::engineering::instrumentation::record_ai_strategy_selected(
+        &run,
+        repodesk_core::engineering::instrumentation::AiStrategyTelemetry {
+            requested_mode: preview.strategy.requested_mode.as_label(),
+            resolved_profile: preview.strategy.profile.as_label(),
+            plan_shape: plan_shape_label(preview.strategy.plan_shape),
+            plan_fingerprint: &preview.plan_fingerprint,
+            baseline_steps: preview.comparison.baseline_steps,
+            planned_steps: preview.comparison.planned_steps,
+            estimated_saved_tokens: preview.comparison.estimated_saved_tokens,
+            context_fingerprint: preview.execution.context.context_fingerprint.as_deref(),
+        },
+    );
+
+    Ok(run)
 }
 
 #[cfg(test)]
@@ -134,6 +162,15 @@ mod tests {
         assert_eq!(parse_strategy_mode(Some("auto".into())).unwrap(), AiStrategyMode::Auto);
         assert_eq!(parse_strategy_mode(Some("local-first".into())).unwrap(), AiStrategyMode::LocalFirst);
         assert!(parse_strategy_mode(Some("YOLO".into())).is_err());
+    }
+
+    #[test]
+    fn plan_shape_labels_match_serialized_contract() {
+        assert_eq!(plan_shape_label(AiPlanShape::SingleWriter), "single_writer");
+        assert_eq!(
+            plan_shape_label(AiPlanShape::AnalyzeWriterReview),
+            "analyze_writer_review"
+        );
     }
 
     #[test]
