@@ -51,7 +51,7 @@ test.describe("work tab golden path (onboarded)", () => {
 
     await expect(strategy.getByText("Auto → Lean")).toBeVisible();
     await expect(strategy.getByText("3 → 1")).toBeVisible();
-    await expect(packet.getByText(/Codex CLI · codex/)).toBeVisible();
+    await expect(packet.locator(".exec-packet-heading strong")).toHaveText("Codex CLI · codex");
     await expect(packet.getByText("Isolated", { exact: true })).toBeVisible();
     await expect(packet.getByText(/4,200 \/ 8,000/)).toBeVisible();
 
