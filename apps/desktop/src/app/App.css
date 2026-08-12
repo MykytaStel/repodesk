@@ -26,3 +26,7 @@
 @import "./styles/task-runner.css";
 @import "../features/knowledge/knowledge-v2.css";
 @import "../features/health/health.css";
+
+/* Product-level visual contract. Keep this last: it intentionally resolves the
+   older migration/polish layers into the current RepoDesk visual language. */
+@import "./styles/visual-language-2026.css";
