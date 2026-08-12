@@ -13,6 +13,12 @@ import type { CommandFixtures } from "./fixtures";
 // `{ __mock_delay_ms: number, __mock_value: unknown }`. This keeps normal array/object
 // fixtures literal while letting UI tests observe in-flight states such as installation.
 //
+// A fixture may also return a deterministic response sequence with
+// `{ __mock_sequence: unknown[] }`. Each invocation consumes the next item and
+// subsequent calls keep returning the final item. This is useful for testing
+// evidence refreshes such as plan-lock invalidation without teaching the mock
+// transport any product-specific migration behavior.
+//
 // `__repodeskMockCalls` records the command sequence so specs can assert that the
 // frontend actually drove the daily loop through the IPC seam.
 export async function installMockIpc(page: Page, fixtures: CommandFixtures): Promise<void> {
@@ -21,6 +27,7 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
     const invocations: Array<{ cmd: string; args: Record<string, unknown> | undefined }> = [];
     const callbacks = new Map<number, (payload: unknown) => unknown>();
     const listeners = new Map<string, number[]>();
+    const sequencePositions = new Map<string, number>();
     let callbackSequence = 0;
     (window as unknown as { __repodeskMockCalls: string[] }).__repodeskMockCalls = calls;
     (window as unknown as { __repodeskMockInvocations: typeof invocations }).__repodeskMockInvocations = invocations;
@@ -63,9 +70,19 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
           ? String((action as { kind: unknown }).kind)
           : action === null ? "snapshot" : null;
         const actionKey = actionKind ? `${cmd}:${actionKind}` : null;
-        const value = actionKey && Object.prototype.hasOwnProperty.call(data, actionKey)
-          ? data[actionKey]
-          : Object.prototype.hasOwnProperty.call(data, cmd) ? data[cmd] : null;
+        const fixtureKey = actionKey && Object.prototype.hasOwnProperty.call(data, actionKey)
+          ? actionKey
+          : cmd;
+        let value = Object.prototype.hasOwnProperty.call(data, fixtureKey) ? data[fixtureKey] : null;
+
+        if (value && typeof value === "object" && "__mock_sequence" in value) {
+          const sequence = (value as { __mock_sequence: unknown }).__mock_sequence;
+          if (Array.isArray(sequence) && sequence.length > 0) {
+            const position = sequencePositions.get(fixtureKey) ?? 0;
+            value = sequence[Math.min(position, sequence.length - 1)];
+            sequencePositions.set(fixtureKey, position + 1);
+          }
+        }
 
         if (
           value
