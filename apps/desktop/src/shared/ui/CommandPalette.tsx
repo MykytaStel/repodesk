@@ -115,12 +115,19 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
 
   return (
     <div className="cmdk-overlay" onClick={onClose}>
-      <div className="cmdk-panel cmdk-panel-v2" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="RepoDesk command palette">
+      <div
+        className="cmdk-panel cmdk-panel-v2"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="RepoDesk command palette"
+      >
         <div className="cmdk-search-row">
           <span aria-hidden="true">⌘</span>
           <input
             ref={inputRef}
             className="cmdk-input"
+            aria-label="Search commands"
             placeholder="Type a command, surface, project, or file…"
             value={query}
             onChange={(e) => {
