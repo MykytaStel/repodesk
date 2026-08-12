@@ -21,7 +21,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt,clippy
-      - name: Share Code Workspace path guard with draft store
+      - name: Share and harden Code Workspace path guard
         shell: python
         run: |
           from pathlib import Path
@@ -29,7 +29,7 @@ jobs:
           path = Path("crates/repodesk-core/src/code_workspace.rs")
           text = path.read_text()
           old = '''fn resolve_existing_editable_file_from_root(\n    canonical_root: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let relative = normalize_relative_path(Path::new(relative_path))?;\n    let display = slash_path(&relative);\n    if let Some(reason) = is_blocked_path(&display) {\n        return Err(RepoDeskError::Api(reason));\n    }\n\n    let joined = canonical_root.join(&relative);'''
-          new = '''pub(crate) fn guard_code_relative_path(relative_path: &str) -> RepoDeskResult<PathBuf> {\n    let relative = normalize_relative_path(Path::new(relative_path))?;\n    let display = slash_path(&relative);\n    if let Some(reason) = is_blocked_path(&display) {\n        return Err(RepoDeskError::Api(reason));\n    }\n    Ok(relative)\n}\n\nfn resolve_existing_editable_file_from_root(\n    canonical_root: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let relative = guard_code_relative_path(relative_path)?;\n\n    let joined = canonical_root.join(&relative);'''
+          new = '''pub(crate) fn guard_code_relative_path(relative_path: &str) -> RepoDeskResult<PathBuf> {\n    let relative = normalize_relative_path(Path::new(relative_path))?;\n    let display = slash_path(&relative);\n    if let Some(reason) = is_blocked_path(&display) {\n        return Err(RepoDeskError::Api(reason));\n    }\n    if relative.components().any(|component| {\n        matches!(component, Component::Normal(name) if name.to_string_lossy().eq_ignore_ascii_case(".git"))\n    }) {\n        return Err(RepoDeskError::Api(\n            "Git metadata paths are not editable in Code Workspace".into(),\n        ));\n    }\n    Ok(relative)\n}\n\nfn resolve_existing_editable_file_from_root(\n    canonical_root: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let relative = guard_code_relative_path(relative_path)?;\n\n    let joined = canonical_root.join(&relative);'''
           if old not in text:
               raise SystemExit("Code Workspace guard integration target not found")
           path.write_text(text.replace(old, new, 1))
@@ -38,6 +38,9 @@ jobs:
           text = drafts.read_text()
           text = text.replace('use std::fs::{self, File};', 'use std::fs;')
           text = text.replace('    File::open(parent)?.sync_all()?;', '    fs::File::open(parent)?.sync_all()?;')
+          text = text.replace('path: "src/private name.rs".into(),', 'path: "src/notes file.rs".into(),')
+          text = text.replace('assert_eq!(record.path, "src/private name.rs");', 'assert_eq!(record.path, "src/notes file.rs");')
+          text = text.replace('assert!(!stored.to_string_lossy().contains("private name"));', 'assert!(!stored.to_string_lossy().contains("notes file"));')
           drafts.write_text(text)
 
           Path(".github/workflows/draft-core-integrate.yml").unlink()
@@ -46,6 +49,7 @@ jobs:
         run: |
           cargo fmt --all
           cargo test -p repodesk-core code_drafts
+          cargo test -p repodesk-core code_workspace
           cargo clippy -p repodesk-core --all-targets -- -D warnings
 
       - name: Commit verified core
@@ -54,5 +58,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git diff --cached --check
-          git commit -m "feat(code): share guarded path policy with drafts"
+          git commit -m "fix(code): harden shared draft path policy"
           git push origin HEAD:feat/code-draft-recovery
