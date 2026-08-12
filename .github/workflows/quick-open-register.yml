@@ -1,0 +1,43 @@
+name: Quick Open Register
+
+on:
+  push:
+    branches:
+      - feat/code-quick-open-index-v2
+    paths:
+      - .github/workflows/quick-open-register.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-registry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/code-quick-open-index-v2
+          fetch-depth: 0
+      - name: Register command
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("apps/desktop/src-tauri/src/lib.rs")
+          text = path.read_text()
+          old = "            code_workspace::code_workspace_save,\n"
+          new = old + "            code_workspace::code_workspace_quick_open,\n"
+          if old not in text:
+              raise SystemExit("code_workspace_save handler not found")
+          if "code_workspace::code_workspace_quick_open," in text:
+              raise SystemExit("quick open handler already registered")
+          path.write_text(text.replace(old, new, 1))
+          Path(".github/workflows/quick-open-register.yml").unlink()
+      - name: Commit registry integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src-tauri/src/lib.rs .github/workflows/quick-open-register.yml
+          git diff --cached --check
+          git commit -m "feat(code): register quick open IPC"
+          git push origin HEAD:feat/code-quick-open-index-v2
