@@ -3,11 +3,10 @@ use repodesk_core::engineering::{
     EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot, RunEvidenceSnapshot,
     WorkItemContractSnapshot, WorkItemContractUpdate, accept_active_engineering_knowledge,
     archive_active_engineering_knowledge, capture_active_verified_command,
-    derive_change_governance, derive_context_inspector, derive_engineering_intelligence,
-    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
-    load_active_engineering_knowledge, load_active_run_evidence_from_events,
-    propose_active_engineering_knowledge, read_context_manifest, read_events,
-    read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
+    derive_change_governance, derive_engineering_intelligence, derive_work_item_contract_snapshot,
+    link_active_acceptance_evidence, load_active_engineering_knowledge,
+    load_active_run_evidence_from_events, load_context_inspector, propose_active_engineering_knowledge,
+    read_events, read_work_item_contract, record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::{Deserialize, Serialize};
@@ -114,8 +113,7 @@ pub fn work_engineering_intelligence(
 
     let events = read_events(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let intelligence = derive_engineering_intelligence(&events);
-    let manifest = read_context_manifest(&task.config.run_dir).map_err(ErrorPayload::from)?;
-    let context_inspector = derive_context_inspector(&events, manifest);
+    let context_inspector = load_context_inspector(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let stored_contract =
         read_work_item_contract(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let work_item_contract = derive_work_item_contract_snapshot(&task, stored_contract, &events);
