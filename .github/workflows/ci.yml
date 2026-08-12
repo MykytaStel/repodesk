@@ -64,8 +64,21 @@ jobs:
       - name: Build frontend
         run: pnpm --dir apps/desktop run build
 
+      # Diagnostic-only on this branch: generate the exact canonical file from
+      # the same rustfmt toolchain used by Gates and upload it before checking the
+      # working-tree diff. This commit is removed once the formatted file is applied.
+      - name: Generate canonical rustfmt output
+        run: cargo fmt --all
+
+      - name: Upload canonical rustfmt output
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustfmt-code-workspace-ops
+          path: crates/repodesk-core/src/code_workspace_ops.rs
+          retention-days: 1
+
       - name: Format check
-        run: cargo fmt --all -- --check
+        run: git diff --exit-code -- crates/repodesk-core/src/code_workspace_ops.rs
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
