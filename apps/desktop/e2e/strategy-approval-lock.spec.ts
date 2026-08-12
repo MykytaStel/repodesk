@@ -53,7 +53,7 @@ test("capability approvals are invalidated when the exact strategy plan lock cha
 
   await expect.poll(async () => {
     const invocations = await recordedInvocations(page);
-    return invocations.findLast((entry) => entry.cmd === "orchestrate_strategy_run")?.args ?? null;
+    return [...invocations].reverse().find((entry) => entry.cmd === "orchestrate_strategy_run")?.args ?? null;
   }).toMatchObject({
     expectedPlanFingerprint: "plan-fixture-refreshed-b5f101cc",
     approvalPlanFingerprint: "plan-fixture-refreshed-b5f101cc",
