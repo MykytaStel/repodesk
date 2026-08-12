@@ -20,6 +20,8 @@ use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -32,6 +34,7 @@ use crate::security::is_blocked_path;
 pub const MAX_CODE_WORKSPACE_FILES: usize = 20_000;
 pub const MAX_EDITABLE_FILE_BYTES: u64 = 512 * 1024;
 const MAX_FALLBACK_DEPTH: usize = 32;
+const GIT_STATUS_CACHE_TTL: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,6 +99,14 @@ pub struct CodeWorkspaceSaveResult {
     pub changed: bool,
 }
 
+#[derive(Clone)]
+struct GitStatusCacheEntry {
+    observed_at: Instant,
+    statuses: BTreeMap<String, CodeWorkspaceFileStatus>,
+}
+
+static GIT_STATUS_CACHE: OnceLock<Mutex<BTreeMap<PathBuf, GitStatusCacheEntry>>> = OnceLock::new();
+
 pub fn load_active_code_workspace() -> RepoDeskResult<CodeWorkspaceSnapshot> {
     let project = get_active_project()?;
     load_code_workspace(&project.name, &project.path)
@@ -118,7 +129,7 @@ pub fn load_code_workspace(
     project_path: &Path,
 ) -> RepoDeskResult<CodeWorkspaceSnapshot> {
     let root = project_path.canonicalize()?;
-    let statuses = git_statuses(&root);
+    let statuses = cached_git_statuses(&root);
     let (paths, source) = match git_visible_files(&root) {
         Some(paths) => (paths, CodeWorkspaceSource::GitIndex),
         None => (
@@ -212,6 +223,7 @@ pub fn save_code_document(
         &current_fingerprint,
     )?;
 
+    invalidate_git_status_cache(&project_path.canonicalize()?);
     let document = document_from_path(project_path, &safe.relative, &safe.canonical)?;
     Ok(CodeWorkspaceSaveResult {
         document,
@@ -357,7 +369,7 @@ fn document_from_path(
     }
 
     let path = slash_path(relative);
-    let status = git_statuses(&project_path.canonicalize()?)
+    let status = cached_git_statuses(&project_path.canonicalize()?)
         .get(&path)
         .copied()
         .unwrap_or(CodeWorkspaceFileStatus::Clean);
@@ -426,7 +438,38 @@ fn git_visible_files(root: &Path) -> Option<Vec<PathBuf>> {
     Some(paths.into_iter().collect())
 }
 
-fn git_statuses(root: &Path) -> BTreeMap<String, CodeWorkspaceFileStatus> {
+fn git_status_cache() -> &'static Mutex<BTreeMap<PathBuf, GitStatusCacheEntry>> {
+    GIT_STATUS_CACHE.get_or_init(|| Mutex::new(BTreeMap::new()))
+}
+
+fn cached_git_statuses(root: &Path) -> BTreeMap<String, CodeWorkspaceFileStatus> {
+    if let Ok(cache) = git_status_cache().lock()
+        && let Some(entry) = cache.get(root)
+        && entry.observed_at.elapsed() <= GIT_STATUS_CACHE_TTL
+    {
+        return entry.statuses.clone();
+    }
+
+    let statuses = git_statuses_uncached(root);
+    if let Ok(mut cache) = git_status_cache().lock() {
+        cache.insert(
+            root.to_path_buf(),
+            GitStatusCacheEntry {
+                observed_at: Instant::now(),
+                statuses: statuses.clone(),
+            },
+        );
+    }
+    statuses
+}
+
+fn invalidate_git_status_cache(root: &Path) {
+    if let Ok(mut cache) = git_status_cache().lock() {
+        cache.remove(root);
+    }
+}
+
+fn git_statuses_uncached(root: &Path) -> BTreeMap<String, CodeWorkspaceFileStatus> {
     let output = match Command::new("git")
         .arg("-C")
         .arg(root)
@@ -630,5 +673,37 @@ mod tests {
     fn save_content_validation_rejects_binary_like_text_before_io() {
         let error = validate_save_content("before\0after").unwrap_err();
         assert!(error.to_string().contains("Binary-like content"));
+    }
+
+    #[test]
+    fn status_cache_invalidation_removes_only_the_target_repository() {
+        let root_a = PathBuf::from("/tmp/repodesk-code-cache-a");
+        let root_b = PathBuf::from("/tmp/repodesk-code-cache-b");
+        let mut statuses = BTreeMap::new();
+        statuses.insert("src/lib.rs".to_string(), CodeWorkspaceFileStatus::Modified);
+
+        if let Ok(mut cache) = git_status_cache().lock() {
+            cache.insert(
+                root_a.clone(),
+                GitStatusCacheEntry {
+                    observed_at: Instant::now(),
+                    statuses: statuses.clone(),
+                },
+            );
+            cache.insert(
+                root_b.clone(),
+                GitStatusCacheEntry {
+                    observed_at: Instant::now(),
+                    statuses,
+                },
+            );
+        }
+
+        invalidate_git_status_cache(&root_a);
+        let cache = git_status_cache().lock().expect("status cache lock");
+        assert!(!cache.contains_key(&root_a));
+        assert!(cache.contains_key(&root_b));
+        drop(cache);
+        invalidate_git_status_cache(&root_b);
     }
 }
