@@ -84,7 +84,7 @@ export function CodeProjectSearch({
 
       {error ? <div className="code-search-notice danger">{error}</div> : null}
 
-      <div className="code-search-results" role="list" aria-label="Project search results">
+      <div className="code-search-results" aria-label="Project search results">
         {!result && !pending && !error ? (
           <div className="code-search-empty">
             <strong>Search repository text.</strong>
@@ -101,7 +101,6 @@ export function CodeProjectSearch({
           <button
             type="button"
             className="code-search-result"
-            role="listitem"
             key={`${match.path}:${match.line}:${match.column}:${index}`}
             onClick={() => onOpen(match)}
           >
