@@ -1,0 +1,106 @@
+name: Code Project Binding
+
+on:
+  push:
+    branches:
+      - feat/code-draft-recovery
+    paths:
+      - .github/workflows/code-project-binding.yml
+
+permissions:
+  contents: write
+
+jobs:
+  bind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/code-draft-recovery
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - name: Bind background jobs before spawn
+        shell: python
+        run: |
+          from pathlib import Path
+
+          drafts = Path("crates/repodesk-core/src/code_drafts.rs")
+          text = drafts.read_text()
+          text = text.replace(
+              'use crate::projects::get_active_project;',
+              'use crate::projects::{ProjectConfig, get_active_project};',
+              1,
+          )
+          old = '''pub fn save_active_code_draft(input: CodeDraftSaveInput) -> RepoDeskResult<CodeDraftRecord> {\n    let project = get_active_project()?;\n    let paths = RepoDeskPaths::resolve()?;\n    save_code_draft(\n        &paths.cache_dir,\n        &project.name,\n        &project.path,\n        input,\n        Utc::now(),\n    )\n}\n\npub fn load_active_code_draft(\n    input: CodeDraftLoadInput,\n) -> RepoDeskResult<Option<CodeDraftRecovery>> {\n    let project = get_active_project()?;\n    let paths = RepoDeskPaths::resolve()?;\n    load_code_draft(&paths.cache_dir, &project.name, &project.path, input)\n}\n\npub fn delete_active_code_draft(path: &str) -> RepoDeskResult<bool> {\n    let project = get_active_project()?;\n    let paths = RepoDeskPaths::resolve()?;\n    delete_code_draft(&paths.cache_dir, &project.name, &project.path, path)\n}\n'''
+          new = '''pub fn save_active_code_draft(input: CodeDraftSaveInput) -> RepoDeskResult<CodeDraftRecord> {\n    save_project_code_draft(get_active_project()?, input)\n}\n\npub fn save_project_code_draft(\n    project: ProjectConfig,\n    input: CodeDraftSaveInput,\n) -> RepoDeskResult<CodeDraftRecord> {\n    let paths = RepoDeskPaths::resolve()?;\n    save_code_draft(\n        &paths.cache_dir,\n        &project.name,\n        &project.path,\n        input,\n        Utc::now(),\n    )\n}\n\npub fn load_active_code_draft(\n    input: CodeDraftLoadInput,\n) -> RepoDeskResult<Option<CodeDraftRecovery>> {\n    load_project_code_draft(get_active_project()?, input)\n}\n\npub fn load_project_code_draft(\n    project: ProjectConfig,\n    input: CodeDraftLoadInput,\n) -> RepoDeskResult<Option<CodeDraftRecovery>> {\n    let paths = RepoDeskPaths::resolve()?;\n    load_code_draft(&paths.cache_dir, &project.name, &project.path, input)\n}\n\npub fn delete_active_code_draft(path: &str) -> RepoDeskResult<bool> {\n    delete_project_code_draft(get_active_project()?, path)\n}\n\npub fn delete_project_code_draft(project: ProjectConfig, path: &str) -> RepoDeskResult<bool> {\n    let paths = RepoDeskPaths::resolve()?;\n    delete_code_draft(&paths.cache_dir, &project.name, &project.path, path)\n}\n'''
+          if old not in text:
+              raise SystemExit("Draft active-wrapper block not found")
+          drafts.write_text(text.replace(old, new, 1))
+
+          search = Path("crates/repodesk-core/src/code_workspace_search.rs")
+          text = search.read_text()
+          old = '''pub fn search_active_code_project(\n    input: CodeProjectSearchInput,\n) -> RepoDeskResult<CodeProjectSearchResult> {\n    let query = validate_project_search_query(&input.query)?;\n    let project = get_active_project()?;\n    let root = project.path.canonicalize()?;\n    let index = indexed_workspace(&project.name, &root)?;'''
+          new = '''pub fn search_active_code_project(\n    input: CodeProjectSearchInput,\n) -> RepoDeskResult<CodeProjectSearchResult> {\n    let project = get_active_project()?;\n    search_code_project(&project.name, &project.path, input)\n}\n\npub fn search_code_project(\n    project_name: &str,\n    project_path: &Path,\n    input: CodeProjectSearchInput,\n) -> RepoDeskResult<CodeProjectSearchResult> {\n    let query = validate_project_search_query(&input.query)?;\n    let root = project_path.canonicalize()?;\n    let index = indexed_workspace(project_name, &root)?;'''
+          if old not in text:
+              raise SystemExit("Project search active-wrapper block not found")
+          search.write_text(text.replace(old, new, 1))
+
+          tauri = Path("apps/desktop/src-tauri/src/code_workspace.rs")
+          text = tauri.read_text()
+          text = text.replace(
+              '''    delete_active_code_draft, load_active_code_draft, save_active_code_draft,''',
+              '''    delete_project_code_draft, load_project_code_draft, save_project_code_draft,''',
+              1,
+          )
+          text = text.replace(
+              '''    invalidate_active_quick_open_index, search_active_code_project, search_active_code_workspace,''',
+              '''    invalidate_active_quick_open_index, search_active_code_workspace, search_code_project,''',
+              1,
+          )
+          marker = '''use repodesk_core::code_workspace_search::{\n'''
+          if marker not in text:
+              raise SystemExit("Tauri search import marker not found")
+          search_import_end = '''};\n\n#[tauri::command]'''
+          if search_import_end not in text:
+              raise SystemExit("Tauri import end not found")
+          text = text.replace(search_import_end, '''};\nuse repodesk_core::projects::get_active_project;\n\n#[tauri::command]''', 1)
+
+          text = text.replace(
+              '''    tauri::async_runtime::spawn_blocking(move || save_active_code_draft(input))''',
+              '''    let project = get_active_project().map_err(|error| error.to_string())?;\n    tauri::async_runtime::spawn_blocking(move || save_project_code_draft(project, input))''',
+              1,
+          )
+          text = text.replace(
+              '''    tauri::async_runtime::spawn_blocking(move || load_active_code_draft(input))''',
+              '''    let project = get_active_project().map_err(|error| error.to_string())?;\n    tauri::async_runtime::spawn_blocking(move || load_project_code_draft(project, input))''',
+              1,
+          )
+          text = text.replace(
+              '''    tauri::async_runtime::spawn_blocking(move || delete_active_code_draft(&relative_path))''',
+              '''    let project = get_active_project().map_err(|error| error.to_string())?;\n    tauri::async_runtime::spawn_blocking(move || delete_project_code_draft(project, &relative_path))''',
+              1,
+          )
+          text = text.replace(
+              '''    tauri::async_runtime::spawn_blocking(move || search_active_code_project(input))''',
+              '''    let project = get_active_project().map_err(|error| error.to_string())?;\n    tauri::async_runtime::spawn_blocking(move || {\n        search_code_project(&project.name, &project.path, input)\n    })''',
+              1,
+          )
+          tauri.write_text(text)
+
+          Path(".github/workflows/code-project-binding.yml").unlink()
+      - name: Verify bound code jobs
+        run: |
+          cargo fmt --all
+          cargo test -p repodesk-core code_drafts
+          cargo test -p repodesk-core code_workspace_search
+          cargo clippy -p repodesk-core --all-targets -- -D warnings
+      - name: Commit binding
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix(code): bind async jobs to invocation project"
+          git push origin HEAD:feat/code-draft-recovery
