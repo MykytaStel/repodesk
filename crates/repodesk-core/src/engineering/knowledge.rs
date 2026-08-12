@@ -702,7 +702,8 @@ fn knowledge_score(record: &EngineeringKnowledgeRecord, query_terms: &BTreeSet<S
 
 fn render_records(records: &[&EngineeringKnowledgeRecord]) -> String {
     if records.is_empty() {
-        return "No current reviewed Engineering Knowledge is available for this project.".to_string();
+        return "No current reviewed Engineering Knowledge is available for this project."
+            .to_string();
     }
     records
         .iter()

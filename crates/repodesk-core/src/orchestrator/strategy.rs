@@ -10,8 +10,8 @@ use std::path::Path;
 use crate::api_clients::ProviderSettings;
 use crate::engineering::{
     AiPlanShape, AiStrategyInputs, AiStrategyMode, AiStrategyProfile, AiStrategyRecommendation,
-    derive_ai_strategy, derive_ai_usage_report, derive_engineering_intelligence,
-    load_context_inspector, read_events, read_work_item_contract,
+    derive_ai_strategy_with_feedback, derive_ai_usage_report, derive_engineering_intelligence,
+    derive_strategy_feedback, load_context_inspector, read_events, read_work_item_contract,
 };
 use crate::errors::RepoDeskResult;
 use crate::projects::get_active_project;
@@ -32,6 +32,7 @@ pub fn derive_active_ai_strategy(
     let events = read_events(&task.config.run_dir)?;
     let intelligence = derive_engineering_intelligence(&events);
     let usage = derive_ai_usage_report(&events, &intelligence);
+    let feedback = derive_strategy_feedback(&events);
     let contract = read_work_item_contract(&task.config.run_dir)?;
     let context_prepared = load_context_inspector(&task.config.run_dir)
         .ok()
@@ -50,7 +51,12 @@ pub fn derive_active_ai_strategy(
         context_prepared,
     };
 
-    Ok(derive_ai_strategy(&usage, inputs, requested_mode))
+    Ok(derive_ai_strategy_with_feedback(
+        &usage,
+        inputs,
+        requested_mode,
+        &feedback,
+    ))
 }
 
 /// Build a plan using the normal planner/router first, then apply the selected
@@ -63,12 +69,7 @@ pub fn build_strategy_plan(
     requested_mode: AiStrategyMode,
 ) -> RepoDeskResult<(OrchestrationPlan, AiStrategyRecommendation)> {
     let strategy = derive_active_ai_strategy(requested_mode)?;
-    let mut plan = build_plan(
-        goal,
-        settings,
-        override_provider.clone(),
-        override_model,
-    )?;
+    let mut plan = build_plan(goal, settings, override_provider.clone(), override_model)?;
 
     apply_plan_shape(&mut plan, strategy.plan_shape);
     if override_provider
@@ -106,12 +107,7 @@ fn scope_is_file_bounded(paths: &[String]) -> bool {
             name.contains('.')
                 || matches!(
                     name,
-                    "Dockerfile"
-                        | "Makefile"
-                        | "Justfile"
-                        | "Procfile"
-                        | "LICENSE"
-                        | "README"
+                    "Dockerfile" | "Makefile" | "Justfile" | "Procfile" | "LICENSE" | "README"
                 )
         })
 }
@@ -204,7 +200,11 @@ mod tests {
         SubAgentTask {
             id: id.into(),
             title: id.into(),
-            kind: if allow_write { TaskKind::Patch } else { TaskKind::Review },
+            kind: if allow_write {
+                TaskKind::Patch
+            } else {
+                TaskKind::Review
+            },
             agent: "agent".into(),
             provider: "provider".into(),
             executor_kind: if allow_write {

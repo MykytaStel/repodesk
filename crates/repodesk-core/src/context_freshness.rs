@@ -150,11 +150,7 @@ mod tests {
     #[test]
     fn score_is_one_for_a_current_observation() {
         let now = Utc::now();
-        let assessment = score_context_freshness_at(
-            ContextSourceKind::GitState,
-            Some(now),
-            now,
-        );
+        let assessment = score_context_freshness_at(ContextSourceKind::GitState, Some(now), now);
         assert_eq!(assessment.score, Some(1.0));
         assert_eq!(assessment.age_days, Some(0.0));
     }
@@ -163,11 +159,8 @@ mod tests {
     fn score_is_half_at_one_source_half_life() {
         let now = Utc::now();
         let observed = now - Duration::days(30);
-        let assessment = score_context_freshness_at(
-            ContextSourceKind::LegacyMemory,
-            Some(observed),
-            now,
-        );
+        let assessment =
+            score_context_freshness_at(ContextSourceKind::LegacyMemory, Some(observed), now);
         assert_eq!(assessment.score, Some(0.5));
         assert_eq!(assessment.half_life_days, 30.0);
     }
@@ -185,11 +178,8 @@ mod tests {
 
     #[test]
     fn missing_timestamp_remains_unevaluated() {
-        let assessment = score_context_freshness_at(
-            ContextSourceKind::EngineeringKnowledge,
-            None,
-            Utc::now(),
-        );
+        let assessment =
+            score_context_freshness_at(ContextSourceKind::EngineeringKnowledge, None, Utc::now());
         assert_eq!(assessment.score, None);
         assert_eq!(assessment.age_days, None);
     }

@@ -273,7 +273,10 @@ pub fn record_ai_strategy_selected(
             "resolved_profile",
             Value::String(telemetry.resolved_profile.to_string()),
         )
-        .with_attribute("plan_shape", Value::String(telemetry.plan_shape.to_string()))
+        .with_attribute(
+            "plan_shape",
+            Value::String(telemetry.plan_shape.to_string()),
+        )
         .with_attribute(
             "plan_fingerprint",
             Value::String(telemetry.plan_fingerprint.to_string()),

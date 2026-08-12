@@ -156,7 +156,8 @@ pub fn engineering_knowledge_context_eligible_at(
 ) -> bool {
     matches!(
         assess_engineering_knowledge_at(record, now).state,
-        EngineeringKnowledgeLifecycleState::Current | EngineeringKnowledgeLifecycleState::ReviewSoon
+        EngineeringKnowledgeLifecycleState::Current
+            | EngineeringKnowledgeLifecycleState::ReviewSoon
     )
 }
 
@@ -204,7 +205,9 @@ mod tests {
 
     use super::*;
     use crate::engineering::domain::EngineeringKnowledgeId;
-    use crate::engineering::knowledge::{EngineeringKnowledgeCounts, EngineeringKnowledgeSuggestion};
+    use crate::engineering::knowledge::{
+        EngineeringKnowledgeCounts, EngineeringKnowledgeSuggestion,
+    };
 
     fn record(
         category: EngineeringKnowledgeCategory,
@@ -348,7 +351,7 @@ mod tests {
     #[test]
     fn report_counts_each_lifecycle_state() {
         let now = Utc::now();
-        let records = vec![
+        let records = [
             record(
                 EngineeringKnowledgeCategory::Architecture,
                 EngineeringKnowledgeOrigin::Human,

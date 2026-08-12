@@ -160,7 +160,8 @@ fn strategy_observability_for_run(
     run_id: &str,
 ) -> Option<RunStrategyObservability> {
     let event = events.iter().rev().find(|event| {
-        event.kind == EngineeringEventKind::AiStrategySelected && event_belongs_to_run(event, run_id)
+        event.kind == EngineeringEventKind::AiStrategySelected
+            && event_belongs_to_run(event, run_id)
     })?;
 
     Some(RunStrategyObservability {
@@ -432,13 +433,13 @@ fn ratio(numerator: f64, denominator: usize) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use crate::engineering::acceptance_evidence::AcceptanceEvidenceReport;
     use crate::engineering::domain::{ExecutionId, WorkItemId};
     use crate::engineering::run_evidence::{
         RunCommitEvidence, RunContextEvidence, RunReviewEvidence, RunVerificationEvidence,
         RunWorkerEvidence,
     };
+    use serde_json::json;
 
     fn base_evidence() -> RunEvidenceSnapshot {
         RunEvidenceSnapshot {

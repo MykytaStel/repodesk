@@ -135,10 +135,8 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     // repo-map implementation used by explicit inspection surfaces. Only the
     // compact structural projection becomes a context candidate; no file bodies
     // are read for this source.
-    let repository_map = crate::repo_map::build_repo_map_for(
-        project.name.clone(),
-        project.path.clone(),
-    )?;
+    let repository_map =
+        crate::repo_map::build_repo_map_for(project.name.clone(), project.path.clone())?;
     let repository_map = crate::repo_map::format_repo_context(&repository_map);
     let repository_map_observed_at = Utc::now();
 
@@ -263,11 +261,13 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     );
 
     let budget_config = load_budget_config()?;
-    let framing_tokens = estimate_text(&render_context_pack(&ContextPackInput::empty())).estimated_tokens;
-    let raw_content_budget = budget_config.context_ok_limit.saturating_sub(framing_tokens);
-    let content_budget = raw_content_budget
-        .saturating_mul(100usize.saturating_sub(PACKING_HEADROOM_PERCENT))
-        / 100;
+    let framing_tokens =
+        estimate_text(&render_context_pack(&ContextPackInput::empty())).estimated_tokens;
+    let raw_content_budget = budget_config
+        .context_ok_limit
+        .saturating_sub(framing_tokens);
+    let content_budget =
+        raw_content_budget.saturating_mul(100usize.saturating_sub(PACKING_HEADROOM_PERCENT)) / 100;
     let packing = pack_context_candidates(
         &pipeline_candidates,
         ContextPackingPolicy {
@@ -311,16 +311,8 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
             bounded_input.engineering_knowledge,
             &packing.selections,
         ),
-        memory: selected_component(
-            "legacy_memory",
-            bounded_input.memory,
-            &packing.selections,
-        ),
-        decisions: selected_component(
-            "decisions",
-            bounded_input.decisions,
-            &packing.selections,
-        ),
+        memory: selected_component("legacy_memory", bounded_input.memory, &packing.selections),
+        decisions: selected_component("decisions", bounded_input.decisions, &packing.selections),
         risks: selected_component("risks", bounded_input.risks, &packing.selections),
         checks: selected_component("checks", bounded_input.checks, &packing.selections),
         ignore_rules: selected_component(
@@ -328,11 +320,7 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
             bounded_input.ignore_rules,
             &packing.selections,
         ),
-        git_state: selected_component(
-            "git_state",
-            bounded_input.git_state,
-            &packing.selections,
-        ),
+        git_state: selected_component("git_state", bounded_input.git_state, &packing.selections),
         agent_notes: selected_component(
             "agent_notes",
             bounded_input.agent_notes,
@@ -350,7 +338,11 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
             &project_metadata,
             packed_input.project_metadata,
         ),
-        context_component("repository_map", &repository_map, packed_input.repository_map),
+        context_component(
+            "repository_map",
+            &repository_map,
+            packed_input.repository_map,
+        ),
         context_component("task_metadata", &task_metadata, packed_input.task_metadata),
         context_component(
             "work_item_contract",
@@ -442,7 +434,10 @@ fn engineering_knowledge_observed_at(included_ids: &[String]) -> Option<DateTime
     if included_ids.is_empty() {
         return None;
     }
-    let included = included_ids.iter().map(String::as_str).collect::<HashSet<_>>();
+    let included = included_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<HashSet<_>>();
     let snapshot = load_active_engineering_knowledge().ok()?;
 
     snapshot
@@ -625,11 +620,7 @@ fn pipeline_candidate(
     }
 }
 
-fn selected_component<'a>(
-    id: &str,
-    value: &'a str,
-    selections: &[ContextSelection],
-) -> &'a str {
+fn selected_component<'a>(id: &str, value: &'a str, selections: &[ContextSelection]) -> &'a str {
     selections
         .iter()
         .find(|selection| selection.candidate_id == id)
@@ -897,7 +888,10 @@ mod tests {
             order: None,
         }];
 
-        assert_eq!(selected_component("repository_map", "structural metadata", &selections), "");
+        assert_eq!(
+            selected_component("repository_map", "structural metadata", &selections),
+            ""
+        );
     }
 
     #[test]

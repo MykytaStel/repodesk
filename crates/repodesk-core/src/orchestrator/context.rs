@@ -153,7 +153,12 @@ mod tests {
     #[test]
     fn prompt_includes_base_goal_instruction_and_handoff() {
         let up = upstream_result("the analysis");
-        let prompt = compose_step_prompt("CANONICAL CONTEXT", "ship feature X", &sample_step(true), &[&up]);
+        let prompt = compose_step_prompt(
+            "CANONICAL CONTEXT",
+            "ship feature X",
+            &sample_step(true),
+            &[&up],
+        );
         assert!(prompt.contains("CANONICAL CONTEXT"));
         assert!(prompt.contains("ship feature X"));
         assert!(prompt.contains("Do the thing."));

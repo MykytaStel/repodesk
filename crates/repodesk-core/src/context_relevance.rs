@@ -122,8 +122,21 @@ fn tokenize(value: &str) -> BTreeSet<String> {
 fn is_noise_token(value: &str) -> bool {
     matches!(
         value,
-        "src" | "lib" | "mod" | "main" | "index" | "test" | "tests" | "spec" | "rs" | "ts"
-            | "tsx" | "js" | "jsx" | "py" | "md"
+        "src"
+            | "lib"
+            | "mod"
+            | "main"
+            | "index"
+            | "test"
+            | "tests"
+            | "spec"
+            | "rs"
+            | "ts"
+            | "tsx"
+            | "js"
+            | "jsx"
+            | "py"
+            | "md"
     )
 }
 
@@ -134,8 +147,8 @@ fn same_repo_path(left: &str, right: &str) -> bool {
 fn normalize_path(value: &str) -> String {
     value
         .trim()
-        .trim_start_matches("./")
         .replace('\\', "/")
+        .trim_start_matches("./")
         .to_ascii_lowercase()
 }
 
@@ -244,11 +257,8 @@ mod tests {
             ContextTrust::Observed,
             "src/auth/session.rs",
         );
-        let assessment = score_context_relevance(
-            &file,
-            "session",
-            &[".\\SRC\\AUTH\\SESSION.RS".into()],
-        );
+        let assessment =
+            score_context_relevance(&file, "session", &[".\\SRC\\AUTH\\SESSION.RS".into()]);
         assert_eq!(assessment.changed_file_adjustment, 0.15);
     }
 }

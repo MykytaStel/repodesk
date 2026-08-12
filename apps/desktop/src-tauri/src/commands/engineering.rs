@@ -2,15 +2,16 @@ use repodesk_core::engineering::{
     AiUsageReport, ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
     EngineeringKnowledgeLifecycleReport, EngineeringKnowledgeProposalInput,
     EngineeringKnowledgeSnapshot, RunEvidenceSnapshot, RunObservabilityReport,
-    WorkItemContractSnapshot, WorkItemContractUpdate, accept_active_engineering_knowledge,
-    archive_active_engineering_knowledge, capture_active_verified_command,
-    derive_ai_usage_report, derive_change_governance, derive_engineering_intelligence,
-    derive_engineering_knowledge_lifecycle, derive_run_observability,
-    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
-    load_active_engineering_knowledge, load_active_run_evidence_from_events,
-    load_context_inspector, propose_active_engineering_knowledge, read_events,
-    read_work_item_contract, reconfirm_active_engineering_knowledge,
-    record_active_scope_override, save_active_work_item_contract,
+    StrategyFeedbackReport, WorkItemContractSnapshot, WorkItemContractUpdate,
+    accept_active_engineering_knowledge, archive_active_engineering_knowledge,
+    capture_active_verified_command, derive_ai_usage_report, derive_change_governance,
+    derive_engineering_intelligence, derive_engineering_knowledge_lifecycle,
+    derive_run_observability, derive_strategy_feedback, derive_work_item_contract_snapshot,
+    link_active_acceptance_evidence, load_active_engineering_knowledge,
+    load_active_run_evidence_from_events, load_context_inspector,
+    propose_active_engineering_knowledge, read_events, read_work_item_contract,
+    reconfirm_active_engineering_knowledge, record_active_scope_override,
+    save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::{Deserialize, Serialize};
@@ -44,6 +45,7 @@ pub struct WorkEngineeringSnapshot {
     /// Normal Work/Changes/Inspector calls still receive every field populated.
     pub intelligence: Option<EngineeringIntelligence>,
     pub ai_usage_report: Option<AiUsageReport>,
+    pub strategy_feedback: Option<StrategyFeedbackReport>,
     pub context_inspector: Option<ContextInspectorReport>,
     pub work_item_contract: Option<WorkItemContractSnapshot>,
     pub change_governance: Option<ChangeGovernanceSnapshot>,
@@ -56,8 +58,8 @@ pub struct WorkEngineeringSnapshot {
 /// Temporary RepoDesk 2 engineering transport. Task-local Work projections and
 /// project-local Knowledge share one registered IPC boundary while the domain is
 /// still migrating. This deliberately avoids adding parallel handler commands.
-/// AI-usage and run-observability projections reuse the same event replay so the
-/// frontend does not need to issue extra ledger reads for explanatory metrics.
+/// AI-usage, strategy feedback and run-observability projections reuse the same
+/// event replay so the frontend does not issue extra ledger reads.
 #[tauri::command]
 pub fn work_engineering_intelligence(
     contract_update: Option<WorkItemContractUpdate>,
@@ -97,9 +99,9 @@ pub fn work_engineering_intelligence(
         Some(EngineeringKnowledgeAction::Accept { knowledge_id }) => {
             Some(accept_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
         }
-        Some(EngineeringKnowledgeAction::Reconfirm { knowledge_id }) => {
-            Some(reconfirm_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
-        }
+        Some(EngineeringKnowledgeAction::Reconfirm { knowledge_id }) => Some(
+            reconfirm_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?,
+        ),
         Some(EngineeringKnowledgeAction::Archive { knowledge_id }) => {
             Some(archive_active_engineering_knowledge(&knowledge_id).map_err(ErrorPayload::from)?)
         }
@@ -118,6 +120,7 @@ pub fn work_engineering_intelligence(
             return Ok(WorkEngineeringSnapshot {
                 intelligence: None,
                 ai_usage_report: None,
+                strategy_feedback: None,
                 context_inspector: None,
                 work_item_contract: None,
                 change_governance: None,
@@ -133,7 +136,9 @@ pub fn work_engineering_intelligence(
     let events = read_events(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let intelligence = derive_engineering_intelligence(&events);
     let ai_usage_report = derive_ai_usage_report(&events, &intelligence);
-    let context_inspector = load_context_inspector(&task.config.run_dir).map_err(ErrorPayload::from)?;
+    let strategy_feedback = derive_strategy_feedback(&events);
+    let context_inspector =
+        load_context_inspector(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let stored_contract =
         read_work_item_contract(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let work_item_contract = derive_work_item_contract_snapshot(&task, stored_contract, &events);
@@ -151,6 +156,7 @@ pub fn work_engineering_intelligence(
     Ok(WorkEngineeringSnapshot {
         intelligence: Some(intelligence),
         ai_usage_report: Some(ai_usage_report),
+        strategy_feedback: Some(strategy_feedback),
         context_inspector: Some(context_inspector),
         work_item_contract: Some(work_item_contract),
         change_governance: Some(change_governance),

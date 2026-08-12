@@ -144,11 +144,7 @@ pub fn format_repo_context(map: &RepoMap) -> String {
     if map.important_files.is_empty() {
         output.push_str("- none detected\n");
     } else {
-        for path in map
-            .important_files
-            .iter()
-            .take(MAX_CONTEXT_IMPORTANT_FILES)
-        {
+        for path in map.important_files.iter().take(MAX_CONTEXT_IMPORTANT_FILES) {
             output.push_str(&format!("- `{path}`\n"));
         }
     }
@@ -441,8 +437,16 @@ mod tests {
         scanner.languages.insert("zeta".into(), (1, 10));
         scanner.languages.insert("alpha".into(), (1, 10));
         scanner.hotspots = vec![
-            FileHotspot { path: "z".into(), bytes: 100, reason: "x".into() },
-            FileHotspot { path: "a".into(), bytes: 100, reason: "x".into() },
+            FileHotspot {
+                path: "z".into(),
+                bytes: 100,
+                reason: "x".into(),
+            },
+            FileHotspot {
+                path: "a".into(),
+                bytes: 100,
+                reason: "x".into(),
+            },
         ];
         let map = scanner.finish();
         assert_eq!(map.languages[0].label, "alpha");

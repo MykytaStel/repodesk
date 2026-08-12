@@ -43,7 +43,7 @@ pub struct ExecutionPreviewStep {
 
 /// Prepared canonical context facts shown before launch. This contains only
 /// structural evidence; raw context content stays in `context.md`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ExecutionContextPreview {
     pub prepared: bool,
     pub context_tokens: usize,
@@ -54,22 +54,6 @@ pub struct ExecutionContextPreview {
     pub context_fingerprint: Option<String>,
     pub generated_at: Option<String>,
     pub warning: Option<String>,
-}
-
-impl Default for ExecutionContextPreview {
-    fn default() -> Self {
-        Self {
-            prepared: false,
-            context_tokens: 0,
-            candidate_tokens: 0,
-            token_budget: None,
-            included_sources: 0,
-            excluded_sources: 0,
-            context_fingerprint: None,
-            generated_at: None,
-            warning: None,
-        }
-    }
 }
 
 /// The whole-run preview: per-step detail plus the aggregate facts and the

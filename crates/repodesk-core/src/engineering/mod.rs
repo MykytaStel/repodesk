@@ -20,6 +20,9 @@ pub mod knowledge;
 pub mod knowledge_lifecycle;
 pub mod run_evidence;
 pub mod run_observability;
+pub mod strategy_adaptation;
+pub mod strategy_feedback;
+pub mod strategy_instrumentation;
 pub mod work_item_contract;
 
 pub use acceptance_evidence::{
@@ -108,6 +111,12 @@ pub use run_observability::{
     RunContextObservability, RunDisposition, RunDispositionStage, RunDispositionState,
     RunEfficiency, RunObservabilityReport, RunStrategyObservability, derive_run_observability,
 };
+pub use strategy_adaptation::derive_ai_strategy_with_feedback;
+pub use strategy_feedback::{
+    STRATEGY_FEEDBACK_MIN_SETTLED_RUNS, StrategyFeedbackReport, StrategyOutcomeState,
+    StrategyProfileFeedback, StrategyRunFeedback, derive_strategy_feedback,
+};
+pub use strategy_instrumentation::{StrategySelectionTelemetry, record_strategy_selection};
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
     WORK_ITEM_CONTRACT_VERSION, WorkItemContract, WorkItemContractReadiness,

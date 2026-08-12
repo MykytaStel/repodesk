@@ -381,9 +381,24 @@ mod tests {
 
         assert_eq!(report.context.latest_repeated_tokens, Some(2_000));
         assert_eq!(report.orchestration.handoffs, 2);
-        assert!(report.signals.iter().any(|signal| signal.code == AiUsageSignalCode::RepeatedContext));
-        assert!(report.signals.iter().any(|signal| signal.code == AiUsageSignalCode::AgentFanout));
-        assert!(report.signals.iter().any(|signal| signal.code == AiUsageSignalCode::PromptHeavy));
+        assert!(
+            report
+                .signals
+                .iter()
+                .any(|signal| signal.code == AiUsageSignalCode::RepeatedContext)
+        );
+        assert!(
+            report
+                .signals
+                .iter()
+                .any(|signal| signal.code == AiUsageSignalCode::AgentFanout)
+        );
+        assert!(
+            report
+                .signals
+                .iter()
+                .any(|signal| signal.code == AiUsageSignalCode::PromptHeavy)
+        );
     }
 
     #[test]

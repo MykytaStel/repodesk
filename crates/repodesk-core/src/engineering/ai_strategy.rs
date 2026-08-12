@@ -128,6 +128,10 @@ pub struct AiStrategyRecommendation {
     pub reuse_prepared_context: bool,
     pub max_agent_steps: usize,
     pub independent_ai_review: bool,
+    /// True only when settled historical strategy outcomes changed the base Auto
+    /// decision. Explicit modes never set this field.
+    pub feedback_influenced: bool,
+    pub feedback_detail: Option<String>,
     pub reasons: Vec<AiStrategyReason>,
 }
 
@@ -259,6 +263,8 @@ pub fn derive_ai_strategy(
             AiPlanShape::AnalyzeWriterReview => 3,
         },
         independent_ai_review: plan_shape != AiPlanShape::SingleWriter,
+        feedback_influenced: false,
+        feedback_detail: None,
         reasons,
     }
 }
@@ -273,7 +279,11 @@ fn push_signal_reason(
     signal_code: AiUsageSignalCode,
     reason_code: AiStrategyReasonCode,
 ) {
-    if let Some(signal) = usage.signals.iter().find(|signal| signal.code == signal_code) {
+    if let Some(signal) = usage
+        .signals
+        .iter()
+        .find(|signal| signal.code == signal_code)
+    {
         reasons.push(AiStrategyReason {
             code: reason_code,
             detail: signal.detail.clone(),
@@ -326,6 +336,7 @@ mod tests {
         assert_eq!(recommendation.plan_shape, AiPlanShape::SingleWriter);
         assert_eq!(recommendation.max_agent_steps, 1);
         assert!(recommendation.reuse_prepared_context);
+        assert!(!recommendation.feedback_influenced);
     }
 
     #[test]

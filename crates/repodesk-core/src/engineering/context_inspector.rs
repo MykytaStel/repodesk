@@ -105,7 +105,11 @@ mod tests {
     #[test]
     fn damaged_pipeline_is_reported_without_becoming_absence() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join(CONTEXT_PIPELINE_FILE), "{ definitely not json").unwrap();
+        fs::write(
+            dir.path().join(CONTEXT_PIPELINE_FILE),
+            "{ definitely not json",
+        )
+        .unwrap();
         assert!(read_context_pipeline(dir.path()).is_err());
     }
 

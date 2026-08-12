@@ -130,7 +130,7 @@ function AcceptanceRow({
 }
 
 function RunObservability({ report }: { report: RunObservabilityReport }) {
-  const { disposition, efficiency, context } = report;
+  const { disposition, efficiency, context, strategy } = report;
   const dispositionTone = disposition.state === "blocked"
     ? "danger"
     : disposition.state === "complete"
@@ -149,6 +149,31 @@ function RunObservability({ report }: { report: RunObservabilityReport }) {
         </div>
         <span className={`pill ${dispositionTone}`}>{disposition.state}</span>
       </section>
+
+      {strategy ? (
+        <section className="run-strategy-evidence" aria-label="AI strategy used by this run">
+          <div>
+            <span>Strategy</span>
+            <strong>{strategy.requested_mode} → {strategy.resolved_profile}</strong>
+            <code title={strategy.plan_fingerprint}>{shortId(strategy.plan_fingerprint)}</code>
+          </div>
+          <div>
+            <span>AI calls</span>
+            <strong>{strategy.baseline_steps} → {strategy.planned_steps}</strong>
+            <code>{strategy.plan_shape}</code>
+          </div>
+          <div>
+            <span>Predicted saving</span>
+            <strong>{strategy.estimated_saved_tokens.toLocaleString()} tok</strong>
+            <code>before execution</code>
+          </div>
+          <div>
+            <span>Context lock</span>
+            <strong>{strategy.context_fingerprint ? shortId(strategy.context_fingerprint) : "legacy"}</strong>
+            <code>{strategy.context_fingerprint ? "bound" : "not recorded"}</code>
+          </div>
+        </section>
+      ) : null}
 
       <section className="run-observability-grid" aria-label="Run efficiency">
         <div><span>Workers</span><strong>{efficiency.workers}</strong><small>{efficiency.successful_workers} successful</small></div>

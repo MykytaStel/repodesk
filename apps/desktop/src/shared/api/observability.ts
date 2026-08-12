@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { EngineeringIntelligence, RunEvidenceSnapshot } from "./engineering";
+import type { AiStrategyProfile } from "./strategy";
 
 export const WORK_OBSERVABILITY_KEY = ["work", "observability-v1"] as const;
 
@@ -69,6 +70,54 @@ export type AiUsageReport = {
   signals: AiUsageSignal[];
 };
 
+export type StrategyOutcomeState = "pending" | "succeeded" | "failed";
+
+export type StrategyRunFeedback = {
+  run_id: string;
+  requested_mode: string;
+  profile: AiStrategyProfile;
+  plan_shape: string;
+  baseline_steps: number;
+  planned_steps: number;
+  baseline_estimated_tokens: number | null;
+  planned_estimated_tokens: number | null;
+  predicted_saved_tokens: number;
+  actual_tokens: number | null;
+  baseline_estimated_cost_units: number | null;
+  planned_estimated_cost_units: number | null;
+  actual_cost_units: number | null;
+  token_estimate_error_ratio: number | null;
+  execution_status: string | null;
+  review_decision: string | null;
+  verification_success: boolean | null;
+  committed: boolean;
+  outcome: StrategyOutcomeState;
+};
+
+export type StrategyProfileFeedback = {
+  profile: AiStrategyProfile;
+  runs: number;
+  settled_runs: number;
+  succeeded_runs: number;
+  failed_runs: number;
+  pending_runs: number;
+  success_rate: number | null;
+  total_actual_tokens: number;
+  total_actual_cost_units: number;
+  average_actual_tokens: number | null;
+  average_actual_cost_units: number | null;
+  average_token_estimate_error_ratio: number | null;
+  adaptation_ready: boolean;
+};
+
+export type StrategyFeedbackReport = {
+  strategy_runs: number;
+  settled_runs: number;
+  pending_runs: number;
+  profiles: StrategyProfileFeedback[];
+  recent_runs: StrategyRunFeedback[];
+};
+
 export type RunDispositionState = "complete" | "ready" | "attention" | "blocked";
 export type RunDispositionStage = "execution" | "review" | "verification" | "acceptance" | "commit" | "complete";
 
@@ -89,6 +138,17 @@ export type RunContextObservability = {
   repeated_context_ratio: number | null;
 };
 
+export type RunStrategyObservability = {
+  requested_mode: string;
+  resolved_profile: string;
+  plan_shape: string;
+  plan_fingerprint: string;
+  baseline_steps: number;
+  planned_steps: number;
+  estimated_saved_tokens: number;
+  context_fingerprint: string | null;
+};
+
 export type RunEfficiency = {
   workers: number;
   successful_workers: number;
@@ -107,6 +167,7 @@ export type RunEfficiency = {
 export type RunObservabilityReport = {
   run_id: string;
   disposition: RunDisposition;
+  strategy: RunStrategyObservability | null;
   context: RunContextObservability;
   efficiency: RunEfficiency;
 };
@@ -114,6 +175,7 @@ export type RunObservabilityReport = {
 export type WorkObservabilitySnapshot = {
   intelligence: EngineeringIntelligence | null;
   ai_usage_report: AiUsageReport | null;
+  strategy_feedback: StrategyFeedbackReport | null;
   run_evidence: RunEvidenceSnapshot | null;
   run_observability: RunObservabilityReport | null;
 };

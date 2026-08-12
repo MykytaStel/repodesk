@@ -168,13 +168,17 @@ mod tests {
             candidate("optional", 80, 1.0, ContextTrust::Authoritative, false),
         ];
 
-        let result = pack_context_candidates(
-            &candidates,
-            ContextPackingPolicy { token_budget: 80 },
-        );
+        let result =
+            pack_context_candidates(&candidates, ContextPackingPolicy { token_budget: 80 });
 
-        assert_eq!(selection(&result, "required").state, ContextSelectionState::Included);
-        assert_eq!(selection(&result, "optional").state, ContextSelectionState::Excluded);
+        assert_eq!(
+            selection(&result, "required").state,
+            ContextSelectionState::Included
+        );
+        assert_eq!(
+            selection(&result, "optional").state,
+            ContextSelectionState::Excluded
+        );
     }
 
     #[test]
@@ -184,12 +188,13 @@ mod tests {
             candidate("relevant", 60, 0.9, ContextTrust::Observed, false),
         ];
 
-        let result = pack_context_candidates(
-            &candidates,
-            ContextPackingPolicy { token_budget: 60 },
-        );
+        let result =
+            pack_context_candidates(&candidates, ContextPackingPolicy { token_budget: 60 });
 
-        assert_eq!(selection(&result, "relevant").state, ContextSelectionState::Included);
+        assert_eq!(
+            selection(&result, "relevant").state,
+            ContextSelectionState::Included
+        );
     }
 
     #[test]
@@ -199,12 +204,13 @@ mod tests {
             candidate("small", 40, 0.7, ContextTrust::Observed, false),
         ];
 
-        let result = pack_context_candidates(
-            &candidates,
-            ContextPackingPolicy { token_budget: 60 },
-        );
+        let result =
+            pack_context_candidates(&candidates, ContextPackingPolicy { token_budget: 60 });
 
-        assert_eq!(selection(&result, "small").state, ContextSelectionState::Included);
+        assert_eq!(
+            selection(&result, "small").state,
+            ContextSelectionState::Included
+        );
         assert_eq!(result.included_tokens, 40);
         assert_eq!(result.excluded_tokens, 90);
     }
@@ -216,10 +222,8 @@ mod tests {
             candidate("a", 50, 0.9, ContextTrust::Observed, false),
         ];
 
-        let result = pack_context_candidates(
-            &candidates,
-            ContextPackingPolicy { token_budget: 50 },
-        );
+        let result =
+            pack_context_candidates(&candidates, ContextPackingPolicy { token_budget: 50 });
 
         assert_eq!(result.selections.len(), 2);
         assert_eq!(result.selections[0].candidate_id, "b");
@@ -238,10 +242,8 @@ mod tests {
             candidate("second", 20, 1.0, ContextTrust::Authoritative, false),
         ];
 
-        let result = pack_context_candidates(
-            &candidates,
-            ContextPackingPolicy { token_budget: 40 },
-        );
+        let result =
+            pack_context_candidates(&candidates, ContextPackingPolicy { token_budget: 40 });
 
         assert_eq!(selection(&result, "first").order, Some(0));
         assert_eq!(selection(&result, "second").order, Some(1));

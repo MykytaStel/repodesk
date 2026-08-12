@@ -28,6 +28,8 @@ export type AiStrategyRecommendation = {
   reuse_prepared_context: boolean;
   max_agent_steps: number;
   independent_ai_review: boolean;
+  feedback_influenced: boolean;
+  feedback_detail: string | null;
   reasons: AiStrategyReason[];
 };
 
@@ -76,6 +78,8 @@ export type StrategyBaselineComparison = {
   baseline_estimated_tokens: number;
   planned_estimated_tokens: number;
   estimated_saved_tokens: number;
+  baseline_estimated_cost_units: number;
+  planned_estimated_cost_units: number;
   estimated_cost_delta_units: number;
 };
 
