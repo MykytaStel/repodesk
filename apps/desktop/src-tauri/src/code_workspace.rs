@@ -8,7 +8,8 @@ use repodesk_core::code_workspace_ops::{
     delete_active_code_path, rename_active_code_path,
 };
 use repodesk_core::code_workspace_search::{
-    CodeQuickOpenResult, invalidate_active_quick_open_index, search_active_code_workspace,
+    CodeProjectSearchInput, CodeProjectSearchResult, CodeQuickOpenResult,
+    invalidate_active_quick_open_index, search_active_code_project, search_active_code_workspace,
 };
 
 #[tauri::command]
@@ -36,6 +37,13 @@ pub fn code_workspace_quick_open(
     limit: Option<usize>,
 ) -> Result<Vec<CodeQuickOpenResult>, String> {
     search_active_code_workspace(&query, limit.unwrap_or(50)).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn code_workspace_project_search(
+    input: CodeProjectSearchInput,
+) -> Result<CodeProjectSearchResult, String> {
+    search_active_code_project(input).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
