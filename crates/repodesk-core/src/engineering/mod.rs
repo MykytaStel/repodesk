@@ -106,7 +106,7 @@ pub use run_evidence::{
 };
 pub use run_observability::{
     RunContextObservability, RunDisposition, RunDispositionStage, RunDispositionState,
-    RunEfficiency, RunObservabilityReport, derive_run_observability,
+    RunEfficiency, RunObservabilityReport, RunStrategyObservability, derive_run_observability,
 };
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
