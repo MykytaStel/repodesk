@@ -27,6 +27,10 @@
 @import "../features/knowledge/knowledge-v2.css";
 @import "../features/health/health.css";
 
-/* Product-level visual contract. Keep this last: it intentionally resolves the
+/* Product-level visual contract. Keep this late: it intentionally resolves the
    older migration/polish layers into the current RepoDesk visual language. */
 @import "./styles/visual-language-2026.css";
+
+/* Feature workbenches may deliberately follow the global visual contract when
+   their information architecture needs stronger, product-specific hierarchy. */
+@import "./styles/context-evidence-v2.css";
