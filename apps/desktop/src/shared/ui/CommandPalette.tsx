@@ -4,10 +4,21 @@ export type Command = {
   id: string;
   label: string;
   hint?: string;
+  group?: string;
+  keywords?: string[];
+  shortcut?: string;
+  priority?: number;
   run: () => void | Promise<void>;
 };
 
-/** Spotlight-style fuzzy command palette (opened with ⌘K / Ctrl-K). */
+const GROUP_ORDER = ["Current", "Files", "Navigate", "Work", "Projects", "View", "Appearance", "Other"];
+
+function groupRank(group: string): number {
+  const index = GROUP_ORDER.indexOf(group);
+  return index === -1 ? GROUP_ORDER.length : index;
+}
+
+/** IDE-style command + quick-open palette (⌘K / Ctrl-K, or ⌘⇧P / Ctrl-Shift-P). */
 export function CommandPalette({ open, onClose, commands }: { open: boolean; onClose: () => void; commands: Command[] }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -17,15 +28,12 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
     if (open) {
       setQuery("");
       setActive(0);
-      // Focus after the element mounts.
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return commands;
-    // Subsequence match so "gst" still matches "Go to Settings"…
     const subseq = (text: string) => {
       let i = 0;
       for (const ch of q) {
@@ -35,40 +43,67 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
       }
       return true;
     };
-    // …but rank contiguous-substring hits first, so typing "git" lands on
-    // "Go to Git" rather than "Go to His(t)ory" (a subsequence-only match).
-    const rank = (c: Command): number | null => {
-      const label = c.label.toLowerCase();
-      const hint = (c.hint ?? "").toLowerCase();
-      if (label.includes(q)) return 0;
-      if (hint.includes(q)) return 1;
-      if (subseq(label) || subseq(hint)) return 2;
+    const rank = (command: Command): number | null => {
+      if (!q) return 0;
+      const label = command.label.toLowerCase();
+      const hint = (command.hint ?? "").toLowerCase();
+      const keywords = (command.keywords ?? []).join(" ").toLowerCase();
+      if (label.startsWith(q)) return 0;
+      if (label.includes(q)) return 1;
+      if (hint.includes(q) || keywords.includes(q)) return 2;
+      if (subseq(label) || subseq(hint) || subseq(keywords)) return 3;
       return null;
     };
+
     return commands
-      .map((c, index) => ({ c, index, score: rank(c) }))
-      .filter((entry): entry is { c: Command; index: number; score: number } => entry.score !== null)
-      .sort((a, b) => a.score - b.score || a.index - b.index)
-      .map((entry) => entry.c);
+      .map((command, index) => ({
+        command,
+        index,
+        score: rank(command),
+        group: command.group ?? "Other",
+      }))
+      .filter((entry): entry is { command: Command; index: number; score: number; group: string } => entry.score !== null)
+      .sort((a, b) => {
+        if (q && a.score !== b.score) return a.score - b.score;
+        const groupDelta = groupRank(a.group) - groupRank(b.group);
+        if (groupDelta !== 0) return groupDelta;
+        const priorityDelta = (b.command.priority ?? 0) - (a.command.priority ?? 0);
+        return priorityDelta || a.index - b.index;
+      })
+      .map((entry) => entry.command);
   }, [commands, query]);
+
+  const grouped = useMemo(() => {
+    const groups: Array<{ name: string; commands: Array<{ command: Command; flatIndex: number }> }> = [];
+    filtered.forEach((command, flatIndex) => {
+      const name = command.group ?? "Other";
+      const previous = groups[groups.length - 1];
+      if (!previous || previous.name !== name) groups.push({ name, commands: [] });
+      groups[groups.length - 1].commands.push({ command, flatIndex });
+    });
+    return groups;
+  }, [filtered]);
+
+  useEffect(() => {
+    if (active >= filtered.length) setActive(Math.max(0, filtered.length - 1));
+  }, [active, filtered.length]);
 
   if (!open) return null;
 
   const choose = (index: number) => {
     const cmd = filtered[index];
-    if (cmd) {
-      void cmd.run();
-      onClose();
-    }
+    if (!cmd) return;
+    void cmd.run();
+    onClose();
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((a) => Math.min(a + 1, filtered.length - 1));
+      setActive((value) => Math.min(value + 1, filtered.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActive((a) => Math.max(a - 1, 0));
+      setActive((value) => Math.max(value - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
       choose(active);
@@ -80,37 +115,54 @@ export function CommandPalette({ open, onClose, commands }: { open: boolean; onC
 
   return (
     <div className="cmdk-overlay" onClick={onClose}>
-      <div className="cmdk-panel" onClick={(e) => e.stopPropagation()}>
-        <input
-          ref={inputRef}
-          className="cmdk-input"
-          placeholder="Search tabs and actions…"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setActive(0);
-          }}
-          onKeyDown={onKeyDown}
-        />
-        <div className="cmdk-list">
+      <div className="cmdk-panel cmdk-panel-v2" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="RepoDesk command palette">
+        <div className="cmdk-search-row">
+          <span aria-hidden="true">⌘</span>
+          <input
+            ref={inputRef}
+            className="cmdk-input"
+            placeholder="Type a command, surface, project, or file…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setActive(0);
+            }}
+            onKeyDown={onKeyDown}
+          />
+          <kbd>esc</kbd>
+        </div>
+        <div className="cmdk-list cmdk-list-v2">
           {filtered.length === 0 ? (
-            <p className="muted cmdk-empty">No matching commands.</p>
+            <div className="cmdk-zero-state">
+              <strong>No matching command</strong>
+              <span>Try a surface name, repository path, project, or action.</span>
+            </div>
           ) : (
-            filtered.map((cmd, i) => (
-              <button
-                key={cmd.id}
-                className={`cmdk-item ${i === active ? "active" : ""}`}
-                onMouseEnter={() => setActive(i)}
-                onClick={() => choose(i)}
-              >
-                <span>{cmd.label}</span>
-                {cmd.hint && <span className="cmdk-hint">{cmd.hint}</span>}
-              </button>
+            grouped.map((group) => (
+              <section className="cmdk-group" key={`${group.name}-${group.commands[0]?.flatIndex ?? 0}`}>
+                <div className="cmdk-group-label">{group.name}</div>
+                {group.commands.map(({ command, flatIndex }) => (
+                  <button
+                    key={command.id}
+                    className={`cmdk-item ${flatIndex === active ? "active" : ""}`}
+                    onMouseEnter={() => setActive(flatIndex)}
+                    onClick={() => choose(flatIndex)}
+                  >
+                    <span className="cmdk-item-copy">
+                      <strong>{command.label}</strong>
+                      {command.hint ? <small>{command.hint}</small> : null}
+                    </span>
+                    {command.shortcut ? <kbd>{command.shortcut}</kbd> : null}
+                  </button>
+                ))}
+              </section>
             ))
           )}
         </div>
         <div className="cmdk-footer">
-          <span>↑↓ navigate</span><span>↵ run</span><span>esc close</span>
+          <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+          <span><kbd>↵</kbd> run</span>
+          <span>{filtered.length} result{filtered.length === 1 ? "" : "s"}</span>
         </div>
       </div>
     </div>
