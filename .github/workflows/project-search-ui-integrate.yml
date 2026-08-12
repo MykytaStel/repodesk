@@ -1,0 +1,115 @@
+name: Project Search UI Integrate
+
+on:
+  push:
+    branches:
+      - feat/code-project-search
+    paths:
+      - .github/workflows/project-search-ui-integrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/code-project-search
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Integrate Code search UI and IPC registry
+        shell: python
+        run: |
+          from pathlib import Path
+
+          component = Path("apps/desktop/src/features/code/CodeProjectSearch.tsx")
+          text = component.read_text()
+          old = 'import { FormEvent, useState } from "react";\n'
+          new = 'import { useState, type FormEvent } from "react";\n'
+          if old not in text:
+              raise SystemExit("CodeProjectSearch React import target not found")
+          text = text.replace(old, new, 1)
+          marker = 'import { errorToMessage } from "../../shared/utils/helpers";\n'
+          if marker not in text:
+              raise SystemExit("CodeProjectSearch style insertion point not found")
+          text = text.replace(marker, marker + 'import "./code-project-search.css";\n', 1)
+          component.write_text(text)
+
+          tab = Path("apps/desktop/src/features/code/CodeTab.tsx")
+          text = tab.read_text()
+
+          old = '''  codeWorkspaceSnapshot,\n  consumeCodeWorkspaceOpenRequest,\n  readCodeLibraryDocument,'''
+          new = '''  codeWorkspaceSnapshot,\n  consumeCodeWorkspaceOpenRequest,\n  requestCodeWorkspaceOpen,\n  readCodeLibraryDocument,'''
+          if old not in text:
+              raise SystemExit("CodeTab API import target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''import { FindingRow } from "./CodeFindings";\nimport { CodeWorkspaceActions } from "./CodeWorkspaceActions";'''
+          new = '''import { FindingRow } from "./CodeFindings";\nimport { CodeProjectSearch } from "./CodeProjectSearch";\nimport { CodeWorkspaceActions } from "./CodeWorkspaceActions";'''
+          if old not in text:
+              raise SystemExit("CodeTab component import target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''type EditorView = "edit" | "diff";\n'''
+          new = '''type EditorView = "edit" | "diff";\ntype CodeSideMode = "explorer" | "search";\n'''
+          if old not in text:
+              raise SystemExit("CodeTab side mode type target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''  const [repoIntelOpen, setRepoIntelOpen] = useState(false);\n  const [workspaceError, setWorkspaceError] = useState<string | null>(null);'''
+          new = '''  const [repoIntelOpen, setRepoIntelOpen] = useState(false);\n  const [sideMode, setSideMode] = useState<CodeSideMode>("explorer");\n  const [workspaceError, setWorkspaceError] = useState<string | null>(null);'''
+          if old not in text:
+              raise SystemExit("CodeTab side mode state target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    setInsightsOpen(false);\n    setRepoIntelOpen(false);\n  // The state snapshot here intentionally belongs to the previous project.'''
+          new = '''    setInsightsOpen(false);\n    setRepoIntelOpen(false);\n    setSideMode("explorer");\n  // The state snapshot here intentionally belongs to the previous project.'''
+          if old not in text:
+              raise SystemExit("CodeTab project reset target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''    <div className="code-workspace-v0">\n      <CodeWorkspaceTree files={workspace.data.files} activePath={activePath} onOpen={(file) => void openFile(file)} />\n\n      <section className="code-editor-workbench">'''
+          new = '''    <div className="code-workspace-v0">\n      {sideMode === "search" ? (\n        <CodeProjectSearch\n          onClose={() => setSideMode("explorer")}\n          onOpen={(match) => {\n            requestCodeWorkspaceOpen(match.path, {\n              line: match.line,\n              column: match.column,\n              endLine: match.line,\n              endColumn: match.end_column,\n            });\n            setSideMode("explorer");\n          }}\n        />\n      ) : (\n        <CodeWorkspaceTree files={workspace.data.files} activePath={activePath} onOpen={(file) => void openFile(file)} />\n      )}\n\n      <section className="code-editor-workbench">'''
+          if old not in text:
+              raise SystemExit("CodeTab sidebar render target not found")
+          text = text.replace(old, new, 1)
+
+          old = '''          <div className="code-workspace-actions">\n            <CodeWorkspaceActions'''
+          new = '''          <div className="code-workspace-actions">\n            <button\n              type="button"\n              className={`tiny-button${sideMode === "search" ? " active" : ""}`}\n              onClick={() => setSideMode((current) => current === "search" ? "explorer" : "search")}\n            >\n              Search project\n            </button>\n            <CodeWorkspaceActions'''
+          if old not in text:
+              raise SystemExit("CodeTab search toolbar target not found")
+          text = text.replace(old, new, 1)
+          tab.write_text(text)
+
+          registry = Path("apps/desktop/src-tauri/src/lib.rs")
+          text = registry.read_text()
+          old = '            code_workspace::code_workspace_quick_open,\n'
+          new = old + '            code_workspace::code_workspace_project_search,\n'
+          if old not in text:
+              raise SystemExit("Tauri quick open registry target not found")
+          if 'code_workspace::code_workspace_project_search,' in text:
+              raise SystemExit("Project search already registered")
+          registry.write_text(text.replace(old, new, 1))
+
+          core = Path("crates/repodesk-core/src/code_workspace_search.rs")
+          text = core.read_text()
+          old = '''    if query.contains(['\\0', '\\n', '\\r']) {'''
+          new = '''    if query.contains('\\0') || query.contains('\\n') || query.contains('\\r') {'''
+          if old in text:
+              core.write_text(text.replace(old, new, 1))
+
+          Path(".github/workflows/project-search-ui-integrate.yml").unlink()
+
+      - name: Format and commit
+        run: |
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(code): integrate project search workbench"
+          git push origin HEAD:feat/code-project-search
