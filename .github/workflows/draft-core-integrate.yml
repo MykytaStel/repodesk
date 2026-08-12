@@ -1,0 +1,58 @@
+name: Draft Core Integrate
+
+on:
+  push:
+    branches:
+      - feat/code-draft-recovery
+    paths:
+      - .github/workflows/draft-core-integrate.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/code-draft-recovery
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+      - name: Share Code Workspace path guard with draft store
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("crates/repodesk-core/src/code_workspace.rs")
+          text = path.read_text()
+          old = '''fn resolve_existing_editable_file_from_root(\n    canonical_root: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let relative = normalize_relative_path(Path::new(relative_path))?;\n    let display = slash_path(&relative);\n    if let Some(reason) = is_blocked_path(&display) {\n        return Err(RepoDeskError::Api(reason));\n    }\n\n    let joined = canonical_root.join(&relative);'''
+          new = '''pub(crate) fn guard_code_relative_path(relative_path: &str) -> RepoDeskResult<PathBuf> {\n    let relative = normalize_relative_path(Path::new(relative_path))?;\n    let display = slash_path(&relative);\n    if let Some(reason) = is_blocked_path(&display) {\n        return Err(RepoDeskError::Api(reason));\n    }\n    Ok(relative)\n}\n\nfn resolve_existing_editable_file_from_root(\n    canonical_root: &Path,\n    relative_path: &str,\n) -> RepoDeskResult<SafeEditableFile> {\n    let relative = guard_code_relative_path(relative_path)?;\n\n    let joined = canonical_root.join(&relative);'''
+          if old not in text:
+              raise SystemExit("Code Workspace guard integration target not found")
+          path.write_text(text.replace(old, new, 1))
+
+          drafts = Path("crates/repodesk-core/src/code_drafts.rs")
+          text = drafts.read_text()
+          text = text.replace('use std::fs::{self, File};', 'use std::fs;')
+          text = text.replace('    File::open(parent)?.sync_all()?;', '    fs::File::open(parent)?.sync_all()?;')
+          drafts.write_text(text)
+
+          Path(".github/workflows/draft-core-integrate.yml").unlink()
+
+      - name: Verify draft core
+        run: |
+          cargo fmt --all
+          cargo test -p repodesk-core code_drafts
+          cargo clippy -p repodesk-core --all-targets -- -D warnings
+
+      - name: Commit verified core
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "feat(code): share guarded path policy with drafts"
+          git push origin HEAD:feat/code-draft-recovery
