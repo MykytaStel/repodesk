@@ -56,6 +56,19 @@ export type CodeWorkspaceMutationResult = {
   language: string | null;
 };
 
+export type CodeDraftRecord = {
+  path: string;
+  content: string;
+  base_fingerprint: string;
+  content_fingerprint: string;
+  updated_at: string;
+};
+
+export type CodeDraftRecovery = {
+  draft: CodeDraftRecord;
+  state: "safe" | "conflict";
+};
+
 export type CodeQuickOpenResult = {
   path: string;
   name: string;
@@ -137,6 +150,25 @@ export async function saveCodeWorkspaceDocument(input: {
   expected_fingerprint: string;
 }): Promise<CodeWorkspaceSaveResult> {
   return invoke("code_workspace_save", { input });
+}
+
+export async function saveCodeWorkspaceDraft(input: {
+  path: string;
+  content: string;
+  base_fingerprint: string;
+}): Promise<CodeDraftRecord> {
+  return invoke("code_workspace_draft_save", { input });
+}
+
+export async function loadCodeWorkspaceDraft(input: {
+  path: string;
+  current_fingerprint: string;
+}): Promise<CodeDraftRecovery | null> {
+  return invoke("code_workspace_draft_load", { input });
+}
+
+export async function deleteCodeWorkspaceDraft(path: string): Promise<boolean> {
+  return invoke("code_workspace_draft_delete", { relativePath: path });
 }
 
 export async function createCodeWorkspaceFile(input: {
