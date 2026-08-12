@@ -5,6 +5,7 @@ import {
   CODE_WORKSPACE_KEY,
   codeWorkspaceSnapshot,
   consumeCodeWorkspaceOpenRequest,
+  requestCodeWorkspaceOpen,
   readCodeLibraryDocument,
   readCodeWorkspaceDocument,
   saveCodeWorkspaceDocument,
@@ -22,6 +23,7 @@ import type { TabId } from "../../shared/types/api";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
+import { CodeProjectSearch } from "./CodeProjectSearch";
 import { CodeWorkspaceActions } from "./CodeWorkspaceActions";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
 import { LibraryTabBadge } from "./LibraryTabBadge";
@@ -45,6 +47,7 @@ type EditorTab = {
 };
 
 type EditorView = "edit" | "diff";
+type CodeSideMode = "explorer" | "search";
 
 type CachedCodeSession = {
   tabs: EditorTab[];
@@ -133,6 +136,7 @@ export function CodeTab({
   const [diffLoading, setDiffLoading] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [repoIntelOpen, setRepoIntelOpen] = useState(false);
+  const [sideMode, setSideMode] = useState<CodeSideMode>("explorer");
   const [workspaceError, setWorkspaceError] = useState<string | null>(null);
   const sessionProjectRef = useRef<string | null>(null);
   const openingRef = useRef(false);
@@ -166,6 +170,7 @@ export function CodeTab({
     setView("edit");
     setInsightsOpen(false);
     setRepoIntelOpen(false);
+    setSideMode("explorer");
   // The state snapshot here intentionally belongs to the previous project.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectName]);
@@ -415,7 +420,22 @@ export function CodeTab({
 
   return (
     <div className="code-workspace-v0">
-      <CodeWorkspaceTree files={workspace.data.files} activePath={activePath} onOpen={(file) => void openFile(file)} />
+      {sideMode === "search" ? (
+        <CodeProjectSearch
+          onClose={() => setSideMode("explorer")}
+          onOpen={(match) => {
+            requestCodeWorkspaceOpen(match.path, {
+              line: match.line,
+              column: match.column,
+              endLine: match.line,
+              endColumn: match.end_column,
+            });
+            setSideMode("explorer");
+          }}
+        />
+      ) : (
+        <CodeWorkspaceTree files={workspace.data.files} activePath={activePath} onOpen={(file) => void openFile(file)} />
+      )}
 
       <section className="code-editor-workbench">
         <header className="code-workspace-toolbar">
@@ -427,6 +447,13 @@ export function CodeTab({
             {dirtyCount > 0 ? <span className="warn">{dirtyCount} unsaved</span> : null}
           </div>
           <div className="code-workspace-actions">
+            <button
+              type="button"
+              className={`tiny-button${sideMode === "search" ? " active" : ""}`}
+              onClick={() => setSideMode((current) => current === "search" ? "explorer" : "search")}
+            >
+              Search project
+            </button>
             <CodeWorkspaceActions
               activeDocument={activeTab?.kind === "workspace" ? {
                 path: activeTab.path,
