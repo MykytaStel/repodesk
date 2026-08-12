@@ -307,7 +307,9 @@ fn preview_line(line: &str, start_char: usize, end_char: usize) -> String {
     let surrounding = PROJECT_SEARCH_PREVIEW_CHARS.saturating_sub(match_len);
     let before = surrounding / 2;
     let from = start_char.saturating_sub(before);
-    let to = (from + PROJECT_SEARCH_PREVIEW_CHARS).max(end_char).min(chars.len());
+    let to = (from + PROJECT_SEARCH_PREVIEW_CHARS)
+        .max(end_char)
+        .min(chars.len());
     let from = to.saturating_sub(PROJECT_SEARCH_PREVIEW_CHARS).min(from);
     let mut preview = chars[from..to].iter().collect::<String>();
     if from > 0 {

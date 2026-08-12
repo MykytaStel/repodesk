@@ -99,6 +99,12 @@ pub struct CodeWorkspaceSaveResult {
     pub changed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GuardedCodeText {
+    pub content: String,
+    pub bytes: u64,
+}
+
 #[derive(Clone)]
 struct GitStatusCacheEntry {
     observed_at: Instant,
@@ -311,14 +317,21 @@ fn resolve_existing_editable_file(
     project_path: &Path,
     relative_path: &str,
 ) -> RepoDeskResult<SafeEditableFile> {
+    let root = project_path.canonicalize()?;
+    resolve_existing_editable_file_from_root(&root, relative_path)
+}
+
+fn resolve_existing_editable_file_from_root(
+    canonical_root: &Path,
+    relative_path: &str,
+) -> RepoDeskResult<SafeEditableFile> {
     let relative = normalize_relative_path(Path::new(relative_path))?;
     let display = slash_path(&relative);
     if let Some(reason) = is_blocked_path(&display) {
         return Err(RepoDeskError::Api(reason));
     }
 
-    let root = project_path.canonicalize()?;
-    let joined = root.join(&relative);
+    let joined = canonical_root.join(&relative);
     let symlink_metadata = fs::symlink_metadata(&joined)?;
     if symlink_metadata.file_type().is_symlink() {
         return Err(RepoDeskError::Api(
@@ -327,7 +340,7 @@ fn resolve_existing_editable_file(
     }
 
     let canonical = joined.canonicalize()?;
-    if !canonical.starts_with(&root) {
+    if !canonical.starts_with(canonical_root) {
         return Err(RepoDeskError::Api("Path escapes active project".into()));
     }
     let metadata = fs::metadata(&canonical)?;
@@ -346,6 +359,26 @@ fn resolve_existing_editable_file(
     Ok(SafeEditableFile {
         relative,
         canonical,
+    })
+}
+
+pub(crate) fn read_guarded_code_text_from_root(
+    canonical_root: &Path,
+    relative_path: &str,
+) -> RepoDeskResult<GuardedCodeText> {
+    let safe = resolve_existing_editable_file_from_root(canonical_root, relative_path)?;
+    let bytes = fs::read(&safe.canonical)?;
+    let content = String::from_utf8(bytes)
+        .map_err(|_| RepoDeskError::Api("Code workspace only opens UTF-8 text files".into()))?;
+    if content.contains('\0') {
+        return Err(RepoDeskError::Api(
+            "Binary-like file cannot be opened in Code Workspace".into(),
+        ));
+    }
+
+    Ok(GuardedCodeText {
+        bytes: content.len() as u64,
+        content,
     })
 }
 
