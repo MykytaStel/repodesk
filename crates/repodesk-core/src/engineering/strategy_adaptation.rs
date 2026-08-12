@@ -14,18 +14,6 @@ use super::strategy_feedback::{StrategyFeedbackReport, StrategyProfileFeedback};
 const STRONG_SUCCESS_RATE: f64 = 0.80;
 const WEAK_SUCCESS_RATE: f64 = 0.50;
 
-impl AiStrategyProfile {
-    pub fn from_label(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "lean" => Some(Self::Lean),
-            "balanced" => Some(Self::Balanced),
-            "local_first" | "local-first" => Some(Self::LocalFirst),
-            "quality" => Some(Self::Quality),
-            _ => None,
-        }
-    }
-}
-
 /// Apply project/Work Item-local settled outcomes to Auto without changing the
 /// semantics of explicit modes.
 pub fn derive_ai_strategy_with_feedback(
@@ -52,8 +40,17 @@ pub fn derive_ai_strategy_with_feedback(
     // A repeatedly weak Lean history vetoes automatic fan-out collapse. Explicit
     // Lean remains available to the human, but Auto falls back to Balanced.
     if recommendation.profile == AiStrategyProfile::Lean && history_is_weak(lean) {
-        let detail = feedback_detail("Lean", lean, "underperformed, so Auto kept the balanced AI review pipeline");
-        apply_profile(&mut recommendation, AiStrategyProfile::Balanced, false, detail);
+        let detail = feedback_detail(
+            "Lean",
+            lean,
+            "underperformed, so Auto kept the balanced AI review pipeline",
+        );
+        apply_profile(
+            &mut recommendation,
+            AiStrategyProfile::Balanced,
+            false,
+            detail,
+        );
         return recommendation;
     }
 
@@ -64,16 +61,34 @@ pub fn derive_ai_strategy_with_feedback(
         && narrow_scope
         && history_is_strong(lean)
     {
-        let detail = feedback_detail("Lean", lean, "has reliable settled outcomes, so Auto reused the lean one-writer shape");
-        apply_profile(&mut recommendation, AiStrategyProfile::Lean, true, detail);
+        let detail = feedback_detail(
+            "Lean",
+            lean,
+            "has reliable settled outcomes, so Auto reused the lean one-writer shape",
+        );
+        apply_profile(
+            &mut recommendation,
+            AiStrategyProfile::Lean,
+            true,
+            detail,
+        );
         return recommendation;
     }
 
     // Prompt-heavy Auto normally prefers Local-first. A settled weak Local-first
     // history vetoes that optimization until the user explicitly chooses it.
     if recommendation.profile == AiStrategyProfile::LocalFirst && history_is_weak(local) {
-        let detail = feedback_detail("Local-first", local, "underperformed, so Auto returned to balanced routing");
-        apply_profile(&mut recommendation, AiStrategyProfile::Balanced, false, detail);
+        let detail = feedback_detail(
+            "Local-first",
+            local,
+            "underperformed, so Auto returned to balanced routing",
+        );
+        apply_profile(
+            &mut recommendation,
+            AiStrategyProfile::Balanced,
+            false,
+            detail,
+        );
     }
 
     recommendation
@@ -88,13 +103,19 @@ fn profile(
 
 fn history_is_strong(value: Option<&StrategyProfileFeedback>) -> bool {
     value.is_some_and(|value| {
-        value.adaptation_ready && value.success_rate.is_some_and(|rate| rate >= STRONG_SUCCESS_RATE)
+        value.adaptation_ready
+            && value
+                .success_rate
+                .is_some_and(|rate| rate >= STRONG_SUCCESS_RATE)
     })
 }
 
 fn history_is_weak(value: Option<&StrategyProfileFeedback>) -> bool {
     value.is_some_and(|value| {
-        value.adaptation_ready && value.success_rate.is_some_and(|rate| rate < WEAK_SUCCESS_RATE)
+        value.adaptation_ready
+            && value
+                .success_rate
+                .is_some_and(|rate| rate < WEAK_SUCCESS_RATE)
     })
 }
 
@@ -204,7 +225,13 @@ mod tests {
         assert_eq!(recommendation.profile, AiStrategyProfile::Lean);
         assert_eq!(recommendation.plan_shape, AiPlanShape::SingleWriter);
         assert!(recommendation.feedback_influenced);
-        assert!(recommendation.feedback_detail.as_deref().unwrap().contains("5/5"));
+        assert!(
+            recommendation
+                .feedback_detail
+                .as_deref()
+                .unwrap()
+                .contains("5/5")
+        );
     }
 
     #[test]
