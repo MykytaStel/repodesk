@@ -25,7 +25,9 @@ pub fn code_workspace_read(relative_path: String) -> Result<CodeWorkspaceDocumen
 pub fn code_workspace_save(
     input: CodeWorkspaceSaveInput,
 ) -> Result<CodeWorkspaceSaveResult, String> {
-    save_active_code_document(input).map_err(|error| error.to_string())
+    let result = save_active_code_document(input).map_err(|error| error.to_string())?;
+    invalidate_active_quick_open_index();
+    Ok(result)
 }
 
 #[tauri::command]
