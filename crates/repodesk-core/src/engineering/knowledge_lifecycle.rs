@@ -146,6 +146,24 @@ pub fn assess_engineering_knowledge_at(
     }
 }
 
+/// Human-reviewed knowledge may enter agent context only while its lifecycle is
+/// still current enough to rely on. `ReviewSoon` remains eligible so RepoDesk
+/// warns before interrupting work; `ReviewRequired` fails closed until an
+/// explicit human reconfirmation refreshes the review timestamp.
+pub fn engineering_knowledge_context_eligible_at(
+    record: &EngineeringKnowledgeRecord,
+    now: DateTime<Utc>,
+) -> bool {
+    matches!(
+        assess_engineering_knowledge_at(record, now).state,
+        EngineeringKnowledgeLifecycleState::Current | EngineeringKnowledgeLifecycleState::ReviewSoon
+    )
+}
+
+pub fn engineering_knowledge_context_eligible(record: &EngineeringKnowledgeRecord) -> bool {
+    engineering_knowledge_context_eligible_at(record, Utc::now())
+}
+
 pub fn derive_engineering_knowledge_lifecycle_at(
     snapshot: &EngineeringKnowledgeSnapshot,
     now: DateTime<Utc>,
@@ -266,6 +284,40 @@ mod tests {
             assess_engineering_knowledge_at(&expired, now).state,
             EngineeringKnowledgeLifecycleState::ReviewRequired
         );
+    }
+
+    #[test]
+    fn review_required_records_fail_closed_for_context() {
+        let now = Utc::now();
+        let current = record(
+            EngineeringKnowledgeCategory::Testing,
+            EngineeringKnowledgeOrigin::Human,
+            EngineeringKnowledgeStatus::Accepted,
+            now - Duration::days(10),
+        );
+        let warning = record(
+            EngineeringKnowledgeCategory::Testing,
+            EngineeringKnowledgeOrigin::Human,
+            EngineeringKnowledgeStatus::Accepted,
+            now - Duration::days(50),
+        );
+        let expired = record(
+            EngineeringKnowledgeCategory::Testing,
+            EngineeringKnowledgeOrigin::Human,
+            EngineeringKnowledgeStatus::Accepted,
+            now - Duration::days(61),
+        );
+        let candidate = record(
+            EngineeringKnowledgeCategory::Testing,
+            EngineeringKnowledgeOrigin::Human,
+            EngineeringKnowledgeStatus::Candidate,
+            now,
+        );
+
+        assert!(engineering_knowledge_context_eligible_at(&current, now));
+        assert!(engineering_knowledge_context_eligible_at(&warning, now));
+        assert!(!engineering_knowledge_context_eligible_at(&expired, now));
+        assert!(!engineering_knowledge_context_eligible_at(&candidate, now));
     }
 
     #[test]
