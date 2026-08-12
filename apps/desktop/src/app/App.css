@@ -34,3 +34,4 @@
 /* Feature workbenches may deliberately follow the global visual contract when
    their information architecture needs stronger, product-specific hierarchy. */
 @import "./styles/context-evidence-v2.css";
+@import "./styles/execute-packet-v2.css";
