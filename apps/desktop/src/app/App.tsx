@@ -9,8 +9,7 @@ import { IDEHealthIndicator } from "../features/health/IDEHealthIndicator";
 import { IDEHealthPanel } from "../features/health/IDEHealthPanel";
 import { useGit } from "../features/git/useGit";
 import {
-  CODE_WORKSPACE_KEY,
-  codeWorkspaceSnapshot,
+  codeWorkspaceQuickOpen,
   requestCodeWorkspaceOpen,
 } from "../shared/api/codeWorkspace";
 import { callCommand } from "../shared/api/queries";
@@ -85,15 +84,6 @@ export default function App() {
     staleTime: 60_000,
   });
 
-  // Quick Open deliberately shares CodeTab's query key. Opening the palette can
-  // reuse the repository snapshot already in cache, and only indexes when the
-  // palette actually needs file commands for an active project.
-  const { data: paletteWorkspace } = useQuery({
-    queryKey: [...CODE_WORKSPACE_KEY, projectName ?? "none"],
-    queryFn: codeWorkspaceSnapshot,
-    enabled: paletteOpen && hasProject,
-    staleTime: 15_000,
-  });
 
   const showFeedback = useCallback(
     (tone: FeedbackTone, title: string, detail: string, options?: { toast?: boolean }) => {
@@ -245,6 +235,26 @@ export default function App() {
     };
   }, []);
 
+  const searchFileCommands = useCallback(
+    async (query: string): Promise<Command[]> => {
+      if (!hasProject) return [];
+      const matches = await codeWorkspaceQuickOpen(query, 50);
+      return matches.map((file) => ({
+        id: `file:${file.path}`,
+        label: `Open file: ${file.name}`,
+        hint: file.path,
+        group: "Files",
+        keywords: [file.path, file.language, file.status],
+        priority: file.status === "clean" ? 0 : 20,
+        run: () => {
+          requestCodeWorkspaceOpen(file.path);
+          navigateTo("code", `Open ${file.path}.`);
+        },
+      }));
+    },
+    [hasProject, navigateTo],
+  );
+
   const commands = useMemo<Command[]>(() => {
     const currentCommands: Command[] = [];
     if (hasTask) {
@@ -270,21 +280,6 @@ export default function App() {
       });
     }
 
-    const fileCommands: Command[] = (paletteWorkspace?.files ?? [])
-      .filter((file) => !file.blocked)
-      .slice(0, 160)
-      .map((file) => ({
-        id: `file:${file.path}`,
-        label: `Open file: ${file.name}`,
-        hint: file.path,
-        group: "Files",
-        keywords: [file.path, file.language, file.extension ?? "", file.status],
-        priority: file.status === "clean" ? 0 : 20,
-        run: () => {
-          requestCodeWorkspaceOpen(file.path);
-          navigateTo("code", `Open ${file.path}.`);
-        },
-      }));
 
     const tabCommands: Command[] = APP_TABS.map((tab) => {
       const primaryIndex = PRIMARY_TABS.findIndex((candidate) => candidate.id === tab.id);
@@ -442,7 +437,6 @@ export default function App() {
 
     return [
       ...currentCommands,
-      ...fileCommands,
       ...tabCommands,
       ...workActions,
       ...projectCommands,
@@ -455,7 +449,6 @@ export default function App() {
     dirtyCount,
     hasTask,
     navigateTo,
-    paletteWorkspace?.files,
     projectName,
     projects,
     queryClient,
@@ -590,7 +583,12 @@ export default function App() {
         kind={viewingArtifact || ""}
         onClose={() => setViewingArtifact(null)}
       />
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={commands}
+        searchCommands={searchFileCommands}
+      />
       <IDEHealthPanel />
     </div>
   );
