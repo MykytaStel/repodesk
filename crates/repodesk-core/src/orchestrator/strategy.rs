@@ -5,6 +5,8 @@
 //! the AI plan shape and/or re-routes read-only reasoning through the existing
 //! routing engine. Human review, verification and commit gates are untouched.
 
+use std::path::Path;
+
 use crate::api_clients::ProviderSettings;
 use crate::engineering::{
     AiPlanShape, AiStrategyInputs, AiStrategyMode, AiStrategyProfile, AiStrategyRecommendation,
@@ -34,11 +36,13 @@ pub fn derive_active_ai_strategy(
     let context_prepared = load_context_inspector(&task.config.run_dir)
         .ok()
         .is_some_and(|report| report.pipeline_error.is_none() && report.pipeline.is_some());
+    let allowed_paths = contract
+        .as_ref()
+        .map(|contract| contract.allowed_paths.as_slice())
+        .unwrap_or_default();
     let inputs = AiStrategyInputs {
-        scope_path_count: contract
-            .as_ref()
-            .map(|contract| contract.allowed_paths.len())
-            .unwrap_or(0),
+        scope_path_count: allowed_paths.len(),
+        scope_file_bounded: scope_is_file_bounded(allowed_paths),
         protected_path_count: contract
             .as_ref()
             .map(|contract| contract.protected_paths.len())
@@ -75,6 +79,41 @@ pub fn build_strategy_plan(
     }
 
     Ok((plan, strategy))
+}
+
+/// `allowed_paths = ["src/", "tests/"]` is not a narrow scope even though it
+/// contains only two entries. Auto may collapse to a single AI writer only when
+/// every target looks like an individual file. Unknown/new extensionless files
+/// stay conservative unless they are common repository control files.
+fn scope_is_file_bounded(paths: &[String]) -> bool {
+    !paths.is_empty()
+        && paths.len() <= 4
+        && paths.iter().all(|value| {
+            let value = value.trim();
+            if value.is_empty()
+                || value.ends_with('/')
+                || value.contains('*')
+                || value.contains('?')
+                || value.contains('[')
+                || value.contains('{')
+            {
+                return false;
+            }
+
+            let Some(name) = Path::new(value).file_name().and_then(|name| name.to_str()) else {
+                return false;
+            };
+            name.contains('.')
+                || matches!(
+                    name,
+                    "Dockerfile"
+                        | "Makefile"
+                        | "Justfile"
+                        | "Procfile"
+                        | "LICENSE"
+                        | "README"
+                )
+        })
 }
 
 fn apply_plan_shape(plan: &mut OrchestrationPlan, shape: AiPlanShape) {
@@ -196,6 +235,20 @@ mod tests {
                 step("review", false, &["implement"]),
             ],
         }
+    }
+
+    #[test]
+    fn directory_scope_is_not_considered_file_bounded() {
+        assert!(!scope_is_file_bounded(&["src/".into(), "tests/".into()]));
+        assert!(!scope_is_file_bounded(&["src/**/*.rs".into()]));
+    }
+
+    #[test]
+    fn small_explicit_file_scope_is_file_bounded() {
+        assert!(scope_is_file_bounded(&[
+            "src/lib.rs".into(),
+            "Cargo.toml".into(),
+        ]));
     }
 
     #[test]
