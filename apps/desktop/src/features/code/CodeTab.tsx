@@ -13,6 +13,7 @@ import {
   type CodeWorkspaceFileStatus,
   type CodeWorkspaceOpenRequest,
 } from "../../shared/api/codeWorkspace";
+import { requestChangesOpen } from "../../shared/api/changesNavigation";
 import { callCommand } from "../../shared/api/queries";
 import { groupByFile, runRepopilotReview } from "../../shared/api/repopilot";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
@@ -346,6 +347,15 @@ export function CodeTab({
     )));
   };
 
+  const openChanges = () => {
+    if (activeTab?.kind === "workspace") {
+      requestChangesOpen(activeTab.path);
+      setActiveTab("changes", `Review the Git delta for ${activeTab.path}.`);
+      return;
+    }
+    setActiveTab("changes", "Review the current Git delta and evidence.");
+  };
+
   if (!hasProject) {
     return <div className="focus-empty">Connect a project to open the Code workspace.</div>;
   }
@@ -400,7 +410,9 @@ export function CodeTab({
                 Findings {review.data.total}
               </button>
             ) : null}
-            <button type="button" className="tiny-button" onClick={() => setActiveTab("changes", "Review the current Git delta and evidence.")}>Review changes</button>
+            <button type="button" className="tiny-button" onClick={openChanges}>
+              {activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
+            </button>
             <button type="button" className="tiny-button" onClick={() => void workspace.refetch()}>Refresh tree</button>
           </div>
         </header>
