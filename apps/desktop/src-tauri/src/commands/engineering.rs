@@ -4,12 +4,11 @@ use repodesk_core::engineering::{
     EngineeringKnowledgeSnapshot, RunEvidenceSnapshot, RunObservabilityReport,
     StrategyFeedbackReport, WorkItemContractSnapshot, WorkItemContractUpdate,
     accept_active_engineering_knowledge, archive_active_engineering_knowledge,
-    capture_active_verified_command, derive_ai_usage_report, derive_change_governance,
-    derive_engineering_intelligence, derive_engineering_knowledge_lifecycle,
-    derive_run_observability, derive_strategy_feedback, derive_work_item_contract_snapshot,
-    link_active_acceptance_evidence, load_active_engineering_knowledge,
-    load_active_run_evidence_from_events, load_context_inspector,
-    propose_active_engineering_knowledge, read_events, read_work_item_contract,
+    capture_active_verified_command, derive_change_governance,
+    derive_engineering_knowledge_lifecycle, derive_run_observability,
+    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
+    load_active_engineering_knowledge, load_active_run_evidence_from_events,
+    load_context_inspector, propose_active_engineering_knowledge, read_work_item_contract,
     reconfirm_active_engineering_knowledge, record_active_scope_override,
     save_active_work_item_contract,
 };
@@ -17,6 +16,7 @@ use repodesk_core::tasks::show_active_task;
 use serde::{Deserialize, Serialize};
 
 use super::ErrorPayload;
+use super::engineering_projection_cache::load_engineering_projection;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -133,25 +133,27 @@ pub fn work_engineering_intelligence(
         Err(error) => return Err(ErrorPayload::from(error)),
     };
 
-    let events = read_events(&task.config.run_dir).map_err(ErrorPayload::from)?;
-    let intelligence = derive_engineering_intelligence(&events);
-    let ai_usage_report = derive_ai_usage_report(&events, &intelligence);
-    let strategy_feedback = derive_strategy_feedback(&events);
+    let projection =
+        load_engineering_projection(&task.config.run_dir).map_err(ErrorPayload::from)?;
+    let events = projection.events.as_slice();
+    let intelligence = projection.intelligence.clone();
+    let ai_usage_report = projection.ai_usage_report.clone();
+    let strategy_feedback = projection.strategy_feedback.clone();
     let context_inspector =
         load_context_inspector(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let stored_contract =
         read_work_item_contract(&task.config.run_dir).map_err(ErrorPayload::from)?;
-    let work_item_contract = derive_work_item_contract_snapshot(&task, stored_contract, &events);
-    let change_governance = derive_change_governance(&task.config.id, &events, &work_item_contract);
+    let work_item_contract = derive_work_item_contract_snapshot(&task, stored_contract, events);
+    let change_governance = derive_change_governance(&task.config.id, events, &work_item_contract);
     let run_evidence = match run_evidence_id {
         Some(run_id) => Some(
-            load_active_run_evidence_from_events(&run_id, &events).map_err(ErrorPayload::from)?,
+            load_active_run_evidence_from_events(&run_id, events).map_err(ErrorPayload::from)?,
         ),
         None => None,
     };
     let run_observability = run_evidence
         .as_ref()
-        .map(|evidence| derive_run_observability(evidence, &events));
+        .map(|evidence| derive_run_observability(evidence, events));
 
     Ok(WorkEngineeringSnapshot {
         intelligence: Some(intelligence),
