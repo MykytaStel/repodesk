@@ -50,8 +50,10 @@ jobs:
 
       - name: Format Rust
         run: cargo fmt --all
-      - name: Focused core tests
-        run: cargo test -p repodesk-core strategy_instrumentation orchestrator::runner
+      - name: Focused strategy instrumentation tests
+        run: cargo test -p repodesk-core strategy_instrumentation
+      - name: Focused runner tests
+        run: cargo test -p repodesk-core orchestrator::runner
       - name: Commit product patch
         shell: bash
         run: |
