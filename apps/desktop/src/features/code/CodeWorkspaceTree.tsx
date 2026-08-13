@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CodeWorkspaceFile, CodeWorkspaceFileStatus } from "../../shared/api/codeWorkspace";
+import { CodeExplorerContextMenu, type ExplorerContextMenuState } from "./CodeExplorerContextMenu";
+import { IdeIcon } from "./IdeIcon";
+import { useIdePreferences } from "./idePreferences";
+import type { WorkspaceActionTarget } from "./CodeWorkspaceActions";
 import { buildCodeTree, flattenCodeTree, searchCodeTree } from "./workspaceTree";
 
 const MAX_EDITOR_BYTES = 512 * 1024;
-const ROW_HEIGHT = 25;
 const VIRTUALIZE_AFTER = 120;
 const OVERSCAN_ROWS = 8;
 const DEFAULT_VIEWPORT_HEIGHT = 520;
@@ -35,9 +38,7 @@ function unavailableReason(file: CodeWorkspaceFile): string | null {
 function parentPaths(path: string): string[] {
   const parts = path.split("/");
   const parents: string[] = [];
-  for (let index = 1; index < parts.length; index += 1) {
-    parents.push(parts.slice(0, index).join("/"));
-  }
+  for (let index = 1; index < parts.length; index += 1) parents.push(parts.slice(0, index).join("/"));
   return parents;
 }
 
@@ -45,15 +46,32 @@ export function CodeWorkspaceTree({
   files,
   activePath,
   onOpen,
+  onSearchProject,
+  onNewFile,
+  onNewFolder,
+  onRename,
+  onDelete,
+  onRefresh,
+  isPathDirty,
 }: {
   files: CodeWorkspaceFile[];
   activePath: string | null;
   onOpen: (file: CodeWorkspaceFile) => void;
+  onSearchProject: () => void;
+  onNewFile: (basePath?: string | null) => void;
+  onNewFolder: (basePath?: string | null) => void;
+  onRename: (target: WorkspaceActionTarget) => void;
+  onDelete: (target: WorkspaceActionTarget) => void;
+  onRefresh: () => void;
+  isPathDirty: (path: string) => boolean;
 }) {
+  const preferences = useIdePreferences();
+  const rowHeight = preferences.explorerDensity === "compact" ? 23 : 27;
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(DEFAULT_VIEWPORT_HEIGHT);
+  const [contextMenu, setContextMenu] = useState<ExplorerContextMenuState | null>(null);
   const treeRef = useRef<HTMLDivElement>(null);
   const tree = useMemo(() => buildCodeTree(files), [files]);
   const rows = useMemo(
@@ -63,20 +81,17 @@ export function CodeWorkspaceTree({
   const virtualized = rows.length > VIRTUALIZE_AFTER;
   const windowRange = useMemo(() => {
     if (!virtualized) return { start: 0, end: rows.length };
-    const visibleRows = Math.ceil(viewportHeight / ROW_HEIGHT);
-    const start = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN_ROWS);
+    const visibleRows = Math.ceil(viewportHeight / rowHeight);
+    const start = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN_ROWS);
     const end = Math.min(rows.length, start + visibleRows + OVERSCAN_ROWS * 2);
     return { start, end };
-  }, [rows.length, scrollTop, viewportHeight, virtualized]);
+  }, [rowHeight, rows.length, scrollTop, viewportHeight, virtualized]);
   const visibleRows = useMemo(
-    () => rows.slice(windowRange.start, windowRange.end).map((row, offset) => ({
-      ...row,
-      flatIndex: windowRange.start + offset,
-    })),
+    () => rows.slice(windowRange.start, windowRange.end).map((row, offset) => ({ ...row, flatIndex: windowRange.start + offset })),
     [rows, windowRange.end, windowRange.start],
   );
-  const topSpacer = virtualized ? windowRange.start * ROW_HEIGHT : 0;
-  const bottomSpacer = virtualized ? (rows.length - windowRange.end) * ROW_HEIGHT : 0;
+  const topSpacer = virtualized ? windowRange.start * rowHeight : 0;
+  const bottomSpacer = virtualized ? (rows.length - windowRange.end) * rowHeight : 0;
 
   useEffect(() => {
     const element = treeRef.current;
@@ -97,9 +112,10 @@ export function CodeWorkspaceTree({
       const next = new Set(current);
       let changed = false;
       for (const parent of parentPaths(activePath)) {
-        if (next.has(parent)) continue;
-        next.add(parent);
-        changed = true;
+        if (!next.has(parent)) {
+          next.add(parent);
+          changed = true;
+        }
       }
       return changed ? next : current;
     });
@@ -110,19 +126,18 @@ export function CodeWorkspaceTree({
     if (!element || !activePath || query.trim()) return;
     const index = rows.findIndex(({ node }) => node.kind === "file" && node.file.path === activePath);
     if (index < 0) return;
-
-    const rowTop = index * ROW_HEIGHT;
-    const rowBottom = rowTop + ROW_HEIGHT;
+    const rowTop = index * rowHeight;
+    const rowBottom = rowTop + rowHeight;
     const viewportTop = element.scrollTop;
     const viewportBottom = viewportTop + element.clientHeight;
     let nextScrollTop = viewportTop;
     if (rowTop < viewportTop) nextScrollTop = rowTop;
     else if (rowBottom > viewportBottom) nextScrollTop = Math.max(0, rowBottom - element.clientHeight);
-    if (nextScrollTop === viewportTop) return;
-
-    element.scrollTop = nextScrollTop;
-    setScrollTop(nextScrollTop);
-  }, [activePath, query, rows]);
+    if (nextScrollTop !== viewportTop) {
+      element.scrollTop = nextScrollTop;
+      setScrollTop(nextScrollTop);
+    }
+  }, [activePath, query, rowHeight, rows]);
 
   useEffect(() => {
     const element = treeRef.current;
@@ -140,11 +155,27 @@ export function CodeWorkspaceTree({
     });
   };
 
+  const openContextMenu = useCallback((event: React.MouseEvent, target: WorkspaceActionTarget, blocked = false) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ x: event.clientX, y: event.clientY, target, blocked });
+  }, []);
+
+  const copyRelativePath = useCallback((path: string) => {
+    void navigator.clipboard?.writeText(path).catch(() => undefined);
+  }, []);
+
   return (
     <aside className="code-explorer" aria-label="Repository explorer">
       <div className="code-explorer-head">
-        <strong>Explorer</strong>
-        <span>{files.length}</span>
+        <div className="code-explorer-title"><strong>Explorer</strong><span>{files.length}</span></div>
+        <div className="ide-icon-toolbar" role="toolbar" aria-label="Explorer actions">
+          <IconAction label="Search project" icon="search" onClick={onSearchProject} />
+          <IconAction label="New file" icon="file-add" onClick={() => onNewFile(null)} />
+          <IconAction label="New folder" icon="folder-add" onClick={() => onNewFolder(null)} />
+          <IconAction label="Refresh Explorer" icon="refresh" onClick={onRefresh} />
+          <IconAction label="Collapse folders" icon="collapse" onClick={() => setExpanded(new Set())} />
+        </div>
       </div>
       <div className="code-explorer-search">
         <input
@@ -164,6 +195,7 @@ export function CodeWorkspaceTree({
         data-virtualized={virtualized ? "true" : "false"}
         data-total-rows={rows.length}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+        onContextMenu={(event) => event.preventDefault()}
       >
         {rows.length === 0 ? <p className="code-tree-empty">No matching files.</p> : null}
         {topSpacer > 0 ? <div aria-hidden="true" style={{ height: topSpacer }} /> : null}
@@ -176,8 +208,9 @@ export function CodeWorkspaceTree({
                 type="button"
                 key={`dir:${node.path}`}
                 className="code-tree-row directory"
-                style={{ paddingLeft: 8 + depth * 14, height: ROW_HEIGHT }}
+                style={{ paddingLeft: 8 + depth * 14, height: rowHeight }}
                 onClick={() => toggleDirectory(node.path)}
+                onContextMenu={(event) => openContextMenu(event, { kind: "directory", path: node.path })}
                 role="treeitem"
                 aria-expanded={open}
                 aria-posinset={position}
@@ -199,8 +232,9 @@ export function CodeWorkspaceTree({
               type="button"
               key={`file:${file.path}`}
               className={`code-tree-row file${active ? " active" : ""}${unavailable ? " blocked" : ""}`}
-              style={{ paddingLeft: 24 + depth * 14, height: ROW_HEIGHT }}
+              style={{ paddingLeft: 24 + depth * 14, height: rowHeight }}
               onClick={() => !unavailable && onOpen(file)}
+              onContextMenu={(event) => openContextMenu(event, { kind: "file", path: file.path }, Boolean(file.blocked) || isPathDirty(file.path))}
               disabled={Boolean(unavailable)}
               title={unavailable ?? file.path}
               role="treeitem"
@@ -210,17 +244,39 @@ export function CodeWorkspaceTree({
               <span className="code-tree-file-icon" aria-hidden="true">·</span>
               <span className="code-tree-name">{file.name}</span>
               {unavailable ? <span className="code-tree-status neutral">lock</span> : null}
-              {!unavailable && label ? (
-                <span className={`code-tree-status ${statusTone(file.status)}`}>{label}</span>
-              ) : null}
+              {!unavailable && label ? <span className={`code-tree-status ${statusTone(file.status)}`}>{label}</span> : null}
             </button>
           );
         })}
         {bottomSpacer > 0 ? <div aria-hidden="true" style={{ height: bottomSpacer }} /> : null}
       </div>
-      {query.trim() && rows.length >= 300 ? (
-        <div className="code-explorer-foot">Showing the first 300 matches.</div>
-      ) : null}
+      {query.trim() && rows.length >= 300 ? <div className="code-explorer-foot">Showing the first 300 matches.</div> : null}
+      <CodeExplorerContextMenu
+        state={contextMenu}
+        onClose={() => setContextMenu(null)}
+        onNewFile={onNewFile}
+        onNewFolder={onNewFolder}
+        onRename={onRename}
+        onDelete={onDelete}
+        onCopyPath={copyRelativePath}
+        onRefresh={onRefresh}
+      />
     </aside>
+  );
+}
+
+function IconAction({
+  label,
+  icon,
+  onClick,
+}: {
+  label: string;
+  icon: Parameters<typeof IdeIcon>[0]["name"];
+  onClick: () => void;
+}) {
+  return (
+    <button type="button" className="ide-icon-button" aria-label={label} title={label} onClick={onClick}>
+      <IdeIcon name={icon} />
+    </button>
   );
 }

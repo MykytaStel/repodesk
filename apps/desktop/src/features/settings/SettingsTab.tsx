@@ -18,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { startLocalServer, refreshModelHealth, type ModelHealthSnapshot, type ProviderHealth } from "../../shared/api/models";
 import { CustomProvidersPanel } from "./CustomProvidersPanel";
 import { ProjectAiImportPanel } from "./ProjectAiImportPanel";
+import { IdePreferencesPanel } from "./IdePreferencesPanel";
 
 export function SettingsTab() {
   const queryClient = useQueryClient();
@@ -225,6 +226,8 @@ export function SettingsTab() {
           </div>
         )}
       </section>
+
+      <IdePreferencesPanel />
 
       <section className="panel wide-panel">
         <div className="panel-title-row"><div><p className="eyebrow">Provider settings</p><h2>Runtime configuration</h2></div><button className="ghost-button" onClick={() => void saveProviderSettings()} disabled={isSavingSettings || isBusy}>Save changes</button></div>
