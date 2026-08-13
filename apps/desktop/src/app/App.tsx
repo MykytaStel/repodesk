@@ -80,7 +80,7 @@ export default function App() {
 
   const { data: projects = [] } = useQuery({
     queryKey: ["project_list_configs"],
-    queryFn: () => invoke<ProjectCommandTarget[]>("project_list_configs").catch(() => []),
+    queryFn: () => invoke<ProjectCommandTarget[]>("project_list_configs"),
     staleTime: 60_000,
   });
 

@@ -164,7 +164,7 @@ export function DashboardTab({
         <p className="eyebrow" style={{ marginBottom: "8px", color: "var(--accent-primary)" }}>Getting Started</p>
         <h1 style={{ fontSize: "2rem", marginBottom: "16px" }}>Welcome to RepoDesk.</h1>
         <p className="lead" style={{ fontSize: "1.1rem", marginBottom: "32px", maxWidth: "600px" }}>
-          Your local-first AI operations cockpit. Safely run autonomous agents (like Claude or Codex) on your codebase without leaking secrets or blowing your budget.
+          Your local-first engineering workspace. Scope one Work Item, coordinate human or agent execution, review the exact ChangeSet, and verify it before commit.
         </p>
         
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>

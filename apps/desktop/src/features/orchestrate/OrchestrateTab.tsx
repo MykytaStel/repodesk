@@ -23,6 +23,7 @@ import {
   type TaskEvent,
 } from "../../shared/api/orchestrate";
 import { MetricCard, errorToMessage, formatCost, formatNumber, EmptyState, ActorBadge, DiffView } from "../../shared/ui/SharedComponents";
+import { useDecisionDialog } from "../../shared/ui/useDecisionDialog";
 import type { TabId } from "../../shared/types/api";
 
 const STATUS_COLOR: Record<SubAgentStatus, string> = {
@@ -700,6 +701,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   const [reviewResult, setReviewResult] = useState<RunReview | null>(null);
   const [acceptingAndVerifying, setAcceptingAndVerifying] = useState(false);
   const [cleaningWorkspace, setCleaningWorkspace] = useState<string | null>(null);
+  const { confirm: confirmDecision, dialog: decisionDialog } = useDecisionDialog();
 
   const busy = orchestrate.plan.isPending || orchestrate.run.isPending || orchestrate.loop.isPending;
   // A run just executed wins; otherwise a history selection; otherwise the latest run.
@@ -747,7 +749,14 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
   async function handleCleanupWorktree(worktree: RunWorktreeStatus) {
     const changed = worktree.changed_files.length;
     const suffix = changed > 0 ? ` It has ${changed} changed file${changed === 1 ? "" : "s"}.` : "";
-    const ok = window.confirm(`Remove worktree ${worktree.workspace_id}?${suffix}`);
+    const ok = await confirmDecision({
+      title: "Remove managed worktree?",
+      message: `Remove ${worktree.workspace_id}?${suffix} This cannot be undone by RepoDesk.`,
+      confirmLabel: "Remove worktree",
+      cancelLabel: "Keep worktree",
+      danger: true,
+      contextLabel: "Workspace recovery",
+    });
     if (!ok) return;
     setCleaningWorkspace(worktree.workspace_id);
     try {
@@ -795,7 +804,13 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
     const hasPaid = planHasPaidStep(built);
     const hasCodingAgent = planHasCodingAgentStep(built);
     if (!dryRun && hasCodingAgent && !approveCodingAgents) {
-      window.alert("This plan includes coding-agent CLI steps. Enable approve CLI agents to launch them.");
+      await confirmDecision({
+        title: "Coding-agent approval required",
+        message: "This plan includes local coding-agent CLI processes. Enable CLI agents before launching the plan.",
+        confirmLabel: "Review approvals",
+        cancelLabel: "Cancel run",
+        contextLabel: "Execution blocked",
+      });
       return;
     }
     if (!dryRun && (hasPaid || hasCodingAgent)) {
@@ -803,7 +818,13 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
         hasPaid ? "paid provider steps that may spend tokens" : "",
         hasCodingAgent ? "local coding-agent CLI processes" : "",
       ].filter(Boolean);
-      const ok = window.confirm(`This plan includes ${approvals.join(" and ")}. Run for real?`);
+      const ok = await confirmDecision({
+        title: "Launch approved workers?",
+        message: `This plan includes ${approvals.join(" and ")}. RepoDesk will preserve the run evidence and stop at its configured guardrails.`,
+        confirmLabel: "Launch workers",
+        cancelLabel: "Keep reviewing",
+        contextLabel: "Execution approval",
+      });
       if (!ok) return;
     }
     await orchestrate.run.mutateAsync({
@@ -1036,6 +1057,7 @@ export function OrchestrateTab({ setActiveTab }: { setActiveTab?: (tab: TabId) =
       />
 
       <TimelinePanel events={orchestrate.timeline} />
+      {decisionDialog}
     </div>
   );
 }

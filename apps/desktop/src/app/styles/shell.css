@@ -669,3 +669,14 @@ button.status-box:hover {
 @media (prefers-reduced-motion: reduce) {
   .global-loader-bar { animation-duration: 2.2s; }
 }
+.project-switcher-error {
+  display: grid;
+  gap: 8px;
+  margin: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 9%, var(--surface));
+}
+
+.project-switcher-error span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }

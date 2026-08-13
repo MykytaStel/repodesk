@@ -451,3 +451,60 @@
   width: 100%;
   padding: var(--space-2) var(--space-3);
 }
+.app-dialog-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.app-dialog {
+  width: min(100%, 900px);
+  max-height: min(90vh, 900px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: 0 20px 70px rgba(0, 0, 0, 0.42);
+}
+
+.app-dialog-header,
+.app-dialog-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.app-dialog-header { border-bottom: 1px solid var(--border); }
+.app-dialog-header h2, .app-dialog-header p { margin: 0; }
+.app-dialog-body { max-height: calc(90vh - 132px); overflow: auto; padding: 18px; }
+.app-dialog-footer { justify-content: flex-end; border-top: 1px solid var(--border); }
+.app-dialog-message, .app-dialog-lead { margin: 0; }
+.app-dialog-body h3 { margin: 20px 0 8px; }
+.app-dialog-list { display: grid; gap: 8px; margin: 0; padding-left: 1.25rem; }
+.app-dialog-secondary-copy { margin: 18px 0 0; }
+.app-dialog-artifact-meta { margin: 0 0 12px; }
+.app-dialog-artifact {
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-body);
+  font: 13px/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .app-dialog-backdrop { padding: 8px; }
+  .app-dialog { max-height: 96vh; }
+  .app-dialog-body { max-height: calc(96vh - 132px); }
+}
