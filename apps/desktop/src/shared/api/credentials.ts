@@ -15,7 +15,15 @@ export const CREDENTIAL_KEYS = {
 } as const;
 
 export async function credentialStatus(): Promise<CredentialMetadata[]> {
-  return invoke("credential_status");
+  const result = await invoke<unknown>("credential_status");
+  if (!Array.isArray(result)) return [];
+  return result.filter((entry): entry is CredentialMetadata => (
+    Boolean(entry)
+    && typeof entry === "object"
+    && typeof (entry as CredentialMetadata).key === "string"
+    && typeof (entry as CredentialMetadata).configured === "boolean"
+    && typeof (entry as CredentialMetadata).hint === "string"
+  ));
 }
 
 export async function credentialSet(key: string, value: string): Promise<CredentialMetadata> {
