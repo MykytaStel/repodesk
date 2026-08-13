@@ -1,42 +1,49 @@
-@import "./styles/foundation.css";
-@import "./styles/shell.css";
-@import "./styles/layout.css";
-@import "./styles/components.css";
-@import "./styles/timeline-table.css";
-@import "./styles/routing-lists.css";
-@import "./styles/code-forms.css";
-@import "./styles/orchestrate.css";
-@import "./styles/work.css";
-@import "./styles/work-cockpit.css";
-@import "./styles/work-contract.css";
-@import "./styles/changes-evidence.css";
-@import "./styles/debug.css";
-@import "./styles/feedback.css";
-@import "./styles/responsive.css";
-@import "./styles/utilities.css";
-@import "./styles/workspace-shell.css";
-@import "./styles/terminal.css";
-@import "./styles/focus-shell.css";
-@import "./styles/focus-context-bar.css";
-@import "./styles/focus-density.css";
-@import "./styles/performance-density-v1.css";
-@import "../features/code/code-editor-polish.css";
-@import "./styles/ide-polish-v1.css";
-@import "./styles/workbench-polish-v2.css";
-@import "./styles/task-runner.css";
-@import "../features/knowledge/knowledge-v2.css";
-@import "../features/health/health.css";
+/*
+ * RepoDesk cascade ownership.
+ *
+ * Keep source order inside each layer stable. New visual work must choose an
+ * existing ownership layer instead of appending another anonymous `*-vN`
+ * override file. `product` intentionally resolves the migration/legacy layer;
+ * focused workbenches may then refine product hierarchy in `workbench`.
+ */
+@layer base, legacy, product, workbench;
 
-/* Product-level visual contract. Keep this late: it intentionally resolves the
-   older migration/polish layers into the current RepoDesk visual language. */
-@import "./styles/visual-language-2026.css";
+@import "./styles/foundation.css" layer(base);
 
-/* Feature workbenches may deliberately follow the global visual contract when
-   their information architecture needs stronger, product-specific hierarchy. */
-@import "./styles/context-evidence-v2.css";
-@import "./styles/execute-packet-v2.css";
-@import "./styles/work-hierarchy-v3.css";
-@import "./styles/command-palette-v2.css";
-@import "./styles/observability-v1.css";
-@import "./styles/ai-strategy-v1.css";
-@import "./styles/strategy-feedback-v1.css";
+@import "./styles/shell.css" layer(legacy);
+@import "./styles/layout.css" layer(legacy);
+@import "./styles/components.css" layer(legacy);
+@import "./styles/timeline-table.css" layer(legacy);
+@import "./styles/routing-lists.css" layer(legacy);
+@import "./styles/code-forms.css" layer(legacy);
+@import "./styles/orchestrate.css" layer(legacy);
+@import "./styles/work.css" layer(legacy);
+@import "./styles/work-cockpit.css" layer(legacy);
+@import "./styles/work-contract.css" layer(legacy);
+@import "./styles/changes-evidence.css" layer(legacy);
+@import "./styles/debug.css" layer(legacy);
+@import "./styles/feedback.css" layer(legacy);
+@import "./styles/responsive.css" layer(legacy);
+@import "./styles/utilities.css" layer(legacy);
+@import "./styles/workspace-shell.css" layer(legacy);
+@import "./styles/terminal.css" layer(legacy);
+@import "./styles/focus-shell.css" layer(legacy);
+@import "./styles/focus-context-bar.css" layer(legacy);
+@import "./styles/focus-density.css" layer(legacy);
+@import "./styles/performance-density-v1.css" layer(legacy);
+@import "../features/code/code-editor-polish.css" layer(legacy);
+@import "./styles/ide-polish-v1.css" layer(legacy);
+@import "./styles/workbench-polish-v2.css" layer(legacy);
+@import "./styles/task-runner.css" layer(legacy);
+@import "../features/knowledge/knowledge-v2.css" layer(legacy);
+@import "../features/health/health.css" layer(legacy);
+
+@import "./styles/visual-language-2026.css" layer(product);
+
+@import "./styles/context-evidence-v2.css" layer(workbench);
+@import "./styles/execute-packet-v2.css" layer(workbench);
+@import "./styles/work-hierarchy-v3.css" layer(workbench);
+@import "./styles/command-palette-v2.css" layer(workbench);
+@import "./styles/observability-v1.css" layer(workbench);
+@import "./styles/ai-strategy-v1.css" layer(workbench);
+@import "./styles/strategy-feedback-v1.css" layer(workbench);
