@@ -102,13 +102,33 @@ impl Default for RunOptions {
     }
 }
 
-/// Execute `plan` and return the aggregated run (also persisted to the run dir).
+/// Reserve the execution identity before a strategy-aware launch.
+///
+/// This lets pre-execution evidence (for example `AiStrategySelected`) bind to
+/// the exact run without fabricating timestamps after the provider returns.
+pub fn reserve_run_id() -> String {
+    new_run_id()
+}
+
+/// Execute `plan` with a fresh RepoDesk run identity.
 pub async fn run_plan(
     plan: &OrchestrationPlan,
     opts: &RunOptions,
 ) -> RepoDeskResult<OrchestrationRun> {
+    run_plan_with_id(plan, opts, reserve_run_id()).await
+}
+
+/// Execute `plan` using a previously reserved run identity.
+///
+/// The caller may use the identity only for best-effort intent telemetry before
+/// entering this execution boundary. All authoritative run/receipt evidence is
+/// still produced by the runner itself.
+pub async fn run_plan_with_id(
+    plan: &OrchestrationPlan,
+    opts: &RunOptions,
+    run_id: String,
+) -> RepoDeskResult<OrchestrationRun> {
     let started_at = Utc::now().to_rfc3339();
-    let run_id = new_run_id();
 
     // Steps grouped into dependency waves: every step in a wave is independent
     // of the others, so their provider calls can run concurrently.
