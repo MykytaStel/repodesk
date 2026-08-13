@@ -1,8 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { onboardedFixtures } from "./fixtures";
 import { installMockIpc } from "./mock-ipc";
 
-async function openFromPalette(page: Parameters<typeof test>[0] extends never ? never : any, title: string) {
+async function openFromPalette(page: Page, title: string) {
   await page.getByRole("button", { name: "Command palette" }).click();
   const input = page.getByRole("textbox", { name: "Search commands" });
   await input.fill(title);
