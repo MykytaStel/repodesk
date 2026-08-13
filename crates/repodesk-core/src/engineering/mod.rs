@@ -116,7 +116,9 @@ pub use strategy_feedback::{
     STRATEGY_FEEDBACK_MIN_SETTLED_RUNS, StrategyFeedbackReport, StrategyOutcomeState,
     StrategyProfileFeedback, StrategyRunFeedback, derive_strategy_feedback,
 };
-pub use strategy_instrumentation::{StrategySelectionTelemetry, record_strategy_selection};
+pub use strategy_instrumentation::{
+    StrategySelectionTelemetry, record_strategy_selection, record_strategy_selection_for_execution,
+};
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
     WORK_ITEM_CONTRACT_VERSION, WorkItemContract, WorkItemContractReadiness,
