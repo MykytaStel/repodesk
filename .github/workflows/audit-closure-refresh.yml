@@ -1,0 +1,69 @@
+name: Audit Closure Refresh
+
+on:
+  push:
+    branches:
+      - fix/audit-closure-v3
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Show vulnerable dependency paths before refresh
+        shell: bash
+        run: |
+          set +e
+          for pkg in 'quick-xml@0.39.4' 'anyhow@1.0.102' 'event-listener@5.4.1' 'glib@0.18.5' 'proc-macro-error@1.0.4' 'unic-char-property@0.9.0'; do
+            echo "===== cargo tree -i $pkg ====="
+            cargo tree -i "$pkg"
+          done
+          exit 0
+
+      - name: Refresh compatible Rust dependency graph
+        run: cargo update
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit refreshed graph
+        shell: bash
+        run: |
+          set +e
+          cargo audit --json > /tmp/audit.json
+          audit_status=$?
+          echo "===== cargo audit ====="
+          cargo audit
+          echo "===== advisory summary ====="
+          jq '{vulnerabilities: (.vulnerabilities.count // 0), warnings: (.warnings | map_values(length))}' /tmp/audit.json || cat /tmp/audit.json
+          echo "audit_exit=$audit_status" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Show remaining dependency paths
+        shell: bash
+        run: |
+          set +e
+          for pkg in quick-xml anyhow event-listener glib proc-macro-error unic-char-property unic-char-range unic-common unic-ucd-ident unic-ucd-version gtk atk gdk; do
+            echo "===== cargo tree -i $pkg ====="
+            cargo tree -i "$pkg"
+          done
+          exit 0
+
+      - name: Commit refreshed lockfile only
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Cargo.lock already current"
+            exit 0
+          fi
+          git commit -m "chore(deps): refresh Rust audit dependencies"
+          git push
