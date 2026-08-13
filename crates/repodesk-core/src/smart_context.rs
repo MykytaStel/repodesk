@@ -1,25 +1,27 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+use sha2::{Digest, Sha256};
 use tokio::fs;
 
+use crate::context::build_context;
+use crate::context_pipeline::{ContextPipelineSnapshot, ContextSelectionState};
 use crate::embeddings::{EmbeddingProvider, OllamaEmbeddingProvider};
-use crate::persistence::vector_db;
-
 use crate::errors::RepoDeskResult;
-use crate::git_workspace::git_lines;
+use crate::persistence::vector_db;
 use crate::projects::get_active_project;
-use crate::repo_map::{build_repo_map, format_repo_map};
 use crate::tasks::show_active_task;
-use crate::tokens::{TokenEstimate, estimate_text, format_estimate};
-use crate::usage::budget::{evaluate_context, format_verdict, load_budget_config};
+use crate::tokens::{TokenEstimate, format_estimate};
 
-const MAX_CANDIDATE_FILES: usize = 12;
-const MAX_PREVIEW_CHARS: usize = 4_000;
-const MAX_TASK_CHARS: usize = 5_000;
-const MAX_REPOMAP_CHARS: usize = 8_000;
-/// Memory Brain gets a lean budget here — the smart pack is meant for paid
-/// agents, so durable decisions/constraints are worth the tokens but must stay small.
-const MAX_MEMORY_TOKENS: usize = 900;
+const EMBEDDING_CHUNK_CHARS: usize = 1_000;
+const PIPELINE_SNAPSHOT_FILE: &str = "context-pipeline.json";
 
+/// Compatibility projection for the historical `smart-context` CLI.
+///
+/// RepoDesk no longer maintains a second rendered execution context. The paths
+/// point at the canonical Context Pipeline artifacts and `included_files` /
+/// `skipped_files` summarize the pipeline's source decisions rather than a
+/// separate changed-file scanner.
 #[derive(Debug, Clone)]
 pub struct SmartContextResult {
     pub context_file: PathBuf,
@@ -29,161 +31,33 @@ pub struct SmartContextResult {
     pub skipped_files: Vec<String>,
 }
 
+/// Build the canonical Context Pipeline and expose it through the legacy smart
+/// context API. This intentionally performs no semantic-network request: Prepare
+/// remains deterministic and available when Ollama is offline.
 pub async fn build_smart_context() -> RepoDeskResult<SmartContextResult> {
-    let project = get_active_project()?;
+    let result = build_context()?;
     let task = show_active_task()?;
-    let repo_map = build_repo_map().await?;
-
-    let changed_files = git_lines(&project.path, &["diff", "--name-only"]);
-    let staged_files = git_lines(&project.path, &["diff", "--cached", "--name-only"]);
-
-    let mut candidate_files = Vec::new();
-    candidate_files.extend(changed_files);
-    candidate_files.extend(staged_files);
-    candidate_files.sort();
-    candidate_files.dedup();
-
-    let mut included_files = Vec::new();
-    let mut skipped_files = Vec::new();
-    let mut file_sections = Vec::new();
-
-    for relative in candidate_files.iter().take(MAX_CANDIDATE_FILES) {
-        if !is_safe_text_path(relative) {
-            skipped_files.push(format!("{relative} — unsupported or risky file type"));
-            continue;
-        }
-
-        let full_path = project.path.join(relative);
-        let content = match fs::read_to_string(&full_path).await {
-            Ok(content) => content,
-            Err(_) => {
-                skipped_files.push(format!("{relative} — could not read as UTF-8 text"));
-                continue;
-            }
-        };
-
-        let trimmed = trim_text(&content, MAX_PREVIEW_CHARS);
-        included_files.push(relative.clone());
-        file_sections.push(format!("## File: `{relative}`\n\n```txt\n{trimmed}\n```\n"));
-    }
-
-    if candidate_files.len() > MAX_CANDIDATE_FILES {
-        skipped_files.push(format!(
-            "{} additional changed files skipped by smart-context file limit",
-            candidate_files.len() - MAX_CANDIDATE_FILES
-        ));
-    }
-
-    let task_markdown = fs::read_to_string(&task.task_markdown_file)
-        .await
-        .unwrap_or_else(|_| "Task markdown is not available.".to_string());
-
-    // RAG Semantic Context (Optional)
-    let mut semantic_context = String::new();
-    let ollama_api =
-        std::env::var("OLLAMA_API_BASE").unwrap_or_else(|_| "http://localhost:11434".to_string());
-    let provider = OllamaEmbeddingProvider {
-        api_base: ollama_api,
-        model: "nomic-embed-text".to_string(),
-    };
-
-    // We try to get an embedding for the task text. If Ollama is not running, this quietly fails
-    // and semantic context remains empty. We do not want to hard-crash context building.
-    if let Ok(query_emb) =
-        provider.get_embedding(&format!("{} {}", task.config.title, task_markdown))
-        && let Ok(results) = vector_db::search_similar(&project.name, &query_emb, 5)
-        && !results.is_empty()
-    {
-        semantic_context.push_str("\n## Relevant Semantic Context (RAG)\n\n");
-        semantic_context
-            .push_str("These snippets were semantically matched from the repository:\n\n");
-        for res in results {
-            semantic_context.push_str(&format!(
-                "### From `{}` (chunk {})\n```txt\n{}\n```\n\n",
-                res.file_path, res.chunk_index, res.content
-            ));
-        }
-    }
-
-    // Shared Memory Brain slice — the same durable context every agent sees.
-    let memory_brain =
-        crate::memory::retrieval::memory_slice_markdown(&project.name, MAX_MEMORY_TOKENS)
-            .unwrap_or_else(|_| "Project memory unavailable.".to_string());
-
-    let context = format!(
-        r#"# RepoDesk Smart Context Pack
-
-## Purpose
-
-This is a smaller, safer context pack optimized for paid agents.
-It prefers active task data, repository map, git status, and changed file snippets.
-
-## Active Task
-
-{task_markdown}
-
-## Project Memory (Brain)
-
-{memory_brain}
-
-## Repository Map
-
-{repo_map}
-
-## Included Changed Files
-
-{included_files}
-
-## Skipped Files
-
-{skipped_files}
-
-## Changed File Snippets
-
-{file_sections}
-{semantic_context}
-## Agent Rules
-
-- Treat this as bounded context.
-- Do not request the full repository unless necessary.
-- Prefer small patches.
-- Do not touch secrets or credentials.
-- Ask for specific missing files only.
-"#,
-        task_markdown = trim_text(&task_markdown, MAX_TASK_CHARS),
-        memory_brain = memory_brain,
-        repo_map = trim_text(&format_repo_map(&repo_map), MAX_REPOMAP_CHARS),
-        included_files = format_lines(&included_files),
-        skipped_files = format_lines(&skipped_files),
-        file_sections = file_sections.join("\n"),
-        semantic_context = semantic_context,
-    );
-
-    let estimate = estimate_text(&context);
-    let budget = load_budget_config()?;
-    let verdict = evaluate_context(&estimate, &budget);
-
-    let final_context = format!(
-        "{context}\n\n## Token Estimate\n\n```txt\n{}\n```\n\n## Budget Verdict\n\n```txt\n{}\n```\n",
-        format_estimate(&estimate),
-        format_verdict(&verdict)
-    );
-
-    let context_file = task.config.run_dir.join("smart-context.md");
-    let token_estimate_file = task.config.run_dir.join("smart-token-estimate.txt");
-
-    fs::write(&context_file, final_context).await?;
-    fs::write(&token_estimate_file, format_estimate(&estimate)).await?;
+    let snapshot = load_pipeline_snapshot(&task.config.run_dir).await;
+    let (included_files, skipped_files) = snapshot
+        .as_ref()
+        .map(pipeline_source_summary)
+        .unwrap_or_default();
 
     Ok(SmartContextResult {
-        context_file,
-        token_estimate_file,
-        estimate,
+        context_file: PathBuf::from(result.context_file),
+        token_estimate_file: PathBuf::from(result.token_estimate_file),
+        estimate: result.estimate,
         included_files,
         skipped_files,
     })
 }
 
+/// Incrementally refresh the local semantic retrieval index.
+///
+/// File fingerprints are compared before any embedding request. Changed files
+/// are fully embedded first and only then replace their previous rows in one DB
+/// transaction, so an unavailable embedding provider cannot destroy a known-good
+/// index. Removed tracked files are deleted from the local index.
 pub async fn index_repository() -> RepoDeskResult<()> {
     let project = get_active_project()?;
     let ollama_api =
@@ -194,6 +68,7 @@ pub async fn index_repository() -> RepoDeskResult<()> {
     };
 
     let files = crate::git_workspace::git_lines(&project.path, &["ls-files"]);
+    let tracked: HashSet<String> = files.iter().cloned().collect();
 
     for relative in files {
         if !is_safe_text_path(&relative) {
@@ -204,70 +79,107 @@ pub async fn index_repository() -> RepoDeskResult<()> {
             Ok(content) => content,
             Err(_) => continue,
         };
+        let fingerprint = sha256_hex(content.as_bytes());
+        if vector_db::embedding_file_fingerprint(&project.name, &relative)?.as_deref()
+            == Some(fingerprint.as_str())
+        {
+            continue;
+        }
 
         let chars: Vec<char> = content.chars().collect();
-        let chunk_size = 1000;
-        let _ = vector_db::delete_embeddings_for_file(&project.name, &relative);
+        let mut chunks = Vec::new();
+        for chunk in chars.chunks(EMBEDDING_CHUNK_CHARS) {
+            let chunk_text: String = chunk.iter().collect();
+            let embedding = provider.get_embedding(&chunk_text)?;
+            chunks.push((chunk_text, embedding));
+        }
 
-        for (index, chunk) in chars.chunks(chunk_size).enumerate() {
-            let chunk_str: String = chunk.iter().collect();
-            if let Ok(emb) = provider.get_embedding(&chunk_str) {
-                let _ = vector_db::insert_embedding(
-                    &project.name,
-                    &relative,
-                    index as i64,
-                    &chunk_str,
-                    &emb,
-                );
-            }
+        vector_db::replace_file_embeddings(
+            &project.name,
+            &relative,
+            &fingerprint,
+            &chunks,
+        )?;
+    }
+
+    for indexed in vector_db::list_indexed_files(&project.name)? {
+        if !tracked.contains(&indexed) {
+            vector_db::delete_indexed_file(&project.name, &indexed)?;
         }
     }
 
     Ok(())
 }
 
+/// Describe the current canonical pipeline decisions through the old
+/// `smart-context sources` command. If Prepare has not built a pipeline yet, the
+/// output explains how to create one instead of reconstructing a competing
+/// source list.
 pub fn list_smart_context_sources() -> RepoDeskResult<String> {
-    let project = get_active_project()?;
-    let changed_files = git_lines(&project.path, &["diff", "--name-only"]);
-    let staged_files = git_lines(&project.path, &["diff", "--cached", "--name-only"]);
-
-    let mut files = Vec::new();
-    files.extend(changed_files);
-    files.extend(staged_files);
-    files.sort();
-    files.dedup();
-
-    if files.is_empty() {
+    let task = show_active_task()?;
+    let path = task.config.run_dir.join(PIPELINE_SNAPSHOT_FILE);
+    if !path.exists() {
         return Ok(
-            "No changed or staged files detected. Smart context will use task + repo map only.\n"
+            "Canonical context has not been prepared yet. Run `repodesk context build`; `smart-context` is now a compatibility view of the same Context Pipeline.\n"
                 .to_string(),
         );
     }
 
-    let mut output = String::new();
-    output.push_str("Smart context candidate files:\n");
+    let content = std::fs::read_to_string(&path)?;
+    let snapshot: ContextPipelineSnapshot = serde_json::from_str(&content)?;
+    snapshot.validate()?;
+    let (included, excluded) = pipeline_source_summary(&snapshot);
 
-    for file in files {
-        let marker = if is_safe_text_path(&file) {
-            "include"
-        } else {
-            "skip"
-        };
-        output.push_str(&format!("  - [{marker}] {file}\n"));
+    let mut output = String::from("Canonical Context Pipeline sources:\n");
+    for source in included {
+        output.push_str(&format!("  - [include] {source}\n"));
     }
-
+    for source in excluded {
+        output.push_str(&format!("  - [exclude] {source}\n"));
+    }
     Ok(output)
 }
 
 pub fn format_smart_context_result(result: &SmartContextResult) -> String {
     format!(
-        "Smart context built:\n  context file: {}\n  token estimate file: {}\n  included files: {}\n  skipped files: {}\n\n{}",
+        "Canonical context built (smart-context compatibility view):\n  context file: {}\n  token estimate file: {}\n  included sources: {}\n  excluded sources: {}\n\n{}",
         result.context_file.display(),
         result.token_estimate_file.display(),
         result.included_files.len(),
         result.skipped_files.len(),
         format_estimate(&result.estimate)
     )
+}
+
+async fn load_pipeline_snapshot(run_dir: &Path) -> Option<ContextPipelineSnapshot> {
+    let content = fs::read_to_string(run_dir.join(PIPELINE_SNAPSHOT_FILE)).await.ok()?;
+    let snapshot = serde_json::from_str::<ContextPipelineSnapshot>(&content).ok()?;
+    snapshot.validate().ok()?;
+    Some(snapshot)
+}
+
+fn pipeline_source_summary(snapshot: &ContextPipelineSnapshot) -> (Vec<String>, Vec<String>) {
+    let states = snapshot
+        .selections
+        .iter()
+        .map(|selection| (selection.candidate_id.as_str(), &selection.state))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut included = Vec::new();
+    let mut excluded = Vec::new();
+    for candidate in &snapshot.candidates {
+        let target = if matches!(states.get(candidate.id.as_str()), Some(ContextSelectionState::Included)) {
+            &mut included
+        } else {
+            &mut excluded
+        };
+        target.push(candidate.id.clone());
+    }
+    (included, excluded)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    format!("{digest:x}")
 }
 
 fn is_safe_text_path(path: &str) -> bool {
@@ -303,26 +215,20 @@ fn is_safe_text_path(path: &str) -> bool {
     )
 }
 
-fn trim_text(value: &str, max_chars: usize) -> String {
-    if value.chars().count() <= max_chars {
-        value.to_string()
-    } else {
-        format!(
-            "{}\n\n[RepoDesk: trimmed to {} chars]",
-            value.chars().take(max_chars).collect::<String>(),
-            max_chars
-        )
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn format_lines(lines: &[String]) -> String {
-    if lines.is_empty() {
-        "- none".to_string()
-    } else {
-        lines
-            .iter()
-            .map(|line| format!("- {line}"))
-            .collect::<Vec<_>>()
-            .join("\n")
+    #[test]
+    fn semantic_fingerprints_are_content_stable() {
+        assert_eq!(sha256_hex(b"same"), sha256_hex(b"same"));
+        assert_ne!(sha256_hex(b"same"), sha256_hex(b"changed"));
+    }
+
+    #[test]
+    fn unsafe_embedding_paths_remain_blocked() {
+        assert!(!is_safe_text_path(".env"));
+        assert!(!is_safe_text_path("config/credentials.json"));
+        assert!(is_safe_text_path("src/lib.rs"));
     }
 }
