@@ -142,14 +142,12 @@ test.describe("Code editor draft recovery", () => {
 
   test("does not silently restore a conflicting draft when user keeps the disk version", async ({ page }) => {
     await installMockIpc(page, workspaceFixtures("conflict"));
-
-    page.once("dialog", async (dialog) => {
-      expect(dialog.type()).toBe("confirm");
-      expect(dialog.message()).toContain("changed on disk after the draft was created");
-      await dialog.dismiss();
-    });
-
     await openCodeFile(page);
+
+    const decision = page.getByRole("dialog", { name: "Recovered draft conflicts with disk" });
+    await expect(decision).toBeVisible();
+    await expect(decision).toContainText("changed on disk after that draft was created");
+    await decision.getByRole("button", { name: "Keep disk version" }).click();
 
     await expect(page.locator(".semantic-code-editor-host .cm-content")).toContainText("disk version");
     await expect(page.locator(".semantic-code-editor-host .cm-content")).not.toContainText("recovered unsaved draft");
@@ -170,5 +168,23 @@ test.describe("Code editor draft recovery", () => {
       args: { relativePath: path },
     });
     expect(invocations.some(({ cmd }) => cmd === "code_workspace_draft_save")).toBe(false);
+  });
+
+  test("dirty tab close uses RepoDesk decision dialog before discarding recovery", async ({ page }) => {
+    await installMockIpc(page, workspaceFixtures("safe"));
+    await openCodeFile(page);
+    await expect(page.locator(".code-draft-badge")).toHaveText("recovered");
+
+    await page.getByRole("button", { name: "Close .gitignore" }).click();
+    const decision = page.getByRole("dialog", { name: "Close unsaved file?" });
+    await expect(decision).toBeVisible();
+    await decision.getByRole("button", { name: "Discard and close" }).click();
+
+    await expect(page.getByRole("tab", { name: /.gitignore/ })).toHaveCount(0);
+    const invocations = await recordedInvocations(page);
+    expect(invocations).toContainEqual({
+      cmd: "code_workspace_draft_delete",
+      args: { relativePath: path },
+    });
   });
 });

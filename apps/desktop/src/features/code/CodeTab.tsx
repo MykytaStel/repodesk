@@ -30,6 +30,7 @@ import { CodeProjectSearch } from "./CodeProjectSearch";
 import { useCodeWorkspaceActions } from "./CodeWorkspaceActions";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
 import { IdeIcon } from "./IdeIcon";
+import { useIdeDecisionDialog } from "./IdeDecisionDialog";
 import { useIdePreferences } from "./idePreferences";
 import { LibraryTabBadge } from "./LibraryTabBadge";
 import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
@@ -167,6 +168,7 @@ export function CodeTab({
   const activeFindings = activePath ? findingsByFile.get(activePath) : undefined;
   const dirtyCount = tabs.filter((tab) => tab.dirty).length;
   const idePreferences = useIdePreferences();
+  const { confirm: confirmEditorDecision, dialog: editorDecisionDialog } = useIdeDecisionDialog();
 
   useEffect(() => {
     const previousProject = sessionProjectRef.current;
@@ -300,7 +302,13 @@ export function CodeTab({
       return;
     }
     if (existing?.dirty && forceReload) {
-      if (!window.confirm(`Discard unsaved changes in ${fileName(file.path)} and reload from disk?`)) return;
+      const discard = await confirmEditorDecision({
+        title: "Reload from disk?",
+        message: `Discard unsaved changes in ${fileName(file.path)} and reload the current disk version?`,
+        confirmLabel: "Discard and reload",
+        danger: true,
+      });
+      if (!discard) return;
       try {
         await discardPersistedDraft(file.path);
       } catch (error) {
@@ -330,9 +338,12 @@ export function CodeTab({
           current_fingerprint: document.fingerprint,
         });
         if (recovery) {
-          const restore = recovery.state === "safe" || window.confirm(
-            `RepoDesk found an unsaved draft for ${fileName(document.path)}, but this file changed on disk after the draft was created.\n\nChoose OK to restore the draft into the editor without saving it. Choose Cancel to discard the draft and keep the current disk version.`,
-          );
+          const restore = recovery.state === "safe" || await confirmEditorDecision({
+            title: "Recovered draft conflicts with disk",
+            message: `RepoDesk found an unsaved draft for ${fileName(document.path)}, but the file changed on disk after that draft was created. Restore the draft into the editor without saving it, or keep the current disk version.`,
+            confirmLabel: "Restore draft",
+            cancelLabel: "Keep disk version",
+          });
           if (restore) {
             openedTab = {
               ...openedTab,
@@ -366,7 +377,7 @@ export function CodeTab({
       openingRef.current = false;
       setOpeningPath(null);
     }
-  }, [discardPersistedDraft, tabs]);
+  }, [confirmEditorDecision, discardPersistedDraft, tabs]);
 
   const openLibrary = useCallback(async (request: CodeWorkspaceOpenRequest) => {
     if (!request.libraryHandle || openingRef.current) return;
@@ -431,7 +442,13 @@ export function CodeTab({
   const closeTab = async (path: string) => {
     const target = tabs.find((tab) => tab.path === path);
     if (target?.dirty) {
-      if (!window.confirm(`Discard unsaved changes in ${fileName(path)}?`)) return;
+      const discard = await confirmEditorDecision({
+        title: "Close unsaved file?",
+        message: `Discard unsaved changes in ${fileName(path)} and close this editor tab?`,
+        confirmLabel: "Discard and close",
+        danger: true,
+      });
+      if (!discard) return;
       if (target.kind === "workspace") {
         try {
           await discardPersistedDraft(path);
@@ -562,6 +579,7 @@ export function CodeTab({
       )}
 
       {workspaceActions.dialog}
+      {editorDecisionDialog}
 
       <section className="code-editor-workbench">
         <header className="code-workspace-toolbar">
