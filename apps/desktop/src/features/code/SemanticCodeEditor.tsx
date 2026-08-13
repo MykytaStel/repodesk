@@ -72,7 +72,6 @@ const editorThemeSpec = {
     height: "100%",
     color: "var(--text)",
     backgroundColor: "var(--bg)",
-    fontSize: "12.5px",
   },
   ".cm-scroller": {
     overflow: "auto",
