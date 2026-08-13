@@ -26,4 +26,3 @@ The bottom panel stays mounted so evidence and PTY state survive hide/show. Xter
 - Playwright covers product copy, dialog semantics, Escape/focus restoration, registry failure/retry, and RepoDesk-owned Orchestrate confirmation.
 - The production build runs an entry-budget check that rejects eager Terminal/Editor preload and caps initial JavaScript gzip at 110 kB.
 - Existing E2E, TypeScript build, Rust workspace verification, and secret scan remain green.
-

@@ -18,8 +18,14 @@ export function ArtifactViewerModal({ kind, isOpen, onClose }: { kind: string; i
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setData(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let mounted = true;
+    setData(null);
     setLoading(true);
     setError(null);
     callCommand<ArtifactContent>("read_artifact", { kind })

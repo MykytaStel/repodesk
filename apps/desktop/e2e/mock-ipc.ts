@@ -75,10 +75,6 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
           : cmd;
         let value = Object.prototype.hasOwnProperty.call(data, fixtureKey) ? data[fixtureKey] : null;
 
-        if (value && typeof value === "object" && "__mock_error" in value) {
-          return Promise.reject(new Error(String((value as { __mock_error: unknown }).__mock_error)));
-        }
-
         if (value && typeof value === "object" && "__mock_sequence" in value) {
           const sequence = (value as { __mock_sequence: unknown }).__mock_sequence;
           if (Array.isArray(sequence) && sequence.length > 0) {
@@ -86,6 +82,10 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
             value = sequence[Math.min(position, sequence.length - 1)];
             sequencePositions.set(fixtureKey, position + 1);
           }
+        }
+
+        if (value && typeof value === "object" && "__mock_error" in value) {
+          return Promise.reject(new Error(String((value as { __mock_error: unknown }).__mock_error)));
         }
 
         if (

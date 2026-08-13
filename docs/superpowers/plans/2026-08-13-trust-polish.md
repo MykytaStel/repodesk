@@ -95,4 +95,3 @@
 - [ ] Run `cargo clippy --all-targets --all-features -- -D warnings` and `git diff --check`.
 - [ ] Review the final diff for trust-copy, focus, error, and confirmation regressions.
 - [ ] Commit, push `feature/trust-polish`, and open a draft PR.
-

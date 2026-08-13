@@ -29,6 +29,7 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
     queryKey: ["project_list_configs"],
     queryFn: () => invoke<ProjectConfig[]>("project_list_configs"),
     enabled: open,
+    retry: false,
     staleTime: 60_000,
   });
 

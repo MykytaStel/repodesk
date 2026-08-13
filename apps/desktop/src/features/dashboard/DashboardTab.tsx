@@ -216,9 +216,9 @@ export function DashboardTab({
         </div>
       )}
       <section className="hero-panel wide-panel">
-        <p className="eyebrow">RepoDesk cockpit</p>
-        <h1>AI workflow state, tokens, and model health.</h1>
-        <p className="lead">Use one screen to see the active project, next safe step, token usage, reachable models, and Git state before handing context to an agent.</p>
+        <p className="eyebrow">Engineering workspace</p>
+        <h1>Project state, context, and verification evidence.</h1>
+        <p className="lead">See the active project, next safe step, context size, available tools, and Git state before handing bounded work to an agent.</p>
         <div className="button-row">
           <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy}>{nextAction ? `Do next: ${nextAction.label}` : "Do next safe step"}</button>
           <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh</button>
