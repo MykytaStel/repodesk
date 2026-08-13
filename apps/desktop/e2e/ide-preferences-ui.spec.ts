@@ -2,11 +2,12 @@ import { expect, test, type Page } from "@playwright/test";
 import { onboardedFixtures } from "./fixtures";
 import { installMockIpc } from "./mock-ipc";
 
-async function openFromPalette(page: Page, title: string) {
-  await page.getByRole("button", { name: "Command palette" }).click();
-  const input = page.getByRole("textbox", { name: "Search commands" });
-  await input.fill(title);
-  await page.keyboard.press("Enter");
+async function openSettings(page: Page) {
+  const sidebar = page.locator(".workspace-sidebar");
+  if (!(await sidebar.isVisible())) {
+    await page.getByRole("button", { name: "Show workspace sidebar" }).click();
+  }
+  await sidebar.getByRole("button", { name: "Settings", exact: true }).click();
 }
 
 test.describe("IDE preferences", () => {
@@ -14,7 +15,7 @@ test.describe("IDE preferences", () => {
     await installMockIpc(page, onboardedFixtures);
     await page.goto("/");
 
-    await openFromPalette(page, "Settings");
+    await openSettings(page);
     await expect(page.getByRole("heading", { name: "Code workspace" })).toBeVisible();
 
     await page.getByRole("combobox", { name: "Editor font size" }).selectOption("16");
