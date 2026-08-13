@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 function vendorChunk(id: string): string | undefined {
-  const normalized = id.replaceAll('\\', '/');
+  const normalized = id.replace(/\\/g, '/');
   if (!normalized.includes('/node_modules/')) return undefined;
 
   if (
