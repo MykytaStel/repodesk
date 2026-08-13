@@ -1,0 +1,50 @@
+name: IDE chrome font fix
+
+on:
+  push:
+    branches:
+      - ux/code-ide-chrome
+    paths:
+      - .github/workflows/ide-chrome-font-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ux/code-ide-chrome
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: apps/desktop/pnpm-lock.yaml
+      - name: Remove competing base font size
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/desktop/src/features/code/SemanticCodeEditor.tsx')
+          text = path.read_text()
+          needle = '    fontSize: "12.5px",\n'
+          assert text.count(needle) == 1, f'expected one hardcoded base font size, found {text.count(needle)}'
+          path.write_text(text.replace(needle, '', 1))
+          PY
+      - name: Verify frontend build
+        run: |
+          pnpm --dir apps/desktop install --frozen-lockfile
+          pnpm --dir apps/desktop build
+      - name: Commit product fix and remove patcher
+        run: |
+          rm .github/workflows/ide-chrome-font-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src/features/code/SemanticCodeEditor.tsx .github/workflows/ide-chrome-font-fix.yml
+          git commit -m "fix(code): make IDE font preference authoritative"
+          git push origin HEAD:ux/code-ide-chrome
