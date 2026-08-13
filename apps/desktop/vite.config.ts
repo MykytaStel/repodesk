@@ -1,6 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const CODEMIRROR_CORE_PACKAGES = [
+  '/node_modules/@codemirror/state/',
+  '/node_modules/@codemirror/view/',
+  '/node_modules/@codemirror/commands/',
+  '/node_modules/@codemirror/search/',
+  '/node_modules/@codemirror/autocomplete/',
+  '/node_modules/@codemirror/lint/',
+  '/node_modules/@codemirror/language/',
+];
+
 function vendorChunk(id: string): string | undefined {
   const normalized = id.replace(/\\/g, '/');
   if (!normalized.includes('/node_modules/')) return undefined;
@@ -14,12 +24,13 @@ function vendorChunk(id: string): string | undefined {
   }
   if (normalized.includes('/node_modules/@tanstack/')) return 'vendor-query';
   if (normalized.includes('/node_modules/@tauri-apps/')) return 'vendor-tauri';
-  if (
-    normalized.includes('/node_modules/@codemirror/') ||
-    normalized.includes('/node_modules/@lezer/')
-  ) {
-    return 'vendor-editor';
+  if (CODEMIRROR_CORE_PACKAGES.some((segment) => normalized.includes(segment))) {
+    return 'vendor-editor-core';
   }
+  // Language parsers (`@codemirror/lang-*`, `@lezer/*`) are intentionally not
+  // grouped here. `SemanticCodeEditor` imports them lazily per opened language;
+  // allowing Rollup to keep those dynamic graphs separate prevents one large
+  // editor vendor chunk from defeating the lazy-loading boundary.
   if (normalized.includes('/node_modules/@xterm/')) return 'vendor-terminal';
   return undefined;
 }
