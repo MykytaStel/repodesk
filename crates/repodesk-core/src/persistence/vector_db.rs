@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::persistence::db::init_db;
 use serde::{Deserialize, Serialize};
@@ -98,19 +96,23 @@ pub fn embedding_file_fingerprint(
             "SELECT content_fingerprint FROM project_embedding_files
              WHERE project = ?1 AND file_path = ?2",
         )
-        .map_err(|e| RepoDeskError::Database(format!("Failed to prepare embedding fingerprint query: {e}")))?;
-    let mut rows = stmt
-        .query((project, file_path))
-        .map_err(|e| RepoDeskError::Database(format!("Failed to query embedding fingerprint: {e}")))?;
-    let Some(row) = rows
-        .next()
-        .map_err(|e| RepoDeskError::Database(format!("Failed to read embedding fingerprint: {e}")))?
+        .map_err(|e| {
+            RepoDeskError::Database(format!(
+                "Failed to prepare embedding fingerprint query: {e}"
+            ))
+        })?;
+    let mut rows = stmt.query((project, file_path)).map_err(|e| {
+        RepoDeskError::Database(format!("Failed to query embedding fingerprint: {e}"))
+    })?;
+    let Some(row) = rows.next().map_err(|e| {
+        RepoDeskError::Database(format!("Failed to read embedding fingerprint: {e}"))
+    })?
     else {
         return Ok(None);
     };
-    row.get(0)
-        .map(Some)
-        .map_err(|e| RepoDeskError::Database(format!("Failed to decode embedding fingerprint: {e}")))
+    row.get(0).map(Some).map_err(|e| {
+        RepoDeskError::Database(format!("Failed to decode embedding fingerprint: {e}"))
+    })
 }
 
 /// List files known to the fingerprint metadata table. Ordered output keeps
@@ -122,7 +124,9 @@ pub fn list_indexed_files(project: &str) -> RepoDeskResult<Vec<String>> {
             "SELECT file_path FROM project_embedding_files
              WHERE project = ?1 ORDER BY file_path",
         )
-        .map_err(|e| RepoDeskError::Database(format!("Failed to prepare indexed-file query: {e}")))?;
+        .map_err(|e| {
+            RepoDeskError::Database(format!("Failed to prepare indexed-file query: {e}"))
+        })?;
     let rows = stmt
         .query_map([project], |row| row.get::<_, String>(0))
         .map_err(|e| RepoDeskError::Database(format!("Failed to query indexed files: {e}")))?;
@@ -140,9 +144,9 @@ pub fn replace_file_embeddings(
     chunks: &[(String, Vec<f32>)],
 ) -> RepoDeskResult<()> {
     let mut conn = init_db()?;
-    let tx = conn
-        .transaction()
-        .map_err(|e| RepoDeskError::Database(format!("Failed to begin embedding transaction: {e}")))?;
+    let tx = conn.transaction().map_err(|e| {
+        RepoDeskError::Database(format!("Failed to begin embedding transaction: {e}"))
+    })?;
     tx.execute(
         "DELETE FROM project_embeddings WHERE project = ?1 AND file_path = ?2",
         (project, file_path),
@@ -173,8 +177,9 @@ pub fn replace_file_embeddings(
     )
     .map_err(|e| RepoDeskError::Database(format!("Failed to update embedding fingerprint: {e}")))?;
 
-    tx.commit()
-        .map_err(|e| RepoDeskError::Database(format!("Failed to commit embedding transaction: {e}")))?;
+    tx.commit().map_err(|e| {
+        RepoDeskError::Database(format!("Failed to commit embedding transaction: {e}"))
+    })?;
     Ok(())
 }
 
@@ -194,7 +199,9 @@ pub fn delete_indexed_file(project: &str, file_path: &str) -> RepoDeskResult<()>
         "DELETE FROM project_embedding_files WHERE project = ?1 AND file_path = ?2",
         (project, file_path),
     )
-    .map_err(|e| RepoDeskError::Database(format!("Failed to delete stale embedding metadata: {e}")))?;
+    .map_err(|e| {
+        RepoDeskError::Database(format!("Failed to delete stale embedding metadata: {e}"))
+    })?;
     tx.commit()
         .map_err(|e| RepoDeskError::Database(format!("Failed to commit embedding cleanup: {e}")))?;
     Ok(())
@@ -219,18 +226,18 @@ pub fn search_similar(
         .next()
         .map_err(|e| RepoDeskError::Database(format!("Failed to fetch search row: {e}")))?
     {
-        let file_path: String = row
-            .get(0)
-            .map_err(|e| RepoDeskError::Database(format!("Failed to decode embedding path: {e}")))?;
-        let chunk_index: i64 = row
-            .get(1)
-            .map_err(|e| RepoDeskError::Database(format!("Failed to decode embedding chunk: {e}")))?;
-        let content: String = row
-            .get(2)
-            .map_err(|e| RepoDeskError::Database(format!("Failed to decode embedding content: {e}")))?;
-        let blob: Vec<u8> = row
-            .get(3)
-            .map_err(|e| RepoDeskError::Database(format!("Failed to decode embedding vector: {e}")))?;
+        let file_path: String = row.get(0).map_err(|e| {
+            RepoDeskError::Database(format!("Failed to decode embedding path: {e}"))
+        })?;
+        let chunk_index: i64 = row.get(1).map_err(|e| {
+            RepoDeskError::Database(format!("Failed to decode embedding chunk: {e}"))
+        })?;
+        let content: String = row.get(2).map_err(|e| {
+            RepoDeskError::Database(format!("Failed to decode embedding content: {e}"))
+        })?;
+        let blob: Vec<u8> = row.get(3).map_err(|e| {
+            RepoDeskError::Database(format!("Failed to decode embedding vector: {e}"))
+        })?;
 
         let embedding = blob_to_vec(&blob);
         let score = cosine_similarity(query_embedding, &embedding);
@@ -270,7 +277,7 @@ mod tests {
 
     #[test]
     fn indexed_file_sets_remain_deterministic() {
-        let set = BTreeSet::from(["z.rs", "a.rs"]);
+        let set = std::collections::BTreeSet::from(["z.rs", "a.rs"]);
         assert_eq!(set.into_iter().collect::<Vec<_>>(), vec!["a.rs", "z.rs"]);
     }
 }

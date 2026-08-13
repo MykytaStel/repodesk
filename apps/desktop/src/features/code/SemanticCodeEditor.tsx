@@ -46,7 +46,7 @@ import {
   showNavigationTarget,
   wordRangeAt,
 } from "./definitionNavigation";
-import { editorLanguageExtension } from "./editorLanguages";
+import { editorLanguageExtension, loadEditorLanguageExtension } from "./editorLanguages";
 import { useLiveLanguage } from "./useLiveLanguage";
 import { useSemanticCodeState, type GitLineKind, type SemanticFileState } from "./useSemanticCodeState";
 import "./semantic-code-editor.css";
@@ -294,6 +294,7 @@ export function SemanticCodeEditor({
   const viewRef = useRef<EditorView | null>(null);
   const gitCompartmentRef = useRef<Compartment | null>(null);
   const themeCompartmentRef = useRef<Compartment | null>(null);
+  const languageCompartmentRef = useRef<Compartment | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const dirtyRef = useRef(dirty);
@@ -312,8 +313,10 @@ export function SemanticCodeEditor({
 
   if (!gitCompartmentRef.current) gitCompartmentRef.current = new Compartment();
   if (!themeCompartmentRef.current) themeCompartmentRef.current = new Compartment();
+  if (!languageCompartmentRef.current) languageCompartmentRef.current = new Compartment();
   const gitCompartment = gitCompartmentRef.current;
   const themeCompartment = themeCompartmentRef.current;
+  const languageCompartment = languageCompartmentRef.current;
 
   const languageIntelligence = useQuery({
     queryKey: [...LANGUAGE_INTELLIGENCE_KEY, projectName ?? "none"],
@@ -427,7 +430,7 @@ export function SemanticCodeEditor({
         lintGutter(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         syntaxHighlighting(repodeskHighlight),
-        editorLanguageExtension(language, path),
+        languageCompartment.of(editorLanguageExtension(language, path)),
         navigationTargetField,
         definitionLinkField,
         themeCompartment.of(editorThemeExtension(resolvedEditorThemeMode())),
@@ -510,6 +513,16 @@ export function SemanticCodeEditor({
     });
     const view = new EditorView({ state, parent: host });
     viewRef.current = view;
+    let languageLoadCancelled = false;
+    void loadEditorLanguageExtension(language, path)
+      .then((extension) => {
+        if (languageLoadCancelled || viewRef.current !== view) return;
+        view.dispatch({ effects: languageCompartment.reconfigure(extension) });
+      })
+      .catch(() => {
+        // Syntax support is optional presentation state; a failed lazy chunk must
+        // not make the editor unusable or affect repository data.
+      });
     view.dispatch(setDiagnostics(view.state, codeMirrorDiagnostics(view.state, semantic)));
 
     let themeMode = resolvedEditorThemeMode();
@@ -568,6 +581,7 @@ export function SemanticCodeEditor({
     window.addEventListener("blur", onWindowBlur);
 
     return () => {
+      languageLoadCancelled = true;
       window.removeEventListener(CODE_OPEN_EVENT, applyPendingLocation);
       window.removeEventListener("keydown", onModifierDown);
       window.removeEventListener("keyup", onModifierUp);
@@ -585,7 +599,7 @@ export function SemanticCodeEditor({
   // A document/language transition gets a clean CodeMirror state and history.
   // Semantic state and external content are updated by dedicated effects below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gitCompartment, language, path, readOnly, themeCompartment]);
+  }, [gitCompartment, language, languageCompartment, path, readOnly, themeCompartment]);
 
   useEffect(() => {
     const view = viewRef.current;

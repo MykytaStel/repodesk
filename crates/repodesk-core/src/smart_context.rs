@@ -94,12 +94,7 @@ pub async fn index_repository() -> RepoDeskResult<()> {
             chunks.push((chunk_text, embedding));
         }
 
-        vector_db::replace_file_embeddings(
-            &project.name,
-            &relative,
-            &fingerprint,
-            &chunks,
-        )?;
+        vector_db::replace_file_embeddings(&project.name, &relative, &fingerprint, &chunks)?;
     }
 
     for indexed in vector_db::list_indexed_files(&project.name)? {
@@ -128,7 +123,9 @@ pub fn list_smart_context_sources() -> RepoDeskResult<String> {
     let content = std::fs::read_to_string(&path)?;
     let snapshot: ContextPipelineSnapshot = serde_json::from_str(&content)?;
     snapshot.validate().map_err(|error| {
-        RepoDeskError::Api(format!("invalid canonical context pipeline snapshot: {error}"))
+        RepoDeskError::Api(format!(
+            "invalid canonical context pipeline snapshot: {error}"
+        ))
     })?;
     let (included, excluded) = pipeline_source_summary(&snapshot);
 
@@ -154,7 +151,9 @@ pub fn format_smart_context_result(result: &SmartContextResult) -> String {
 }
 
 async fn load_pipeline_snapshot(run_dir: &Path) -> Option<ContextPipelineSnapshot> {
-    let content = fs::read_to_string(run_dir.join(PIPELINE_SNAPSHOT_FILE)).await.ok()?;
+    let content = fs::read_to_string(run_dir.join(PIPELINE_SNAPSHOT_FILE))
+        .await
+        .ok()?;
     let snapshot = serde_json::from_str::<ContextPipelineSnapshot>(&content).ok()?;
     snapshot.validate().ok()?;
     Some(snapshot)
