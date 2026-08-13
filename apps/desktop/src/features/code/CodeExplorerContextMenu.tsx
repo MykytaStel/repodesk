@@ -6,6 +6,7 @@ export type ExplorerContextMenuState = {
   x: number;
   y: number;
   target: WorkspaceActionTarget;
+  blocked?: boolean;
 };
 
 type MenuAction = {
@@ -67,8 +68,8 @@ export function CodeExplorerContextMenu({
   const actions: MenuAction[] = [
     { label: "New File", icon: "file-add", run: () => onNewFile(basePath) },
     { label: "New Folder", icon: "folder-add", run: () => onNewFolder(basePath) },
-    { label: "Rename…", icon: "rename", run: () => onRename(state.target) },
-    { label: "Delete", icon: "delete", danger: true, run: () => onDelete(state.target) },
+    { label: "Rename…", icon: "rename", disabled: state.blocked, run: () => onRename(state.target) },
+    { label: "Delete", icon: "delete", danger: true, disabled: state.blocked, run: () => onDelete(state.target) },
     { label: "Copy Relative Path", icon: "copy", run: () => onCopyPath(state.target.path) },
     { label: "Refresh Explorer", icon: "refresh", run: onRefresh },
   ];
