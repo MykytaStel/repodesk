@@ -47,6 +47,7 @@ import {
   wordRangeAt,
 } from "./definitionNavigation";
 import { editorLanguageExtension, loadEditorLanguageExtension } from "./editorLanguages";
+import { useIdePreferences, type IdePreferences } from "./idePreferences";
 import { useLiveLanguage } from "./useLiveLanguage";
 import { useSemanticCodeState, type GitLineKind, type SemanticFileState } from "./useSemanticCodeState";
 import "./semantic-code-editor.css";
@@ -137,6 +138,18 @@ function resolvedEditorThemeMode(): EditorThemeMode {
 
 function editorThemeExtension(mode: EditorThemeMode): Extension {
   return mode === "light" ? lightEditorTheme : darkEditorTheme;
+}
+
+function editorPreferencesExtension(preferences: IdePreferences): Extension {
+  return [
+    EditorState.tabSize.of(preferences.tabSize),
+    preferences.wordWrap ? EditorView.lineWrapping : [],
+    EditorView.theme({
+      "&": { fontSize: `${preferences.editorFontSize}px` },
+      ".cm-content": { fontSize: "inherit" },
+      ".cm-gutters": { fontSize: `${Math.max(10, preferences.editorFontSize - 1)}px` },
+    }),
+  ];
 }
 
 class GitMarker extends GutterMarker {
@@ -290,11 +303,13 @@ export function SemanticCodeEditor({
   readOnly?: boolean;
 }) {
   const { hasProject, projectName } = useWorkspace();
+  const idePreferences = useIdePreferences();
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const gitCompartmentRef = useRef<Compartment | null>(null);
   const themeCompartmentRef = useRef<Compartment | null>(null);
   const languageCompartmentRef = useRef<Compartment | null>(null);
+  const preferenceCompartmentRef = useRef<Compartment | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const dirtyRef = useRef(dirty);
@@ -314,9 +329,11 @@ export function SemanticCodeEditor({
   if (!gitCompartmentRef.current) gitCompartmentRef.current = new Compartment();
   if (!themeCompartmentRef.current) themeCompartmentRef.current = new Compartment();
   if (!languageCompartmentRef.current) languageCompartmentRef.current = new Compartment();
+  if (!preferenceCompartmentRef.current) preferenceCompartmentRef.current = new Compartment();
   const gitCompartment = gitCompartmentRef.current;
   const themeCompartment = themeCompartmentRef.current;
   const languageCompartment = languageCompartmentRef.current;
+  const preferenceCompartment = preferenceCompartmentRef.current;
 
   const languageIntelligence = useQuery({
     queryKey: [...LANGUAGE_INTELLIGENCE_KEY, projectName ?? "none"],
@@ -434,7 +451,7 @@ export function SemanticCodeEditor({
         navigationTargetField,
         definitionLinkField,
         themeCompartment.of(editorThemeExtension(resolvedEditorThemeMode())),
-        EditorState.tabSize.of(2),
+        preferenceCompartment.of(editorPreferencesExtension(idePreferences)),
         EditorState.readOnly.of(readOnly),
         EditorView.editable.of(!readOnly),
         keymap.of([
@@ -599,7 +616,15 @@ export function SemanticCodeEditor({
   // A document/language transition gets a clean CodeMirror state and history.
   // Semantic state and external content are updated by dedicated effects below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gitCompartment, language, languageCompartment, path, readOnly, themeCompartment]);
+  }, [gitCompartment, language, languageCompartment, path, preferenceCompartment, readOnly, themeCompartment]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: preferenceCompartment.reconfigure(editorPreferencesExtension(idePreferences)),
+    });
+  }, [idePreferences, preferenceCompartment]);
 
   useEffect(() => {
     const view = viewRef.current;

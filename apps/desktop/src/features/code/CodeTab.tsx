@@ -27,12 +27,15 @@ import { DiffViewer } from "../../shared/ui/DiffViewer";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
 import { CodeProjectSearch } from "./CodeProjectSearch";
-import { CodeWorkspaceActions } from "./CodeWorkspaceActions";
+import { useCodeWorkspaceActions } from "./CodeWorkspaceActions";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
+import { IdeIcon } from "./IdeIcon";
+import { useIdePreferences } from "./idePreferences";
 import { LibraryTabBadge } from "./LibraryTabBadge";
 import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
 import { SemanticCodeEditor } from "./SemanticCodeEditor";
 import "./code-workspace.css";
+import "./ide-chrome.css";
 
 const MAX_OPEN_TABS = 8;
 const MAX_CACHED_PROJECT_SESSIONS = 2;
@@ -163,6 +166,7 @@ export function CodeTab({
   const activeTab = tabs.find((tab) => tab.path === activePath) ?? null;
   const activeFindings = activePath ? findingsByFile.get(activePath) : undefined;
   const dirtyCount = tabs.filter((tab) => tab.dirty).length;
+  const idePreferences = useIdePreferences();
 
   useEffect(() => {
     const previousProject = sessionProjectRef.current;
@@ -507,6 +511,16 @@ export function CodeTab({
     await refreshMutationProjections();
   }, [refreshMutationProjections, tabs]);
 
+  const workspaceActions = useCodeWorkspaceActions({
+    getOpenDocument: (path) => {
+      const tab = tabs.find((candidate) => candidate.kind === "workspace" && candidate.path === path);
+      return tab ? { path: tab.path, fingerprint: tab.fingerprint, dirty: tab.dirty } : null;
+    },
+    onMutation: handleWorkspaceMutation,
+    onError: setWorkspaceError,
+    preferences: idePreferences,
+  });
+
   if (!hasProject) {
     return <div className="focus-empty">Connect a project to open the Code workspace.</div>;
   }
@@ -533,8 +547,21 @@ export function CodeTab({
           }}
         />
       ) : (
-        <CodeWorkspaceTree files={workspace.data.files} activePath={activePath} onOpen={(file) => void openFile(file)} />
+        <CodeWorkspaceTree
+          files={workspace.data.files}
+          activePath={activePath}
+          onOpen={(file) => void openFile(file)}
+          onSearchProject={() => setSideMode("search")}
+          onNewFile={workspaceActions.requestCreateFile}
+          onNewFolder={workspaceActions.requestCreateDirectory}
+          onRename={workspaceActions.requestRename}
+          onDelete={workspaceActions.requestDelete}
+          onRefresh={() => void workspace.refetch()}
+          isPathDirty={(path) => tabs.some((tab) => tab.kind === "workspace" && tab.path === path && tab.dirty)}
+        />
       )}
+
+      {workspaceActions.dialog}
 
       <section className="code-editor-workbench">
         <header className="code-workspace-toolbar">
@@ -545,57 +572,55 @@ export function CodeTab({
             {workspace.data.truncated ? <span className="warn">index capped</span> : null}
             {dirtyCount > 0 ? <span className="warn">{dirtyCount} unsaved</span> : null}
           </div>
-          <div className="code-workspace-actions">
-            <button
-              type="button"
-              className={`tiny-button${sideMode === "search" ? " active" : ""}`}
-              onClick={() => setSideMode((current) => current === "search" ? "explorer" : "search")}
-            >
-              Search project
-            </button>
-            <CodeWorkspaceActions
-              activeDocument={activeTab?.kind === "workspace" ? {
-                path: activeTab.path,
-                fingerprint: activeTab.fingerprint,
-                dirty: activeTab.dirty,
-              } : null}
-              onMutation={handleWorkspaceMutation}
-              onError={setWorkspaceError}
-            />
+          <div className="code-workspace-actions ide-icon-toolbar" role="toolbar" aria-label="Code workspace actions">
             {activeTab?.kind === "workspace" ? (
               <button
                 type="button"
-                className={`tiny-button${repoIntelOpen ? " active" : ""}`}
+                className={`ide-icon-button${repoIntelOpen ? " active" : ""}`}
+                aria-label="Repository context"
+                title="Repository context"
                 onClick={() => {
                   setRepoIntelOpen((open) => !open);
                   setInsightsOpen(false);
                 }}
-              >Repo context</button>
+              >
+                <IdeIcon name="context" />
+              </button>
             ) : null}
             <button
               type="button"
-              className="tiny-button"
+              className="ide-icon-button"
+              aria-label={review.isPending ? "Analyzing changes" : "Analyze changes"}
+              title={review.isPending ? "Analyzing changes…" : "Analyze changes"}
               disabled={review.isPending}
               onClick={() => review.mutate()}
             >
-              {review.isPending ? "Analyzing…" : "Analyze changes"}
+              <IdeIcon name="analyze" />
             </button>
             {review.data ? (
               <button
                 type="button"
-                className={`tiny-button${insightsOpen ? " active" : ""}`}
+                className={`ide-icon-button${insightsOpen ? " active" : ""}`}
+                aria-label={`Findings ${review.data.total}`}
+                title={`${review.data.total} engineering findings`}
                 onClick={() => {
                   setInsightsOpen((open) => !open);
                   setRepoIntelOpen(false);
                 }}
               >
-                Findings {review.data.total}
+                <IdeIcon name="more" />
+                <span className="ide-icon-count">{review.data.total > 99 ? "99+" : review.data.total}</span>
               </button>
             ) : null}
-            <button type="button" className="tiny-button" onClick={openChanges}>
-              {activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
+            <button
+              type="button"
+              className="ide-icon-button"
+              aria-label={activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
+              title={activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
+              onClick={openChanges}
+            >
+              <IdeIcon name="changes" />
             </button>
-            <button type="button" className="tiny-button" onClick={() => void workspace.refetch()}>Refresh tree</button>
           </div>
         </header>
 

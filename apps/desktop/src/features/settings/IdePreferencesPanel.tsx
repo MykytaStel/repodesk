@@ -1,4 +1,5 @@
 import { useIdePreferences, saveIdePreferences, resetIdePreferences } from "../code/idePreferences";
+import "../code/ide-chrome.css";
 
 export function IdePreferencesPanel() {
   const preferences = useIdePreferences();

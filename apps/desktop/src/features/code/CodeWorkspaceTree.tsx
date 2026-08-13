@@ -52,6 +52,7 @@ export function CodeWorkspaceTree({
   onRename,
   onDelete,
   onRefresh,
+  isPathDirty,
 }: {
   files: CodeWorkspaceFile[];
   activePath: string | null;
@@ -62,6 +63,7 @@ export function CodeWorkspaceTree({
   onRename: (target: WorkspaceActionTarget) => void;
   onDelete: (target: WorkspaceActionTarget) => void;
   onRefresh: () => void;
+  isPathDirty: (path: string) => boolean;
 }) {
   const preferences = useIdePreferences();
   const rowHeight = preferences.explorerDensity === "compact" ? 23 : 27;
@@ -232,7 +234,7 @@ export function CodeWorkspaceTree({
               className={`code-tree-row file${active ? " active" : ""}${unavailable ? " blocked" : ""}`}
               style={{ paddingLeft: 24 + depth * 14, height: rowHeight }}
               onClick={() => !unavailable && onOpen(file)}
-              onContextMenu={(event) => openContextMenu(event, { kind: "file", path: file.path }, Boolean(file.blocked))}
+              onContextMenu={(event) => openContextMenu(event, { kind: "file", path: file.path }, Boolean(file.blocked) || isPathDirty(file.path))}
               disabled={Boolean(unavailable)}
               title={unavailable ?? file.path}
               role="treeitem"

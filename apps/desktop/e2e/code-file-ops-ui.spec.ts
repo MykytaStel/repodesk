@@ -30,17 +30,17 @@ const fileOpsFixtures = {
   },
 };
 
-test.describe("Code workspace file actions", () => {
-  test("creates a repository file through guarded IPC and opens it immediately", async ({ page }) => {
+test.describe("Code workspace IDE actions", () => {
+  test("creates a repository file through the Explorer icon and RepoDesk dialog", async ({ page }) => {
     await installMockIpc(page, fileOpsFixtures);
     await page.goto("/");
     await page.getByRole("button", { name: /^Code —/ }).click();
 
-    page.once("dialog", async (dialog) => {
-      expect(dialog.type()).toBe("prompt");
-      await dialog.accept("src/created.ts");
-    });
     await page.getByRole("button", { name: "New file" }).click();
+    const dialog = page.getByRole("dialog", { name: "New file" });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("textbox").fill("src/created.ts");
+    await dialog.getByRole("button", { name: "Create" }).click();
 
     await expect(page.getByRole("tab", { name: /created.ts/ })).toBeVisible();
     await expect(page.locator(".code-document-location")).toContainText("src/created.ts");
@@ -53,21 +53,25 @@ test.describe("Code workspace file actions", () => {
     });
   });
 
-  test("disables destructive file actions while the active editor has unsaved changes", async ({ page }) => {
+  test("shows Explorer right-click actions and blocks destructive actions for dirty files", async ({ page }) => {
     await installMockIpc(page, onboardedFixtures);
     await page.goto("/");
     await page.getByRole("button", { name: /^Code —/ }).click();
-    await page.getByRole("treeitem", { name: /.gitignore/ }).click();
 
-    const rename = page.getByRole("button", { name: "Rename" });
-    const remove = page.getByRole("button", { name: "Delete" });
-    await expect(rename).toBeEnabled();
-    await expect(remove).toBeEnabled();
+    const row = page.getByRole("treeitem", { name: /.gitignore/ });
+    await row.click();
+    await row.click({ button: "right" });
+    const menu = page.getByRole("menu", { name: /Explorer actions for .gitignore/ });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("menuitem", { name: "Rename…" })).toBeEnabled();
+    await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeEnabled();
+    await expect(menu.getByRole("menuitem", { name: "Copy Relative Path" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
 
     await page.locator(".semantic-code-editor-host .cm-content").press("x");
-
-    await expect(rename).toBeDisabled();
-    await expect(remove).toBeDisabled();
-    await expect(rename).toHaveAttribute("title", "Save or discard unsaved edits before rename/delete");
+    await row.click({ button: "right" });
+    await expect(menu.getByRole("menuitem", { name: "Rename…" })).toBeDisabled();
+    await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeDisabled();
   });
 });
