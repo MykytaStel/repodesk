@@ -13,7 +13,7 @@ use rusqlite::Connection;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 /// The schema version the current binary expects.
-pub const TARGET_VERSION: i64 = 5;
+pub const TARGET_VERSION: i64 = 6;
 
 fn db_err(context: &str, e: impl std::fmt::Display) -> RepoDeskError {
     RepoDeskError::Database(format!("{context}: {e}"))
@@ -51,6 +51,11 @@ pub fn run_migrations(conn: &Connection) -> RepoDeskResult<()> {
     if current < 5 {
         migrate_to_v5(conn)?;
         set_version(conn, 5)?;
+    }
+
+    if current < 6 {
+        migrate_to_v6(conn)?;
+        set_version(conn, 6)?;
     }
 
     Ok(())
@@ -302,6 +307,36 @@ fn migrate_to_v5(conn: &Connection) -> RepoDeskResult<()> {
     Ok(())
 }
 
+/// Migration 6 — per-file semantic-index fingerprints.
+///
+/// Embeddings are derived local cache, but older databases already contain
+/// chunks without file-level freshness metadata. Seed those paths with an empty
+/// fingerprint so the next explicit index refresh deterministically re-embeds
+/// them rather than treating stale vectors as current.
+fn migrate_to_v6(conn: &Connection) -> RepoDeskResult<()> {
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS project_embedding_files (
+            project TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            content_fingerprint TEXT NOT NULL,
+            indexed_at TEXT NOT NULL,
+            PRIMARY KEY (project, file_path)
+        )",
+        [],
+    )
+    .map_err(|e| db_err("Failed to create project_embedding_files table", e))?;
+
+    conn.execute(
+        "INSERT OR IGNORE INTO project_embedding_files
+            (project, file_path, content_fingerprint, indexed_at)
+         SELECT DISTINCT project, file_path, '', '' FROM project_embeddings",
+        [],
+    )
+    .map_err(|e| db_err("Failed to seed embedding file metadata", e))?;
+
+    Ok(())
+}
+
 fn column_exists(conn: &Connection, table: &str, column: &str) -> RepoDeskResult<bool> {
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
@@ -426,5 +461,13 @@ mod tests {
             })
             .unwrap();
         assert_eq!(meta_count, 0);
+
+        // v6: per-file semantic index metadata exists.
+        let embedding_file_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM project_embedding_files", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(embedding_file_count, 0);
     }
 }

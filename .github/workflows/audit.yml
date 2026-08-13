@@ -1,16 +1,24 @@
 name: Security audit
 
-# RustSec advisory scan. Informational (does not gate PR merges) — it runs
-# weekly, on demand, and whenever Rust dependencies change.
+# RustSec advisory gate. Actionable vulnerabilities and unsound advisories fail;
+# the single accepted transitive exception is documented in .cargo/audit.toml
+# and docs/security/dependency-risk-register.md.
 on:
   schedule:
     - cron: '0 6 * * 1' # Mondays 06:00 UTC
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.cargo/audit.toml'
+      - '.github/workflows/audit.yml'
   push:
     branches: [main]
     paths:
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - '.cargo/audit.toml'
       - '.github/workflows/audit.yml'
 
 jobs:
@@ -23,7 +31,7 @@ jobs:
       checks: write
     steps:
       - uses: actions/checkout@v4
-      - name: Run RustSec advisory check
+      - name: Run RustSec advisory gate
         uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

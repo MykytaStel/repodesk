@@ -12,9 +12,8 @@ path = "src/lib.rs"
 name = "repodesk"
 path = "src/main.rs"
 
-
 [dependencies]
-anyhow = "1"
+anyhow.workspace = true
 clap = { version = "4", features = ["derive"] }
 repodesk-core = { path = "../repodesk-core" }
-tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "fs"] }
+tokio.workspace = true

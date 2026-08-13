@@ -177,13 +177,16 @@ pub async fn orchestrate_strategy_run(
         coding_agent_timeout_secs: 600,
         agent_workspace_policy: AgentWorkspacePolicy::IsolatedRequired,
     };
-    let run = orchestrator::run_plan(&prepared.plan, &opts).await?;
 
-    // Full prediction telemetry is best-effort: execution/receipt evidence has
-    // already completed and cannot be downgraded by an observability append.
+    // Bind intent evidence to the exact execution identity before any provider
+    // request or coding-agent process is launched. Telemetry is best-effort and
+    // never weakens the execution/receipt gates.
+    let run_id = orchestrator::reserve_run_id();
     let preview = &prepared.preview;
-    let _ = repodesk_core::engineering::record_strategy_selection(
-        &run,
+    let _ = repodesk_core::engineering::record_strategy_selection_for_execution(
+        &prepared.plan.project,
+        &prepared.plan.task_id,
+        &run_id,
         StrategySelectionTelemetry {
             requested_mode: preview.strategy.requested_mode.as_label(),
             resolved_profile: preview.strategy.profile.as_label(),
@@ -200,6 +203,7 @@ pub async fn orchestrate_strategy_run(
         },
     );
 
+    let run = orchestrator::run_plan_with_id(&prepared.plan, &opts, run_id).await?;
     Ok(run)
 }
 

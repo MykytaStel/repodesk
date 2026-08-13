@@ -1,0 +1,32 @@
+# RepoDesk RustSec policy.
+#
+# Security vulnerabilities fail `cargo audit` by default. Informational
+# `unsound` advisories are also denied so they cannot silently accumulate.
+# Unmaintained transitive crates remain warnings because Tauri's Linux
+# WebKitGTK stack still depends on the GTK3 0.18 ecosystem.
+#
+# Every ignored advisory must have a matching entry in
+# docs/security/dependency-risk-register.md with an explicit removal condition.
+
+[advisories]
+severity_threshold = "low"
+informational_warnings = ["unmaintained", "unsound"]
+ignore = [
+  # glib <0.20: VariantStrIter is unsound. RepoDesk does not call that API
+  # directly; glib 0.18 is pulled transitively by Tauri/WebKitGTK on Linux.
+  # Remove this exception as soon as the desktop stack can use glib >=0.20.
+  "RUSTSEC-2024-0429",
+]
+
+[output]
+deny = ["unsound"]
+quiet = false
+show_tree = true
+
+[database]
+fetch = true
+stale = false
+
+[yanked]
+enabled = true
+update_index = true

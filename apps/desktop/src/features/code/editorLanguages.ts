@@ -1,8 +1,5 @@
 import { StreamLanguage, type StreamParser } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { rust } from "@codemirror/lang-rust";
 
 type HtmlState = {
   comment: boolean;
@@ -166,14 +163,30 @@ const htmlLanguage = StreamLanguage.define(htmlStream);
 const tomlLanguage = StreamLanguage.define(tomlStream);
 const yamlLanguage = StreamLanguage.define(yamlStream);
 
-export function editorLanguageExtension(language: string, path: string): Extension {
-  const extension = path.split(".").pop()?.toLowerCase() ?? "";
-  if (language === "rust") return rust();
-  if (language === "typescript") return javascript({ typescript: true, jsx: extension === "tsx" });
-  if (language === "javascript") return javascript({ jsx: extension === "jsx" });
-  if (language === "json") return json();
+export function editorLanguageExtension(language: string, _path: string): Extension {
   if (language === "html") return htmlLanguage;
   if (language === "toml") return tomlLanguage;
   if (language === "yaml") return yamlLanguage;
   return [];
+}
+
+export async function loadEditorLanguageExtension(language: string, path: string): Promise<Extension> {
+  const extension = path.split(".").pop()?.toLowerCase() ?? "";
+  if (language === "rust") {
+    const { rust } = await import("@codemirror/lang-rust");
+    return rust();
+  }
+  if (language === "typescript") {
+    const { javascript } = await import("@codemirror/lang-javascript");
+    return javascript({ typescript: true, jsx: extension === "tsx" });
+  }
+  if (language === "javascript") {
+    const { javascript } = await import("@codemirror/lang-javascript");
+    return javascript({ jsx: extension === "jsx" });
+  }
+  if (language === "json") {
+    const { json } = await import("@codemirror/lang-json");
+    return json();
+  }
+  return editorLanguageExtension(language, path);
 }

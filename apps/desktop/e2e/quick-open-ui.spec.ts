@@ -54,7 +54,12 @@ test.describe("Whole-repository Quick Open", () => {
     await installMockIpc(page, quickOpenFixtures);
     await page.goto("/");
 
-    await page.keyboard.press("Control+k");
+    // The shortcut contract begins once the application shell is interactive;
+    // pressing a browser key while React is still booting tests navigation timing,
+    // not RepoDesk Quick Open. Keep this in sync with the daily-loop shortcut test.
+    await expect(page.locator(".phase-rail")).toBeVisible();
+    await page.locator("body").click();
+    await page.keyboard.press("ControlOrMeta+k");
     const input = page.getByRole("textbox", { name: "Search commands" });
     await expect(input).toBeFocused();
     await input.fill("session");

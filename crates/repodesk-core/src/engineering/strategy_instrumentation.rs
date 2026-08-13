@@ -33,20 +33,35 @@ pub fn record_strategy_selection(
     run: &OrchestrationRun,
     telemetry: StrategySelectionTelemetry<'_>,
 ) -> RepoDeskResult<()> {
+    record_strategy_selection_for_execution(&run.project, &run.task_id, &run.run_id, telemetry)
+}
+
+/// Record the strategy decision before provider/process execution begins.
+///
+/// `run_id` must come from `orchestrator::reserve_run_id`; the same id is then
+/// passed to `run_plan_with_id`. A launch that fails before producing execution
+/// evidence therefore leaves an explicit intent event, not a falsely completed
+/// run. Feedback projections treat such an execution as unsettled.
+pub fn record_strategy_selection_for_execution(
+    project: &str,
+    task_id: &str,
+    run_id: &str,
+    telemetry: StrategySelectionTelemetry<'_>,
+) -> RepoDeskResult<()> {
     let task = show_active_task()?.config;
-    if task.id != run.task_id || task.project_name != run.project {
+    if task.id != task_id || task.project_name != project {
         return Err(RepoDeskError::Api(format!(
-            "strategy instrumentation active task mismatch: run {}/{} vs task {}/{}",
-            run.project, run.task_id, task.project_name, task.id
+            "strategy instrumentation active task mismatch: run {project}/{task_id} vs task {}/{}",
+            task.project_name, task.id
         )));
     }
-    let work_item_id = WorkItemId::try_new(run.task_id.clone())
+    let work_item_id = WorkItemId::try_new(task_id.to_string())
         .map_err(|error| RepoDeskError::Api(format!("strategy instrumentation: {error}")))?;
-    let execution_id = ExecutionId::try_new(run.run_id.clone())
+    let execution_id = ExecutionId::try_new(run_id.to_string())
         .map_err(|error| RepoDeskError::Api(format!("strategy instrumentation: {error}")))?;
 
     let mut event = EngineeringEvent::new(
-        run.project.clone(),
+        project.to_string(),
         work_item_id,
         EngineeringEventKind::AiStrategySelected,
     )
