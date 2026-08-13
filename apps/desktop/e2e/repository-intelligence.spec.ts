@@ -120,7 +120,7 @@ test("Repository intelligence explains semantic coverage and graph confidence", 
   await page.getByRole("treeitem", { name: /app\.ts/ }).click();
   await expect(page.locator(".semantic-code-editor-host .cm-editor")).toBeVisible();
 
-  await page.getByRole("button", { name: "Repo context" }).click();
+  await page.getByRole("button", { name: "Repository context" }).click();
 
   const drawer = page.getByRole("complementary", { name: "Repository intelligence" });
   await expect(drawer).toBeVisible();
