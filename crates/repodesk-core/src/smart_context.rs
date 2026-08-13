@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -7,7 +7,7 @@ use tokio::fs;
 use crate::context::build_context;
 use crate::context_pipeline::{ContextPipelineSnapshot, ContextSelectionState};
 use crate::embeddings::{EmbeddingProvider, OllamaEmbeddingProvider};
-use crate::errors::RepoDeskResult;
+use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::persistence::vector_db;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
@@ -127,7 +127,9 @@ pub fn list_smart_context_sources() -> RepoDeskResult<String> {
 
     let content = std::fs::read_to_string(&path)?;
     let snapshot: ContextPipelineSnapshot = serde_json::from_str(&content)?;
-    snapshot.validate()?;
+    snapshot.validate().map_err(|error| {
+        RepoDeskError::Api(format!("invalid canonical context pipeline snapshot: {error}"))
+    })?;
     let (included, excluded) = pipeline_source_summary(&snapshot);
 
     let mut output = String::from("Canonical Context Pipeline sources:\n");
@@ -159,15 +161,18 @@ async fn load_pipeline_snapshot(run_dir: &Path) -> Option<ContextPipelineSnapsho
 }
 
 fn pipeline_source_summary(snapshot: &ContextPipelineSnapshot) -> (Vec<String>, Vec<String>) {
-    let states = snapshot
+    let states: HashMap<&str, &ContextSelectionState> = snapshot
         .selections
         .iter()
         .map(|selection| (selection.candidate_id.as_str(), &selection.state))
-        .collect::<std::collections::HashMap<_, _>>();
+        .collect();
     let mut included = Vec::new();
     let mut excluded = Vec::new();
     for candidate in &snapshot.candidates {
-        let target = if matches!(states.get(candidate.id.as_str()), Some(ContextSelectionState::Included)) {
+        let target = if matches!(
+            states.get(candidate.id.as_str()).copied(),
+            Some(ContextSelectionState::Included)
+        ) {
             &mut included
         } else {
             &mut excluded
