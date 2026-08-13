@@ -1,6 +1,7 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const FRONTEND_CHUNK_BUDGET_BYTES = 500_000;
 const CODEMIRROR_CORE_PACKAGES = [
   '/node_modules/@codemirror/state/',
   '/node_modules/@codemirror/view/',
@@ -35,8 +36,33 @@ function vendorChunk(id: string): string | undefined {
   return undefined;
 }
 
+function chunkBudget(): Plugin {
+  return {
+    name: 'repodesk-chunk-budget',
+    generateBundle(_options, bundle) {
+      const oversized = Object.values(bundle)
+        .filter((output) => output.type === 'chunk')
+        .map((output) => ({
+          fileName: output.fileName,
+          bytes: new TextEncoder().encode(output.code).byteLength,
+        }))
+        .filter(({ bytes }) => bytes > FRONTEND_CHUNK_BUDGET_BYTES)
+        .sort((a, b) => b.bytes - a.bytes);
+
+      if (oversized.length === 0) return;
+
+      const details = oversized
+        .map(({ fileName, bytes }) => `${fileName}: ${(bytes / 1_000).toFixed(1)} kB`)
+        .join(', ');
+      this.error(
+        `RepoDesk frontend chunk budget exceeded (${FRONTEND_CHUNK_BUDGET_BYTES / 1_000} kB): ${details}`,
+      );
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), chunkBudget()],
   clearScreen: false,
   build: {
     rollupOptions: {
