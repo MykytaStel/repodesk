@@ -40,6 +40,7 @@ pub use review::{ReviewAction, ReviewedFile, RunReview, record_review};
 pub use review_evidence_gate::review_run;
 pub use runner::{
     AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, list_runs, load_latest_run, load_run,
+    reserve_run_id, run_plan_with_id,
 };
 pub use strategy::{build_strategy_plan, derive_active_ai_strategy};
 pub use strategy_preview::{
