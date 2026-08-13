@@ -20,6 +20,7 @@ ignore = [
 
 [output]
 deny = ["unsound"]
+quiet = false
 show_tree = true
 
 [database]
