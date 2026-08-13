@@ -69,14 +69,17 @@ test.describe("IDE preferences", () => {
 
     const editor = page.locator(".semantic-code-editor-host .cm-editor");
     const content = page.locator(".semantic-code-editor-host .cm-content");
+    const gutters = page.locator(".semantic-code-editor-host .cm-gutters");
     await expect(editor).toBeVisible();
     await expect(content).toHaveClass(/cm-lineWrapping/);
 
     const fontSize = await editor.evaluate((element) => getComputedStyle(element).fontSize);
+    const gutterFontSize = await gutters.evaluate((element) => getComputedStyle(element).fontSize);
     const tabSize = await content.evaluate((element) => getComputedStyle(element).tabSize);
     const rowBox = await row.boundingBox();
 
     expect(fontSize).toBe("16px");
+    expect(gutterFontSize).toBe("15px");
     expect(tabSize).toBe("4");
     expect(Math.round(rowBox?.height ?? 0)).toBe(27);
   });
