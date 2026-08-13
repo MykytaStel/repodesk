@@ -80,7 +80,8 @@ export default function App() {
 
   const { data: projects = [] } = useQuery({
     queryKey: ["project_list_configs"],
-    queryFn: () => invoke<ProjectCommandTarget[]>("project_list_configs").catch(() => []),
+    queryFn: () => invoke<ProjectCommandTarget[]>("project_list_configs"),
+    retry: false,
     staleTime: 60_000,
   });
 
@@ -201,6 +202,10 @@ export default function App() {
       if (!mod) return;
 
       const key = event.key.toLowerCase();
+      const modalOpen = document.querySelector('[role="dialog"][aria-modal="true"]') !== null;
+      const togglesOpenPalette = paletteOpen && (key === "k" || (key === "p" && event.shiftKey));
+      if (modalOpen && !togglesOpenPalette) return;
+
       if (key === "k" || (key === "p" && event.shiftKey)) {
         event.preventDefault();
         setPaletteOpen((open) => !open);
@@ -233,7 +238,7 @@ export default function App() {
       window.removeEventListener("keydown", handler);
       void unlisten.then((dispose) => dispose());
     };
-  }, []);
+  }, [paletteOpen]);
 
   const searchFileCommands = useCallback(
     async (query: string): Promise<Command[]> => {

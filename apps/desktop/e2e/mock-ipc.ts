@@ -84,6 +84,10 @@ export async function installMockIpc(page: Page, fixtures: CommandFixtures): Pro
           }
         }
 
+        if (value && typeof value === "object" && "__mock_error" in value) {
+          return Promise.reject(new Error(String((value as { __mock_error: unknown }).__mock_error)));
+        }
+
         if (
           value
           && typeof value === "object"

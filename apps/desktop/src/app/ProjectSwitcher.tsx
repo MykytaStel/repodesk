@@ -25,10 +25,11 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  const { data: projects = [], isFetching } = useQuery({
+  const { data: projects = [], isFetching, isError, error, refetch } = useQuery({
     queryKey: ["project_list_configs"],
-    queryFn: () => invoke<ProjectConfig[]>("project_list_configs").catch(() => [] as ProjectConfig[]),
+    queryFn: () => invoke<ProjectConfig[]>("project_list_configs"),
     enabled: open,
+    retry: false,
     staleTime: 60_000,
   });
 
@@ -190,7 +191,15 @@ export function ProjectSwitcher({ projectName, onConnectProject }: { projectName
           ) : null}
 
           <div className="project-switcher-list" role="list">
-            {isFetching && projects.length === 0 ? (
+            {isError ? (
+              <div className="project-switcher-error" role="alert">
+                <strong>Could not load projects</strong>
+                <span>{error instanceof Error ? error.message : String(error)}</span>
+                <button type="button" className="tiny-button" onClick={() => void refetch()}>
+                  Retry loading projects
+                </button>
+              </div>
+            ) : isFetching && projects.length === 0 ? (
               <p className="project-switcher-empty">Loading…</p>
             ) : filteredProjects.length === 0 ? (
               <p className="project-switcher-empty">No matching projects.</p>

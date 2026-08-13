@@ -78,7 +78,7 @@ export function InteractiveTerminal({ active }: InteractiveTerminalProps) {
 
   useEffect(() => {
     const host = hostRef.current;
-    if (!active || initializedRef.current || !host) return;
+    if (initializedRef.current || !host) return;
     initializedRef.current = true;
 
     const terminal = new Terminal({
@@ -204,7 +204,7 @@ export function InteractiveTerminal({ active }: InteractiveTerminalProps) {
 
     void Promise.all([attachOutput, attachExit]).then(() => startSession());
 
-    cleanupRef.current = () => {
+    const cleanup = () => {
       disposed = true;
       const current = sessionRef.current;
       sessionRef.current = null;
@@ -219,15 +219,14 @@ export function InteractiveTerminal({ active }: InteractiveTerminalProps) {
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
+      initializedRef.current = false;
     };
-  }, [active]);
-
-  useEffect(
-    () => () => {
-      cleanupRef.current?.();
-    },
-    [],
-  );
+    cleanupRef.current = cleanup;
+    return () => {
+      cleanup();
+      if (cleanupRef.current === cleanup) cleanupRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!active) return;

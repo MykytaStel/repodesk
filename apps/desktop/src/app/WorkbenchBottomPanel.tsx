@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   captureActionDiagnostics,
   clearProblems,
@@ -12,9 +12,12 @@ import {
 } from "../shared/api/workbench";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { formatNumber } from "../shared/utils/helpers";
-import { InteractiveTerminal } from "./InteractiveTerminal";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { TaskRunnerPanel } from "./TaskRunnerPanel";
+
+const InteractiveTerminal = lazy(() => import("./InteractiveTerminal").then((module) => ({
+  default: module.InteractiveTerminal,
+})));
 
 interface ActionRunResult {
   id: string;
@@ -87,22 +90,28 @@ function LogRow({ log }: { log: LogEntry }) {
 export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProps) {
   const { projectName } = useWorkspace();
   const [activeTab, setActiveTab] = useState<BottomPanelTab>("output");
+  const [terminalActivated, setTerminalActivated] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
   const historyProject = useRef<string | null>(projectName ?? null);
   const problemSnapshot = useSyncExternalStore(subscribeProblems, getProblemSnapshot, getProblemSnapshot);
 
+  const selectTab = useCallback((tab: BottomPanelTab) => {
+    if (tab === "terminal") setTerminalActivated(true);
+    setActiveTab(tab);
+  }, []);
+
   useEffect(() => {
     const onTabRequest = (event: Event) => {
       const tab = (event as CustomEvent<BottomPanelTab>).detail;
       if (tab === "problems" || tab === "tasks" || tab === "output" || tab === "terminal") {
-        setActiveTab(tab);
+        selectTab(tab);
       }
     };
     window.addEventListener(BOTTOM_PANEL_TAB_EVENT, onTabRequest);
     return () => window.removeEventListener(BOTTOM_PANEL_TAB_EVENT, onTabRequest);
-  }, []);
+  }, [selectTab]);
 
   useEffect(() => {
     const nextProject = projectName ?? null;
@@ -189,16 +198,16 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
     >
       <header className="bottom-panel-tabs">
         <div className="bottom-panel-tab-list" role="tablist" aria-label="Bottom panel views">
-          <button type="button" className={activeTab === "problems" ? "active" : ""} onClick={() => setActiveTab("problems")}>
+          <button type="button" className={activeTab === "problems" ? "active" : ""} onClick={() => selectTab("problems")}>
             Problems <span>{problemSnapshot.diagnostics.length}</span>
           </button>
-          <button type="button" className={activeTab === "tasks" ? "active" : ""} onClick={() => setActiveTab("tasks")}>
+          <button type="button" className={activeTab === "tasks" ? "active" : ""} onClick={() => selectTab("tasks")}>
             Tasks
           </button>
-          <button type="button" className={activeTab === "output" ? "active" : ""} onClick={() => setActiveTab("output")}>
+          <button type="button" className={activeTab === "output" ? "active" : ""} onClick={() => selectTab("output")}>
             Output <span>{logs.length}</span>
           </button>
-          <button type="button" className={activeTab === "terminal" ? "active" : ""} onClick={() => setActiveTab("terminal")}>
+          <button type="button" className={activeTab === "terminal" ? "active" : ""} onClick={() => selectTab("terminal")}>
             Terminal
           </button>
         </div>
@@ -215,7 +224,7 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
       ) : null}
 
       <div className={`bottom-panel-task-host${activeTab === "tasks" ? "" : " bottom-panel-view-hidden"}`}>
-        <TaskRunnerPanel active={open && activeTab === "tasks"} onOpenProblems={() => setActiveTab("problems")} />
+        <TaskRunnerPanel active={open && activeTab === "tasks"} onOpenProblems={() => selectTab("problems")} />
       </div>
 
       {activeTab === "output" ? (
@@ -228,7 +237,11 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
         </div>
       ) : null}
 
-      <InteractiveTerminal active={open && activeTab === "terminal"} />
+      {terminalActivated ? (
+        <Suspense fallback={<div className="bottom-panel-empty"><strong>Loading Terminal…</strong></div>}>
+          <InteractiveTerminal active={open && activeTab === "terminal"} />
+        </Suspense>
+      ) : null}
     </section>
   );
 }

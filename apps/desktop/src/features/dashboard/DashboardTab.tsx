@@ -164,7 +164,7 @@ export function DashboardTab({
         <p className="eyebrow" style={{ marginBottom: "8px", color: "var(--accent-primary)" }}>Getting Started</p>
         <h1 style={{ fontSize: "2rem", marginBottom: "16px" }}>Welcome to RepoDesk.</h1>
         <p className="lead" style={{ fontSize: "1.1rem", marginBottom: "32px", maxWidth: "600px" }}>
-          Your local-first AI operations cockpit. Safely run autonomous agents (like Claude or Codex) on your codebase without leaking secrets or blowing your budget.
+          Your local-first engineering workspace. Scope one Work Item, coordinate human or agent execution, review the exact ChangeSet, and verify it before commit.
         </p>
         
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -216,9 +216,9 @@ export function DashboardTab({
         </div>
       )}
       <section className="hero-panel wide-panel">
-        <p className="eyebrow">RepoDesk cockpit</p>
-        <h1>AI workflow state, tokens, and model health.</h1>
-        <p className="lead">Use one screen to see the active project, next safe step, token usage, reachable models, and Git state before handing context to an agent.</p>
+        <p className="eyebrow">Engineering workspace</p>
+        <h1>Project state, context, and verification evidence.</h1>
+        <p className="lead">See the active project, next safe step, context size, available tools, and Git state before handing bounded work to an agent.</p>
         <div className="button-row">
           <button className="primary-button" onClick={() => void doNextSafeStep()} disabled={isBusy}>{nextAction ? `Do next: ${nextAction.label}` : "Do next safe step"}</button>
           <button className="ghost-button" onClick={() => void refreshAll()} disabled={isBusy}>Refresh</button>

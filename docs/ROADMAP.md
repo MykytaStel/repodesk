@@ -1,6 +1,6 @@
 # RepoDesk Development Roadmap
 
-RepoDesk is a local-first desktop control cockpit for AI-assisted development.
+RepoDesk is a local-first engineering workspace for controlled software change.
 The core product idea is simple: connect projects, create tasks, build safe context, route work to the right AI/runtime, run checks, and keep the workflow observable and secure.
 
 ## Current product goal
