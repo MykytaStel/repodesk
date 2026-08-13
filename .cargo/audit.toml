@@ -12,10 +12,9 @@
 severity_threshold = "low"
 informational_warnings = ["unmaintained", "unsound"]
 ignore = [
-  # glib <0.20: VariantStrIter::as_str() can expose an invalid lifetime.
-  # RepoDesk does not call that API directly; glib 0.18 is pulled transitively
-  # by Tauri/WebKitGTK on Linux. Remove this exception as soon as the desktop
-  # stack moves to glib >=0.20 / a GTK4-capable Tauri runtime.
+  # glib <0.20: VariantStrIter is unsound. RepoDesk does not call that API
+  # directly; glib 0.18 is pulled transitively by Tauri/WebKitGTK on Linux.
+  # Remove this exception as soon as the desktop stack can use glib >=0.20.
   "RUSTSEC-2024-0429",
 ]
 
@@ -27,6 +26,6 @@ show_tree = true
 fetch = true
 stale = false
 
-yanked]
+[yanked]
 enabled = true
 update_index = true
