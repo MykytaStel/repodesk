@@ -35,11 +35,14 @@
 @import "./styles/ide-polish-v1.css" layer(legacy);
 @import "./styles/workbench-polish-v2.css" layer(legacy);
 @import "./styles/task-runner.css" layer(legacy);
-@import "../features/knowledge/knowledge-v2.css" layer(legacy);
 @import "../features/health/health.css" layer(legacy);
 
 @import "./styles/visual-language-2026.css" layer(product);
 
+/* Feature-specific v2/v3 workbench contracts intentionally refine the shared
+ * product language. Keep them in the final layer so a generic density rule can
+ * never silently shrink a reviewed accessibility contract. */
+@import "../features/knowledge/knowledge-v2.css" layer(workbench);
 @import "./styles/context-evidence-v2.css" layer(workbench);
 @import "./styles/execute-packet-v2.css" layer(workbench);
 @import "./styles/work-hierarchy-v3.css" layer(workbench);
