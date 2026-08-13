@@ -1,3 +1,4 @@
+@layer legacy {
 .knowledge-workspace {
   display: grid;
   gap: 14px;
@@ -329,4 +330,5 @@
   .knowledge-list { max-height: 260px; border-right: 0; border-bottom: 1px solid var(--border); }
   .knowledge-proposal-grid { grid-template-columns: 1fr; }
   .focus-page-header { flex-direction: column; }
+}
 }
