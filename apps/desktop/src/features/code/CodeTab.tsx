@@ -19,8 +19,9 @@ import {
 import {
   discardCodeWorkspaceDraft,
   flushCodeWorkspaceDraft,
-  stageCodeWorkspaceDrafts,
+  stageCodeWorkspaceTabDrafts,
   subscribeCodeDraftPersistence,
+  workspaceProjectFromDraftTab,
 } from "../../shared/api/codeDraftPersistence";
 import { requestChangesOpen } from "../../shared/api/changesNavigation";
 import { callCommand } from "../../shared/api/queries";
@@ -83,20 +84,6 @@ const STATUS_LABEL: Record<CodeWorkspaceFileStatus, string> = {
 
 function workspaceTabId(project: string, path: string): string {
   return `workspace:${project}:${path}`;
-}
-
-function workspaceTabProject(tab: EditorTab): string | null {
-  if (tab.kind !== "workspace") return null;
-  const prefix = "workspace:";
-  const suffix = `:${tab.path}`;
-  if (!tab.id.startsWith(prefix) || !tab.id.endsWith(suffix)) return null;
-  return tab.id.slice(prefix.length, tab.id.length - suffix.length) || null;
-}
-
-function dirtyDraftSnapshots(project: string, tabs: EditorTab[]) {
-  return tabs
-    .filter((tab) => tab.kind === "workspace" && tab.dirty && tab.id === workspaceTabId(project, tab.path))
-    .map((tab) => ({ path: tab.path, content: tab.content, baseFingerprint: tab.fingerprint }));
 }
 
 function libraryTabId(handle: string): string {
@@ -203,7 +190,7 @@ export function CodeTab({
   useEffect(() => {
     const previousProject = sessionProjectRef.current;
     if (previousProject && previousProject !== projectName) {
-      stageCodeWorkspaceDrafts(previousProject, dirtyDraftSnapshots(previousProject, tabs));
+      stageCodeWorkspaceTabDrafts(previousProject, tabs);
       rememberCodeSession(previousProject, tabs, activeTabId);
     }
 
@@ -227,7 +214,7 @@ export function CodeTab({
 
   useEffect(() => {
     if (!projectName) return;
-    stageCodeWorkspaceDrafts(projectName, dirtyDraftSnapshots(projectName, tabs));
+    stageCodeWorkspaceTabDrafts(projectName, tabs);
   }, [projectName, tabs]);
 
   useEffect(() => subscribeCodeDraftPersistence((error) => {
@@ -273,7 +260,7 @@ export function CodeTab({
   const save = useMutation({
     mutationFn: async (tab: EditorTab) => {
       if (tab.kind !== "workspace") throw new Error("Library documents are read-only.");
-      const project = workspaceTabProject(tab);
+      const project = workspaceProjectFromDraftTab(tab);
       if (!project) throw new Error("Workspace tab has no stable project identity.");
       await flushCodeWorkspaceDraft(project, tab.path);
       const result = await saveCodeWorkspaceDocument({
@@ -290,7 +277,7 @@ export function CodeTab({
     },
     onSuccess: (result, savedTab) => {
       const saved = result.document;
-      const project = workspaceTabProject(savedTab) ?? projectName ?? "unknown";
+      const project = workspaceProjectFromDraftTab(savedTab) ?? projectName ?? "unknown";
       const refreshed = { ...toWorkspaceTab(saved, project), id: savedTab.id };
       setTabs((current) => current.map((tab) => tab.id === savedTab.id ? refreshed : tab));
       setWorkspaceError(null);
@@ -465,7 +452,7 @@ export function CodeTab({
       if (!discard) return;
       if (target.kind === "workspace") {
         try {
-          const project = workspaceTabProject(target);
+          const project = workspaceProjectFromDraftTab(target);
           if (!project) throw new Error("Workspace tab has no stable project identity.");
           await discardCodeWorkspaceDraft(project, target.path);
         } catch (error) {
