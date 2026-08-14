@@ -18,12 +18,15 @@ pub(super) struct DiffStatCapture {
 }
 
 pub(super) fn capture_diff_stat(project_path: &Path, cached: bool) -> DiffStatCapture {
-    let args = if cached {
-        ["diff", "--cached", "--stat"].as_slice()
+    let capture = if cached {
+        run_git_captured_bounded(
+            project_path,
+            &["diff", "--cached", "--stat"],
+            MAX_DIFF_STAT_BYTES,
+        )
     } else {
-        ["diff", "--stat"].as_slice()
+        run_git_captured_bounded(project_path, &["diff", "--stat"], MAX_DIFF_STAT_BYTES)
     };
-    let capture = run_git_captured_bounded(project_path, args, MAX_DIFF_STAT_BYTES);
     DiffStatCapture {
         text: truncate_with_marker(
             &capture.text,
