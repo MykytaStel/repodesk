@@ -265,17 +265,20 @@ test("persisted-open startup activates the bottom panel without creating a Termi
   await expect(panel.getByText("PID 4242")).toBeVisible();
 });
 
-test("a failed optional feature load is surfaced by the app error boundary", async ({ page }) => {
+test("a failed optional feature load is contained by its local error boundary", async ({ page }) => {
   await page.route("**/src/shared/ui/CommandPalette.tsx*", (route) => route.abort());
   await installMockIpc(page, currentOnboardedFixtures);
   await page.goto("/");
 
-  await expect(page.getByRole("button", { name: "Command palette" })).toBeVisible();
-  await page.getByRole("button", { name: "Command palette" }).click();
+  const paletteButton = page.getByRole("button", { name: "Command palette" });
+  await expect(paletteButton).toBeVisible();
+  await paletteButton.click();
 
   const error = page.getByRole("alert");
-  await expect(error).toContainText("RepoDesk hit an unexpected error");
-  await expect(error.getByRole("button", { name: "Reload app" })).toBeVisible();
+  await expect(error).toContainText("This view crashed");
+  await expect(error.getByRole("button", { name: "Try again" })).toBeVisible();
+  await expect(page.getByText("RepoDesk hit an unexpected error")).toHaveCount(0);
+  await expect(paletteButton).toBeVisible();
 });
 
 test("Orchestrate cleanup uses a RepoDesk decision instead of a browser dialog", async ({ page }) => {
