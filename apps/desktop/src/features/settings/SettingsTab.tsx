@@ -109,7 +109,7 @@ export function SettingsTab() {
     <div className="content-grid">
       <section className="hero-panel wide-panel">
         <p className="eyebrow">Settings</p>
-        <h1>API keys, providers, and preferences.</h1>
+        <h1>API keys, providers, and workspace.</h1>
         <p className="lead">Paste your own Anthropic, OpenAI, and Gemini API keys below — they're stored locally in <code>~/.repodesk</code>, never committed, never sent to repos or context packs. Local engines (Ollama, LM Studio) need no key.</p>
       </section>
 
