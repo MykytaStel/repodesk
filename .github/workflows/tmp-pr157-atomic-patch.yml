@@ -1,0 +1,64 @@
+name: Temporary PR157 atomic patch
+
+on:
+  push:
+    branches:
+      - fix/canonical-engineering-event-ledger
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: fix/canonical-engineering-event-ledger
+          fetch-depth: 1
+
+      - name: Apply exact test-contract patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("crates/repodesk-core/tests/core_safety_paths.rs")
+          text = path.read_text()
+          old = '''    let events = read_task_events(&active_id, 10).expect("read_task_events");
+          assert_eq!(events.len(), 1);
+          assert_eq!(events[0].task_id, active_id);
+          assert_eq!(events[0].message, "run finished");
+          '''
+          new = '''    let events = read_task_events(&active_id, 10).expect("read_task_events");
+          assert_eq!(events.len(), 2);
+          assert!(events.iter().all(|event| event.task_id == active_id));
+          assert!(
+              events
+                  .iter()
+                  .any(|event| event.module_name == "orchestrator" && event.message == "run finished")
+          );
+          assert!(
+              events.iter().any(|event| {
+                  event.module_name == "engineering"
+                      && event.message == "engineering event: work_item_created"
+              }),
+              "canonical task timeline should include the Work Item creation evidence"
+          );
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one test block, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+
+          helper = Path(".github/workflows/tmp-pr157-atomic-patch.yml")
+          helper.unlink()
+
+      - name: Commit exact patch and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/repodesk-core/tests/core_safety_paths.rs .github/workflows/tmp-pr157-atomic-patch.yml
+          git diff --cached --check
+          git commit -m "test: align task timeline with canonical ledger"
+          git push origin HEAD:fix/canonical-engineering-event-ledger
