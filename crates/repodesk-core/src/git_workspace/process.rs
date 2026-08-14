@@ -3,31 +3,29 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread;
 
+const DEFAULT_GIT_CAPTURE_BYTES: usize = 1024 * 1024;
+const DEFAULT_TRUNCATION_MARKER: &str = "\n[git output truncated]";
+
 #[derive(Debug)]
 pub(crate) struct BoundedGitCapture {
+    pub(crate) success: bool,
     pub(crate) text: String,
     pub(crate) truncated: bool,
 }
 
+/// Compatibility helper for callers that only need textual Git output.
+///
+/// Capture is intentionally bounded so a repository-controlled Git command can
+/// never force RepoDesk to materialize arbitrary output in memory. Callers that
+/// need a smaller domain-specific budget should use `run_git_captured_bounded`.
 pub fn run_git_captured(project_path: &Path, args: &[&str]) -> String {
-    match Command::new("git")
-        .args(args)
-        .current_dir(project_path)
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).to_string()
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.trim().is_empty() {
-                String::from_utf8_lossy(&output.stdout).to_string()
-            } else {
-                stderr.to_string()
-            }
-        }
-        Err(error) => format!("failed to run git {}: {}", args.join(" "), error),
-    }
+    let capture = run_git_captured_bounded(project_path, args, DEFAULT_GIT_CAPTURE_BYTES);
+    truncate_with_marker(
+        &capture.text,
+        DEFAULT_GIT_CAPTURE_BYTES,
+        capture.truncated,
+        DEFAULT_TRUNCATION_MARKER,
+    )
 }
 
 /// Run Git while retaining only `max + 1` bytes from each output pipe. The one
@@ -53,6 +51,7 @@ pub(crate) fn run_git_captured_bounded(
         Ok(child) => child,
         Err(error) => {
             return BoundedGitCapture {
+                success: false,
                 text: format!("failed to run git {}: {}", args.join(" "), error),
                 truncated: false,
             };
@@ -63,6 +62,7 @@ pub(crate) fn run_git_captured_bounded(
         let _ = child.kill();
         let _ = child.wait();
         return BoundedGitCapture {
+            success: false,
             text: "failed to capture git stdout".to_string(),
             truncated: false,
         };
@@ -71,6 +71,7 @@ pub(crate) fn run_git_captured_bounded(
         let _ = child.kill();
         let _ = child.wait();
         return BoundedGitCapture {
+            success: false,
             text: "failed to capture git stderr".to_string(),
             truncated: false,
         };
@@ -86,6 +87,7 @@ pub(crate) fn run_git_captured_bounded(
             let _ = stdout_reader.join();
             let _ = stderr_reader.join();
             return BoundedGitCapture {
+                success: false,
                 text: format!("failed to wait for git {}: {}", args.join(" "), error),
                 truncated: false,
             };
@@ -97,24 +99,65 @@ pub(crate) fn run_git_captured_bounded(
 
     let Some((stdout, stdout_truncated)) = stdout else {
         return BoundedGitCapture {
+            success: false,
             text: "failed to read git stdout".to_string(),
             truncated: false,
         };
     };
     let Some((stderr, stderr_truncated)) = stderr else {
         return BoundedGitCapture {
+            success: false,
             text: "failed to read git stderr".to_string(),
             truncated: false,
         };
     };
 
-    let (text, truncated) = if status.success() || stderr.trim().is_empty() {
+    let success = status.success();
+    let (text, truncated) = if success || stderr.trim().is_empty() {
         (stdout, stdout_truncated)
     } else {
         (stderr, stderr_truncated)
     };
 
-    BoundedGitCapture { text, truncated }
+    BoundedGitCapture {
+        success,
+        text,
+        truncated,
+    }
+}
+
+pub(crate) fn truncate_with_marker(
+    text: &str,
+    max: usize,
+    truncated: bool,
+    marker: &str,
+) -> String {
+    if !truncated && text.len() <= max {
+        return text.to_string();
+    }
+
+    if max == 0 {
+        return String::new();
+    }
+
+    if marker.len() > max {
+        let mut end = max.min(text.len());
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        return text[..end].to_string();
+    }
+
+    let content_budget = max - marker.len();
+    let mut end = content_budget.min(text.len());
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    let mut output = String::with_capacity(max);
+    output.push_str(&text[..end]);
+    output.push_str(marker);
+    output
 }
 
 fn drain_bounded(mut reader: impl Read, max: usize) -> io::Result<(String, bool)> {
@@ -167,5 +210,12 @@ mod tests {
         let (text, truncated) = drain_bounded(Cursor::new(b"content"), 0).unwrap();
         assert_eq!(text, "c");
         assert!(truncated);
+    }
+
+    #[test]
+    fn truncation_marker_stays_inside_budget() {
+        let output = truncate_with_marker(&"x".repeat(100), 32, true, "\n[truncated]");
+        assert!(output.ends_with("[truncated]"));
+        assert!(output.len() <= 32);
     }
 }
