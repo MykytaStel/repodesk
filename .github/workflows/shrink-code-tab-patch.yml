@@ -1,0 +1,32 @@
+name: Shrink CodeTab Draft Projection
+
+on:
+  push:
+    branches:
+      - fix/safe-quit-draft-flush
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Apply guarded split
+        run: python3 .github/shrink-code-tab-patch.py
+      - name: Commit split and remove temporary tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/shrink-code-tab-patch.py .github/workflows/shrink-code-tab-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "refactor: move draft tab projection out of CodeTab"
+          git push origin "HEAD:${{ github.ref_name }}"
