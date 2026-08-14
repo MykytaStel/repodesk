@@ -102,6 +102,9 @@ pub enum RepoDeskError {
         currency: String,
     },
 
+    #[error("git status resource limit exceeded: {detail}")]
+    GitStatusLimitExceeded { detail: String },
+
     // ── Low-level I/O and serialization ────────────────────────────────────
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -145,9 +148,9 @@ impl RepoDeskError {
             | Self::RoutingFailed { .. }
             | Self::WorkflowPaused { .. } => ErrorCategory::ProviderTransient,
 
-            Self::ContextTooLarge { .. } | Self::BudgetExceeded { .. } => {
-                ErrorCategory::ResourceLimit
-            }
+            Self::ContextTooLarge { .. }
+            | Self::BudgetExceeded { .. }
+            | Self::GitStatusLimitExceeded { .. } => ErrorCategory::ResourceLimit,
 
             Self::Io(_)
             | Self::TomlDe(_)

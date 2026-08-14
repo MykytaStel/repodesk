@@ -380,7 +380,7 @@ pub fn run_coding_agent_command(
 
     // Snapshot the working tree before the run so we can attribute exactly what
     // the agent changed (post-run minus pre-run). `None` when `cwd` is not a repo.
-    let pre_status = git_porcelain(cwd);
+    let pre_status = git_porcelain(cwd)?;
 
     let mut builder = Command::new(&command.program);
     builder
@@ -426,7 +426,7 @@ pub fn run_coding_agent_command(
     // Capture the changeset the run produced (cheap; empty when not a git repo
     // or nothing changed). Always done — a read-only run that changed nothing is
     // itself a useful "no writes" receipt.
-    let changeset = capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_deref());
+    let changeset = capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref())?;
 
     // Bound then secret-redact the streams before they enter the run record /
     // Memory Brain. The raw, unredacted streams remain at *_path on disk.

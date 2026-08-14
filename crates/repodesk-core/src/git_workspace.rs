@@ -6,8 +6,10 @@ use std::process::Command;
 use crate::projects;
 
 mod process;
+mod status;
 pub use process::run_git_captured;
 pub(crate) use process::run_git_captured_bounded;
+pub(crate) use status::{GitStatusSnapshot, read_git_status};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitFileChange {
