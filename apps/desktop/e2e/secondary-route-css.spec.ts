@@ -17,15 +17,19 @@ async function gridColumnCount(page: Page, selector: string) {
   );
 }
 
-test("secondary route CSS is ready on direct entry", async ({ page }) => {
+test("historical product routes migrate to canonical owners on direct entry", async ({ page }) => {
   await openDirectly(page, "orchestrate");
-  await expect(page.getByRole("heading", { name: /Run sub-agents/ })).toBeVisible();
-  expect(await gridColumnCount(page, ".orchestrate-control-panel")).toBe(3);
+  await expect(page.getByRole("button", { name: /^Work —/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("group", { name: "Execution mode" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("work");
 
   await openDirectly(page, "dashboard", { width: 760, height: 720 });
-  await expect(page.getByRole("heading", { name: "Project state, context, and verification evidence." })).toBeVisible();
-  expect(await page.locator(".route-panel").evaluate((element) => getComputedStyle(element).display)).toBe("grid");
-  expect(await gridColumnCount(page, ".route-summary-grid")).toBe(1);
+  await expect(page.getByRole("button", { name: /^Work —/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".phase-rail")).toBeVisible();
+
+  await openDirectly(page, "models-cost");
+  await expect(page.getByRole("heading", { name: "API keys, providers, and workspace." })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("settings");
 });
 
 test("moved product styles still yield to the Work workbench layer", async ({ page }) => {
@@ -46,27 +50,20 @@ test("Runs shared subnavigation is styled on direct entry", async ({ page }) => 
 
   await expect(subnav).toBeVisible();
   expect(await subnav.evaluate((element) => getComputedStyle(element).display)).toBe("flex");
-  expect(await selected.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
-    "rgba(0, 0, 0, 0)",
-  );
+  expect(await selected.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
 });
 
-test("Models & Cost shared subnavigation is styled on direct entry", async ({ page }) => {
-  await openDirectly(page, "models-cost");
-  const subnav = page.getByRole("tablist", { name: "Models and cost views" });
-  const selected = subnav.getByRole("tab", { selected: true });
-
+test("Projects owns lazy Knowledge and Work Template styling", async ({ page }) => {
+  await openDirectly(page, "projects");
+  const subnav = page.getByRole("tablist", { name: "Project views" });
   await expect(subnav).toBeVisible();
-  expect(await subnav.evaluate((element) => getComputedStyle(element).display)).toBe("flex");
-  expect(await selected.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
-    "rgba(0, 0, 0, 0)",
-  );
-});
 
-test("Playbooks shared manual import control is styled on direct entry", async ({ page }) => {
-  await openDirectly(page, "playbooks");
+  await subnav.getByRole("tab", { name: "Work templates" }).click();
   const input = page.locator(".manual-import-input");
-
   await expect(input).toBeVisible();
   expect(await input.evaluate((element) => getComputedStyle(element).fontFamily)).toContain("SFMono-Regular");
+  expect(await gridColumnCount(page, ".playbook-route")).toBe(3);
+
+  await subnav.getByRole("tab", { name: "Knowledge" }).click();
+  await expect(page.getByRole("heading", { name: "Engineering knowledge" })).toBeVisible();
 });

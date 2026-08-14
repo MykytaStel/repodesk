@@ -3,10 +3,10 @@ import { installMockIpc, recordedCommands } from "./mock-ipc";
 import { firstRunFixtures, reviewFixtures } from "./fixtures";
 import { currentOnboardedFixtures } from "./current-fixtures";
 
-// The golden path through the Work tab: the app lands on Work, the six-phase
-// rail reflects backend evidence, Strategy previews the exact execution packet,
-// and advanced orchestration remains a separate lower-level destination. IPC is
-// mocked, so this asserts surface wiring; phase logic stays covered in Rust.
+// The golden path through Work: the six-phase rail reflects backend evidence,
+// execution previews the exact packet, and review/verification remain owned by
+// the canonical Work → Changes → Runs lifecycle rather than a parallel
+// orchestration destination. IPC is mocked; phase logic stays covered in Rust.
 test.describe("work tab golden path (onboarded)", () => {
   test.beforeEach(async ({ page }) => {
     await installMockIpc(page, currentOnboardedFixtures);
@@ -69,22 +69,25 @@ test.describe("work tab golden path (onboarded)", () => {
     expect(commands).toContain("orchestrate_strategy_run");
   });
 
-  test("advanced orchestration is a separate navigation destination", async ({ page }) => {
-    const advanced = page.getByRole("button", { name: "Advanced orchestration" });
-    await expect(advanced).toBeVisible();
-    await advanced.click();
-    await expect(page.getByRole("heading", { name: /Run sub-agents/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Work —/ })).toHaveAttribute("aria-pressed", "false");
+  test("execution stays inside Work instead of exposing a parallel Orchestrate destination", async ({ page }) => {
+    await expect(page.getByRole("button", { name: "Advanced orchestration" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Command palette" }).click();
+    const input = page.getByRole("textbox", { name: "Search commands" });
+    await input.fill("Orchestrate");
+    await expect(page.getByText("No matching command")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: /^Work —/ })).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("primary activity rail stays focused and deeper tools live in the drawer", async ({ page }) => {
+  test("primary activity rail stays focused and utilities are explicit", async ({ page }) => {
     for (const tab of ["Work", "Code", "Changes", "Runs", "Projects"]) {
       await expect(page.getByRole("button", { name: new RegExp(`^${tab} —`) })).toBeVisible();
     }
+
     await page.getByRole("button", { name: "Command palette" }).click();
-    await page.getByRole("textbox", { name: "Search commands" }).fill("Models & Cost");
+    await page.getByRole("textbox", { name: "Search commands" }).fill("Go to Settings");
     await page.keyboard.press("Enter");
-    await expect(page.locator(".subnav")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "API keys, providers, and workspace." })).toBeVisible();
     await expect(page.getByText("This view crashed")).toHaveCount(0);
 
     await page.getByRole("button", { name: /^Changes —/ }).click();
