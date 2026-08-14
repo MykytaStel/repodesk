@@ -28,7 +28,8 @@ fn scan_verified_stored(
     let mut expected_prev_hash = String::new();
 
     for row in rows {
-        let stored = row.map_err(|error| db_err("Failed to decode engineering event row", error))?;
+        let stored =
+            row.map_err(|error| db_err("Failed to decode engineering event row", error))?;
         stored.verify_hash()?;
         if stored.sequence != expected_sequence {
             return Err(RepoDeskError::Database(format!(
@@ -73,7 +74,7 @@ fn decode_newest(buffer: VecDeque<StoredEvent>) -> RepoDeskResult<Vec<Engineerin
 
 /// Canonical engineering events, newest first. The complete hash chain is
 /// verified, but only the latest `limit` raw rows are retained in memory.
-pub(super) fn read_engineering_events(limit: usize) -> RepoDeskResult<Vec<EngineeringEvent>> {
+pub fn read_engineering_events(limit: usize) -> RepoDeskResult<Vec<EngineeringEvent>> {
     let mut retained = VecDeque::new();
     scan_verified_stored(|stored| {
         retain_latest(&mut retained, stored, limit);
@@ -101,7 +102,7 @@ pub(crate) fn read_engineering_events_for_scope(
     decode_newest(retained)
 }
 
-pub(super) fn read_events(limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
+pub fn read_events(limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
     Ok(read_engineering_events(limit)?
         .into_iter()
         .map(EventEntry::from)
@@ -110,7 +111,7 @@ pub(super) fn read_events(limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
 
 /// The most recent events for a single Work Item, newest first. The whole
 /// ledger is still verified, while retained memory is bounded by `limit`.
-pub(super) fn read_task_events(task_id: &str, limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
+pub fn read_task_events(task_id: &str, limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
     let mut retained = VecDeque::new();
     scan_verified_stored(|stored| {
         if stored.work_item_id == task_id {
@@ -126,7 +127,7 @@ pub(super) fn read_task_events(task_id: &str, limit: usize) -> RepoDeskResult<Ve
 
 /// Build a journal snapshot in one verified pass. Aggregate counters cover the
 /// complete ledger; only the latest requested entries are retained.
-pub(super) fn try_journal_snapshot(limit: usize) -> RepoDeskResult<EventJournalSnapshot> {
+pub fn try_journal_snapshot(limit: usize) -> RepoDeskResult<EventJournalSnapshot> {
     let mut total_entries = 0usize;
     let mut counts_by_severity: BTreeMap<String, usize> = BTreeMap::new();
     let mut retained = VecDeque::new();
@@ -156,7 +157,7 @@ pub(super) fn try_journal_snapshot(limit: usize) -> RepoDeskResult<EventJournalS
     })
 }
 
-pub(super) fn journal_snapshot(limit: usize) -> EventJournalSnapshot {
+pub fn journal_snapshot(limit: usize) -> EventJournalSnapshot {
     try_journal_snapshot(limit).unwrap_or_else(|_| EventJournalSnapshot {
         generated_at: chrono::Utc::now(),
         total_entries: 0,
@@ -188,7 +189,10 @@ mod tests {
             retain_latest(&mut retained, value, 3);
             assert!(retained.len() <= 3);
         }
-        assert_eq!(retained.into_iter().collect::<Vec<_>>(), vec![997, 998, 999]);
+        assert_eq!(
+            retained.into_iter().collect::<Vec<_>>(),
+            vec![997, 998, 999]
+        );
     }
 
     #[test]

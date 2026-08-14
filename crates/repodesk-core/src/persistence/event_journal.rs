@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -15,8 +15,16 @@ use crate::persistence::db::{get_db_path, init_db};
 use crate::projects::read_active_project;
 use crate::tasks::show_active_task;
 
+mod export;
 mod revision;
+mod scan;
+
+pub use export::export_event_journal_jsonl;
 pub use revision::{EngineeringEventRevision, engineering_event_revision};
+pub(crate) use scan::read_engineering_events_for_scope;
+pub use scan::{
+    journal_snapshot, read_engineering_events, read_events, read_task_events, try_journal_snapshot,
+};
 
 const EVENT_SCHEMA_VERSION: i64 = 1;
 const LEGACY_IMPORT_KEY: &str = "legacy_event_journal_jsonl_v1";
@@ -587,164 +595,6 @@ pub fn log_event(input: LogEventInput) -> RepoDeskResult<PathBuf> {
     get_db_path()
 }
 
-// ── Read / integrity verification ────────────────────────────────────────────
-
-fn load_verified_ledger() -> RepoDeskResult<Vec<EngineeringEvent>> {
-    ensure_legacy_jsonl_import()?;
-    let conn = init_db()?;
-    let mut stmt = conn
-        .prepare(
-            "SELECT sequence, schema_version, timestamp, project, work_item_id, run_id,
-                    kind, module_name, level, message, payload, prev_hash, event_hash
-             FROM engineering_events ORDER BY sequence ASC",
-        )
-        .map_err(|e| db_err("Failed to prepare engineering event query", e))?;
-    let rows = stmt
-        .query_map([], StoredEvent::from_row)
-        .map_err(|e| db_err("Failed to read engineering events", e))?;
-
-    let mut events = Vec::new();
-    let mut expected_sequence = 1i64;
-    let mut expected_prev_hash = String::new();
-
-    for row in rows {
-        let stored = row.map_err(|e| db_err("Failed to decode engineering event row", e))?;
-        stored.verify_hash()?;
-        if stored.sequence != expected_sequence {
-            return Err(RepoDeskError::Database(format!(
-                "engineering event ledger sequence gap: expected {}, found {}",
-                expected_sequence, stored.sequence
-            )));
-        }
-        if stored.prev_hash != expected_prev_hash {
-            return Err(RepoDeskError::Database(format!(
-                "engineering event ledger chain mismatch at sequence {}",
-                stored.sequence
-            )));
-        }
-
-        expected_sequence = expected_sequence
-            .checked_add(1)
-            .ok_or_else(|| RepoDeskError::Database("event sequence overflow".to_string()))?;
-        expected_prev_hash = stored.event_hash.clone();
-        events.push(stored.into_event()?);
-    }
-
-    Ok(events)
-}
-
-/// Canonical engineering events, newest first. Reads fail closed if any stored
-/// sequence/hash link is corrupt.
-pub fn read_engineering_events(limit: usize) -> RepoDeskResult<Vec<EngineeringEvent>> {
-    let events = load_verified_ledger()?;
-    let keep = limit.min(events.len());
-    Ok(events.into_iter().rev().take(keep).collect())
-}
-
-pub fn read_events(limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
-    Ok(read_engineering_events(limit)?
-        .into_iter()
-        .map(EventEntry::from)
-        .collect())
-}
-
-/// The most recent events for a single task, newest-first. Backs the per-task
-/// activity timeline; filters by Work Item identity before applying `limit`.
-pub fn read_task_events(task_id: &str, limit: usize) -> RepoDeskResult<Vec<EventEntry>> {
-    let all = read_engineering_events(usize::MAX)?;
-    Ok(all
-        .into_iter()
-        .filter(|entry| entry.work_item_id == task_id)
-        .take(limit)
-        .map(EventEntry::from)
-        .collect())
-}
-
-/// Build a journal snapshot while preserving integrity errors for callers that
-/// can surface them (notably the Tauri boundary).
-pub fn try_journal_snapshot(limit: usize) -> RepoDeskResult<EventJournalSnapshot> {
-    let all_entries = read_events(usize::MAX)?;
-    let total_entries = all_entries.len();
-
-    let mut counts_by_severity: BTreeMap<String, usize> = BTreeMap::new();
-    for entry in &all_entries {
-        *counts_by_severity
-            .entry(entry.severity().as_str().to_string())
-            .or_insert(0) += 1;
-    }
-
-    let entries: Vec<EventEntry> = all_entries.into_iter().take(limit).collect();
-    let returned = entries.len();
-
-    Ok(EventJournalSnapshot {
-        generated_at: Utc::now(),
-        total_entries,
-        returned,
-        counts_by_severity,
-        entries,
-    })
-}
-
-/// Backwards-compatible snapshot helper for non-error-aware callers. New
-/// boundaries should prefer [`try_journal_snapshot`] so corruption is visible.
-pub fn journal_snapshot(limit: usize) -> EventJournalSnapshot {
-    try_journal_snapshot(limit).unwrap_or_else(|_| EventJournalSnapshot {
-        generated_at: Utc::now(),
-        total_entries: 0,
-        returned: 0,
-        counts_by_severity: BTreeMap::new(),
-        entries: Vec::new(),
-    })
-}
-
-// ── JSONL export ──────────────────────────────────────────────────────────────
-
-/// Materialize the verified SQLite ledger as the historical JSONL shape.
-/// JSONL is an export artifact only; modifying it never changes canonical state.
-pub fn export_event_journal_jsonl() -> RepoDeskResult<PathBuf> {
-    let entries = read_events(usize::MAX)?;
-    let target = legacy_journal_path()?;
-    let temp = target.with_file_name(format!(
-        ".event-journal.jsonl.tmp-{}-{}",
-        std::process::id(),
-        Utc::now().timestamp_nanos_opt().unwrap_or_default()
-    ));
-
-    let result = (|| -> RepoDeskResult<()> {
-        let mut file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temp)?;
-        // Historical JSONL was append-ordered (oldest first).
-        for entry in entries.iter().rev() {
-            writeln!(file, "{}", serde_json::to_string(entry)?)?;
-        }
-        file.flush()?;
-        file.sync_all()?;
-
-        if target.exists() {
-            let metadata = fs::symlink_metadata(&target)?;
-            if metadata.file_type().is_symlink() || metadata.is_file() {
-                fs::remove_file(&target)?;
-            } else {
-                return Err(RepoDeskError::Database(format!(
-                    "event journal export target is not a file: {}",
-                    target.display()
-                )));
-            }
-        }
-        fs::rename(&temp, &target)?;
-        Ok(())
-    })();
-
-    if let Err(error) = result {
-        let _ = fs::remove_file(&temp);
-        return Err(error);
-    }
-
-    Ok(target)
-}
-
 // ── Formatting (CLI output) ───────────────────────────────────────────────────
 
 pub fn format_events(events: &[EventEntry]) -> String {
@@ -779,6 +629,8 @@ pub fn format_events(events: &[EventEntry]) -> String {
 mod tests {
     use super::*;
     use serial_test::serial;
+    use std::fs::OpenOptions;
+    use std::io::Write;
     use tempfile::TempDir;
 
     fn isolated_home() -> TempDir {
