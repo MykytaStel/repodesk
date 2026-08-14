@@ -17,6 +17,15 @@ type StagedDraft = {
   snapshot: DraftSnapshot;
 };
 
+type WorkspaceDraftTab = {
+  id: string;
+  kind: "workspace" | "library";
+  path: string;
+  content: string;
+  fingerprint: string;
+  dirty: boolean;
+};
+
 export type CodeDraftPersistenceError = {
   projectName: string;
   path: string;
@@ -33,6 +42,35 @@ let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 function draftKey(projectName: string, path: string): string {
   return `${projectName}\0${path}`;
+}
+
+function workspaceTabId(projectName: string, path: string): string {
+  return `workspace:${projectName}:${path}`;
+}
+
+export function workspaceProjectFromDraftTab(tab: WorkspaceDraftTab): string | null {
+  if (tab.kind !== "workspace") return null;
+  const prefix = "workspace:";
+  const suffix = `:${tab.path}`;
+  if (!tab.id.startsWith(prefix) || !tab.id.endsWith(suffix)) return null;
+  return tab.id.slice(prefix.length, tab.id.length - suffix.length) || null;
+}
+
+export function stageCodeWorkspaceTabDrafts(projectName: string, tabs: WorkspaceDraftTab[]): void {
+  stageCodeWorkspaceDrafts(
+    projectName,
+    tabs
+      .filter((tab) => (
+        tab.kind === "workspace"
+        && tab.dirty
+        && tab.id === workspaceTabId(projectName, tab.path)
+      ))
+      .map((tab) => ({
+        path: tab.path,
+        content: tab.content,
+        baseFingerprint: tab.fingerprint,
+      })),
+  );
 }
 
 function notify(error: CodeDraftPersistenceError | null) {
