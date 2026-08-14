@@ -50,7 +50,8 @@ pub use change_governance::{
     ChangeFileGovernance, ChangeFileScopeState, ChangeGovernanceSnapshot, ChangeOrigin,
     ChangeReviewState, ChangeVerificationEvidence, ChangeVerificationState, CommitGate,
     CommitGateState, ScopeOverrideEvidence, derive_change_governance,
-    load_active_change_governance, load_change_governance, record_active_scope_override,
+    load_active_change_governance, load_change_governance, reconcile_verification_freshness,
+    record_active_scope_override,
 };
 pub use commit_policy::{
     CommitScopePolicyDecision, derive_commit_scope_policy, load_active_commit_scope_policy,
