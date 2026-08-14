@@ -92,8 +92,8 @@ pub fn build_git_workspace_snapshot_for_path(
     let branch = read_branch(project_path, &mut warnings);
     let last_commit = read_last_commit(project_path, &mut warnings);
 
-    let diff_stat = diff_stat(project_path, false, &mut warnings);
-    let cached_diff_stat = diff_stat(project_path, true, &mut warnings);
+    let diff_stat = read_diff_stat(project_path, false, &mut warnings);
+    let cached_diff_stat = read_diff_stat(project_path, true, &mut warnings);
 
     let (raw_projection, raw_truncated) = status.diagnostic_porcelain(MAX_RAW_STATUS_BYTES);
     let raw_status = truncate_with_marker(
@@ -176,7 +176,7 @@ fn read_last_commit(project_path: &Path, warnings: &mut Vec<String>) -> Option<S
     non_empty(commit.text.trim())
 }
 
-fn diff_stat(project_path: &Path, cached: bool, warnings: &mut Vec<String>) -> String {
+fn read_diff_stat(project_path: &Path, cached: bool, warnings: &mut Vec<String>) -> String {
     let capture = capture_diff_stat(project_path, cached);
     let label = if cached { "staged" } else { "unstaged" };
     if !capture.success {
