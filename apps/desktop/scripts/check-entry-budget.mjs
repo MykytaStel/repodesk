@@ -14,25 +14,21 @@ import {
 const distPath = fileURLToPath(new URL("../dist/", import.meta.url));
 const manifest = JSON.parse(readFileSync(join(distPath, ".vite/manifest.json"), "utf8"));
 
-const ROUTES = {
-  work: "src/features/work/WorkSurface.tsx",
-  code: "src/features/code/CodeTab.tsx",
-  changes: "src/features/changes/ChangesTab.tsx",
-  history: "src/features/history/HistoryTab.tsx",
-  projects: "src/features/projects/ProjectsTab.tsx",
-  dashboard: "src/features/dashboard/DashboardTab.tsx",
-  tokens: "src/features/tokens/TokensTab.tsx",
-  models: "src/features/models/ModelsTab.tsx",
-  git: "src/features/git/GitTab.tsx",
-  memory: "src/features/knowledge/KnowledgeTab.tsx",
-  orchestrate: "src/features/orchestrate/OrchestrateTab.tsx",
-  outcomes: "src/features/outcomes/OutcomesTab.tsx",
-  playbooks: "src/features/playbooks/PlaybooksTab.tsx",
-  "models-cost": "src/features/models-cost/ModelsCostTab.tsx",
-  audit: "src/features/audit/AuditTab.tsx",
-  settings: "src/features/settings/SettingsTab.tsx",
-  system: "src/features/system/SystemTab.tsx",
-  debug: "src/features/debug/DebugTab.tsx",
+// Budget only real activation roots. Historical destinations such as Dashboard,
+// Git, Orchestrate, Models and Tokens are no longer product routes and must not
+// be kept alive merely so the performance audit can find a chunk for them.
+const BUDGET_ROOTS = {
+  "route:work": "src/features/work/WorkSurface.tsx",
+  "route:code": "src/features/code/CodeTab.tsx",
+  "route:changes": "src/features/changes/ChangesTab.tsx",
+  "route:runs": "src/features/history/HistoryTab.tsx",
+  "route:projects": "src/features/projects/ProjectsTab.tsx",
+  "utility:settings": "src/features/settings/SettingsTab.tsx",
+  "utility:debug": "src/features/debug/DebugTab.tsx",
+  "nested:knowledge": "src/features/knowledge/KnowledgeTab.tsx",
+  "nested:work-templates": "src/features/playbooks/PlaybooksTab.tsx",
+  "nested:outcomes": "src/features/outcomes/OutcomesTab.tsx",
+  "nested:audit": "src/features/audit/AuditTab.tsx",
 };
 
 const ACTIVATED_FEATURES = {
@@ -96,19 +92,20 @@ assertAbsentFromShell("Terminal vendor graph", terminalVendorFiles, shellFiles);
 assertAbsentFromShell("Editor vendor graph", editorVendorFiles, shellFiles);
 report("Editor vendor graph", measureFiles(editorVendorFiles));
 
-for (const [route, source] of Object.entries(ROUTES)) {
+for (const [owner, source] of Object.entries(BUDGET_ROOTS)) {
   const rootKey = findChunkBySource(manifest, source);
-  const routeGraph = measureGraph({ manifest, rootKey, distPath });
-  const incrementFiles = routeGraph.files.filter((file) => !shellFiles.has(file));
-  const budgetFiles = route === "code" ? excludeFiles(incrementFiles, editorVendorFiles) : incrementFiles;
+  const ownerGraph = measureGraph({ manifest, rootKey, distPath });
+  const incrementFiles = ownerGraph.files.filter((file) => !shellFiles.has(file));
+  const isCode = owner === "route:code";
+  const budgetFiles = isCode ? excludeFiles(incrementFiles, editorVendorFiles) : incrementFiles;
   const increment = measureFiles(budgetFiles);
-  report(`Route ${route} increment`, increment);
+  report(`${owner} increment`, increment);
 
-  assertAtMost(`Route ${route} CSS gzip budget`, increment.cssGzip, ROUTE_BUDGET.cssGzip);
+  assertAtMost(`${owner} CSS gzip budget`, increment.cssGzip, ROUTE_BUDGET.cssGzip);
   assertAtMost(
-    `Route ${route} JavaScript gzip budget`,
+    `${owner} JavaScript gzip budget`,
     increment.jsGzip,
-    route === "code" ? CODE_JS_BUDGET : ROUTE_BUDGET.jsGzip,
+    isCode ? CODE_JS_BUDGET : ROUTE_BUDGET.jsGzip,
   );
 }
 
