@@ -6,11 +6,11 @@
 
 RepoDesk connects a repository and a concrete work item to bounded context, human/agent execution, isolated worktrees, changesets, verification, review, project knowledge, and engineering intelligence.
 
-> RepoDesk is not primarily an AI provider dashboard. AI is one class of worker inside the engineering workflow. The long-term direction is an IDE-like environment centered on `Work Item -> ChangeSet -> Verification -> Knowledge`.
+> RepoDesk is not primarily an AI provider dashboard. AI is one class of worker inside the engineering workflow. The product is centered on `Work Item -> ChangeSet -> Verification -> Knowledge`.
 
 ## Current workflow
 
-The current product already implements the core development lifecycle:
+The current product implements the core development lifecycle:
 
 ```text
 Scope -> Prepare -> Execute -> Review -> Verify -> Finish
@@ -18,23 +18,26 @@ Scope -> Prepare -> Execute -> Review -> Verify -> Finish
 
 RepoDesk can coordinate local/cloud completion providers and coding-agent executors, build bounded context, run guarded checks, isolate coding-agent writes in Git worktrees, capture diffs, accept/reject changesets, verify reviewed changes, and keep run evidence.
 
-## RepoDesk 2.0 direction
+## Product direction
 
-The next product direction expands RepoDesk into an engineering environment with five primary surfaces:
+RepoDesk converges on five primary surfaces:
 
-- **Work** — active work item, scope, plan, context, approvals and next action;
+- **Work** — active work item, scope, plan, context, approvals and next safe action;
 - **Code** — repository tree, editor, search, symbols and diagnostics;
-- **Changes** — Git state, worktrees, changesets, diff review and commit readiness;
-- **Runs** — worker execution, checks, receipts, failures and engineering telemetry;
-- **Projects** — repository rules, engineering knowledge, commands and playbooks.
+- **Changes** — exact changesets, provenance, diff review, verification and commit readiness;
+- **Runs** — worker execution, routing evidence, receipts, failures and runtime telemetry;
+- **Projects** — repository rules, engineering knowledge, execution policy and reusable work templates.
 
-Engineering Intelligence will measure more than AI spend. Planned evidence-backed dimensions include context compactness, worker/agent fan-out, redundant execution, retries and correction cost, knowledge reuse, scope adherence, verification efficiency, and heuristic algorithmic complexity changes.
+The product is deliberately moving away from parallel Git, orchestration, model, token, audit and dashboard destinations. Those capabilities remain useful as implementation evidence or contextual tools, but they should not compete with the trustworthy-change workflow for navigation ownership.
+
+Engineering Intelligence measures the engineering process only when the result can influence a future decision: context compactness, worker fan-out, redundant execution, retries/correction cost, knowledge reuse, scope adherence, verification efficiency, cost to accepted change, and structural complexity risk.
 
 See:
 
-- [`docs/REPODESK_2_PRODUCT.md`](docs/REPODESK_2_PRODUCT.md) — product contract;
-- [`docs/REPODESK_2_MIGRATION.md`](docs/REPODESK_2_MIGRATION.md) — incremental migration roadmap;
-- [`docs/ENGINEERING_INTELLIGENCE.md`](docs/ENGINEERING_INTELLIGENCE.md) — telemetry and algorithmic-intelligence model;
+- [`docs/PRODUCT_CONVERGENCE_AUDIT_2026-08.md`](docs/PRODUCT_CONVERGENCE_AUDIT_2026-08.md) — current product, feature, IA and design convergence audit;
+- [`docs/NEXT_DEVELOPMENT_PLAN.md`](docs/NEXT_DEVELOPMENT_PLAN.md) — implementation roadmap and acceptance contracts;
+- [`docs/REPODESK_2_PRODUCT.md`](docs/REPODESK_2_PRODUCT.md) — underlying product foundation;
+- [`docs/ENGINEERING_INTELLIGENCE.md`](docs/ENGINEERING_INTELLIGENCE.md) — telemetry and engineering-intelligence model;
 - [`docs/architecture/ADR-0001-repodesk-2-product-boundary.md`](docs/architecture/ADR-0001-repodesk-2-product-boundary.md) — RepoDesk/SubRadar boundary.
 
 ## Architecture
