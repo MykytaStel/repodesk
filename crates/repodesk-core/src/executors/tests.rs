@@ -139,15 +139,8 @@ fn verbose_run_is_drained_with_hard_memory_and_disk_caps() {
         stderr_log_bytes: 96,
     };
 
-    let result = runtime::run_with_limits(
-        &command,
-        "prompt",
-        dir.path(),
-        dir.path(),
-        5,
-        limits,
-    )
-    .expect("verbose executor should finish while both pipes are continuously drained");
+    let result = runtime::run_with_limits(&command, "prompt", dir.path(), dir.path(), 5, limits)
+        .expect("verbose executor should finish while both pipes are continuously drained");
 
     assert_eq!(result.status, "ok");
     assert!(result.stdout_truncated);
@@ -251,8 +244,7 @@ fn run_command_captures_git_changeset() {
     );
     let command = command_for_script(&script);
 
-    let result =
-        run_coding_agent_command(&command, "prompt", repo.path(), out.path(), 5).unwrap();
+    let result = run_coding_agent_command(&command, "prompt", repo.path(), out.path(), 5).unwrap();
     assert_eq!(result.status, "ok");
     let paths: Vec<&str> = result
         .changed_files
