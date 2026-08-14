@@ -114,30 +114,10 @@ fn run_probe_command_with_timeout(
     })
 }
 
-/// Drain the entire stream while retaining at most `max` bytes. Unlike
-/// `Read::take`, this keeps reading after the retention budget is exhausted so
-/// the child process never blocks because RepoDesk stopped consuming a pipe.
-fn drain_bounded(mut reader: impl Read, max: usize) -> io::Result<String> {
-    let mut retained = Vec::with_capacity(max.min(64 * 1024));
-    let mut buffer = [0u8; 8 * 1024];
-    let mut truncated = false;
-
-    loop {
-        let read = reader.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-
-        let remaining = max.saturating_sub(retained.len());
-        let keep = remaining.min(read);
-        retained.extend_from_slice(&buffer[..keep]);
-        if keep < read {
-            truncated = true;
-        }
-    }
-
-    let mut text = String::from_utf8_lossy(&retained).into_owned();
-    if truncated {
+fn drain_bounded(reader: impl Read, max: usize) -> io::Result<String> {
+    let capture = crate::process_io::drain_bounded_bytes(reader, max)?;
+    let mut text = String::from_utf8_lossy(&capture.bytes).into_owned();
+    if capture.truncated {
         text.push_str("\n[output truncated]");
     }
     Ok(text)
