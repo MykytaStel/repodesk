@@ -1,0 +1,47 @@
+name: Temporary executor probe cut
+on:
+  push:
+    branches: [fix/bounded-executor-probes]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: fix/bounded-executor-probes
+          fetch-depth: 1
+      - name: Apply exact executor probe cut
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("crates/repodesk-core/src/executors.rs")
+          text = path.read_text()
+
+          old = "mod process;\nuse process::read_bounded;"
+          new = "mod process;\nuse process::{probe_version, read_bounded, run_probe_command};"
+          if text.count(old) != 1:
+              raise SystemExit("unexpected process import seam")
+          text = text.replace(old, new, 1)
+
+          start = text.index("struct ProbeCommandOutput {")
+          end = text.index("fn safe_status_detail(output: &str) -> Option<String> {")
+          text = text[:start] + text[end:]
+
+          start = text.index("/// Run `<binary> --version` argv-only with a short timeout")
+          end = text.index("fn first_meaningful_line(text: &str) -> Option<String> {")
+          text = text[:start] + text[end:]
+
+          path.write_text(text)
+          Path(".github/workflows/tmp-executor-probe-cut.yml").unlink()
+      - name: Format and commit
+        run: |
+          cargo fmt --all
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "refactor: route CLI probes through bounded process capture"
+          git push origin HEAD:fix/bounded-executor-probes
