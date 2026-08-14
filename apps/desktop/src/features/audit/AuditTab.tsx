@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { auditRecent, auditVerify, type AuditEvent, type ChainVerification } from "../../shared/api/audit";
 import { queryKeys } from "../../shared/api/queries";
 import { EmptyState, MetricCard, errorToMessage, formatNumber } from "../../shared/ui/SharedComponents";
+import "./audit-route.css";
+import "../routing/routing-feature.css";
 
 const RECENT_LIMIT = 50;
 

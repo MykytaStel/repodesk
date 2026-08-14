@@ -4,6 +4,7 @@ import { FileGroup, DiffView, stringifyPreview, EmptyState, getString } from "..
 import { callCommand, queryKeys } from "../../shared/api/queries";
 import { useGit } from "./useGit";
 import { listFromRecord } from "../../shared/utils/helpers";
+import "../routing/routing-feature.css";
 
 export function GitTab() {
   const queryClient = useQueryClient();

@@ -1,0 +1,6 @@
+@import "./knowledge.css" layer(legacy);
+@import "./knowledge-v2.css" layer(workbench);
+
+@layer legacy {
+  .knowledge-master-detail { border-radius: 7px; }
+}

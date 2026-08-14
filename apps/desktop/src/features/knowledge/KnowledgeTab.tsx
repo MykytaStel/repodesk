@@ -16,7 +16,7 @@ import {
 } from "../../shared/api/knowledge";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { errorToMessage } from "../../shared/utils/helpers";
-import "./knowledge.css";
+import "./knowledge-route.css";
 
 const CATEGORY_LABELS: Record<EngineeringKnowledgeCategory, string> = {
   architecture: "Architecture",

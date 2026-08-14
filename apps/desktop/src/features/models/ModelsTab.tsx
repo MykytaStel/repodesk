@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { systemModelRecommendations, startLocalServer, type ProviderHealth } from "../../shared/api/models";
 import { useSettings } from "../settings/useSettings";
 import { useToast } from "../../shared/ui/Toast";
+import "../routing/routing-feature.css";
 
 interface ModelsTabProps {
   setActiveTab: (tab: TabId) => void;

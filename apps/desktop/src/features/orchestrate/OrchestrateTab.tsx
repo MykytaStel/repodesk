@@ -25,6 +25,8 @@ import {
 import { MetricCard, errorToMessage, formatCost, formatNumber, EmptyState, ActorBadge, DiffView } from "../../shared/ui/SharedComponents";
 import { useDecisionDialog } from "../../shared/ui/useDecisionDialog";
 import type { TabId } from "../../shared/types/api";
+import "./orchestrate-route.css";
+import "../routing/routing-feature.css";
 
 const STATUS_COLOR: Record<SubAgentStatus, string> = {
   ok: "#3fb950",

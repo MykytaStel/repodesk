@@ -3,6 +3,7 @@
    bounded engineering actions. Keep the hierarchy dense like an IDE rather
    than presenting another dashboard modal. */
 
+@layer workbench {
 .cmdk-panel-v2 {
   width: min(720px, calc(100vw - 32px));
   max-height: min(650px, calc(100vh - 96px));
@@ -203,4 +204,5 @@
   .cmdk-panel-v2 .cmdk-footer > span:first-child {
     display: none;
   }
+}
 }

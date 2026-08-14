@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import "../../app/styles/command-palette-v2.css";
 
 export type Command = {
   id: string;

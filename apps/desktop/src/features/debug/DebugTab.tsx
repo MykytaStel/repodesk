@@ -10,6 +10,8 @@ import { useGit } from "../git/useGit";
 import { useTokens } from "../tokens/useTokens";
 import { useModels } from "../models/useModels";
 import { useSettings } from "../settings/useSettings";
+import "./debug-route.css";
+import "../routing/routing-feature.css";
 
 export function DebugTab() {
   const { debugEvents, artifactKind, artifactContent, requestArtifact, pendingPaid, confirmPaidReveal, cancelPaidReveal } = useDebug();

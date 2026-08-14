@@ -18,6 +18,8 @@ import type { TabId } from "../../shared/types/api";
 import { listFromRecord } from "../../shared/utils/helpers";
 import type { FileFindings } from "../../shared/api/repopilot";
 import { ChangeGovernancePanel } from "./ChangeGovernancePanel";
+import "./changes-route.css";
+import "../routing/routing-feature.css";
 
 type FileStatus = "staged" | "modified" | "untracked";
 const STATUS_META: Record<FileStatus, { label: string; tone: string }> = {

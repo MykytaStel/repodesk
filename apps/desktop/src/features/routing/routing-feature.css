@@ -1,0 +1,17 @@
+@import "../../app/styles/routing-lists.css" layer(legacy);
+
+@layer legacy {
+  @media (max-width: 1180px) {
+    .route-summary-grid,
+    .route-detail-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 760px) {
+    .route-summary-grid,
+    .route-detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+}

@@ -1,0 +1,18 @@
+/* Runs is an evidence document, not a stack of cards. */
+.history-tab .run-evidence-detail {
+  gap: 0;
+}
+
+.history-tab .evidence-section {
+  margin: 0;
+  padding: 12px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+}
+
+.history-tab .evidence-section:last-child { border-bottom: 0; }
+.history-tab .evidence-row { border-radius: 5px; box-shadow: none; }
+.history-tab .run-evidence-facts { padding: 8px 0 12px; border-bottom: 1px solid var(--border); }
+.runs-shell { border-radius: 7px; }

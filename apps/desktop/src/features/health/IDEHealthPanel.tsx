@@ -6,6 +6,7 @@ import type {
   RecoveryState,
 } from "../../shared/api/recovery";
 import { useRecovery } from "./RecoveryProvider";
+import "./health-panel.css";
 
 const STATE_LABELS: Record<RecoveryState, string> = {
   healthy: "Healthy",

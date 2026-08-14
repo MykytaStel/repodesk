@@ -1,4 +1,5 @@
 import { useRecovery } from "./RecoveryProvider";
+import "./health-indicator.css";
 
 const ACTIONABLE_STATES = new Set(["degraded", "needs_approval", "blocked"]);
 

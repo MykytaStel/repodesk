@@ -2,6 +2,7 @@
    Kept intentionally flat and dense: the terminal should feel like a tool,
    not another dashboard card. xterm owns its scrollback/rendering buffer. */
 
+@layer legacy {
 .workbench-bottom-panel.hidden {
   display: none;
 }
@@ -147,4 +148,5 @@
   .interactive-terminal-meta span {
     max-width: 42vw;
   }
+}
 }

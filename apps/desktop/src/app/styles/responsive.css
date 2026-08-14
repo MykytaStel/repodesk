@@ -7,11 +7,7 @@
   }
   .shell-feedback { margin-top: calc(var(--space-5) * -0.45); }
   .two-column-grid { grid-template-columns: 1fr; }
-  .route-summary-grid,
-  .route-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .work-tab .phase-brief-grid,
-  .work-tab .agent-packet,
   .playbook-route,
   .memory-flow-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -44,11 +40,8 @@
   }
   .status-strip,
   .content-grid,
-  .dashboard-grid,
   .checklist-grid,
   .snippet-grid,
-  .route-summary-grid,
-  .route-detail-grid,
   .settings-grid,
   .form-grid {
     grid-template-columns: 1fr;
@@ -65,8 +58,6 @@
   .playbook-card-actions {
     justify-items: start;
   }
-  .work-tab .phase-brief-grid,
-  .work-tab .agent-packet,
   .playbook-route,
   .memory-flow-grid {
     grid-template-columns: 1fr;
@@ -76,8 +67,7 @@
   }
   .span-2 { grid-column: span 1; }
   h1 { font-size: 24px; }
-  .table-row,
-  .debug-event summary {
+  .table-row {
     grid-template-columns: 1fr;
   }
   .row-meta {

@@ -1,0 +1,42 @@
+.timeline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.timeline-step {
+  min-width: 0;
+  min-height: 154px;
+  padding: 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-3);
+}
+
+.timeline-step span {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--accent-contrast);
+  background: var(--accent);
+  font-weight: 900;
+}
+
+.timeline-step strong,
+.timeline-step small {
+  display: block;
+  margin-top: 10px;
+}
+
+.timeline-step small {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.timeline-step p {
+  margin-bottom: 0;
+  font-size: 13px;
+}

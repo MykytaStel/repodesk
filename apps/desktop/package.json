@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5177",
-    "build": "tsc && vite build && node scripts/check-entry-budget.mjs",
+    "build": "tsc && node --test scripts/performance-budget.test.mjs && vite build && node scripts/check-entry-budget.mjs",
     "preview": "vite preview --host 127.0.0.1 --port 4177",
     "tauri": "tauri",
     "desktop:icon": "tauri icon app-icon.svg --output src-tauri/generated/repodesk-icons",

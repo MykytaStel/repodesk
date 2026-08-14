@@ -65,6 +65,7 @@ export default defineConfig({
   plugins: [react(), chunkBudget()],
   clearScreen: false,
   build: {
+    manifest: true,
     rollupOptions: {
       output: {
         // Keep the application shell and feature routes small while preserving

@@ -1,0 +1,54 @@
+@layer legacy {
+  .project-registry-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-3);
+  }
+
+  .project-registry-card {
+    min-width: 0;
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+  }
+
+  .project-registry-card.active {
+    border-color: var(--accent-border);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .project-registry-head {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .project-registry-head .eyebrow { margin-bottom: 3px; }
+  .project-registry-card code {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-registry-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .project-registry-meta span {
+    padding: 4px 7px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--muted);
+    font-size: 10px;
+  }
+}

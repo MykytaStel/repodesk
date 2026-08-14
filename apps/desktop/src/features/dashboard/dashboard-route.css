@@ -1,0 +1,11 @@
+@import "./dashboard-layout.css" layer(legacy);
+
+@layer legacy {
+  @media (max-width: 760px) {
+    .checklist-grid,
+    .route-summary-grid,
+    .route-detail-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+}

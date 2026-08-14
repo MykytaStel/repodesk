@@ -5,6 +5,7 @@ import { statusTone } from "../../shared/ui/SharedComponents";
 import { queryKeys } from "../../shared/api/queries";
 import { useSystem } from "./useSystem";
 import { aiDiscoveryScan } from "../../shared/api/discovery";
+import "../routing/routing-feature.css";
 
 export function SystemTab() {
   const queryClient = useQueryClient();

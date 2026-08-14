@@ -73,7 +73,6 @@
 
 /* Hero copy is useful for empty/setup states, but routine primary screens should
    not start with a large marketing-style block. */
-.work-surface-v2 .lead,
 .subnav-host .lead {
   max-width: 760px;
   font-size: 12px;

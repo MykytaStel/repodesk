@@ -14,39 +14,16 @@
 @import "./styles/layout.css" layer(legacy);
 @import "./styles/components.css" layer(legacy);
 @import "./styles/timeline-table.css" layer(legacy);
-@import "./styles/routing-lists.css" layer(legacy);
 @import "./styles/code-forms.css" layer(legacy);
-@import "./styles/orchestrate.css" layer(legacy);
-@import "./styles/work.css" layer(legacy);
-@import "./styles/work-cockpit.css" layer(legacy);
-@import "./styles/work-contract.css" layer(legacy);
-@import "./styles/changes-evidence.css" layer(legacy);
-@import "./styles/debug.css" layer(legacy);
 @import "./styles/feedback.css" layer(legacy);
 @import "./styles/responsive.css" layer(legacy);
 @import "./styles/utilities.css" layer(legacy);
 @import "./styles/workspace-shell.css" layer(legacy);
-@import "./styles/terminal.css" layer(legacy);
 @import "./styles/focus-shell.css" layer(legacy);
 @import "./styles/focus-context-bar.css" layer(legacy);
 @import "./styles/focus-density.css" layer(legacy);
-@import "./styles/performance-density-v1.css" layer(legacy);
 @import "../features/code/code-editor-polish.css" layer(legacy);
 @import "./styles/ide-polish-v1.css" layer(legacy);
 @import "./styles/workbench-polish-v2.css" layer(legacy);
-@import "./styles/task-runner.css" layer(legacy);
-@import "../features/health/health.css" layer(legacy);
 
 @import "./styles/visual-language-2026.css" layer(product);
-
-/* Feature-specific v2/v3 workbench contracts intentionally refine the shared
- * product language. Keep them in the final layer so a generic density rule can
- * never silently shrink a reviewed accessibility contract. */
-@import "../features/knowledge/knowledge-v2.css" layer(workbench);
-@import "./styles/context-evidence-v2.css" layer(workbench);
-@import "./styles/execute-packet-v2.css" layer(workbench);
-@import "./styles/work-hierarchy-v3.css" layer(workbench);
-@import "./styles/command-palette-v2.css" layer(workbench);
-@import "./styles/observability-v1.css" layer(workbench);
-@import "./styles/ai-strategy-v1.css" layer(workbench);
-@import "./styles/strategy-feedback-v1.css" layer(workbench);

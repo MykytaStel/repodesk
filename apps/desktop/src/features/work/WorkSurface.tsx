@@ -7,6 +7,9 @@ import { ContextInspectorCard } from "./ContextInspectorCard";
 import { WorkIntelligenceCard, WorkIntelligenceRailSummary } from "./WorkIntelligenceCard";
 import { WorkItemContractCard } from "./WorkItemContractCard";
 import { WorkTab } from "./WorkTab";
+import "../../shared/ui/manual-import.css";
+import "./work-route.css";
+import "../routing/routing-feature.css";
 
 const PHASE_KEY = ["work", "phase-state"] as const;
 

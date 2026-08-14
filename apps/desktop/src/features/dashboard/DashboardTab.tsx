@@ -10,6 +10,8 @@ import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { useWorkflow } from "../workflow/useWorkflow";
 import { useQueryClient } from "@tanstack/react-query";
 import { callCommand } from "../../shared/api/queries";
+import "./dashboard-route.css";
+import "../routing/routing-feature.css";
 
 interface DashboardTabProps {
   setActiveTab: (tab: any) => void;

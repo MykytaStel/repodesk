@@ -14,6 +14,8 @@ import { useWorkspace } from "../shared/hooks/useWorkspace";
 import { formatNumber } from "../shared/utils/helpers";
 import { ProblemsPanel } from "./ProblemsPanel";
 import { TaskRunnerPanel } from "./TaskRunnerPanel";
+import "./styles/terminal.css";
+import "./styles/task-runner.css";
 
 const InteractiveTerminal = lazy(() => import("./InteractiveTerminal").then((module) => ({
   default: module.InteractiveTerminal,
@@ -50,6 +52,7 @@ interface LogEntry {
 interface WorkbenchBottomPanelProps {
   open: boolean;
   onClose: () => void;
+  requestedTab?: BottomPanelTab | null;
 }
 
 const MAX_PANEL_LOGS = 150;
@@ -87,10 +90,10 @@ function LogRow({ log }: { log: LogEntry }) {
   );
 }
 
-export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProps) {
+export function WorkbenchBottomPanel({ open, onClose, requestedTab }: WorkbenchBottomPanelProps) {
   const { projectName } = useWorkspace();
-  const [activeTab, setActiveTab] = useState<BottomPanelTab>("output");
-  const [terminalActivated, setTerminalActivated] = useState(false);
+  const [activeTab, setActiveTab] = useState<BottomPanelTab>(requestedTab ?? "output");
+  const [terminalActivated, setTerminalActivated] = useState(requestedTab === "terminal");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyLoaded = useRef(false);
@@ -101,6 +104,10 @@ export function WorkbenchBottomPanel({ open, onClose }: WorkbenchBottomPanelProp
     if (tab === "terminal") setTerminalActivated(true);
     setActiveTab(tab);
   }, []);
+
+  useEffect(() => {
+    if (requestedTab) selectTab(requestedTab);
+  }, [requestedTab, selectTab]);
 
   useEffect(() => {
     const onTabRequest = (event: Event) => {

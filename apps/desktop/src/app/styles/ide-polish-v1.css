@@ -8,12 +8,6 @@
   padding: 16px 18px 24px;
 }
 
-.focus-work-surface,
-.work-focus-layout,
-.changes-focus-layout {
-  gap: 12px;
-}
-
 .workspace-sidebar-scroll,
 .workspace-inspector-scroll {
   padding: 16px 14px;
@@ -28,59 +22,6 @@
 .inspector-section {
   gap: 9px;
   padding: 14px 0;
-}
-
-.work-focus-toolbar {
-  margin-bottom: 2px;
-}
-
-.work-phase-header {
-  padding: 4px 2px 14px;
-}
-
-.work-current-step {
-  margin-block: 2px;
-  padding: 13px 15px;
-}
-
-.work-tab .phase-controls.compact {
-  padding-top: 12px;
-}
-
-.work-tab .work-cta-row.focus {
-  padding-top: 14px;
-}
-
-.changes-focus-header {
-  min-height: 42px;
-  padding: 2px 2px 11px;
-}
-
-.changes-gate-bar {
-  min-height: 38px;
-  padding: 7px 10px;
-}
-
-.changes-pane-head {
-  min-height: 38px;
-  padding-inline: 11px;
-}
-
-.changes-preview-content {
-  padding: 12px 14px 22px;
-}
-
-.changes-file-list > p.muted {
-  margin: 0;
-  padding: 14px 12px;
-  font-size: 11px;
-  line-height: 1.5;
-}
-
-.changes-preview-content > .empty-state {
-  min-height: 170px;
-  margin: 4px 0;
-  padding: 24px;
 }
 
 /* Compact project switcher -------------------------------------------------- */
@@ -320,24 +261,6 @@
 }
 
 /* Purposeful empty states --------------------------------------------------- */
-.changes-file-empty {
-  display: grid;
-  gap: 4px;
-  padding: 16px 12px;
-}
-
-.changes-file-empty strong {
-  color: var(--text);
-  font-size: 11px;
-}
-
-.changes-file-empty span {
-  max-width: 28ch;
-  color: var(--muted);
-  font-size: 10px;
-  line-height: 1.5;
-}
-
 .focus-empty {
   padding: 28px 22px;
   line-height: 1.5;

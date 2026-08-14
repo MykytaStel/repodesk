@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
@@ -6,18 +6,22 @@ import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 import { EconomyMode } from "../features/routing/EconomyControl";
 import { IDEHealthIndicator } from "../features/health/IDEHealthIndicator";
-import { IDEHealthPanel } from "../features/health/IDEHealthPanel";
+import { IDEHealthPanelGate } from "../features/health/IDEHealthPanelGate";
 import { useGit } from "../features/git/useGit";
 import {
   codeWorkspaceQuickOpen,
   requestCodeWorkspaceOpen,
 } from "../shared/api/codeWorkspace";
 import { callCommand } from "../shared/api/queries";
+import {
+  BOTTOM_PANEL_TAB_EVENT,
+  type BottomPanelTab,
+} from "../shared/api/workbench";
 import { useWorkspace } from "../shared/hooks/useWorkspace";
 import type { TabId, Theme } from "../shared/types/api";
 import { AboutModal } from "../shared/ui/AboutModal";
 import { ArtifactViewerModal } from "../shared/ui/ArtifactViewerModal";
-import { CommandPalette, type Command } from "../shared/ui/CommandPalette";
+import type { Command } from "../shared/ui/CommandPalette";
 import { GlobalLoader } from "../shared/ui/GlobalLoader";
 import { errorToMessage, StartupSkeleton } from "../shared/ui/SharedComponents";
 import { TabErrorBoundary } from "../shared/ui/TabErrorBoundary";
@@ -26,11 +30,16 @@ import { ActivityRail } from "./ActivityRail";
 import { STORAGE_KEYS } from "./constants";
 import { readStoredActiveTab, readStoredEconomyMode, readStoredTheme } from "./storage";
 import { APP_TABS, PRIMARY_TABS, renderAppTab } from "./tabs";
-import { WorkbenchBottomPanel } from "./WorkbenchBottomPanel";
 import { WorkspaceInspector } from "./WorkspaceInspector";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
 
 const ABOUT_SEEN_KEY = "repodesk.about.seen";
+const CommandPalette = lazy(() => import("../shared/ui/CommandPalette").then((module) => ({
+  default: module.CommandPalette,
+})));
+const WorkbenchBottomPanel = lazy(() => import("./WorkbenchBottomPanel").then((module) => ({
+  default: module.WorkbenchBottomPanel,
+})));
 
 type FeedbackTone = "info" | "success" | "error";
 type ShellFeedback = {
@@ -49,6 +58,7 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
   const [economyMode, setEconomyMode] = useState<EconomyMode>(readStoredEconomyMode);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteActivated, setPaletteActivated] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [viewingArtifact, setViewingArtifact] = useState<string | null>(null);
   const [appVersion, setAppVersion] = useState("1.0.0");
@@ -62,6 +72,10 @@ export default function App() {
   const [bottomPanelOpen, setBottomPanelOpen] = useState(
     () => window.localStorage.getItem(STORAGE_KEYS.bottomPanelOpen) === "1",
   );
+  const [bottomPanelActivated, setBottomPanelActivated] = useState(
+    () => window.localStorage.getItem(STORAGE_KEYS.bottomPanelOpen) === "1",
+  );
+  const [requestedBottomPanelTab, setRequestedBottomPanelTab] = useState<BottomPanelTab | null>(null);
 
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -77,6 +91,22 @@ export default function App() {
 
   const booting = workspaceLoading;
   const activeTabInfo = APP_TABS.find((tab) => tab.id === activeTab) ?? APP_TABS[0];
+
+  const openPalette = useCallback(() => {
+    setPaletteActivated(true);
+    setPaletteOpen(true);
+  }, []);
+
+  const toggleBottomPanel = useCallback(() => {
+    setBottomPanelActivated(true);
+    setBottomPanelOpen((open) => !open);
+  }, []);
+
+  const openBottomPanel = useCallback((tab?: BottomPanelTab) => {
+    setBottomPanelActivated(true);
+    if (tab) setRequestedBottomPanelTab(tab);
+    setBottomPanelOpen(true);
+  }, []);
 
   const { data: projects = [] } = useQuery({
     queryKey: ["project_list_configs"],
@@ -197,6 +227,17 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    const onTabRequest = (event: Event) => {
+      const tab = (event as CustomEvent<BottomPanelTab>).detail;
+      if (tab === "problems" || tab === "tasks" || tab === "output" || tab === "terminal") {
+        openBottomPanel(tab);
+      }
+    };
+    window.addEventListener(BOTTOM_PANEL_TAB_EVENT, onTabRequest);
+    return () => window.removeEventListener(BOTTOM_PANEL_TAB_EVENT, onTabRequest);
+  }, [openBottomPanel]);
+
+  useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       const mod = event.metaKey || event.ctrlKey;
       if (!mod) return;
@@ -208,7 +249,8 @@ export default function App() {
 
       if (key === "k" || (key === "p" && event.shiftKey)) {
         event.preventDefault();
-        setPaletteOpen((open) => !open);
+        if (paletteOpen) setPaletteOpen(false);
+        else openPalette();
         return;
       }
       if (key === "b") {
@@ -218,7 +260,7 @@ export default function App() {
       }
       if (key === "j") {
         event.preventDefault();
-        setBottomPanelOpen((open) => !open);
+        toggleBottomPanel();
         return;
       }
       if (/^[1-9]$/.test(event.key)) {
@@ -232,13 +274,13 @@ export default function App() {
     };
 
     window.addEventListener("keydown", handler);
-    const unlisten = listen("open-command-palette", () => setPaletteOpen(true));
+    const unlisten = listen("open-command-palette", openPalette);
 
     return () => {
       window.removeEventListener("keydown", handler);
       void unlisten.then((dispose) => dispose());
     };
-  }, [paletteOpen]);
+  }, [openPalette, paletteOpen, toggleBottomPanel]);
 
   const searchFileCommands = useCallback(
     async (query: string): Promise<Command[]> => {
@@ -325,7 +367,7 @@ export default function App() {
         group: "View",
         shortcut: "⌘J",
         keywords: ["terminal", "panel", "checks"],
-        run: () => setBottomPanelOpen((open) => !open),
+        run: toggleBottomPanel,
       },
     ];
 
@@ -378,7 +420,7 @@ export default function App() {
               task: async () => {
                 await callCommand("run_desktop_action", { actionId: "checks-run" });
                 await queryClient.invalidateQueries();
-                setBottomPanelOpen(true);
+                openBottomPanel();
               },
             }),
         },
@@ -459,6 +501,8 @@ export default function App() {
     queryClient,
     runWithFeedback,
     taskTitle,
+    openBottomPanel,
+    toggleBottomPanel,
   ]);
 
   function renderActiveTab() {
@@ -498,8 +542,8 @@ export default function App() {
         onSelect={navigateTo}
         onToggleSidebar={() => setSidebarOpen((open) => !open)}
         onToggleInspector={() => setInspectorOpen((open) => !open)}
-        onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)}
-        onOpenPalette={() => setPaletteOpen(true)}
+        onToggleBottomPanel={toggleBottomPanel}
+        onOpenPalette={openPalette}
       />
 
       {sidebarOpen ? (
@@ -555,10 +599,19 @@ export default function App() {
 
         <main className="ide-surface-scroll">{renderActiveTab()}</main>
 
-        <WorkbenchBottomPanel
-          open={bottomPanelOpen}
-          onClose={() => setBottomPanelOpen(false)}
-        />
+        {bottomPanelActivated ? (
+          <Suspense fallback={bottomPanelOpen ? (
+            <section className="workbench-bottom-panel" aria-label="Workbench bottom panel">
+              <div className="bottom-panel-empty"><strong>Loading bottom panel…</strong></div>
+            </section>
+          ) : null}>
+            <WorkbenchBottomPanel
+              open={bottomPanelOpen}
+              onClose={() => setBottomPanelOpen(false)}
+              requestedTab={requestedBottomPanelTab}
+            />
+          </Suspense>
+        ) : null}
       </section>
 
       {inspectorOpen ? (
@@ -588,13 +641,21 @@ export default function App() {
         kind={viewingArtifact || ""}
         onClose={() => setViewingArtifact(null)}
       />
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        commands={commands}
-        searchCommands={searchFileCommands}
-      />
-      <IDEHealthPanel />
+      {paletteActivated ? (
+        <Suspense fallback={paletteOpen ? (
+          <div className="cmdk-overlay">
+            <div className="cmdk-panel cmdk-panel-v2" role="status">Loading commands…</div>
+          </div>
+        ) : null}>
+          <CommandPalette
+            open={paletteOpen}
+            onClose={() => setPaletteOpen(false)}
+            commands={commands}
+            searchCommands={searchFileCommands}
+          />
+        </Suspense>
+      ) : null}
+      <IDEHealthPanelGate />
     </div>
   );
 }

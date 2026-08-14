@@ -75,58 +75,6 @@
   height: 13px;
 }
 
-/* Changes: empty copy stays together at the top instead of inheriting legacy
-   list distribution rules that spread children over the pane height. */
-.changes-file-list {
-  display: block !important;
-  align-content: initial !important;
-  justify-content: initial !important;
-}
-
-.changes-file-empty {
-  min-height: 0 !important;
-  display: flex !important;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start !important;
-  gap: 5px !important;
-  padding: 18px 14px !important;
-}
-
-.changes-file-empty strong {
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.changes-file-empty span {
-  max-width: 34ch;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
-.changes-preview-content > .empty-state {
-  min-height: 128px;
-  place-content: start;
-  align-items: start;
-  padding: 18px 16px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-}
-
-.changes-preview-content > .empty-state .empty-state-msg {
-  color: var(--text);
-  font-size: 11px;
-  font-weight: 720;
-}
-
-.changes-preview-content > .empty-state .empty-state-hint {
-  max-width: 46ch;
-  font-size: 10px;
-  line-height: 1.45;
-}
-
 @media (max-width: 700px) {
   .project-switcher-v2 .project-switcher-footer.compact {
     grid-template-columns: 1fr 1fr;

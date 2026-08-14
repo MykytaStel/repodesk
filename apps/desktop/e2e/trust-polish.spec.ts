@@ -1,6 +1,30 @@
 import { expect, test } from "@playwright/test";
 import { currentOnboardedFixtures } from "./current-fixtures";
-import { installMockIpc, recordedCommands } from "./mock-ipc";
+import { emitMockTauriEvent, installMockIpc, recordedCommands } from "./mock-ipc";
+
+const optionalResourceFragments = [
+  "CommandPalette",
+  "command-palette-v2.css",
+  "WorkbenchBottomPanel",
+  "InteractiveTerminal",
+  "vendor-terminal",
+  "@xterm",
+  "xterm.css",
+  "terminal.css",
+  "task-runner.css",
+  "IDEHealthPanel.tsx",
+  "health-panel.css",
+];
+
+function matchingResources(resources: string[], fragments: string[]) {
+  return resources.filter((url) => fragments.some((fragment) => url.includes(fragment)));
+}
+
+async function closePalette(page: import("@playwright/test").Page) {
+  await page.getByRole("textbox", { name: "Search commands" }).focus();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("textbox", { name: "Search commands" })).toHaveCount(0);
+}
 
 async function openFromPalette(page: import("@playwright/test").Page, title: string) {
   await page.getByRole("button", { name: "Command palette" }).click();
@@ -121,7 +145,10 @@ test("artifact viewer clears stale identity across reopen and failure", async ({
   await expect(dialog).not.toContainText("/tmp/fresh-context.md");
 });
 
-test("Terminal stays deferred and preserves its session across panel hide/show", async ({ page }) => {
+test("optional workspace tools request implementation assets only after first activation", async ({ page }) => {
+  const resources: string[] = [];
+  page.on("request", (request) => resources.push(request.url()));
+
   await installMockIpc(page, {
     ...currentOnboardedFixtures,
     action_history: [],
@@ -134,11 +161,99 @@ test("Terminal stays deferred and preserves its session across panel hide/show",
     terminal_resize: null,
   });
   await page.goto("/");
+  await expect(page.getByRole("button", { name: "Command palette" })).toBeVisible();
+  await page.waitForLoadState("networkidle");
 
+  expect(matchingResources(resources, optionalResourceFragments)).toEqual([]);
   expect((await recordedCommands(page)).filter((command) => command === "terminal_create")).toHaveLength(0);
-  await page.getByRole("button", { name: "Show bottom panel" }).click();
+
+  await page.keyboard.press("Meta+k");
+  await expect(page.getByRole("textbox", { name: "Search commands" })).toBeVisible();
+  await expect.poll(() => matchingResources(resources, ["CommandPalette"]).length).toBeGreaterThan(0);
+  await closePalette(page);
+
+  const paletteRequests = matchingResources(resources, ["CommandPalette"]).length;
+  await page.getByRole("button", { name: "Command palette" }).click();
+  await expect(page.getByRole("textbox", { name: "Search commands" })).toBeVisible();
+  await closePalette(page);
+  await emitMockTauriEvent(page, "open-command-palette", null);
+  await expect(page.getByRole("textbox", { name: "Search commands" })).toBeVisible();
+  await closePalette(page);
+  expect(matchingResources(resources, ["CommandPalette"])).toHaveLength(paletteRequests);
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent("repodesk:bottom-panel-tab", { detail: "terminal" }));
+  });
   const panel = page.getByRole("region", { name: "Workbench bottom panel" });
+  await expect(panel).toBeVisible();
+  await expect.poll(async () =>
+    (await recordedCommands(page)).filter((command) => command === "terminal_create").length,
+  ).toBe(1);
+  await expect(panel.getByText("PID 4242")).toBeVisible();
+  await expect.poll(() => matchingResources(resources, ["WorkbenchBottomPanel"]).length).toBeGreaterThan(0);
+  await expect.poll(() => matchingResources(resources, ["InteractiveTerminal", "@xterm", "xterm.css"]).length).toBeGreaterThan(0);
+
+  const panelRequests = matchingResources(resources, ["WorkbenchBottomPanel"]).length;
+  const terminalRequests = matchingResources(resources, ["InteractiveTerminal", "@xterm", "xterm.css"]).length;
+  await panel.getByRole("button", { name: "Close bottom panel" }).click();
+  await page.keyboard.press("Meta+j");
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Output", exact: false }).click();
   await panel.getByRole("button", { name: "Terminal", exact: true }).click();
+  await page.getByRole("button", { name: /Code —/ }).click();
+  await expect(page.getByRole("toolbar", { name: "Code workspace actions" })).toBeVisible();
+  await page.getByRole("button", { name: /^Work —/ }).click();
+  await expect(page.getByRole("region", { name: "Current Work Item" })).toBeVisible();
+  await expect.poll(async () =>
+    (await recordedCommands(page)).filter((command) => command === "terminal_create").length,
+  ).toBe(1);
+  expect(matchingResources(resources, ["WorkbenchBottomPanel"])).toHaveLength(panelRequests);
+  expect(matchingResources(resources, ["InteractiveTerminal", "@xterm", "xterm.css"])).toHaveLength(terminalRequests);
+
+  await panel.getByRole("button", { name: "Close bottom panel" }).click();
+  await openFromPalette(page, "Toggle bottom panel");
+  await expect(panel).toBeVisible();
+  await panel.getByRole("button", { name: "Close bottom panel" }).click();
+  await openFromPalette(page, "Run configured checks");
+  await expect(panel).toBeVisible();
+  await expect.poll(async () =>
+    (await recordedCommands(page)).filter((command) => command === "terminal_create").length,
+  ).toBe(1);
+
+  const healthIndicator = page.getByRole("button", { name: /IDE health:/ });
+  await healthIndicator.click();
+  await expect(page.getByRole("dialog", { name: "IDE Health" })).toBeVisible();
+  await expect.poll(() => matchingResources(resources, ["IDEHealthPanel.tsx", "health-panel.css"]).length).toBeGreaterThan(0);
+});
+
+test("persisted-open startup activates the bottom panel without creating a Terminal session", async ({ page }) => {
+  const resources: string[] = [];
+  const terminalResourceFragments = ["InteractiveTerminal", "vendor-terminal", "@xterm", "xterm.css"];
+  page.on("request", (request) => resources.push(request.url()));
+
+  await installMockIpc(page, {
+    ...currentOnboardedFixtures,
+    action_history: [],
+    terminal_create: {
+      session_id: "terminal-trust-polish",
+      cwd: "/Users/you/code/repodesk",
+      pid: 4242,
+      shell: "/bin/zsh",
+    },
+    terminal_resize: null,
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("repodesk.bottomPanelOpen", "1");
+  });
+  await page.goto("/");
+
+  const panel = page.getByRole("region", { name: "Workbench bottom panel" });
+  await expect(panel).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  expect(matchingResources(resources, terminalResourceFragments)).toEqual([]);
+  expect((await recordedCommands(page)).filter((command) => command === "terminal_create")).toHaveLength(0);
+  await panel.getByRole("button", { name: "Terminal", exact: true }).click();
+  await expect.poll(() => matchingResources(resources, terminalResourceFragments).length).toBeGreaterThan(0);
   await expect.poll(async () => (await recordedCommands(page)).filter((command) => command === "terminal_create").length).toBe(1);
   await expect(panel.getByText("PID 4242")).toBeVisible();
 
@@ -148,6 +263,19 @@ test("Terminal stays deferred and preserves its session across panel hide/show",
   await panel.getByRole("button", { name: "Terminal", exact: true }).click();
   await expect.poll(async () => (await recordedCommands(page)).filter((command) => command === "terminal_create").length).toBe(1);
   await expect(panel.getByText("PID 4242")).toBeVisible();
+});
+
+test("a failed optional feature load is surfaced by the app error boundary", async ({ page }) => {
+  await page.route("**/src/shared/ui/CommandPalette.tsx*", (route) => route.abort());
+  await installMockIpc(page, currentOnboardedFixtures);
+  await page.goto("/");
+
+  await expect(page.getByRole("button", { name: "Command palette" })).toBeVisible();
+  await page.getByRole("button", { name: "Command palette" }).click();
+
+  const error = page.getByRole("alert");
+  await expect(error).toContainText("RepoDesk hit an unexpected error");
+  await expect(error.getByRole("button", { name: "Reload app" })).toBeVisible();
 });
 
 test("Orchestrate cleanup uses a RepoDesk decision instead of a browser dialog", async ({ page }) => {

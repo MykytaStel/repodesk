@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { TabId } from "../../shared/types/api";
 import * as api from "../../shared/api/playbooks";
 import type { Playbook } from "../../shared/api/playbooks";
+import "../../shared/ui/manual-import.css";
+import "./playbooks-route.css";
 
 // Targets a playbook can open. Kept in sync with the primary surfaces; the value
 // is a TabId so the shortcut routes through the same nav as everything else.

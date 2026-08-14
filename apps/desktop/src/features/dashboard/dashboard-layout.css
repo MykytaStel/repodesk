@@ -1,0 +1,3 @@
+@media (max-width: 760px) {
+  .dashboard-grid { grid-template-columns: 1fr; }
+}

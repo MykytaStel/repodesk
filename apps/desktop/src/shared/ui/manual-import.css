@@ -1,0 +1,13 @@
+@layer legacy {
+  .manual-import-input {
+    width: 100%;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    padding: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-body);
+    color: var(--text);
+  }
+}

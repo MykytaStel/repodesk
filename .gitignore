@@ -215,6 +215,9 @@ report.md
 generated/
 .codegen/
 
+# Local linked worktrees used for isolated implementation sessions.
+.worktrees/
+
 # Tauri app icons must be committed so `tauri build` works from a fresh clone.
 # The macOS "Icon?" rule above otherwise hides them.
 !apps/desktop/src-tauri/icons/

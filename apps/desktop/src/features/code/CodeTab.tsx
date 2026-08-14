@@ -37,6 +37,7 @@ import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
 import { SemanticCodeEditor } from "./SemanticCodeEditor";
 import "./code-workspace.css";
 import "./ide-chrome.css";
+import "../routing/routing-feature.css";
 
 const MAX_OPEN_TABS = 8;
 const MAX_CACHED_PROJECT_SESSIONS = 2;

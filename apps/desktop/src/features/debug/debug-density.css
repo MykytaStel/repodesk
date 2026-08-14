@@ -1,0 +1,34 @@
+.debug-runtime-table {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.debug-runtime-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 70px 90px 80px 70px;
+  gap: 8px;
+  align-items: center;
+  min-height: 29px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+}
+
+.debug-runtime-row.header {
+  color: var(--muted-2);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.debug-runtime-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .debug-runtime-row { grid-template-columns: minmax(140px, 1fr) 50px 70px 60px 50px; }
+}

@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import type { TabId } from "../../shared/types/api";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import "./projects-route.css";
 
 interface ProjectConfigSummary {
   name: string;

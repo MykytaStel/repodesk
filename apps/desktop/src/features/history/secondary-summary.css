@@ -1,0 +1,18 @@
+.changes-summary {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: 8px;
+  padding: 0 0 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.changes-summary .eyebrow { margin: 0 0 var(--space-1); }
+
+.changes-summary strong {
+  display: block;
+  font-size: var(--text-lg);
+  line-height: 1.2;
+}

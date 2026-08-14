@@ -1,0 +1,12 @@
+@import "../../app/styles/debug.css" layer(legacy);
+@import "./debug-density.css" layer(legacy);
+
+@layer legacy {
+  @media (max-width: 760px) {
+    .form-grid,
+    .route-summary-grid,
+    .debug-event summary {
+      grid-template-columns: 1fr;
+    }
+  }
+}

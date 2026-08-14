@@ -11,7 +11,8 @@ import {
   runEvidenceBundle,
   type RunObservabilityReport,
 } from "../../shared/api/observability";
-import "./runs.css";
+import "../../shared/ui/secondary-subnav.css";
+import "./history-route.css";
 
 const OutcomesTab = lazy(() => import("../outcomes/OutcomesTab").then((m) => ({ default: m.OutcomesTab })));
 const AuditTab = lazy(() => import("../audit/AuditTab").then((m) => ({ default: m.AuditTab })));
