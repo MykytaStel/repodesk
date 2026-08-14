@@ -17,7 +17,6 @@ use crate::tokens::estimate_text;
 use super::model::MemoryEntry;
 use super::store;
 
-// ── Scoring weights (tunable) ────────────────────────────────────────────────
 const PINNED_BOOST: f64 = 10_000.0;
 const SALIENCE_WEIGHT: f64 = 100.0;
 const CONFIDENCE_WEIGHT: f64 = 20.0;
@@ -27,7 +26,6 @@ const RECENCY_WEIGHT: f64 = 40.0;
 const RECENCY_HALFLIFE_DAYS: f64 = 30.0;
 const MAX_LINE_CHARS: usize = 240;
 
-/// Keywords distilled from the active task, used for relevance overlap.
 #[derive(Debug, Clone, Default)]
 pub struct TaskSignals {
     pub keywords: HashSet<String>,
@@ -45,7 +43,6 @@ impl TaskSignals {
     }
 }
 
-/// An entry with its computed relevance score.
 #[derive(Debug, Clone)]
 pub struct ScoredEntry {
     pub entry: MemoryEntry,
@@ -53,16 +50,12 @@ pub struct ScoredEntry {
     pub reasons: Vec<String>,
 }
 
-/// Result of selecting a hard-budgeted slice of memory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SliceRender {
     pub markdown: String,
     pub estimated_tokens: usize,
     pub included_ids: Vec<i64>,
     pub excluded_ids: Vec<i64>,
-    /// Pinned entries that could not fit under the hard token ceiling. This is
-    /// explicit because silently dropping a durable constraint is materially
-    /// different from dropping an ordinary low-ranked memory.
     #[serde(default)]
     pub pinned_overflow_ids: Vec<i64>,
     pub total_active: usize,
@@ -76,10 +69,6 @@ impl SliceRender {
     }
 }
 
-/// Rank active entries by relevance using an explicit point in time.
-///
-/// This is the replayable ranking primitive: identical `signals`, `entries`,
-/// and `now` produce identical scores and ordering.
 pub fn rank_for_task_at(
     signals: &TaskSignals,
     entries: &[MemoryEntry],
@@ -132,18 +121,10 @@ pub fn rank_for_task_at(
     scored
 }
 
-/// Interactive convenience wrapper. Call [`rank_for_task_at`] when replay or
-/// deterministic evidence reconstruction matters.
 pub fn rank_for_task(signals: &TaskSignals, entries: &[MemoryEntry]) -> Vec<ScoredEntry> {
     rank_for_task_at(signals, entries, Utc::now())
 }
 
-/// Select ranked entries under a **hard** token ceiling and render the slice.
-///
-/// Pinned entries rank first, but they do not bypass the ceiling. If durable
-/// constraints themselves exceed the budget, their ids are reported in
-/// `pinned_overflow_ids` so the caller can block or request a larger context
-/// instead of silently violating the bounded-context contract.
 pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender {
     let total_active = scored.len();
     let mut running = HEADER_TOKEN_OVERHEAD.min(token_budget);
@@ -167,11 +148,6 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
         }
     }
 
-    // The line-level estimate above is intentionally cheap, but category labels
-    // and markdown framing also cost tokens. Enforce the contract against the
-    // final rendered text and evict the lowest-ranked included entries until it
-    // truly fits. Because `included` preserves rank order, `.pop()` removes the
-    // least valuable selected entry first.
     let (markdown, estimated_tokens) = loop {
         let rendered = render_markdown(&included);
         let estimate = estimate_text(&rendered).estimated_tokens;
@@ -179,10 +155,16 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
             break (rendered, estimate);
         }
 
+        // Framing is lower value than the selected memories themselves. Before
+        // evicting a pinned or otherwise high-ranked entry, drop the intro and
+        // category headings and try the compact representation.
+        let compact = render_compact_markdown(&included);
+        let compact_estimate = estimate_text(&compact).estimated_tokens;
+        if compact_estimate <= token_budget {
+            break (compact, compact_estimate);
+        }
+
         let Some(removed) = included.pop() else {
-            // Even the empty-state prose is larger than the requested budget.
-            // An empty string is the only representation that can uphold a zero
-            // or extremely small hard ceiling.
             break (String::new(), 0);
         };
         included_ids.retain(|id| *id != removed.id);
@@ -208,9 +190,6 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
     }
 }
 
-/// IO wrapper: load active memory for `project`, rank against the active task,
-/// and render a budgeted slice. Never fails on a missing/unset task — it just
-/// ranks without keyword signals.
 pub fn memory_slice(project: &str, token_budget: usize) -> RepoDeskResult<SliceRender> {
     let entries = store::list_active(project)?;
     let signals = active_task_signals();
@@ -218,12 +197,10 @@ pub fn memory_slice(project: &str, token_budget: usize) -> RepoDeskResult<SliceR
     Ok(render_slice(&scored, token_budget))
 }
 
-/// Convenience for context builders that only want the markdown body.
 pub fn memory_slice_markdown(project: &str, token_budget: usize) -> RepoDeskResult<String> {
     Ok(memory_slice(project, token_budget)?.markdown)
 }
 
-/// Build task signals from the active task (title + task.md), best-effort.
 fn active_task_signals() -> TaskSignals {
     let Ok(task) = crate::tasks::show_active_task() else {
         return TaskSignals::default();
@@ -269,6 +246,14 @@ fn render_markdown(entries: &[&MemoryEntry]) -> String {
     out
 }
 
+fn render_compact_markdown(entries: &[&MemoryEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| render_line(entry))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render_line(entry: &MemoryEntry) -> String {
     let pin = if entry.pinned { " (pinned)" } else { "" };
     format!(
@@ -308,7 +293,6 @@ fn keyword_overlap(signals: &TaskSignals, entry: &MemoryEntry) -> usize {
         .count()
 }
 
-/// Lowercase alphanumeric tokens of length >= 3, minus a small stopword set.
 fn tokenize(text: &str) -> HashSet<String> {
     text.split(|c: char| !c.is_alphanumeric())
         .map(|w| w.to_lowercase())
@@ -396,7 +380,6 @@ mod tests {
         pinned.salience = 0.0;
         let relevant = entry(2, "auth payments api design", "decision", &["auth"]);
         let signals = TaskSignals::from_text("improve auth payments flow");
-
         let ranked = rank_for_task_at(&signals, &[relevant, pinned], fixed_now());
         assert_eq!(ranked[0].entry.id, 1, "pinned entry must rank first");
     }
@@ -406,7 +389,6 @@ mod tests {
         let relevant = entry(1, "decision about auth tokens", "decision", &["auth"]);
         let irrelevant = entry(2, "note about logging colors", "general", &["ui"]);
         let signals = TaskSignals::from_text("rework the auth tokens module");
-
         let ranked = rank_for_task_at(&signals, &[irrelevant, relevant], fixed_now());
         assert_eq!(ranked[0].entry.id, 1);
     }
@@ -416,7 +398,6 @@ mod tests {
         let now = fixed_now();
         let older = entry_at(1, "older note", "general", &[], now - Duration::days(120));
         let newer = entry_at(2, "newer note", "general", &[], now);
-
         let ranked = rank_for_task_at(&TaskSignals::default(), &[older, newer], now);
         assert_eq!(ranked[0].entry.id, 2);
     }
@@ -441,10 +422,8 @@ mod tests {
             ),
         ];
         let signals = TaskSignals::from_text("auth change");
-
         let first = rank_for_task_at(&signals, &entries, now);
         let second = rank_for_task_at(&signals, &entries, now);
-
         assert_eq!(
             first.iter().map(|entry| entry.entry.id).collect::<Vec<_>>(),
             second
@@ -473,10 +452,8 @@ mod tests {
             pinned.pinned = true;
             entries.push(pinned);
         }
-
         let scored = rank_for_task_at(&TaskSignals::default(), &entries, fixed_now());
         let render = render_slice(&scored, 80);
-
         assert!(render.estimated_tokens <= 80);
         assert!(!render.pinned_overflow_ids.is_empty());
         assert!(render.budget_exhausted);
@@ -489,7 +466,6 @@ mod tests {
         pinned.pinned = true;
         let scored = rank_for_task_at(&TaskSignals::default(), &[pinned], fixed_now());
         let render = render_slice(&scored, 0);
-
         assert!(render.markdown.is_empty());
         assert_eq!(render.estimated_tokens, 0);
         assert_eq!(render.pinned_overflow_ids, vec![999]);
@@ -509,10 +485,8 @@ mod tests {
         let mut pinned = entry(999, "critical pinned constraint", "constraint", &[]);
         pinned.pinned = true;
         entries.push(pinned);
-
         let scored = rank_for_task_at(&TaskSignals::default(), &entries, fixed_now());
         let render = render_slice(&scored, 60);
-
         assert!(render.included_ids.contains(&999));
         assert!(!render.excluded_ids.is_empty());
         assert!(render.included_ids.len() < entries.len());
