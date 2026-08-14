@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use crate::git_workspace::{self, GitFileChange};
+use crate::errors::{RepoDeskError, RepoDeskResult};
+use crate::git_workspace::{self, GitFileChange, GitStatusSnapshot};
 
 /// Maximum diff size kept on an executor run / written to a receipt.
 const MAX_DIFF_BYTES: usize = 200 * 1024;
@@ -27,23 +27,26 @@ impl Changeset {
     }
 }
 
-/// Compare the post-run git status to the pre-run snapshot, capture the unified
-/// diff of the tracked changes, and write it to a `.diff` receipt. Returns an
-/// empty changeset when `cwd` is not a git repo or nothing changed.
+/// Compare the post-run Git status to the exact typed pre-run snapshot, capture
+/// the tracked unified diff, and write it to a `.diff` receipt.
 pub(super) fn capture_changeset(
     cwd: &Path,
     output_dir: &Path,
     safe_id: &str,
     stamp: u128,
-    pre_status: Option<&str>,
-) -> Changeset {
+    pre_status: Option<&GitStatusSnapshot>,
+) -> RepoDeskResult<Changeset> {
     let Some(pre) = pre_status else {
-        return Changeset::empty();
+        return Ok(Changeset::empty());
     };
-    let post = git_workspace::run_git_captured(cwd, &["status", "--porcelain=v1"]);
-    let changed_files = changed_since(pre, &post);
+    let post = git_workspace::read_git_status(cwd)?.ok_or_else(|| {
+        RepoDeskError::Api(
+            "git work tree disappeared before post-run provenance capture".to_string(),
+        )
+    })?;
+    let changed_files = post.changed_since(pre);
     if changed_files.is_empty() {
-        return Changeset::empty();
+        return Ok(Changeset::empty());
     }
 
     // Staged + unstaged tracked diffs; neither needs an existing HEAD, so this
@@ -84,34 +87,17 @@ pub(super) fn capture_changeset(
         }
     };
 
-    Changeset {
+    Ok(Changeset {
         changed_files,
         diff,
         diff_truncated,
         diff_path,
-    }
+    })
 }
 
-/// Porcelain status of `cwd`, or `None` when it is not inside a git work tree.
-pub(super) fn git_porcelain(cwd: &Path) -> Option<String> {
-    let inside = git_workspace::run_git_captured(cwd, &["rev-parse", "--is-inside-work-tree"]);
-    if inside.trim() != "true" {
-        return None;
-    }
-    Some(git_workspace::run_git_captured(
-        cwd,
-        &["status", "--porcelain=v1"],
-    ))
-}
-
-/// Porcelain lines present after the run but not before it — the files the run
-/// added or whose status it changed.
-fn changed_since(pre: &str, post: &str) -> Vec<GitFileChange> {
-    let pre_lines: HashSet<&str> = pre.lines().collect();
-    post.lines()
-        .filter(|line| !pre_lines.contains(*line))
-        .filter_map(git_workspace::parse_porcelain_line)
-        .collect()
+/// Exact typed status of `cwd`, or `None` when it is not inside a Git work tree.
+pub(super) fn git_porcelain(cwd: &Path) -> RepoDeskResult<Option<GitStatusSnapshot>> {
+    git_workspace::read_git_status(cwd)
 }
 
 /// Truncate `text` to at most `max` bytes on a char boundary. When the complete
@@ -167,14 +153,5 @@ mod tests {
         assert!(truncated);
         assert_eq!(text, "abcd");
         assert_eq!(text.len(), 4);
-    }
-
-    #[test]
-    fn changed_since_reports_only_new_status_lines() {
-        let pre = " M seed.txt\n";
-        let post = " M seed.txt\n M other.rs\n?? added.txt\n";
-        let changed = changed_since(pre, post);
-        let paths: Vec<&str> = changed.iter().map(|change| change.path.as_str()).collect();
-        assert_eq!(paths, vec!["other.rs", "added.txt"]);
     }
 }
