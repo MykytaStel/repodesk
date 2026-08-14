@@ -70,6 +70,7 @@ export function ChangesTab({
   const untracked = listFromRecord(git, ["untracked", "untracked_files"]);
   const governance = engineering.data?.change_governance ?? null;
   const passport = engineering.data?.changeset_passport ?? null;
+  const manifest = engineering.data?.safe_commit_manifest ?? null;
 
   const statusOf = (file: string): FileStatus | null =>
     staged.includes(file)
@@ -162,10 +163,12 @@ export function ChangesTab({
   };
 
   const selectedGroup = selectedFile ? findingsByFile.get(selectedFile) : undefined;
-  const blocker = governance?.gate.blockers[0] ?? null;
-  const gateLabel = governance?.gate.ready
+  const blocker = manifest?.blockers[0] ?? null;
+  const gateLabel = manifest?.state === "ready"
     ? "Ready to commit"
-    : governance?.gate.state?.split("_").join(" ") ?? "No ChangeSet";
+    : manifest?.state === "committed"
+      ? "Committed"
+      : manifest ? "Commit blocked" : "No ChangeSet";
 
   return (
     <div className="changes-tab changes-focus-layout">
@@ -178,7 +181,7 @@ export function ChangesTab({
         <div className="changes-focus-actions">
           <button className="tiny-button" onClick={refreshWorkspace}>Refresh</button>
           <button className="tiny-button" onClick={() => setEvidenceOpen((open) => !open)}>
-            Passport{governance?.gate.ready ? " ✓" : blocker ? " !" : ""}
+            Manifest{manifest?.state === "ready" || manifest?.state === "committed" ? " ✓" : blocker ? " !" : ""}
           </button>
           <button
             className={`tiny-button${findingsOpen ? " active" : ""}`}
@@ -195,11 +198,11 @@ export function ChangesTab({
 
       {hasTask ? (
         <div className={`changes-gate-bar${blocker ? " danger" : ""}`}>
-          <span>Commit gate</span>
+          <span>Safe commit</span>
           <strong>{gateLabel}</strong>
-          {blocker ? <small>{blocker}</small> : <small>{governance?.changeset_id ?? "No active ChangeSet"}</small>}
+          {blocker ? <small>{blocker}</small> : <small>{manifest?.manifest_digest ? `Manifest ${manifest.manifest_digest.slice(0, 12)}` : governance?.changeset_id ?? "No active ChangeSet"}</small>}
           <button className="link-cta" onClick={() => setEvidenceOpen((open) => !open)}>
-            {evidenceOpen ? "Hide passport" : "Inspect passport"}
+            {evidenceOpen ? "Hide manifest" : "Inspect manifest"}
           </button>
         </div>
       ) : (
@@ -219,6 +222,7 @@ export function ChangesTab({
         <ChangeGovernancePanel
           governance={governance}
           passport={passport}
+          manifest={manifest}
           loading={engineering.isLoading}
           error={engineering.isError ? engineering.error : null}
         />
