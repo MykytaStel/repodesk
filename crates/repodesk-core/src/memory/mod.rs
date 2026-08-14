@@ -26,7 +26,9 @@ pub(crate) mod test_support;
 
 pub use capture::{capture_from_text, capture_from_text_smart};
 pub use consolidate::consolidate_project_memory;
-pub use context_source::{MemoryContextSource, context_source_for_slice};
+pub use context_source::{
+    MemoryContextSource, ResolvedMemoryContext, context_source_for_slice, resolve_context_memory,
+};
 pub use llm::BrainLlm;
 pub use merge::{ScanSummary, accept_proposal, reconcile_conflict, reject_proposal, scan};
 pub use model::{
