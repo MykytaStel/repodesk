@@ -159,11 +159,7 @@ mod tests {
     }
 
     fn event(work_item_id: &str, kind: EngineeringEventKind) -> EngineeringEvent {
-        EngineeringEvent::new(
-            PROJECT,
-            WorkItemId::try_new(work_item_id).unwrap(),
-            kind,
-        )
+        EngineeringEvent::new(PROJECT, WorkItemId::try_new(work_item_id).unwrap(), kind)
     }
 
     #[test]
@@ -243,11 +239,7 @@ mod tests {
         .unwrap();
         load_engineering_projection(&run_dir).unwrap();
 
-        fs::write(
-            event_ledger_path(&run_dir),
-            "{not-json}\nmore-corruption\n",
-        )
-        .unwrap();
+        fs::write(event_ledger_path(&run_dir), "{not-json}\nmore-corruption\n").unwrap();
 
         assert!(load_engineering_projection(&run_dir).is_err());
     }
