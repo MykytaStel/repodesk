@@ -8,8 +8,8 @@ mod status;
 
 pub use diff::{active_file_diff, file_diff, git_lines};
 pub use process::run_git_captured;
-pub use snapshot::{build_git_workspace_snapshot, build_git_workspace_snapshot_for_path};
 pub(crate) use process::run_git_captured_bounded;
+pub use snapshot::{build_git_workspace_snapshot, build_git_workspace_snapshot_for_path};
 pub(crate) use status::{GitStatusSnapshot, read_git_status};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
