@@ -346,6 +346,40 @@ export type VerificationCommandEvidence = {
   success: boolean;
 };
 
+export type CommitScopePolicyDecision = {
+  status: ScopeComplianceStatus;
+  allowed: boolean;
+  overridden: boolean;
+  override_event_id: string | null;
+  out_of_scope_files: string[];
+  protected_files: string[];
+};
+
+export type SafeCommitState = "blocked" | "ready" | "committed";
+
+export type SafeCommitManifest = {
+  version: number;
+  work_item_id: string;
+  run_id: string | null;
+  changeset_digest: string | null;
+  parent_head_sha: string | null;
+  current_head_sha: string | null;
+  reviewed_tree_sha: string | null;
+  verification_tree_sha: string | null;
+  verification_verified_at: string | null;
+  reviewed_paths: string[];
+  staged_paths: string[];
+  verification_commands: VerificationCommandEvidence[];
+  scope: CommitScopePolicyDecision;
+  acceptance: AcceptanceEvidenceReport;
+  commit_sha: string | null;
+  state: SafeCommitState;
+  ready: boolean;
+  blockers: string[];
+  warnings: string[];
+  manifest_digest: string;
+};
+
 export type RunWorkerEvidence = {
   step_id: string;
   agent: string;
@@ -413,6 +447,7 @@ export type WorkEngineeringSnapshot = {
   work_item_contract: WorkItemContractSnapshot;
   change_governance: ChangeGovernanceSnapshot;
   changeset_passport: ChangeSetPassport;
+  safe_commit_manifest: SafeCommitManifest;
   run_evidence: RunEvidenceSnapshot | null;
 };
 
@@ -452,6 +487,13 @@ export async function saveWorkItemContract(
 
 export async function recordScopeOverride(reason: string): Promise<ChangeGovernanceSnapshot> {
   return (await invokeWorkEngineering({ scopeOverrideReason: reason })).change_governance;
+}
+
+export async function linkChangesAcceptanceEvidence(
+  criterionId: string,
+  command: string,
+): Promise<WorkEngineeringSnapshot> {
+  return invokeWorkEngineering({ acceptanceCriterionId: criterionId, acceptanceCommand: command });
 }
 
 export async function runEvidenceSnapshot(runId: string): Promise<RunEvidenceSnapshot> {
