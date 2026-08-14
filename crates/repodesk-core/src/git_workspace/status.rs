@@ -40,6 +40,18 @@ impl GitStatusRecord {
             renamed: x == 'R' || y == 'R',
         }
     }
+
+    fn diagnostic_line(&self) -> String {
+        match &self.original_path {
+            Some(original_path) => format!(
+                "{} {} <- {}\n",
+                self.status_code,
+                escape_path(&self.path),
+                escape_path(original_path)
+            ),
+            None => format!("{} {}\n", self.status_code, escape_path(&self.path)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -48,12 +60,38 @@ pub(crate) struct GitStatusSnapshot {
 }
 
 impl GitStatusSnapshot {
+    pub(crate) fn changes(&self) -> Vec<GitFileChange> {
+        self.records
+            .iter()
+            .cloned()
+            .map(GitStatusRecord::into_change)
+            .collect()
+    }
+
     pub(crate) fn changed_since(&self, previous: &Self) -> Vec<GitFileChange> {
         self.records
             .difference(&previous.records)
             .cloned()
             .map(GitStatusRecord::into_change)
             .collect()
+    }
+
+    /// Compatibility projection for UI/debug consumers that historically read
+    /// raw porcelain text. The canonical source remains the typed record set.
+    pub(crate) fn diagnostic_porcelain(&self, max_bytes: usize) -> (String, bool) {
+        let mut output = String::new();
+        let mut truncated = false;
+
+        for record in &self.records {
+            let line = record.diagnostic_line();
+            if output.len().saturating_add(line.len()) > max_bytes {
+                truncated = true;
+                break;
+            }
+            output.push_str(&line);
+        }
+
+        (output, truncated)
     }
 
     #[cfg(test)]
@@ -207,7 +245,7 @@ fn drain_diagnostic(mut reader: impl Read, max: usize) -> io::Result<String> {
 /// `cwd` is not inside a Git work tree.
 pub(crate) fn read_git_status(cwd: &Path) -> RepoDeskResult<Option<GitStatusSnapshot>> {
     let inside = run_git_captured_bounded(cwd, &["rev-parse", "--is-inside-work-tree"], 16);
-    if inside.text.trim() != "true" {
+    if !inside.success || inside.truncated || inside.text.trim() != "true" {
         return Ok(None);
     }
 
@@ -274,6 +312,10 @@ pub(crate) fn read_git_status(cwd: &Path) -> RepoDeskResult<Option<GitStatusSnap
     Ok(Some(snapshot))
 }
 
+fn escape_path(path: &str) -> String {
+    path.chars().flat_map(char::escape_default).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +348,17 @@ mod tests {
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].path, "seed.txt");
         assert!(changes[0].staged);
+    }
+
+    #[test]
+    fn diagnostic_projection_is_bounded_and_escaped() {
+        let snapshot =
+            parse_status_stream(Cursor::new(b"?? weird\nname.txt\0 M other.txt\0"), 10, 1024)
+                .unwrap();
+        let (diagnostic, truncated) = snapshot.diagnostic_porcelain(20);
+        assert!(diagnostic.len() <= 20);
+        assert!(truncated);
+        assert!(!diagnostic.contains('\n') || diagnostic.ends_with('\n'));
     }
 
     #[test]
