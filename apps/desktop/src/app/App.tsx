@@ -12,6 +12,7 @@ import {
   codeWorkspaceQuickOpen,
   requestCodeWorkspaceOpen,
 } from "../shared/api/codeWorkspace";
+import { flushCodeWorkspaceDrafts } from "../shared/api/codeDraftPersistence";
 import { callCommand } from "../shared/api/queries";
 import {
   BOTTOM_PANEL_TAB_EVENT,
@@ -175,6 +176,30 @@ export default function App() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen<{ requestId: number }>("repodesk-safe-quit-requested", async ({ payload }) => {
+      const requestId = payload.requestId;
+      let acknowledged = false;
+      try {
+        await invoke("safe_quit_ack", { requestId });
+        acknowledged = true;
+        await flushCodeWorkspaceDrafts();
+        await invoke("safe_quit_complete", { requestId });
+      } catch (error) {
+        if (!acknowledged) return;
+        await invoke("safe_quit_cancel", { requestId }).catch(() => undefined);
+        showFeedback(
+          "error",
+          "Quit cancelled",
+          `Recovery drafts could not be saved: ${errorToMessage(error)}`,
+        );
+      }
+    });
+    return () => {
+      void unlisten.then((dispose) => dispose());
+    };
+  }, [showFeedback]);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.activeTab, activeTab);

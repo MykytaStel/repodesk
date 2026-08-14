@@ -156,19 +156,19 @@ export async function saveCodeWorkspaceDraft(input: {
   path: string;
   content: string;
   base_fingerprint: string;
-}): Promise<CodeDraftRecord> {
-  return invoke("code_workspace_draft_save", { input });
+}, projectName?: string | null): Promise<CodeDraftRecord> {
+  return invoke("code_workspace_draft_save", { input, projectName: projectName ?? null });
 }
 
 export async function loadCodeWorkspaceDraft(input: {
   path: string;
   current_fingerprint: string;
-}): Promise<CodeDraftRecovery | null> {
-  return invoke("code_workspace_draft_load", { input });
+}, projectName?: string | null): Promise<CodeDraftRecovery | null> {
+  return invoke("code_workspace_draft_load", { input, projectName: projectName ?? null });
 }
 
-export async function deleteCodeWorkspaceDraft(path: string): Promise<boolean> {
-  return invoke("code_workspace_draft_delete", { relativePath: path });
+export async function deleteCodeWorkspaceDraft(path: string, projectName?: string | null): Promise<boolean> {
+  return invoke("code_workspace_draft_delete", { relativePath: path, projectName: projectName ?? null });
 }
 
 export async function createCodeWorkspaceFile(input: {

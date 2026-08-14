@@ -106,6 +106,7 @@ test.describe("Code editor draft recovery", () => {
           path,
           current_fingerprint: diskFingerprint,
         },
+        projectName: "RepoDesk",
       },
     });
     expect(beforeSave).toContainEqual({
@@ -116,6 +117,7 @@ test.describe("Code editor draft recovery", () => {
           content: recoveredContent,
           base_fingerprint: diskFingerprint,
         },
+        projectName: "RepoDesk",
       },
     });
 
@@ -136,7 +138,7 @@ test.describe("Code editor draft recovery", () => {
     });
     expect(afterSave).toContainEqual({
       cmd: "code_workspace_draft_delete",
-      args: { relativePath: path },
+      args: { relativePath: path, projectName: "RepoDesk" },
     });
   });
 
@@ -161,11 +163,12 @@ test.describe("Code editor draft recovery", () => {
           path,
           current_fingerprint: diskFingerprint,
         },
+        projectName: "RepoDesk",
       },
     });
     expect(invocations).toContainEqual({
       cmd: "code_workspace_draft_delete",
-      args: { relativePath: path },
+      args: { relativePath: path, projectName: "RepoDesk" },
     });
     expect(invocations.some(({ cmd }) => cmd === "code_workspace_draft_save")).toBe(false);
   });
@@ -184,7 +187,7 @@ test.describe("Code editor draft recovery", () => {
     const invocations = await recordedInvocations(page);
     expect(invocations).toContainEqual({
       cmd: "code_workspace_draft_delete",
-      args: { relativePath: path },
+      args: { relativePath: path, projectName: "RepoDesk" },
     });
   });
 });
