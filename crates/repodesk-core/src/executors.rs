@@ -18,6 +18,9 @@ use wait_timeout::ChildExt;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::git_workspace::{self, GitFileChange};
 
+mod process;
+use process::read_bounded;
+
 /// Maximum diff size kept on a [`CodingAgentExecution`] / written to a receipt.
 /// A larger diff is truncated with a trailing marker so the run record never
 /// balloons; the full working tree is still on disk for the human to inspect.
@@ -962,19 +965,6 @@ fn format_command_preview(command: &CodingAgentCommandSpec) -> String {
         parts.push("[stdin: bounded prompt]".to_string());
     }
     parts.join(" ")
-}
-
-/// Read at most `max` bytes of a file, lossily decoded. Returns the text and
-/// whether it was truncated (a marker is appended when so).
-fn read_bounded(path: &Path, max: usize) -> RepoDeskResult<(String, bool)> {
-    let bytes = fs::read(path)?;
-    let truncated = bytes.len() > max;
-    let slice = if truncated { &bytes[..max] } else { &bytes[..] };
-    let mut text = String::from_utf8_lossy(slice).into_owned();
-    if truncated {
-        text.push_str("\n[output truncated]");
-    }
-    Ok((text, truncated))
 }
 
 /// Clear the child's environment and forward only the [`FORWARDED_ENV_VARS`]
