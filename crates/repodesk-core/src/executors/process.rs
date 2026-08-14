@@ -91,9 +91,9 @@ fn run_probe_command_with_timeout(
     let stdout_reader = thread::spawn(move || drain_bounded(stdout, MAX_PROBE_OUTPUT_BYTES));
     let stderr_reader = thread::spawn(move || drain_bounded(stderr, MAX_PROBE_OUTPUT_BYTES));
 
-    let status = match child.wait_timeout(timeout).ok()? {
-        Some(status) => status,
-        None => {
+    let status = match child.wait_timeout(timeout) {
+        Ok(Some(status)) => status,
+        Ok(None) | Err(_) => {
             let _ = child.kill();
             let _ = child.wait();
             let _ = stdout_reader.join();
