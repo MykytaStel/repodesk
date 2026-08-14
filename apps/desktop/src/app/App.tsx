@@ -22,6 +22,7 @@ import type { TabId, Theme } from "../shared/types/api";
 import { AboutModal } from "../shared/ui/AboutModal";
 import { ArtifactViewerModal } from "../shared/ui/ArtifactViewerModal";
 import type { Command } from "../shared/ui/CommandPalette";
+import { ErrorBoundary } from "../shared/ui/ErrorBoundary";
 import { GlobalLoader } from "../shared/ui/GlobalLoader";
 import { errorToMessage, StartupSkeleton } from "../shared/ui/SharedComponents";
 import { TabErrorBoundary } from "../shared/ui/TabErrorBoundary";
@@ -114,7 +115,6 @@ export default function App() {
     retry: false,
     staleTime: 60_000,
   });
-
 
   const showFeedback = useCallback(
     (tone: FeedbackTone, title: string, detail: string, options?: { toast?: boolean }) => {
@@ -326,7 +326,6 @@ export default function App() {
         run: () => navigateTo("changes", "Review the current workspace delta."),
       });
     }
-
 
     const tabCommands: Command[] = APP_TABS.map((tab) => {
       const primaryIndex = PRIMARY_TABS.findIndex((candidate) => candidate.id === tab.id);
@@ -600,17 +599,22 @@ export default function App() {
         <main className="ide-surface-scroll">{renderActiveTab()}</main>
 
         {bottomPanelActivated ? (
-          <Suspense fallback={bottomPanelOpen ? (
-            <section className="workbench-bottom-panel" aria-label="Workbench bottom panel">
-              <div className="bottom-panel-empty"><strong>Loading bottom panel…</strong></div>
-            </section>
-          ) : null}>
-            <WorkbenchBottomPanel
-              open={bottomPanelOpen}
-              onClose={() => setBottomPanelOpen(false)}
-              requestedTab={requestedBottomPanelTab}
-            />
-          </Suspense>
+          <ErrorBoundary
+            scope="bottom-panel"
+            resetKeys={[bottomPanelActivated, bottomPanelOpen, requestedBottomPanelTab]}
+          >
+            <Suspense fallback={bottomPanelOpen ? (
+              <section className="workbench-bottom-panel" aria-label="Workbench bottom panel">
+                <div className="bottom-panel-empty"><strong>Loading bottom panel…</strong></div>
+              </section>
+            ) : null}>
+              <WorkbenchBottomPanel
+                open={bottomPanelOpen}
+                onClose={() => setBottomPanelOpen(false)}
+                requestedTab={requestedBottomPanelTab}
+              />
+            </Suspense>
+          </ErrorBoundary>
         ) : null}
       </section>
 
@@ -642,18 +646,20 @@ export default function App() {
         onClose={() => setViewingArtifact(null)}
       />
       {paletteActivated ? (
-        <Suspense fallback={paletteOpen ? (
-          <div className="cmdk-overlay">
-            <div className="cmdk-panel cmdk-panel-v2" role="status">Loading commands…</div>
-          </div>
-        ) : null}>
-          <CommandPalette
-            open={paletteOpen}
-            onClose={() => setPaletteOpen(false)}
-            commands={commands}
-            searchCommands={searchFileCommands}
-          />
-        </Suspense>
+        <ErrorBoundary scope="command-palette" resetKeys={[paletteActivated, paletteOpen]}>
+          <Suspense fallback={paletteOpen ? (
+            <div className="cmdk-overlay">
+              <div className="cmdk-panel cmdk-panel-v2" role="status">Loading commands…</div>
+            </div>
+          ) : null}>
+            <CommandPalette
+              open={paletteOpen}
+              onClose={() => setPaletteOpen(false)}
+              commands={commands}
+              searchCommands={searchFileCommands}
+            />
+          </Suspense>
+        </ErrorBoundary>
       ) : null}
       <IDEHealthPanelGate />
     </div>
