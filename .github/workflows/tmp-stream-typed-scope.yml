@@ -1,0 +1,50 @@
+name: Temporary typed journal scope migration
+
+on:
+  push:
+    branches:
+      - perf/stream-verified-event-journal
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: perf/stream-verified-event-journal
+          fetch-depth: 1
+      - name: Route typed replay through scoped scanner
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("crates/repodesk-core/src/engineering/events.rs")
+          text = path.read_text()
+          old = "    EngineeringEventInput, append_engineering_event, engineering_event_revision,\n    read_engineering_events,"
+          new = "    EngineeringEventInput, append_engineering_event, engineering_event_revision,\n    read_engineering_events_for_scope,"
+          if text.count(old) != 1:
+              raise SystemExit("unexpected import marker")
+          text = text.replace(old, new, 1)
+
+          start_marker = "    let mut canonical = read_engineering_events(usize::MAX)?"
+          end_marker = "        .map(|encoded| serde_json::from_str::<EngineeringEvent>(&encoded))"
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit("unexpected typed replay markers")
+          start = text.index(start_marker)
+          end = text.index(end_marker)
+          replacement = "    let mut canonical = read_engineering_events_for_scope(\n        project.as_deref(),\n        task_id.as_deref(),\n    )?\n    .into_iter()\n    .filter_map(|entry| entry.payload.get(TYPED_EVENT_PAYLOAD_KEY).cloned())\n"
+          text = text[:start] + replacement + text[end:]
+          path.write_text(text)
+          Path(".github/workflows/tmp-stream-typed-scope.yml").unlink()
+      - name: Format and commit
+        run: |
+          cargo fmt --all
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "perf: scope typed event replay during verified scan"
+          git push origin HEAD:perf/stream-verified-event-journal
