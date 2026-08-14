@@ -19,6 +19,7 @@ use crate::engineering::{
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::git_workspace::run_git_captured as run_git;
 use crate::init;
+use crate::memory::resolve_context_memory;
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
@@ -115,19 +116,14 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     let engineering_knowledge_observed_at =
         engineering_knowledge_observed_at(&engineering_knowledge.included_ids);
 
-    // Legacy Memory Brain remains temporarily as a lower-priority compatibility
-    // slice. Keep the selected slice around long enough to attach provenance age
-    // to the shared Context Pipeline; fallback memory.md remains unevaluated.
-    let memory_slice = crate::memory::retrieval::memory_slice(&project.name, MEMORY_BUDGET_TOKENS)
-        .ok()
-        .filter(|slice| !slice.is_empty());
-    let memory_observed_at = memory_slice
-        .as_ref()
-        .and_then(|slice| memory_slice_observed_at(&project.name, &slice.included_ids));
-    let memory = memory_slice
-        .as_ref()
-        .map(|slice| slice.markdown.clone())
-        .unwrap_or_else(|| read_optional_file(&project_meta_dir.join("memory.md")));
+    let memory_context = resolve_context_memory(
+        &project.name,
+        MEMORY_BUDGET_TOKENS,
+        &project_meta_dir.join("memory.md"),
+    )?;
+    let memory_source = memory_context.source;
+    let memory_observed_at = memory_context.observed_at;
+    let memory = memory_context.markdown;
     let decisions = read_optional_file(&project_meta_dir.join("decisions.md"));
     let risks = read_optional_file(&project_meta_dir.join("risks.md"));
 
@@ -240,7 +236,8 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
             .map(|value| value.goal.as_str())
             .unwrap_or_default()
     );
-    let mut pipeline_candidates = build_pipeline_candidates(&bounded_input, contract.is_some());
+    let mut pipeline_candidates =
+        build_pipeline_candidates(&bounded_input, contract.is_some(), memory_source.locator());
     for candidate in &mut pipeline_candidates {
         apply_context_relevance(candidate, &relevance_text, &changed_files);
     }
@@ -449,20 +446,6 @@ fn engineering_knowledge_observed_at(included_ids: &[String]) -> Option<DateTime
         .min()
 }
 
-fn memory_slice_observed_at(project: &str, included_ids: &[i64]) -> Option<DateTime<Utc>> {
-    if included_ids.is_empty() {
-        return None;
-    }
-    let included = included_ids.iter().copied().collect::<HashSet<_>>();
-
-    crate::memory::store::list_active(project)
-        .ok()?
-        .into_iter()
-        .filter(|entry| included.contains(&entry.id))
-        .map(|entry| entry.updated_at.unwrap_or(entry.timestamp))
-        .min()
-}
-
 fn apply_named_freshness(
     candidates: &mut [ContextCandidate],
     candidate_id: &str,
@@ -479,6 +462,7 @@ fn apply_named_freshness(
 fn build_pipeline_candidates(
     input: &ContextPackInput<'_>,
     has_contract: bool,
+    memory_locator: &str,
 ) -> Vec<ContextCandidate> {
     vec![
         pipeline_candidate(
@@ -541,7 +525,7 @@ fn build_pipeline_candidates(
             "legacy_memory",
             ContextSourceKind::LegacyMemory,
             ContextTrust::Legacy,
-            "project:legacy-memory",
+            memory_locator,
             input.memory,
             false,
         ),
@@ -861,7 +845,7 @@ mod tests {
             agent_notes: "notes",
         };
 
-        let candidates = build_pipeline_candidates(&input, true);
+        let candidates = build_pipeline_candidates(&input, true, "memory-brain:active-slice");
         let required = candidates
             .iter()
             .filter(|candidate| candidate.required)
@@ -912,7 +896,7 @@ mod tests {
             git_state: "git",
             agent_notes: "notes",
         };
-        let mut candidates = build_pipeline_candidates(&input, true);
+        let mut candidates = build_pipeline_candidates(&input, true, "memory-brain:active-slice");
         let observed_at = Utc::now() - Duration::days(7);
 
         apply_named_freshness(&mut candidates, "repository_map", Some(observed_at));

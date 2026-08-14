@@ -1,16 +1,17 @@
 use repodesk_core::engineering::{
-    AiUsageReport, ChangeGovernanceSnapshot, ContextInspectorReport, EngineeringIntelligence,
-    EngineeringKnowledgeLifecycleReport, EngineeringKnowledgeProposalInput,
-    EngineeringKnowledgeSnapshot, RunEvidenceSnapshot, RunObservabilityReport,
-    StrategyFeedbackReport, WorkItemContractSnapshot, WorkItemContractUpdate,
-    accept_active_engineering_knowledge, archive_active_engineering_knowledge,
-    capture_active_verified_command, derive_change_governance,
-    derive_engineering_knowledge_lifecycle, derive_run_observability,
-    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
-    load_active_engineering_knowledge, load_active_run_evidence_from_events,
-    load_context_inspector, propose_active_engineering_knowledge, read_work_item_contract,
-    reconfirm_active_engineering_knowledge, record_active_scope_override,
-    save_active_work_item_contract,
+    AiUsageReport, ChangeGovernanceSnapshot, ChangeSetPassport, ChangeVerificationState,
+    ContextInspectorReport, EngineeringIntelligence, EngineeringKnowledgeLifecycleReport,
+    EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot, RunEvidenceSnapshot,
+    RunObservabilityReport, StrategyFeedbackReport, WorkItemContractSnapshot,
+    WorkItemContractUpdate, accept_active_engineering_knowledge, active_verification_is_fresh,
+    archive_active_engineering_knowledge, capture_active_verified_command,
+    derive_change_governance, derive_changeset_passport, derive_engineering_knowledge_lifecycle,
+    derive_run_observability, derive_work_item_contract_snapshot, link_active_acceptance_evidence,
+    load_active_acceptance_evidence, load_active_engineering_knowledge,
+    load_active_run_evidence_from_events, load_context_inspector,
+    propose_active_engineering_knowledge, read_work_item_contract,
+    reconcile_verification_freshness, reconfirm_active_engineering_knowledge,
+    record_active_scope_override, save_active_work_item_contract,
 };
 use repodesk_core::tasks::show_active_task;
 use serde::{Deserialize, Serialize};
@@ -49,6 +50,7 @@ pub struct WorkEngineeringSnapshot {
     pub context_inspector: Option<ContextInspectorReport>,
     pub work_item_contract: Option<WorkItemContractSnapshot>,
     pub change_governance: Option<ChangeGovernanceSnapshot>,
+    pub changeset_passport: Option<ChangeSetPassport>,
     pub run_evidence: Option<RunEvidenceSnapshot>,
     pub run_observability: Option<RunObservabilityReport>,
     pub knowledge: Option<EngineeringKnowledgeSnapshot>,
@@ -124,6 +126,7 @@ pub fn work_engineering_intelligence(
                 context_inspector: None,
                 work_item_contract: None,
                 change_governance: None,
+                changeset_passport: None,
                 run_evidence: None,
                 run_observability: None,
                 knowledge,
@@ -144,7 +147,35 @@ pub fn work_engineering_intelligence(
     let stored_contract =
         read_work_item_contract(&task.config.run_dir).map_err(ErrorPayload::from)?;
     let work_item_contract = derive_work_item_contract_snapshot(&task, stored_contract, events);
-    let change_governance = derive_change_governance(&task.config.id, events, &work_item_contract);
+
+    // The ledger tells us that verification happened; the canonical run receipt
+    // and current Git tree tell us whether that proof is still valid *now*.
+    // Changes must use the same freshness contract as Work/Finish so a historical
+    // green event can never keep the commit gate green after the tree moves.
+    let receipt = repodesk_core::workflow::load_receipt().map_err(ErrorPayload::from)?;
+    let mut change_governance =
+        derive_change_governance(&task.config.id, events, &work_item_contract);
+    if change_governance.verification.state == ChangeVerificationState::Passed {
+        let fresh = match receipt.as_ref() {
+            Some(receipt) => active_verification_is_fresh(receipt).map_err(ErrorPayload::from)?,
+            None => false,
+        };
+        let reason = (!fresh).then(|| {
+            if receipt.is_none() {
+                "The historical verification event has no matching canonical VerificationReceipt."
+                    .to_string()
+            } else {
+                "The VerificationReceipt no longer matches the current reviewed HEAD/index/ChangeSet tree. Re-run verification."
+                    .to_string()
+            }
+        });
+        reconcile_verification_freshness(&mut change_governance, fresh, reason);
+    }
+
+    let acceptance = load_active_acceptance_evidence().map_err(ErrorPayload::from)?;
+    let changeset_passport =
+        derive_changeset_passport(&change_governance, &acceptance, receipt.as_ref());
+
     let run_evidence = match run_evidence_id {
         Some(run_id) => Some(
             load_active_run_evidence_from_events(&run_id, events).map_err(ErrorPayload::from)?,
@@ -162,6 +193,7 @@ pub fn work_engineering_intelligence(
         context_inspector: Some(context_inspector),
         work_item_contract: Some(work_item_contract),
         change_governance: Some(change_governance),
+        changeset_passport: Some(changeset_passport),
         run_evidence,
         run_observability,
         knowledge,

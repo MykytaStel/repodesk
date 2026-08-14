@@ -248,6 +248,8 @@ export type ChangeVerificationEvidence = {
   command_count: number;
   evidence: EvidenceRef[];
   error: string | null;
+  fresh: boolean | null;
+  stale_reason: string | null;
 };
 
 export type ScopeOverrideEvidence = {
@@ -264,6 +266,7 @@ export type CommitGateState =
   | "verification_required"
   | "verification_running"
   | "verification_failed"
+  | "verification_stale"
   | "ready"
   | "committed";
 
@@ -283,6 +286,33 @@ export type ChangeGovernanceSnapshot = {
   review_state: ChangeReviewState;
   verification: ChangeVerificationEvidence;
   scope_override: ScopeOverrideEvidence | null;
+  committed: boolean;
+  commit_sha: string | null;
+  gate: CommitGate;
+};
+
+export type ChangeAttributionStrength = "recorded_run" | "manual" | "unattributed";
+
+export type AcceptanceCoverageSummary = {
+  configured: boolean;
+  total: number;
+  proven: number;
+  failed: number;
+  unproven: number;
+};
+
+export type ChangeSetPassport = {
+  work_item_id: string;
+  changeset_id: string | null;
+  run_id: string | null;
+  baseline_commit: string | null;
+  attribution: ChangeAttributionStrength;
+  changed_file_count: number;
+  scope_status: ScopeComplianceStatus;
+  review_state: ChangeReviewState;
+  verification_state: ChangeVerificationState;
+  verification_fresh: boolean;
+  acceptance: AcceptanceCoverageSummary;
   committed: boolean;
   commit_sha: string | null;
   gate: CommitGate;
@@ -382,6 +412,7 @@ export type WorkEngineeringSnapshot = {
   context_inspector: ContextInspectorReport;
   work_item_contract: WorkItemContractSnapshot;
   change_governance: ChangeGovernanceSnapshot;
+  changeset_passport: ChangeSetPassport;
   run_evidence: RunEvidenceSnapshot | null;
 };
 

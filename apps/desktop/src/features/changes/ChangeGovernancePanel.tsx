@@ -4,9 +4,11 @@ import {
   WORK_ENGINEERING_SNAPSHOT_KEY,
   recordScopeOverride,
   type ChangeGovernanceSnapshot,
+  type ChangeSetPassport,
   type CommitGateState,
   type WorkEngineeringSnapshot,
 } from "../../shared/api/engineering";
+import { workVerify } from "../../shared/api/orchestrate";
 import { errorToMessage } from "../../shared/utils/helpers";
 
 function gateLabel(state: CommitGateState): string {
@@ -18,6 +20,7 @@ function gateLabel(state: CommitGateState): string {
     case "verification_required": return "Needs verification";
     case "verification_running": return "Verifying";
     case "verification_failed": return "Verification failed";
+    case "verification_stale": return "Verification stale";
     case "ready": return "Ready to commit";
     case "committed": return "Committed";
   }
@@ -31,6 +34,7 @@ function gateTone(state: CommitGateState): string {
     case "scope_violation":
     case "rejected":
     case "verification_failed":
+    case "verification_stale":
       return "danger";
     case "needs_review":
     case "verification_required":
@@ -47,8 +51,11 @@ function reviewLabel(value: ChangeGovernanceSnapshot["review_state"]): string {
   return "Proposed";
 }
 
-function verificationLabel(value: ChangeGovernanceSnapshot["verification"]["state"]): string {
-  if (value === "passed") return "Passed";
+function verificationLabel(governance: ChangeGovernanceSnapshot): string {
+  const value = governance.verification.state;
+  if (value === "passed" && governance.verification.fresh === false) return "Passed · stale";
+  if (value === "passed" && governance.verification.fresh === true) return "Passed · current";
+  if (value === "passed") return "Passed · unchecked";
   if (value === "failed") return "Failed";
   if (value === "running") return "Running";
   return "Not run";
@@ -60,6 +67,17 @@ function workerLabel(governance: ChangeGovernanceSnapshot): string {
     .slice(0, 2)
     .map((worker) => worker.id)
     .join(" + ");
+}
+
+function attributionLabel(passport: ChangeSetPassport): string {
+  if (passport.attribution === "recorded_run") return "Recorded run";
+  if (passport.attribution === "manual") return "Manual handoff";
+  return "Unattributed";
+}
+
+function shortSha(value: string | null): string {
+  if (!value) return "—";
+  return value.slice(0, Math.min(value.length, 12));
 }
 
 function EvidenceCell({ label, value, detail }: { label: string; value: string; detail?: string }) {
@@ -74,16 +92,24 @@ function EvidenceCell({ label, value, detail }: { label: string; value: string; 
 
 export function ChangeGovernancePanel({
   governance,
+  passport,
   loading,
   error,
 }: {
   governance: ChangeGovernanceSnapshot | null;
+  passport: ChangeSetPassport | null;
   loading: boolean;
   error: unknown;
 }) {
   const queryClient = useQueryClient();
   const [showOverride, setShowOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+
+  const refreshTrustState = () => {
+    void queryClient.invalidateQueries({ queryKey: WORK_ENGINEERING_SNAPSHOT_KEY });
+    void queryClient.invalidateQueries({ queryKey: ["work"] });
+    void queryClient.invalidateQueries({ queryKey: ["git"] });
+  };
 
   const override = useMutation({
     mutationFn: (reason: string) => recordScopeOverride(reason),
@@ -93,25 +119,36 @@ export function ChangeGovernancePanel({
       );
       setOverrideReason("");
       setShowOverride(false);
-      void queryClient.invalidateQueries({ queryKey: ["work"] });
+      refreshTrustState();
     },
+  });
+
+  const verify = useMutation({
+    mutationFn: workVerify,
+    onSuccess: refreshTrustState,
   });
 
   if (error) {
     return <div className="notice danger">Change governance unavailable: {errorToMessage(error)}</div>;
   }
-  if (loading || !governance) {
+  if (loading || !governance || !passport) {
     return <div className="change-evidence-loading">Loading ChangeSet evidence…</div>;
   }
 
   const changeset = governance.changeset_id ? governance.changeset_id.replace(/-changeset$/, "") : "none";
   const overridden = governance.scope_override != null;
+  const canVerify = governance.gate.state === "verification_required"
+    || governance.gate.state === "verification_failed"
+    || governance.gate.state === "verification_stale";
+  const acceptanceValue = passport.acceptance.configured
+    ? `${passport.acceptance.proven}/${passport.acceptance.total} proven`
+    : "Not configured";
 
   return (
     <section className="change-evidence" aria-label="ChangeSet evidence">
       <div className="change-evidence-head">
         <div>
-          <p className="eyebrow">Change Evidence</p>
+          <p className="eyebrow">ChangeSet Passport</p>
           <strong>{governance.changeset_id ? `ChangeSet ${changeset}` : "No recorded ChangeSet"}</strong>
         </div>
         <span className={`pill ${gateTone(governance.gate.state)}`}>{gateLabel(governance.gate.state)}</span>
@@ -121,18 +158,32 @@ export function ChangeGovernancePanel({
         <EvidenceCell
           label="Origin"
           value={workerLabel(governance)}
-          detail={governance.origin.execution_mode ?? "no execution mode"}
+          detail={`${attributionLabel(passport)} · ${governance.origin.execution_mode ?? "no execution mode"}`}
+        />
+        <EvidenceCell
+          label="Baseline"
+          value={shortSha(passport.baseline_commit)}
+          detail={passport.run_id ? `Run ${passport.run_id}` : "No canonical run receipt"}
         />
         <EvidenceCell
           label="Scope"
           value={overridden ? "Overridden" : governance.scope_status.split("_").join(" ")}
-          detail={`${governance.files.length} recorded file${governance.files.length === 1 ? "" : "s"}`}
+          detail={`${passport.changed_file_count} recorded file${passport.changed_file_count === 1 ? "" : "s"}`}
         />
         <EvidenceCell label="Review" value={reviewLabel(governance.review_state)} />
         <EvidenceCell
           label="Verification"
-          value={verificationLabel(governance.verification.state)}
-          detail={governance.verification.command_count > 0 ? `${governance.verification.command_count} commands` : undefined}
+          value={verificationLabel(governance)}
+          detail={governance.verification.command_count > 0 ? `${governance.verification.command_count} canonical commands` : undefined}
+        />
+        <EvidenceCell
+          label="Acceptance"
+          value={acceptanceValue}
+          detail={passport.acceptance.failed > 0
+            ? `${passport.acceptance.failed} failed`
+            : passport.acceptance.unproven > 0
+              ? `${passport.acceptance.unproven} unproven`
+              : passport.acceptance.configured ? "All criteria evidenced" : undefined}
         />
       </div>
 
@@ -149,6 +200,28 @@ export function ChangeGovernancePanel({
           <span>{governance.gate.warnings[0]}</span>
         </div>
       ) : null}
+
+      {governance.verification.stale_reason ? (
+        <div className="change-evidence-message danger">
+          <strong>Stale receipt</strong>
+          <span>{governance.verification.stale_reason}</span>
+        </div>
+      ) : null}
+
+      {canVerify ? (
+        <div className="change-evidence-actions">
+          <button
+            type="button"
+            className="primary-button"
+            disabled={verify.isPending}
+            onClick={() => verify.mutate()}
+          >
+            {verify.isPending ? "Verifying reviewed ChangeSet…" : "Verify reviewed ChangeSet"}
+          </button>
+          <span className="muted">Creates a canonical receipt bound to the current HEAD, accepted index tree and ChangeSet.</span>
+        </div>
+      ) : null}
+      {verify.isError ? <div className="notice danger">{errorToMessage(verify.error)}</div> : null}
 
       {governance.scope_override ? (
         <div className="change-override-receipt">

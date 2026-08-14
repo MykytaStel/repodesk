@@ -8,6 +8,8 @@ pub mod ai_strategy;
 pub mod ai_usage_intelligence;
 pub mod algorithmic_profile;
 pub mod change_governance;
+pub mod change_verification;
+pub mod changeset_passport;
 pub mod commit_policy;
 pub mod context_compactness;
 pub mod context_inspector;
@@ -51,6 +53,11 @@ pub use change_governance::{
     ChangeReviewState, ChangeVerificationEvidence, ChangeVerificationState, CommitGate,
     CommitGateState, ScopeOverrideEvidence, derive_change_governance,
     load_active_change_governance, load_change_governance, record_active_scope_override,
+};
+pub use change_verification::reconcile_verification_freshness;
+pub use changeset_passport::{
+    AcceptanceCoverageSummary, ChangeAttributionStrength, ChangeSetPassport,
+    derive_changeset_passport,
 };
 pub use commit_policy::{
     CommitScopePolicyDecision, derive_commit_scope_policy, load_active_commit_scope_policy,

@@ -1,9 +1,8 @@
 //! Deterministic governance read model for the latest Work Item ChangeSet.
 //!
-//! RepoDesk derives this report entirely from the task-local engineering ledger
-//! plus the versioned Work Item Contract. It does not inspect or trust frontend
-//! state, and it never treats an agent's textual claim as proof of review or
-//! verification.
+//! This module derives historical state from the canonical engineering ledger
+//! plus the Work Item Contract. Live receipt/tree freshness is reconciled by the
+//! separate `change_verification` module.
 
 use std::collections::BTreeSet;
 
@@ -69,6 +68,13 @@ pub struct ChangeVerificationEvidence {
     pub command_count: usize,
     pub evidence: Vec<EvidenceRef>,
     pub error: Option<String>,
+    /// `None` means this is only the historical ledger projection. Normal live
+    /// Changes snapshots reconcile it against the canonical TaskRunReceipt and
+    /// current Git tree before exposing commit readiness.
+    #[serde(default)]
+    pub fresh: Option<bool>,
+    #[serde(default)]
+    pub stale_reason: Option<String>,
 }
 
 impl Default for ChangeVerificationEvidence {
@@ -79,6 +85,8 @@ impl Default for ChangeVerificationEvidence {
             command_count: 0,
             evidence: Vec::new(),
             error: None,
+            fresh: None,
+            stale_reason: None,
         }
     }
 }
@@ -100,6 +108,7 @@ pub enum CommitGateState {
     VerificationRequired,
     VerificationRunning,
     VerificationFailed,
+    VerificationStale,
     Ready,
     Committed,
 }
@@ -419,6 +428,8 @@ fn derive_verification(
                         .get("error")
                         .and_then(Value::as_str)
                         .map(str::to_string),
+                    fresh: None,
+                    stale_reason: None,
                 };
             }
             EngineeringEventKind::VerificationStarted => {
@@ -720,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn accepted_and_verified_changeset_is_ready() {
+    fn accepted_and_verified_event_projection_is_historically_ready() {
         let mut events = changeset_events();
         let changeset = ChangeSetId::try_new("run-1-changeset").unwrap();
         let verification = crate::engineering::domain::VerificationId::try_new("verify-1").unwrap();
@@ -744,8 +755,8 @@ mod tests {
         );
         assert_eq!(report.review_state, ChangeReviewState::Accepted);
         assert_eq!(report.verification.state, ChangeVerificationState::Passed);
+        assert_eq!(report.verification.fresh, None);
         assert_eq!(report.gate.state, CommitGateState::Ready);
-        assert!(report.gate.ready);
     }
 
     #[test]
