@@ -22,7 +22,7 @@ use crate::errors::RepoDeskResult;
 use crate::persistence::db::get_db_path;
 use crate::persistence::event_journal::{
     EngineeringEventInput, append_engineering_event, engineering_event_revision,
-    read_engineering_events,
+    read_engineering_events_for_scope,
 };
 
 pub const ENGINEERING_EVENT_LEDGER_FILE: &str = "engineering-events.jsonl";
@@ -239,16 +239,8 @@ pub fn append_event(_run_dir: &Path, event: &EngineeringEvent) -> RepoDeskResult
 pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {
     let (project, task_id) = event_scope(run_dir);
 
-    let mut canonical = read_engineering_events(usize::MAX)?
+    let mut canonical = read_engineering_events_for_scope(project.as_deref(), task_id.as_deref())?
         .into_iter()
-        .filter(|entry| {
-            task_id
-                .as_deref()
-                .is_none_or(|task_id| entry.work_item_id == task_id)
-                && project
-                    .as_deref()
-                    .is_none_or(|project| entry.project == project)
-        })
         .filter_map(|entry| entry.payload.get(TYPED_EVENT_PAYLOAD_KEY).cloned())
         .map(|encoded| serde_json::from_str::<EngineeringEvent>(&encoded))
         .collect::<Result<Vec<_>, _>>()?;
