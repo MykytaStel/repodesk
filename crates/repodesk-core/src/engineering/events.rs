@@ -5,7 +5,7 @@
 //! created before this migration; it is never mutated by the current write path.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -286,7 +286,7 @@ mod tests {
         }
         crate::init::init_home().expect("init home");
         let run_dir = home.path().join("runs/repodesk/task-1");
-        fs::create_dir_all(&run_dir).expect("run dir");
+        std::fs::create_dir_all(&run_dir).expect("run dir");
         (home, run_dir)
     }
 
@@ -344,7 +344,7 @@ mod tests {
             EngineeringEventKind::WorkItemCreated,
         );
         let legacy_path = event_ledger_path(&run_dir);
-        fs::write(
+        std::fs::write(
             &legacy_path,
             format!("{}\n", serde_json::to_string(&legacy).unwrap()),
         )
@@ -360,7 +360,7 @@ mod tests {
         assert!(events.iter().any(|event| event.id == legacy.id));
         assert!(events.iter().any(|event| event.id == current.id));
 
-        let raw = fs::read_to_string(legacy_path).unwrap();
+        let raw = std::fs::read_to_string(legacy_path).unwrap();
         assert_eq!(raw.lines().count(), 1, "legacy JSONL must remain read-only");
     }
 }
