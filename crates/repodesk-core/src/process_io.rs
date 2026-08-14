@@ -1,14 +1,22 @@
 //! Shared bounded process-I/O primitives.
 //!
 //! Readers always drain to EOF so a child cannot deadlock on a full pipe, while
-//! retained memory stays within the caller-provided byte budget.
+//! retained memory and optionally persisted output stay within caller-provided
+//! byte budgets.
 
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 
 #[derive(Debug)]
 pub(crate) struct BoundedBytes {
     pub(crate) bytes: Vec<u8>,
     pub(crate) truncated: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct BoundedTee {
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) retained_truncated: bool,
+    pub(crate) persisted_truncated: bool,
 }
 
 pub(crate) fn drain_bounded_bytes(mut reader: impl Read, max: usize) -> io::Result<BoundedBytes> {
@@ -33,6 +41,57 @@ pub(crate) fn drain_bounded_bytes(mut reader: impl Read, max: usize) -> io::Resu
     Ok(BoundedBytes {
         bytes: retained,
         truncated,
+    })
+}
+
+/// Drain `reader` completely while retaining at most `retain_max` bytes in
+/// memory and writing at most `persist_max` bytes to `writer`.
+///
+/// The two budgets are independent: a run record can stay compact while a larger
+/// diagnostic prefix is persisted. Excess bytes are deliberately discarded only
+/// after being read, which keeps the child pipe flowing without allowing either
+/// RAM or per-stream disk usage to grow with untrusted output volume.
+pub(crate) fn drain_bounded_to_writer(
+    mut reader: impl Read,
+    mut writer: impl Write,
+    retain_max: usize,
+    persist_max: usize,
+) -> io::Result<BoundedTee> {
+    let mut retained = Vec::with_capacity(retain_max.min(64 * 1024));
+    let mut persisted = 0usize;
+    let mut retained_truncated = false;
+    let mut persisted_truncated = false;
+    let mut buffer = [0u8; 8 * 1024];
+
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+
+        let retain_remaining = retain_max.saturating_sub(retained.len());
+        let retain = retain_remaining.min(read);
+        retained.extend_from_slice(&buffer[..retain]);
+        if retain < read {
+            retained_truncated = true;
+        }
+
+        let persist_remaining = persist_max.saturating_sub(persisted);
+        let persist = persist_remaining.min(read);
+        if persist > 0 {
+            writer.write_all(&buffer[..persist])?;
+            persisted = persisted.saturating_add(persist);
+        }
+        if persist < read {
+            persisted_truncated = true;
+        }
+    }
+
+    writer.flush()?;
+    Ok(BoundedTee {
+        bytes: retained,
+        retained_truncated,
+        persisted_truncated,
     })
 }
 
