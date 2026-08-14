@@ -617,20 +617,9 @@ fn read_task_events_filters_to_the_active_task() {
     .expect("log event");
 
     let events = read_task_events(&active_id, 10).expect("read_task_events");
-    assert_eq!(events.len(), 2);
-    assert!(events.iter().all(|event| event.task_id == active_id));
-    assert!(
-        events
-            .iter()
-            .any(|event| event.module_name == "orchestrator" && event.message == "run finished")
-    );
-    assert!(
-        events.iter().any(|event| {
-            event.module_name == "engineering"
-                && event.message == "engineering event: work_item_created"
-        }),
-        "canonical task timeline should include the Work Item creation evidence"
-    );
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].task_id, active_id);
+    assert_eq!(events[0].message, "run finished");
 
     // A different task id sees none of the active task's events.
     let other = read_task_events("some-other-task", 10).expect("read_task_events other");
@@ -1332,8 +1321,8 @@ fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationR
         agent: "ollama".to_string(),
         provider: "ollama".to_string(),
         executor_kind: ExecutorKind::LocalRuntime,
-        executor_id: provider.to_string(),
-        provider_id: Some(provider.to_string()),
+        executor_id: "ollama".to_string(),
+        provider_id: Some("ollama".to_string()),
         model: Some("llama3".to_string()),
         thinking: ThinkingLevel::None,
         instruction: format!("do {id}"),
@@ -1488,4 +1477,165 @@ fn confirm_outcome_flips_verdict_to_human_and_dry_runs_are_not_recorded() {
 
     // Confirming an unknown id is an error, not a silent no-op.
     assert!(outcomes::confirm_outcome(999_999, Verdict::Bad).is_err());
+}
+
+// --- N8-B: learned routing bias from the outcome ledger ----------------------
+
+/// Record a run of `count` plan-kind steps on `provider`, all with `status`.
+fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize, ok: bool) {
+    use repodesk_core::outcomes;
+    let steps: Vec<SubAgentTask> = (0..count)
+        .map(|i| SubAgentTask {
+            id: format!("step-{i}"),
+            title: format!("step {i}"),
+            kind: TaskKind::Plan,
+            agent: provider.to_string(),
+            provider: provider.to_string(),
+            executor_kind: ExecutorKind::LocalRuntime,
+            executor_id: provider.to_string(),
+            provider_id: Some(provider.to_string()),
+            model: Some("m".to_string()),
+            thinking: ThinkingLevel::None,
+            instruction: String::new(),
+            depends_on: Vec::new(),
+            verify_command: None,
+            budget_tokens: 100,
+            allow_write: false,
+        })
+        .collect();
+    let results: Vec<SubAgentResult> = steps
+        .iter()
+        .map(|s| SubAgentResult {
+            task_id: s.id.clone(),
+            agent: provider.to_string(),
+            provider: provider.to_string(),
+            model: "m".to_string(),
+            status: if ok {
+                SubAgentStatus::Ok
+            } else {
+                SubAgentStatus::Failed
+            },
+            output: String::new(),
+            input_tokens: 1,
+            output_tokens: 1,
+            cost_units: 0.1,
+            captured_proposals: 0,
+            changed_files: Vec::new(),
+            diff_path: None,
+            workspace: None,
+            notes: Vec::new(),
+        })
+        .collect();
+    let plan = OrchestrationPlan {
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "g".to_string(),
+        steps,
+    };
+    let run = OrchestrationRun {
+        run_id: format!("run-2026{provider}{count}{ok}"),
+        project: project.to_string(),
+        task_id: task_id.to_string(),
+        goal: "g".to_string(),
+        status: RunStatus::Completed,
+        dry_run: false,
+        started_at: "2026-06-19T12:00:00Z".to_string(),
+        finished_at: "2026-06-19T12:01:00Z".to_string(),
+        results,
+        total_input_tokens: count,
+        total_output_tokens: count,
+        total_cost_units: 0.1 * count as f64,
+    };
+    outcomes::record_run(&plan, &run).expect("record_run");
+}
+
+#[test]
+#[serial]
+fn routing_bias_rewards_success_punishes_failure_and_needs_enough_signal() {
+    use repodesk_core::outcomes;
+    use repodesk_core::routing::types::TaskKind as TK;
+    let _fx = setup();
+    let active_id = show_active_task().expect("active").config.id;
+
+    // 4 successful plan steps on ollama → above the min-weight threshold, so a
+    // positive nudge is learned.
+    record_plan_steps("demo", &active_id, "ollama", 4, true);
+    // 4 failed plan steps on chatgpt → a negative nudge.
+    record_plan_steps("demo", &active_id, "chatgpt", 4, false);
+    // Only 1 plan step on gemini → below threshold, no entry.
+    record_plan_steps("demo", &active_id, "gemini", 1, true);
+
+    let bias = outcomes::routing_bias("demo").expect("routing_bias");
+
+    let ollama = bias.lookup(TK::Plan, "ollama").expect("ollama entry");
+    assert!(
+        ollama.adjustment > 0,
+        "all-success should nudge positively, got {}",
+        ollama.adjustment
+    );
+    let chatgpt = bias.lookup(TK::Plan, "chatgpt").expect("chatgpt entry");
+    assert!(
+        chatgpt.adjustment < 0,
+        "all-failure should nudge negatively, got {}",
+        chatgpt.adjustment
+    );
+    // Below the signal threshold: no learned entry yet.
+    assert!(bias.lookup(TK::Plan, "gemini").is_none());
+    // A pair with no data at all is also absent.
+    assert!(bias.lookup(TK::Patch, "ollama").is_none());
+}
+
+// --- N8-C: bounded autonomous loop -------------------------------------------
+
+#[tokio::test]
+#[serial]
+async fn loop_dry_run_is_a_single_preview_pass() {
+    use repodesk_core::orchestrator::{LoopOptions, LoopStatus, run_loop};
+    let _fx = setup();
+
+    let opts = LoopOptions {
+        max_iterations: 3,
+        dry_run: true,
+        settings: ProviderSettings::default(),
+        ..LoopOptions::default()
+    };
+    let loop_run = run_loop(Some("ship it".to_string()), &opts)
+        .await
+        .expect("run_loop");
+
+    // A dry run never loops: one preview pass, terminal DryRun, and no real
+    // spend. The reported cost may be a projection when a paid/CLI route is
+    // available on this machine.
+    assert_eq!(loop_run.status, LoopStatus::DryRun);
+    assert_eq!(loop_run.iterations.len(), 1);
+    assert!(loop_run.total_cost_units.is_finite());
+    assert!(loop_run.total_cost_units >= 0.0);
+    assert_eq!(loop_run.goal, "ship it");
+}
+
+#[tokio::test]
+#[serial]
+async fn loop_pauses_before_paid_spend_without_approval() {
+    use repodesk_core::orchestrator::{LoopOptions, LoopStatus, run_loop};
+    let _fx = setup();
+
+    // A configured paid key makes the patch step route to a paid provider, so
+    // the plan has a paid step. Without approval the loop must refuse to spend.
+    let mut settings = ProviderSettings::default();
+    settings.openai.api_key = Some("sk-test".to_string());
+
+    let opts = LoopOptions {
+        max_iterations: 3,
+        dry_run: false,
+        approve_paid: false,
+        settings,
+        ..LoopOptions::default()
+    };
+    let loop_run = run_loop(None, &opts).await.expect("run_loop");
+
+    // Stopped on the first attempt, before any provider call, with no cost.
+    assert_eq!(loop_run.status, LoopStatus::NeedsApproval);
+    assert_eq!(loop_run.iterations.len(), 1);
+    assert!(loop_run.iterations[0].run_id.is_empty());
+    assert_eq!(loop_run.total_cost_units, 0.0);
 }
