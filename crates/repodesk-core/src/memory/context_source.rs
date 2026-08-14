@@ -1,14 +1,17 @@
-//! Selection contract for legacy Memory Brain material entering an agent context.
+//! Selection contract for legacy Memory Brain material entering agent context.
 //!
-//! The important distinction is between "there are no structured records" and
-//! "structured retrieval failed/could not fit required pinned records". Only the
-//! former may use the historical `memory.md` compatibility file.
+//! This module owns retrieval/fallback/provenance so the context builder does not
+//! need a second interpretation of Memory Brain state.
 
+use std::fs;
+use std::path::Path;
+
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
-use super::retrieval::SliceRender;
+use super::retrieval::{SliceRender, memory_slice};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -26,9 +29,43 @@ impl MemoryContextSource {
     }
 }
 
-/// Validate the retrieval result and decide whether compatibility fallback is
-/// permitted. Retrieval errors are propagated by the caller before this point;
-/// omitted pinned entries are a hard construction failure, not truncation.
+#[derive(Debug, Clone)]
+pub struct ResolvedMemoryContext {
+    pub markdown: String,
+    pub source: MemoryContextSource,
+    pub observed_at: Option<DateTime<Utc>>,
+}
+
+/// Retrieve the bounded structured slice and resolve the only permitted legacy
+/// fallback. Retrieval failure and pinned overflow propagate as hard errors.
+pub fn resolve_context_memory(
+    project: &str,
+    token_budget: usize,
+    legacy_path: &Path,
+) -> RepoDeskResult<ResolvedMemoryContext> {
+    let slice = memory_slice(project, token_budget)?;
+    let source = context_source_for_slice(&slice)?;
+    let (markdown, observed_at) = match source {
+        MemoryContextSource::StructuredSlice => (
+            slice.markdown.clone(),
+            structured_observed_at(project, &slice.included_ids),
+        ),
+        MemoryContextSource::LegacyFile => (
+            fs::read_to_string(legacy_path).unwrap_or_else(|_| "Not available.".to_string()),
+            file_observed_at(legacy_path),
+        ),
+    };
+
+    Ok(ResolvedMemoryContext {
+        markdown,
+        source,
+        observed_at,
+    })
+}
+
+/// Decide whether compatibility fallback is permitted. Retrieval errors are
+/// already propagated by the caller; omitted pinned entries are a construction
+/// failure, never ordinary truncation.
 pub fn context_source_for_slice(slice: &SliceRender) -> RepoDeskResult<MemoryContextSource> {
     if !slice.pinned_overflow_ids.is_empty() {
         return Err(RepoDeskError::Api(format!(
@@ -46,11 +83,32 @@ pub fn context_source_for_slice(slice: &SliceRender) -> RepoDeskResult<MemoryCon
     if slice.total_active == 0 {
         Ok(MemoryContextSource::LegacyFile)
     } else {
-        // Even if ordinary records were excluded by the hard token budget, a
-        // structured store exists. Falling back to memory.md here would bypass
-        // the ranked/bounded selection policy and reintroduce unreviewed bytes.
+        // Active structured records exist even if ordinary entries were excluded
+        // by the hard budget. memory.md cannot bypass ranked selection.
         Ok(MemoryContextSource::StructuredSlice)
     }
+}
+
+fn structured_observed_at(project: &str, included_ids: &[i64]) -> Option<DateTime<Utc>> {
+    if included_ids.is_empty() {
+        return None;
+    }
+    let included = included_ids
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    super::store::list_active(project)
+        .ok()?
+        .into_iter()
+        .filter(|entry| included.contains(&entry.id))
+        .map(|entry| entry.updated_at.unwrap_or(entry.timestamp))
+        .min()
+}
+
+fn file_observed_at(path: &Path) -> Option<DateTime<Utc>> {
+    Some(DateTime::<Utc>::from(
+        fs::metadata(path).ok()?.modified().ok()?,
+    ))
 }
 
 #[cfg(test)]
