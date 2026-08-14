@@ -127,6 +127,7 @@ test("activation graph audit rejects an eager child while allowing only explicit
       css: ["assets/optional-feature.css"],
     },
   };
+
   assert.deepEqual(activatedFeatureEagerFiles(activationManifest, "src/OptionalFeature.tsx", {
     shellRootKey: "index.html",
     allowedShellRootKeys: ["index.html"],
@@ -134,7 +135,27 @@ test("activation graph audit rejects an eager child while allowing only explicit
   }), ["assets/optional-child.js", "assets/optional-child.css"]);
 });
 
-test("primary route styles are emitted outside the eager shell graph", async () => {
+const canonicalPrimaryRoutes = [
+  "src/features/work/WorkSurface.tsx",
+  "src/features/code/CodeTab.tsx",
+  "src/features/changes/ChangesTab.tsx",
+  "src/features/history/HistoryTab.tsx",
+  "src/features/projects/ProjectsTab.tsx",
+];
+
+const canonicalUtilityRoutes = [
+  "src/features/settings/SettingsTab.tsx",
+  "src/features/debug/DebugTab.tsx",
+];
+
+const nestedOwnerRoutes = [
+  "src/features/knowledge/KnowledgeTab.tsx",
+  "src/features/playbooks/PlaybooksTab.tsx",
+  "src/features/outcomes/OutcomesTab.tsx",
+  "src/features/audit/AuditTab.tsx",
+];
+
+test("canonical primary route styles are emitted outside the eager shell graph", async () => {
   const desktopRoot = fileURLToPath(new URL("../", import.meta.url));
   const outDir = mkdtempSync(join(tmpdir(), "repodesk-primary-route-css-"));
 
@@ -151,12 +172,7 @@ test("primary route styles are emitted outside the eager shell graph", async () 
       collectStaticGraph(emittedManifest, "index.html"),
     ).filter((file) => file.endsWith(".css"));
 
-    for (const source of [
-      "src/features/work/WorkSurface.tsx",
-      "src/features/changes/ChangesTab.tsx",
-      "src/features/history/HistoryTab.tsx",
-      "src/features/projects/ProjectsTab.tsx",
-    ]) {
+    for (const source of canonicalPrimaryRoutes.filter((source) => !source.includes("/code/"))) {
       const routeKey = findChunkBySource(emittedManifest, source);
       const routeCss = emittedManifest[routeKey].css ?? [];
 
@@ -172,9 +188,9 @@ test("primary route styles are emitted outside the eager shell graph", async () 
   }
 });
 
-test("secondary and mixed route styles are emitted only with their owning lazy routes", async () => {
+test("canonical and nested owner styles stay with their lazy activation roots", async () => {
   const desktopRoot = fileURLToPath(new URL("../", import.meta.url));
-  const outDir = mkdtempSync(join(tmpdir(), "repodesk-secondary-route-css-"));
+  const outDir = mkdtempSync(join(tmpdir(), "repodesk-owner-route-css-"));
 
   try {
     await build({
@@ -189,20 +205,15 @@ test("secondary and mixed route styles are emitted only with their owning lazy r
         .filter((file) => file.endsWith(".css"))
         .map((file) => readFileSync(join(outDir, file), "utf8"))
         .join("\n");
-
     const shellCss = cssTextForGraph("index.html");
     const routeContracts = [
       ["src/features/work/WorkSurface.tsx", [".work-focus-layout", ".task-switcher"]],
       ["src/features/changes/ChangesTab.tsx", [".changes-focus-layout", ".findings-list"]],
       ["src/features/history/HistoryTab.tsx", [".run-evidence-detail"]],
-      ["src/features/dashboard/DashboardTab.tsx", [".dashboard-grid", ".route-panel"]],
+      ["src/features/projects/ProjectsTab.tsx", [".project-registry-grid"]],
       ["src/features/knowledge/KnowledgeTab.tsx", [".knowledge-workspace", ".knowledge-page-header"]],
-      ["src/features/orchestrate/OrchestrateTab.tsx", [".orchestrate-control-panel", ".task-row-main"]],
+      ["src/features/playbooks/PlaybooksTab.tsx", [".playbook-list"]],
       ["src/features/debug/DebugTab.tsx", [".debug-event", ".debug-runtime-row"]],
-      ["src/features/code/CodeTab.tsx", [".health-trend"]],
-      ["src/features/models/ModelsTab.tsx", [".provider-panel"]],
-      ["src/features/git/GitTab.tsx", [".file-group-stack"]],
-      ["src/features/system/SystemTab.tsx", [".route-list"]],
       ["src/features/audit/AuditTab.tsx", [".route-summary-grid"]],
     ];
 
@@ -217,23 +228,23 @@ test("secondary and mixed route styles are emitted only with their owning lazy r
     }
 
     const forbiddenShellSelectors = [
-      ...shellCss.matchAll(/\.(?:work|changes|runs|orchestrate|knowledge|route|debug)-[\w-]+/g),
+      ...shellCss.matchAll(/\.(?:work|changes|runs|knowledge|route|debug|project|playbook)-[\w-]+/g),
     ]
       .map(([selector]) => selector)
       .filter((selector) => selector !== ".debug-list");
     assert.deepEqual(
       [...new Set(forbiddenShellSelectors)].sort(),
       [],
-      "route-exclusive selector prefixes must not be emitted in the eager shell CSS",
+      "owner-exclusive selector prefixes must not be emitted in eager shell CSS",
     );
   } finally {
     rmSync(outDir, { recursive: true, force: true });
   }
 });
 
-test("shared secondary-route primitives follow every consumer without leaking to unrelated routes", async () => {
+test("shared route primitives follow canonical consumers without leaking to unrelated owners", async () => {
   const desktopRoot = fileURLToPath(new URL("../", import.meta.url));
-  const outDir = mkdtempSync(join(tmpdir(), "repodesk-shared-secondary-css-"));
+  const outDir = mkdtempSync(join(tmpdir(), "repodesk-shared-route-css-"));
 
   try {
     await build({
@@ -259,29 +270,14 @@ test("shared secondary-route primitives follow every consumer without leaking to
 
     const shellCss = routeCssFiles("index.html");
     const routeSources = [
-      "src/features/work/WorkSurface.tsx",
-      "src/features/code/CodeTab.tsx",
-      "src/features/changes/ChangesTab.tsx",
-      "src/features/history/HistoryTab.tsx",
-      "src/features/projects/ProjectsTab.tsx",
-      "src/features/dashboard/DashboardTab.tsx",
-      "src/features/tokens/TokensTab.tsx",
-      "src/features/models/ModelsTab.tsx",
-      "src/features/git/GitTab.tsx",
-      "src/features/knowledge/KnowledgeTab.tsx",
-      "src/features/orchestrate/OrchestrateTab.tsx",
-      "src/features/outcomes/OutcomesTab.tsx",
-      "src/features/playbooks/PlaybooksTab.tsx",
-      "src/features/models-cost/ModelsCostTab.tsx",
-      "src/features/audit/AuditTab.tsx",
-      "src/features/settings/SettingsTab.tsx",
-      "src/features/system/SystemTab.tsx",
-      "src/features/debug/DebugTab.tsx",
+      ...canonicalPrimaryRoutes,
+      ...canonicalUtilityRoutes,
+      ...nestedOwnerRoutes,
     ];
     const routeCssBySource = new Map(routeSources.map((source) => [source, routeCssFiles(source)]));
     const subnavOwners = new Set([
       "src/features/history/HistoryTab.tsx",
-      "src/features/models-cost/ModelsCostTab.tsx",
+      "src/features/projects/ProjectsTab.tsx",
     ]);
     const manualImportOwners = new Set([
       "src/features/work/WorkSurface.tsx",
@@ -314,7 +310,7 @@ test("shared secondary-route primitives follow every consumer without leaking to
   }
 });
 
-test("routing feature CSS is one shared lazy asset owned by every actual consumer", async () => {
+test("routing feature CSS is one shared lazy asset owned only by actual consumers", async () => {
   const desktopRoot = fileURLToPath(new URL("../", import.meta.url));
   const outDir = mkdtempSync(join(tmpdir(), "repodesk-shared-routing-css-"));
 
@@ -344,15 +340,10 @@ test("routing feature CSS is one shared lazy asset owned by every actual consume
 
     for (const source of [
       "src/features/work/WorkSurface.tsx",
-      "src/features/changes/ChangesTab.tsx",
-      "src/features/dashboard/DashboardTab.tsx",
-      "src/features/debug/DebugTab.tsx",
-      "src/features/orchestrate/OrchestrateTab.tsx",
-      "src/features/audit/AuditTab.tsx",
       "src/features/code/CodeTab.tsx",
-      "src/features/git/GitTab.tsx",
-      "src/features/models/ModelsTab.tsx",
-      "src/features/system/SystemTab.tsx",
+      "src/features/changes/ChangesTab.tsx",
+      "src/features/debug/DebugTab.tsx",
+      "src/features/audit/AuditTab.tsx",
     ]) {
       assert.ok(routeCssFiles(source).includes(routingAsset), `${source} must load the shared routing asset`);
     }
@@ -362,10 +353,8 @@ test("routing feature CSS is one shared lazy asset owned by every actual consume
       "src/features/projects/ProjectsTab.tsx",
       "src/features/knowledge/KnowledgeTab.tsx",
       "src/features/playbooks/PlaybooksTab.tsx",
-      "src/features/models-cost/ModelsCostTab.tsx",
-      "src/features/settings/SettingsTab.tsx",
-      "src/features/tokens/TokensTab.tsx",
       "src/features/outcomes/OutcomesTab.tsx",
+      "src/features/settings/SettingsTab.tsx",
     ]) {
       assert.ok(!routeCssFiles(source).includes(routingAsset), `${source} must not load unrelated routing CSS`);
     }
