@@ -94,7 +94,6 @@ pub fn rank_for_task_at(
 
             let salience = entry.salience.clamp(0.0, 1.0);
             score += salience * SALIENCE_WEIGHT;
-
             score += entry.confidence.clamp(0.0, 1.0) * CONFIDENCE_WEIGHT;
 
             let days = (now - entry.timestamp).num_days().max(0) as f64;
@@ -196,6 +195,9 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
         }
     };
 
+    let budget_exhausted = !scored.is_empty()
+        && (!excluded_ids.is_empty() || estimated_tokens >= token_budget);
+
     SliceRender {
         markdown,
         estimated_tokens,
@@ -203,7 +205,7 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
         excluded_ids,
         pinned_overflow_ids,
         total_active,
-        budget_exhausted: !scored.is_empty() && (!excluded_ids.is_empty() || estimated_tokens >= token_budget),
+        budget_exhausted,
     }
 }
 
@@ -424,8 +426,20 @@ mod tests {
     fn ranking_is_replayable_with_explicit_clock() {
         let now = fixed_now();
         let entries = vec![
-            entry_at(1, "old auth rule", "constraint", &["auth"], now - Duration::days(90)),
-            entry_at(2, "new auth rule", "constraint", &["auth"], now - Duration::days(2)),
+            entry_at(
+                1,
+                "old auth rule",
+                "constraint",
+                &["auth"],
+                now - Duration::days(90),
+            ),
+            entry_at(
+                2,
+                "new auth rule",
+                "constraint",
+                &["auth"],
+                now - Duration::days(2),
+            ),
         ];
         let signals = TaskSignals::from_text("auth change");
 
@@ -433,8 +447,14 @@ mod tests {
         let second = rank_for_task_at(&signals, &entries, now);
 
         assert_eq!(
-            first.iter().map(|entry| entry.entry.id).collect::<Vec<_>>(),
-            second.iter().map(|entry| entry.entry.id).collect::<Vec<_>>()
+            first
+                .iter()
+                .map(|entry| entry.entry.id)
+                .collect::<Vec<_>>(),
+            second
+                .iter()
+                .map(|entry| entry.entry.id)
+                .collect::<Vec<_>>()
         );
         assert_eq!(
             first.iter().map(|entry| entry.score).collect::<Vec<_>>(),
