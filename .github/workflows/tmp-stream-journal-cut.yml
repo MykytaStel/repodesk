@@ -1,0 +1,113 @@
+name: Temporary streaming journal cut
+
+on:
+  push:
+    branches:
+      - perf/stream-verified-event-journal
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: perf/stream-verified-event-journal
+          fetch-depth: 1
+      - name: Apply exact module cut
+        shell: python
+        run: |
+          from pathlib import Path
+
+          parent = Path("crates/repodesk-core/src/persistence/event_journal.rs")
+          text = parent.read_text()
+          old_imports = "use std::fs::{self, File, OpenOptions};\nuse std::io::{BufRead, BufReader, Write};"
+          new_imports = "use std::fs::{self, File};\nuse std::io::{BufRead, BufReader};"
+          if text.count(old_imports) != 1:
+              raise SystemExit("unexpected parent fs/io imports")
+          text = text.replace(old_imports, new_imports, 1)
+
+          old_modules = "mod revision;\npub use revision::{EngineeringEventRevision, engineering_event_revision};"
+          new_modules = "mod export;\nmod revision;\nmod scan;\n\npub use export::export_event_journal_jsonl;\npub use revision::{EngineeringEventRevision, engineering_event_revision};\npub use scan::{\n    journal_snapshot, read_engineering_events, read_events, read_task_events,\n    try_journal_snapshot,\n};\npub(crate) use scan::read_engineering_events_for_scope;"
+          if text.count(old_modules) != 1:
+              raise SystemExit("unexpected parent module seam")
+          text = text.replace(old_modules, new_modules, 1)
+
+          start_marker = "// ── Read / integrity verification ────────────────────────────────────────────"
+          end_marker = "// ── Formatting (CLI output) ───────────────────────────────────────────────────"
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit("unexpected read/export section markers")
+          start = text.index(start_marker)
+          end = text.index(end_marker)
+          text = text[:start] + end_marker + text[end + len(end_marker):]
+
+          test_marker = "mod tests {\n    use super::*;"
+          replacement = "mod tests {\n    use super::*;\n    use std::fs::OpenOptions;\n    use std::io::Write;"
+          if text.count(test_marker) != 1:
+              raise SystemExit("unexpected parent test module marker")
+          text = text.replace(test_marker, replacement, 1)
+          parent.write_text(text)
+
+          scan = Path("crates/repodesk-core/src/persistence/event_journal/scan.rs")
+          scan_text = scan.read_text()
+          for old, new in [
+              ("pub(super) fn read_engineering_events", "pub fn read_engineering_events"),
+              ("pub(super) fn read_events", "pub fn read_events"),
+              ("pub(super) fn read_task_events", "pub fn read_task_events"),
+              ("pub(super) fn try_journal_snapshot", "pub fn try_journal_snapshot"),
+              ("pub(super) fn journal_snapshot", "pub fn journal_snapshot"),
+          ]:
+              if scan_text.count(old) != 1:
+                  raise SystemExit(f"unexpected scan visibility marker: {old}")
+              scan_text = scan_text.replace(old, new, 1)
+          scan.write_text(scan_text)
+
+          export = Path("crates/repodesk-core/src/persistence/event_journal/export.rs")
+          export_text = export.read_text()
+          marker = "pub(super) fn export_event_journal_jsonl"
+          if export_text.count(marker) != 1:
+              raise SystemExit("unexpected export visibility marker")
+          export.write_text(export_text.replace(marker, "pub fn export_event_journal_jsonl", 1))
+
+          events = Path("crates/repodesk-core/src/engineering/events.rs")
+          events_text = events.read_text()
+          old_import = "    EngineeringEventInput, append_engineering_event, engineering_event_revision,\n    read_engineering_events,"
+          new_import = "    EngineeringEventInput, append_engineering_event, engineering_event_revision,\n    read_engineering_events_for_scope,"
+          if events_text.count(old_import) != 1:
+              raise SystemExit("unexpected typed-event import marker")
+          events_text = events_text.replace(old_import, new_import, 1)
+
+          old_read = '''    let mut canonical = read_engineering_events(usize::MAX)?
+        .into_iter()
+        .filter(|entry| {
+            task_id
+                .as_deref()
+                .is_none_or(|task_id| entry.work_item_id == task_id)
+                && project
+                    .as_deref()
+                    .is_none_or(|project| entry.project == project)
+        })
+        .filter_map(|entry| entry.payload.get(TYPED_EVENT_PAYLOAD_KEY).cloned())'''
+          new_read = '''    let mut canonical = read_engineering_events_for_scope(
+        project.as_deref(),
+        task_id.as_deref(),
+    )?
+    .into_iter()
+    .filter_map(|entry| entry.payload.get(TYPED_EVENT_PAYLOAD_KEY).cloned())'''
+          if events_text.count(old_read) != 1:
+              raise SystemExit("unexpected typed-event read marker")
+          events.write_text(events_text.replace(old_read, new_read, 1))
+
+          Path(".github/workflows/tmp-stream-journal-cut.yml").unlink()
+      - name: Format and commit
+        run: |
+          cargo fmt --all
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "perf: stream verified event journal projections"
+          git push origin HEAD:perf/stream-verified-event-journal
