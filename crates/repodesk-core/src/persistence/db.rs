@@ -143,8 +143,9 @@ fn restore_database_file(src: &Path, dest: &Path) -> RepoDeskResult<()> {
 
     let had_live_db = dest.exists();
     if had_live_db {
-        std::fs::rename(dest, &rollback)
-            .map_err(|error| db_error("Failed to move current database aside for restore", error))?;
+        std::fs::rename(dest, &rollback).map_err(|error| {
+            db_error("Failed to move current database aside for restore", error)
+        })?;
     }
 
     if let Err(promote_error) = std::fs::rename(&candidate, dest) {
@@ -168,15 +169,17 @@ fn restore_database_file(src: &Path, dest: &Path) -> RepoDeskResult<()> {
     if let Err(error) = promoted_result {
         let _ = std::fs::remove_file(dest);
         if had_live_db {
-            std::fs::rename(&rollback, dest)
-                .map_err(|rollback_error| db_error("Restore failed and rollback failed", rollback_error))?;
+            std::fs::rename(&rollback, dest).map_err(|rollback_error| {
+                db_error("Restore failed and rollback failed", rollback_error)
+            })?;
         }
         return Err(error);
     }
 
     if had_live_db {
-        std::fs::remove_file(&rollback)
-            .map_err(|error| db_error("Restore succeeded but rollback file cleanup failed", error))?;
+        std::fs::remove_file(&rollback).map_err(|error| {
+            db_error("Restore succeeded but rollback file cleanup failed", error)
+        })?;
     }
     Ok(())
 }
@@ -234,8 +237,7 @@ fn initialize_connection(conn: &Connection) -> RepoDeskResult<()> {
 
 pub fn init_db() -> RepoDeskResult<Connection> {
     let db_path = get_db_path()?;
-    let conn = Connection::open(&db_path)
-        .map_err(|error| db_error("Failed to open DB", error))?;
+    let conn = Connection::open(&db_path).map_err(|error| db_error("Failed to open DB", error))?;
     initialize_connection(&conn)?;
     Ok(conn)
 }
@@ -264,8 +266,12 @@ mod tests {
 
     fn event_message(path: &Path) -> String {
         let conn = Connection::open(path).unwrap();
-        conn.query_row("SELECT message FROM events ORDER BY id DESC LIMIT 1", [], |row| row.get(0))
-            .unwrap()
+        conn.query_row(
+            "SELECT message FROM events ORDER BY id DESC LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
     }
 
     #[test]
