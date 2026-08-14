@@ -5,19 +5,23 @@ import {
   CODE_WORKSPACE_KEY,
   codeWorkspaceSnapshot,
   consumeCodeWorkspaceOpenRequest,
-  deleteCodeWorkspaceDraft,
   loadCodeWorkspaceDraft,
   requestCodeWorkspaceOpen,
   readCodeLibraryDocument,
   readCodeWorkspaceDocument,
   saveCodeWorkspaceDocument,
-  saveCodeWorkspaceDraft,
   type CodeWorkspaceDocument,
   type CodeWorkspaceFile,
   type CodeWorkspaceFileStatus,
   type CodeWorkspaceMutationResult,
   type CodeWorkspaceOpenRequest,
 } from "../../shared/api/codeWorkspace";
+import {
+  discardCodeWorkspaceDraft,
+  flushCodeWorkspaceDraft,
+  stageCodeWorkspaceDrafts,
+  subscribeCodeDraftPersistence,
+} from "../../shared/api/codeDraftPersistence";
 import { requestChangesOpen } from "../../shared/api/changesNavigation";
 import { callCommand } from "../../shared/api/queries";
 import { groupByFile, runRepopilotReview } from "../../shared/api/repopilot";
@@ -79,6 +83,20 @@ const STATUS_LABEL: Record<CodeWorkspaceFileStatus, string> = {
 
 function workspaceTabId(project: string, path: string): string {
   return `workspace:${project}:${path}`;
+}
+
+function workspaceTabProject(tab: EditorTab): string | null {
+  if (tab.kind !== "workspace") return null;
+  const prefix = "workspace:";
+  const suffix = `:${tab.path}`;
+  if (!tab.id.startsWith(prefix) || !tab.id.endsWith(suffix)) return null;
+  return tab.id.slice(prefix.length, tab.id.length - suffix.length) || null;
+}
+
+function dirtyDraftSnapshots(project: string, tabs: EditorTab[]) {
+  return tabs
+    .filter((tab) => tab.kind === "workspace" && tab.dirty && tab.id === workspaceTabId(project, tab.path))
+    .map((tab) => ({ path: tab.path, content: tab.content, baseFingerprint: tab.fingerprint }));
 }
 
 function libraryTabId(handle: string): string {
@@ -163,7 +181,6 @@ export function CodeTab({
   const [draftError, setDraftError] = useState<string | null>(null);
   const sessionProjectRef = useRef<string | null>(null);
   const openingRef = useRef(false);
-  const draftWritesRef = useRef(new Map<string, Promise<void>>());
 
   const workspace = useQuery({
     queryKey: [...CODE_WORKSPACE_KEY, projectName ?? "none"],
@@ -186,6 +203,7 @@ export function CodeTab({
   useEffect(() => {
     const previousProject = sessionProjectRef.current;
     if (previousProject && previousProject !== projectName) {
+      stageCodeWorkspaceDrafts(previousProject, dirtyDraftSnapshots(previousProject, tabs));
       rememberCodeSession(previousProject, tabs, activeTabId);
     }
 
@@ -206,6 +224,20 @@ export function CodeTab({
     const project = sessionProjectRef.current;
     if (project) rememberCodeSession(project, tabs, activeTabId);
   }, [activeTabId, tabs]);
+
+  useEffect(() => {
+    if (!projectName) return;
+    stageCodeWorkspaceDrafts(projectName, dirtyDraftSnapshots(projectName, tabs));
+  }, [projectName, tabs]);
+
+  useEffect(() => subscribeCodeDraftPersistence((error) => {
+    if (!error) {
+      setDraftError(null);
+      return;
+    }
+    if (sessionProjectRef.current && error.projectName !== sessionProjectRef.current) return;
+    setDraftError(`Draft recovery backup failed for ${fileName(error.path)}: ${error.message}`);
+  }), []);
 
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
@@ -238,58 +270,19 @@ export function CodeTab({
     };
   }, [activeWorkspacePath, view]);
 
-  const persistDraft = useCallback((tab: EditorTab): Promise<void> => {
-    if (tab.kind !== "workspace" || !tab.dirty) return Promise.resolve();
-
-    const previous = draftWritesRef.current.get(tab.path) ?? Promise.resolve();
-    const write = previous.then(() => saveCodeWorkspaceDraft({
-      path: tab.path,
-      content: tab.content,
-      base_fingerprint: tab.fingerprint,
-    })).then(() => {
-      setDraftError(null);
-    }).catch((error) => {
-      setDraftError(`Draft recovery backup failed for ${fileName(tab.path)}: ${errorToMessage(error)}`);
-    });
-
-    let tracked: Promise<void>;
-    tracked = write.finally(() => {
-      if (draftWritesRef.current.get(tab.path) === tracked) {
-        draftWritesRef.current.delete(tab.path);
-      }
-    });
-    draftWritesRef.current.set(tab.path, tracked);
-    return tracked;
-  }, []);
-
-  const discardPersistedDraft = useCallback(async (path: string) => {
-    const pending = draftWritesRef.current.get(path);
-    if (pending) await pending;
-    await deleteCodeWorkspaceDraft(path);
-  }, []);
-
-  useEffect(() => {
-    const dirtyWorkspaceTabs = tabs.filter((tab) => tab.kind === "workspace" && tab.dirty);
-    if (dirtyWorkspaceTabs.length === 0) return;
-
-    const timer = window.setTimeout(() => {
-      for (const tab of dirtyWorkspaceTabs) void persistDraft(tab);
-    }, 600);
-    return () => window.clearTimeout(timer);
-  }, [persistDraft, tabs]);
-
   const save = useMutation({
     mutationFn: async (tab: EditorTab) => {
       if (tab.kind !== "workspace") throw new Error("Library documents are read-only.");
-      const pendingDraft = draftWritesRef.current.get(tab.path);
-      if (pendingDraft) await pendingDraft;
+      const project = workspaceTabProject(tab);
+      if (!project) throw new Error("Workspace tab has no stable project identity.");
+      await flushCodeWorkspaceDraft(project, tab.path);
       const result = await saveCodeWorkspaceDocument({
         path: tab.path,
         content: tab.content,
         expected_fingerprint: tab.fingerprint,
       });
       try {
-        await deleteCodeWorkspaceDraft(tab.path);
+        await discardCodeWorkspaceDraft(project, tab.path);
       } catch (error) {
         setDraftError(`Saved ${fileName(tab.path)}, but its recovery draft could not be cleared: ${errorToMessage(error)}`);
       }
@@ -297,7 +290,7 @@ export function CodeTab({
     },
     onSuccess: (result, savedTab) => {
       const saved = result.document;
-      const project = sessionProjectRef.current ?? projectName ?? "unknown";
+      const project = workspaceTabProject(savedTab) ?? projectName ?? "unknown";
       const refreshed = { ...toWorkspaceTab(saved, project), id: savedTab.id };
       setTabs((current) => current.map((tab) => tab.id === savedTab.id ? refreshed : tab));
       setWorkspaceError(null);
@@ -329,7 +322,7 @@ export function CodeTab({
       });
       if (!discard) return;
       try {
-        await discardPersistedDraft(file.path);
+        await discardCodeWorkspaceDraft(project, file.path);
       } catch (error) {
         setDraftError(`Could not discard the recovery draft for ${fileName(file.path)}: ${errorToMessage(error)}`);
         return;
@@ -355,7 +348,7 @@ export function CodeTab({
         const recovery = await loadCodeWorkspaceDraft({
           path: document.path,
           current_fingerprint: document.fingerprint,
-        });
+        }, project);
         if (recovery) {
           const restore = recovery.state === "safe" || await confirmEditorDecision({
             title: "Recovered draft conflicts with disk",
@@ -372,7 +365,7 @@ export function CodeTab({
               recoveredDraft: true,
             };
           } else {
-            await discardPersistedDraft(document.path);
+            await discardCodeWorkspaceDraft(project, document.path);
           }
         }
       } catch (error) {
@@ -396,7 +389,7 @@ export function CodeTab({
       openingRef.current = false;
       setOpeningPath(null);
     }
-  }, [confirmEditorDecision, discardPersistedDraft, projectName, tabs, workspace.data?.project]);
+  }, [confirmEditorDecision, projectName, tabs, workspace.data?.project]);
 
   const openLibrary = useCallback(async (request: CodeWorkspaceOpenRequest) => {
     if (!request.libraryHandle || openingRef.current) return;
@@ -472,7 +465,9 @@ export function CodeTab({
       if (!discard) return;
       if (target.kind === "workspace") {
         try {
-          await discardPersistedDraft(target.path);
+          const project = workspaceTabProject(target);
+          if (!project) throw new Error("Workspace tab has no stable project identity.");
+          await discardCodeWorkspaceDraft(project, target.path);
         } catch (error) {
           setDraftError(`Could not discard the recovery draft for ${fileName(target.path)}: ${errorToMessage(error)}`);
           return;

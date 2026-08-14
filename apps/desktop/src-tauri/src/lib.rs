@@ -1,6 +1,7 @@
 mod code_library;
 mod code_workspace;
 pub mod commands;
+mod quit;
 mod engineering_ipc;
 mod store;
 mod terminal;
@@ -15,6 +16,7 @@ use tauri_plugin_global_shortcut::ShortcutState;
 pub fn run() {
     tauri::Builder::default()
         .manage(terminal::TerminalManager::default())
+        .manage(quit::QuitCoordinator::default())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -45,7 +47,7 @@ pub fn run() {
                 .icon(app.default_window_icon().cloned().unwrap())
                 .on_menu_event(|app: &tauri::AppHandle, event| {
                     if event.id.as_ref() == "quit" {
-                        app.exit(0);
+                        quit::request_safe_quit(app);
                     }
                 })
                 .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| {
@@ -67,6 +69,9 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            quit::safe_quit_ack,
+            quit::safe_quit_complete,
+            quit::safe_quit_cancel,
             terminal::terminal_create,
             terminal::terminal_list,
             terminal::terminal_write,
