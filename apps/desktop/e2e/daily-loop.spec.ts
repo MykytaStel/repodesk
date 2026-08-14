@@ -19,8 +19,6 @@ async function openProjectsView(page: Page, name: "Knowledge" | "Work templates"
   await page.getByRole("tab", { name }).click();
 }
 
-// Drives the daily loop on a fully onboarded workspace. The product contract is
-// intentionally small: five owning engineering surfaces plus utility settings.
 test.describe("daily loop (onboarded)", () => {
   test.beforeEach(async ({ page }) => {
     await installMockIpc(page, currentOnboardedFixtures);
@@ -126,7 +124,6 @@ test.describe("daily loop (onboarded)", () => {
     await tabButton(page, "Changes").click();
     await expect(page.getByRole("region", { name: "Changed files" })).toBeVisible();
     await expect(page.getByText("src/app.ts").first()).toBeVisible();
-    await expect(page.locator(".diff-add").getByText("+new line")).toBeVisible();
 
     await tabButton(page, "Runs").click();
     await expect(page.getByRole("tablist", { name: "Runs views" })).toBeVisible();

@@ -12,7 +12,7 @@ async function openDirectly(page: Page, route: string, viewport = { width: 1280,
 }
 
 async function gridColumnCount(page: Page, selector: string) {
-  return page.locator(selector).evaluate((element) =>
+  return page.locator(selector).first().evaluate((element) =>
     getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length,
   );
 }
