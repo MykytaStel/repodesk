@@ -28,8 +28,7 @@ impl QuitCoordinator {
             .fetch_add(1, Ordering::SeqCst)
             .saturating_add(1);
         self.acknowledged_request_id.store(0, Ordering::SeqCst);
-        self.pending_request_id
-            .store(request_id, Ordering::SeqCst);
+        self.pending_request_id.store(request_id, Ordering::SeqCst);
         request_id
     }
 
@@ -83,10 +82,7 @@ pub fn request_safe_quit(app: &AppHandle) {
     let app = app.clone();
     thread::spawn(move || {
         thread::sleep(SAFE_QUIT_FALLBACK);
-        if app
-            .state::<QuitCoordinator>()
-            .should_force_exit(request_id)
-        {
+        if app.state::<QuitCoordinator>().should_force_exit(request_id) {
             app.exit(0);
         }
     });

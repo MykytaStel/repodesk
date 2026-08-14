@@ -1,8 +1,8 @@
 mod code_library;
 mod code_workspace;
 pub mod commands;
-mod quit;
 mod engineering_ipc;
+mod quit;
 mod store;
 mod terminal;
 
