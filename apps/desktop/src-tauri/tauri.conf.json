@@ -30,8 +30,8 @@
     "active": true,
     "targets": "all",
     "category": "DeveloperTool",
-    "shortDescription": "Local-first AI operations cockpit for AI-assisted development.",
-    "longDescription": "RepoDesk is a local-first desktop cockpit for AI-assisted development: connect a project, scope a task, build bounded context, run safety/budget checks, route work to the right (preferably local) model, and know when it is safe to commit.",
+    "shortDescription": "Local-first engineering workspace for controlled software change.",
+    "longDescription": "RepoDesk is a local-first engineering workspace for planning, executing, reviewing, verifying, and learning from software changes made by humans and coding agents, with bounded context, explicit policy, isolated worktrees, and reviewable evidence.",
     "copyright": "Copyright © 2026 RepoDesk",
     "icon": [
       "generated/repodesk-icons/32x32.png",
