@@ -3,10 +3,10 @@ use std::path::Path;
 
 use crate::projects;
 
+use super::GitWorkspaceSnapshot;
 use super::diff::capture_diff_stat;
 use super::process::{run_git_captured_bounded, truncate_with_marker};
 use super::status::read_git_status;
-use super::GitWorkspaceSnapshot;
 
 const MAX_BRANCH_BYTES: usize = 512;
 const MAX_COMMIT_BYTES: usize = 8 * 1024;
@@ -163,11 +163,8 @@ fn read_branch(project_path: &Path, warnings: &mut Vec<String>) -> Option<String
 }
 
 fn read_last_commit(project_path: &Path, warnings: &mut Vec<String>) -> Option<String> {
-    let commit = run_git_captured_bounded(
-        project_path,
-        &["log", "-1", "--oneline"],
-        MAX_COMMIT_BYTES,
-    );
+    let commit =
+        run_git_captured_bounded(project_path, &["log", "-1", "--oneline"], MAX_COMMIT_BYTES);
     if commit.truncated {
         warnings.push("Last commit metadata exceeded the configured budget.".to_string());
         return None;
@@ -187,7 +184,9 @@ fn diff_stat(project_path: &Path, cached: bool, warnings: &mut Vec<String>) -> S
         return String::new();
     }
     if capture.truncated {
-        warnings.push(format!("{label} Git diff stat was truncated to its hard budget."));
+        warnings.push(format!(
+            "{label} Git diff stat was truncated to its hard budget."
+        ));
     }
     capture.text
 }
