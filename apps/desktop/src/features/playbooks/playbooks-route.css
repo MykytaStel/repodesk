@@ -1,6 +1,6 @@
 /* Work Templates owns its route-specific layout. These rules used to live in
-   eager global components.css and a retired Dashboard stylesheet. Keeping them
-   here means opening RepoDesk no longer downloads template-only CSS. */
+   eager global components/responsive CSS and a retired Dashboard stylesheet.
+   Keeping them here means opening RepoDesk does not download template-only CSS. */
 .playbook-list {
   display: grid;
   gap: var(--space-3);
@@ -103,8 +103,24 @@
   font-size: var(--text-sm);
 }
 
+@media (max-width: 1180px) {
+  .playbook-route {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 760px) {
-  .dashboard-grid {
+  .dashboard-grid,
+  .playbook-card,
+  .playbook-route {
     grid-template-columns: 1fr;
+  }
+
+  .playbook-card {
+    align-items: flex-start;
+  }
+
+  .playbook-card-actions {
+    justify-items: start;
   }
 }
