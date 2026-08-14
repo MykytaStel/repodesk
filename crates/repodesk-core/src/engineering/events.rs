@@ -21,7 +21,8 @@ use crate::engineering::domain::{
 use crate::errors::RepoDeskResult;
 use crate::persistence::db::get_db_path;
 use crate::persistence::event_journal::{
-    EngineeringEventInput, append_engineering_event, read_engineering_events,
+    EngineeringEventInput, append_engineering_event, engineering_event_revision,
+    read_engineering_events,
 };
 
 pub const ENGINEERING_EVENT_LEDGER_FILE: &str = "engineering-events.jsonl";
@@ -160,6 +161,39 @@ pub fn event_ledger_path(run_dir: &Path) -> PathBuf {
     run_dir.join(ENGINEERING_EVENT_LEDGER_FILE)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventLedgerRevision {
+    pub sequence: i64,
+    pub event_hash: String,
+}
+
+fn event_scope(run_dir: &Path) -> (Option<String>, Option<String>) {
+    let work_item_id = run_dir
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string());
+    let project = run_dir
+        .parent()
+        .and_then(Path::file_name)
+        .map(|value| value.to_string_lossy().to_string());
+    (project, work_item_id)
+}
+
+/// Return the latest canonical revision for the Work Item represented by
+/// `run_dir` without replaying or allocating its event history.
+pub fn event_ledger_revision(run_dir: &Path) -> RepoDeskResult<Option<EventLedgerRevision>> {
+    let (project, work_item_id) = event_scope(run_dir);
+    let (Some(project), Some(work_item_id)) = (project, work_item_id) else {
+        return Ok(None);
+    };
+
+    Ok(
+        engineering_event_revision(&project, &work_item_id)?.map(|revision| EventLedgerRevision {
+            sequence: revision.sequence,
+            event_hash: revision.event_hash,
+        }),
+    )
+}
+
 /// Append one typed engineering event to the canonical hash-chained SQLite
 /// journal. `run_dir` is retained in the compatibility signature because many
 /// existing instrumentation call sites already carry it; it is no longer a
@@ -203,13 +237,7 @@ pub fn append_event(_run_dir: &Path, event: &EngineeringEvent) -> RepoDeskResult
 /// merged read-only so pre-migration evidence remains visible; no current code
 /// appends to that file.
 pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {
-    let task_id = run_dir
-        .file_name()
-        .map(|value| value.to_string_lossy().to_string());
-    let project = run_dir
-        .parent()
-        .and_then(Path::file_name)
-        .map(|value| value.to_string_lossy().to_string());
+    let (project, task_id) = event_scope(run_dir);
 
     let mut canonical = read_engineering_events(usize::MAX)?
         .into_iter()

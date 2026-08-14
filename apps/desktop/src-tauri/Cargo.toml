@@ -31,4 +31,5 @@ tauri-plugin-global-shortcut = "2.0.0"
 quick-xml = "0.41"
 
 [dev-dependencies]
+serial_test = "3"
 tempfile.workspace = true

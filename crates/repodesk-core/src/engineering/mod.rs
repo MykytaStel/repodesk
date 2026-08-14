@@ -76,8 +76,8 @@ pub use domain::{
     VerificationStatus, WorkItem, WorkItemId, WorkItemState, WorkerKind, WorkerRef,
 };
 pub use events::{
-    ENGINEERING_EVENT_LEDGER_FILE, EngineeringEvent, EngineeringEventKind, append_event,
-    event_ledger_path, read_events,
+    ENGINEERING_EVENT_LEDGER_FILE, EngineeringEvent, EngineeringEventKind, EventLedgerRevision,
+    append_event, event_ledger_path, event_ledger_revision, read_events,
 };
 pub use intelligence::{
     AiUsageIntelligence, ChangeIntelligence, CompletionIntelligence, ContextIntelligence,
