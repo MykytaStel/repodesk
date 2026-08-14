@@ -1,12 +1,12 @@
-//! Append-only engineering event ledger.
+//! Typed engineering-event compatibility facade over the canonical SQLite ledger.
 //!
-//! Events are stored as JSON Lines inside the legacy task run directory. This
-//! keeps the first ledger slice local, inspectable, migration-free, and easy to
-//! replay into later Engineering Intelligence reports.
+//! New engineering events are appended only to the hash-chained SQLite journal.
+//! The historical task-local JSONL file is read-only compatibility for Work Items
+//! created before this migration; it is never mutated by the current write path.
 
-use std::collections::BTreeMap;
-use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs::{self, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -19,8 +19,13 @@ use crate::engineering::domain::{
     WorkerRef,
 };
 use crate::errors::RepoDeskResult;
+use crate::persistence::db::get_db_path;
+use crate::persistence::event_journal::{
+    EngineeringEventInput, append_engineering_event, read_engineering_events,
+};
 
 pub const ENGINEERING_EVENT_LEDGER_FILE: &str = "engineering-events.jsonl";
+const TYPED_EVENT_PAYLOAD_KEY: &str = "typed_engineering_event";
 
 static EVENT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -128,34 +133,125 @@ fn next_event_id() -> EngineeringEventId {
         .expect("generated engineering event id must be valid")
 }
 
+fn event_kind_label(kind: EngineeringEventKind) -> &'static str {
+    match kind {
+        EngineeringEventKind::WorkItemCreated => "work_item_created",
+        EngineeringEventKind::ScopeChanged => "scope_changed",
+        EngineeringEventKind::ContextBuilt => "context_built",
+        EngineeringEventKind::ContextEdited => "context_edited",
+        EngineeringEventKind::AiStrategySelected => "ai_strategy_selected",
+        EngineeringEventKind::ExecutionStarted => "execution_started",
+        EngineeringEventKind::ExecutionFinished => "execution_finished",
+        EngineeringEventKind::WorkerHandoff => "worker_handoff",
+        EngineeringEventKind::ChangeSetCreated => "changeset_created",
+        EngineeringEventKind::ChangeSetReviewed => "changeset_reviewed",
+        EngineeringEventKind::VerificationStarted => "verification_started",
+        EngineeringEventKind::VerificationFinished => "verification_finished",
+        EngineeringEventKind::CommitCreated => "commit_created",
+        EngineeringEventKind::KnowledgeProposed => "knowledge_proposed",
+        EngineeringEventKind::KnowledgeAccepted => "knowledge_accepted",
+        EngineeringEventKind::KnowledgeRejected => "knowledge_rejected",
+        EngineeringEventKind::KnowledgeArchived => "knowledge_archived",
+        EngineeringEventKind::HumanOverride => "human_override",
+    }
+}
+
 pub fn event_ledger_path(run_dir: &Path) -> PathBuf {
     run_dir.join(ENGINEERING_EVENT_LEDGER_FILE)
 }
 
-/// Append one event as a single JSONL record. Existing records are never
-/// rewritten by this API, preserving the ledger as replayable evidence.
-pub fn append_event(run_dir: &Path, event: &EngineeringEvent) -> RepoDeskResult<PathBuf> {
-    fs::create_dir_all(run_dir)?;
-    let path = event_ledger_path(run_dir);
-    let mut record = serde_json::to_vec(event)?;
-    record.push(b'\n');
-
-    let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
-    file.write_all(&record)?;
-    file.flush()?;
-
-    Ok(path)
-}
-
-/// Replay the task-local ledger in append order. A missing ledger is a valid
-/// empty history, which makes adoption backward-compatible for existing tasks.
-pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {
-    let path = event_ledger_path(run_dir);
-    if !path.exists() {
-        return Ok(Vec::new());
+/// Append one typed engineering event to the canonical hash-chained SQLite
+/// journal. `run_dir` is retained in the compatibility signature because many
+/// existing instrumentation call sites already carry it; it is no longer a
+/// storage destination.
+pub fn append_event(_run_dir: &Path, event: &EngineeringEvent) -> RepoDeskResult<PathBuf> {
+    let kind = event_kind_label(event.kind);
+    let mut payload = BTreeMap::new();
+    payload.insert(
+        TYPED_EVENT_PAYLOAD_KEY.to_string(),
+        serde_json::to_string(event)?,
+    );
+    payload.insert("event_id".to_string(), event.id.to_string());
+    payload.insert("occurred_at".to_string(), event.occurred_at.to_rfc3339());
+    if let Some(changeset_id) = event.changeset_id.as_ref() {
+        payload.insert("changeset_id".to_string(), changeset_id.to_string());
+    }
+    if let Some(verification_id) = event.verification_id.as_ref() {
+        payload.insert("verification_id".to_string(), verification_id.to_string());
     }
 
-    read_event_file(&path)
+    append_engineering_event(EngineeringEventInput {
+        project: event.project.clone(),
+        work_item_id: event.work_item_id.to_string(),
+        run_id: event
+            .execution_id
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        kind: kind.to_string(),
+        module_name: "engineering".to_string(),
+        level: "info".to_string(),
+        message: format!("engineering event: {kind}"),
+        payload,
+    })?;
+
+    get_db_path()
+}
+
+/// Replay typed engineering events for the Work Item represented by `run_dir`.
+/// Canonical SQLite events are authoritative. A historical task-local JSONL is
+/// merged read-only so pre-migration evidence remains visible; no current code
+/// appends to that file.
+pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {
+    let task_id = run_dir
+        .file_name()
+        .map(|value| value.to_string_lossy().to_string());
+    let project = run_dir
+        .parent()
+        .and_then(Path::file_name)
+        .map(|value| value.to_string_lossy().to_string());
+
+    let mut canonical = read_engineering_events(usize::MAX)?
+        .into_iter()
+        .filter(|entry| {
+            task_id
+                .as_deref()
+                .is_none_or(|task_id| entry.work_item_id == task_id)
+                && project
+                    .as_deref()
+                    .is_none_or(|project| entry.project == project)
+        })
+        .filter_map(|entry| entry.payload.get(TYPED_EVENT_PAYLOAD_KEY).cloned())
+        .map(|encoded| serde_json::from_str::<EngineeringEvent>(&encoded))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    // Canonical journal reads are newest-first; typed replay remains oldest-first.
+    canonical.reverse();
+
+    let legacy_path = event_ledger_path(run_dir);
+    let legacy = if legacy_path.exists() {
+        read_event_file(&legacy_path)?
+    } else {
+        Vec::new()
+    };
+
+    if legacy.is_empty() {
+        return Ok(canonical);
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut combined = Vec::with_capacity(legacy.len() + canonical.len());
+    for event in legacy.into_iter().chain(canonical) {
+        if seen.insert(event.id.clone()) {
+            combined.push(event);
+        }
+    }
+    combined.sort_by(|left, right| {
+        left.occurred_at
+            .cmp(&right.occurred_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    Ok(combined)
 }
 
 fn read_event_file(path: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {
@@ -178,17 +274,33 @@ fn read_event_file(path: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {
 mod tests {
     use super::*;
     use crate::engineering::domain::{EvidenceKind, EvidenceRef};
-    use tempfile::tempdir;
+    use serial_test::serial;
+    use tempfile::TempDir;
 
-    #[test]
-    fn missing_ledger_is_an_empty_history() {
-        let dir = tempdir().unwrap();
-        assert!(read_events(dir.path()).unwrap().is_empty());
+    fn isolated_run() -> (TempDir, PathBuf) {
+        let home = TempDir::new().expect("temp home");
+        // SAFETY: tests in this module are serialized because REPODESK_HOME is
+        // process-global.
+        unsafe {
+            std::env::set_var("REPODESK_HOME", home.path());
+        }
+        crate::init::init_home().expect("init home");
+        let run_dir = home.path().join("runs/repodesk/task-1");
+        fs::create_dir_all(&run_dir).expect("run dir");
+        (home, run_dir)
     }
 
     #[test]
-    fn ledger_appends_and_replays_events_in_order() {
-        let dir = tempdir().unwrap();
+    #[serial]
+    fn missing_legacy_ledger_and_empty_sqlite_is_an_empty_history() {
+        let (_home, run_dir) = isolated_run();
+        assert!(read_events(&run_dir).unwrap().is_empty());
+    }
+
+    #[test]
+    #[serial]
+    fn canonical_ledger_appends_and_replays_typed_events_in_order() {
+        let (_home, run_dir) = isolated_run();
         let work_item_id = WorkItemId::try_new("task-1").unwrap();
 
         let first = EngineeringEvent::new(
@@ -203,12 +315,17 @@ mod tests {
                 .with_evidence(EvidenceRef::try_new(EvidenceKind::Context, "context.md").unwrap())
                 .with_attribute("tokens", Value::from(1200));
 
-        let path = append_event(dir.path(), &first).unwrap();
-        append_event(dir.path(), &second).unwrap();
+        let path = append_event(&run_dir, &first).unwrap();
+        append_event(&run_dir, &second).unwrap();
 
-        assert_eq!(path, dir.path().join(ENGINEERING_EVENT_LEDGER_FILE));
+        assert_eq!(path, get_db_path().unwrap());
+        assert!(path.exists());
+        assert!(
+            !event_ledger_path(&run_dir).exists(),
+            "task-local JSONL must not be written by the canonical append path"
+        );
 
-        let events = read_events(dir.path()).unwrap();
+        let events = read_events(&run_dir).unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].kind, EngineeringEventKind::WorkItemCreated);
         assert_eq!(events[1].kind, EngineeringEventKind::ContextBuilt);
@@ -217,20 +334,33 @@ mod tests {
     }
 
     #[test]
-    fn ledger_is_plain_json_lines_for_inspection_and_replay() {
-        let dir = tempdir().unwrap();
-        let event = EngineeringEvent::new(
+    #[serial]
+    fn historical_task_jsonl_is_read_only_compatibility() {
+        let (_home, run_dir) = isolated_run();
+        let work_item_id = WorkItemId::try_new("task-1").unwrap();
+        let legacy = EngineeringEvent::new(
             "repodesk",
-            WorkItemId::try_new("task-1").unwrap(),
-            EngineeringEventKind::HumanOverride,
+            work_item_id.clone(),
+            EngineeringEventKind::WorkItemCreated,
         );
+        let legacy_path = event_ledger_path(&run_dir);
+        fs::write(
+            &legacy_path,
+            format!("{}\n", serde_json::to_string(&legacy).unwrap()),
+        )
+        .unwrap();
 
-        let path = append_event(dir.path(), &event).unwrap();
-        let raw = fs::read_to_string(path).unwrap();
-        let lines: Vec<&str> = raw.lines().collect();
+        let current =
+            EngineeringEvent::new("repodesk", work_item_id, EngineeringEventKind::ContextBuilt)
+                .with_attribute("tokens", Value::from(800));
+        append_event(&run_dir, &current).unwrap();
 
-        assert_eq!(lines.len(), 1);
-        let decoded: EngineeringEvent = serde_json::from_str(lines[0]).unwrap();
-        assert_eq!(decoded.id, event.id);
+        let events = read_events(&run_dir).unwrap();
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().any(|event| event.id == legacy.id));
+        assert!(events.iter().any(|event| event.id == current.id));
+
+        let raw = fs::read_to_string(legacy_path).unwrap();
+        assert_eq!(raw.lines().count(), 1, "legacy JSONL must remain read-only");
     }
 }
