@@ -1,1 +1,12 @@
-@import "../dashboard/dashboard-layout.css" layer(legacy);
+/* Work Templates owns its small responsive layout directly. Do not route this
+   capability back through the retired Dashboard visual layer. */
+.playbook-list {
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 760px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
