@@ -5,6 +5,7 @@ import type { TabId } from "../../shared/types/api";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import "../../shared/ui/secondary-subnav.css";
 import "./projects-route.css";
+import { useProjectSetup } from "./useProjectSetup";
 
 const KnowledgeTab = lazy(() => import("../knowledge/KnowledgeTab").then((module) => ({ default: module.KnowledgeTab })));
 const WorkTemplatesTab = lazy(() => import("../playbooks/PlaybooksTab").then((module) => ({ default: module.PlaybooksTab })));
@@ -28,8 +29,17 @@ const VIEWS: Array<{ id: ProjectsView; label: string }> = [
 
 export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detail?: string) => void }) {
   const [view, setView] = useState<ProjectsView>("registry");
+  const [showSetup, setShowSetup] = useState(false);
   const queryClient = useQueryClient();
   const { projectName } = useWorkspace();
+  const {
+    setupForm,
+    setSetupForm,
+    setupNotice,
+    browseForProjectPath,
+    addProject,
+    isAddingProject,
+  } = useProjectSetup();
   const projects = useQuery({
     queryKey: ["project_list_configs"],
     queryFn: () => invoke<ProjectConfigSummary[]>("project_list_configs"),
@@ -78,10 +88,79 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                 A Project is the durable boundary around repositories, Work Items, checks, context rules and reviewed engineering knowledge.
               </p>
               <div className="button-row">
-                <button className="primary-button" type="button" onClick={() => setActiveTab("settings", "Add or configure a project.")}>Add or configure project</button>
+                <button className="primary-button" type="button" onClick={() => setShowSetup((visible) => !visible)}>
+                  {showSetup ? "Close setup" : "Add project"}
+                </button>
                 <button className="ghost-button" type="button" onClick={() => void projects.refetch()}>Refresh registry</button>
               </div>
             </section>
+
+            {showSetup ? (
+              <section className="panel wide-panel project-setup-panel">
+                <div className="panel-title-row">
+                  <div>
+                    <p className="eyebrow">Connect repository</p>
+                    <h2>Add and activate a project</h2>
+                  </div>
+                  <span className="pill neutral">Project-scoped</span>
+                </div>
+                <div className="form-stack">
+                  <label>
+                    Project name
+                    <input
+                      value={setupForm.projectName}
+                      onChange={(event) => setSetupForm({ ...setupForm, projectName: event.target.value })}
+                      placeholder="my-app"
+                    />
+                  </label>
+                  <label>
+                    Project path
+                    <div className="input-with-action">
+                      <input
+                        value={setupForm.projectPath}
+                        onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })}
+                        placeholder="/Users/you/code/my-app"
+                      />
+                      <button type="button" className="ghost-button" onClick={() => void browseForProjectPath()}>
+                        Browse…
+                      </button>
+                    </div>
+                  </label>
+                  <div className="settings-grid">
+                    <label>
+                      Project type
+                      <input
+                        value={setupForm.projectType}
+                        onChange={(event) => setSetupForm({ ...setupForm, projectType: event.target.value })}
+                        placeholder="repository"
+                      />
+                    </label>
+                    <label>
+                      Main language
+                      <input
+                        value={setupForm.mainLanguage}
+                        onChange={(event) => setSetupForm({ ...setupForm, mainLanguage: event.target.value })}
+                        placeholder="rust, typescript, …"
+                      />
+                    </label>
+                  </div>
+                  <div className="button-row">
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => void addProject().catch(() => undefined)}
+                      disabled={isAddingProject}
+                    >
+                      {isAddingProject ? "Adding and activating…" : "Add and activate project"}
+                    </button>
+                    <button className="ghost-button" type="button" onClick={() => setShowSetup(false)} disabled={isAddingProject}>
+                      Cancel
+                    </button>
+                  </div>
+                  {setupNotice ? <div className={`notice ${setupNotice.tone}`}>{setupNotice.message}</div> : null}
+                </div>
+              </section>
+            ) : null}
 
             <section className="panel wide-panel">
               <div className="panel-title-row">
@@ -98,7 +177,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
               ) : (projects.data?.length ?? 0) === 0 ? (
                 <div className="workspace-empty-state">
                   <strong>No projects registered.</strong>
-                  <span>Use Settings to connect a repository. RepoDesk keeps project-specific context and rules bounded to it.</span>
+                  <span>Add a repository here. RepoDesk keeps project-specific context and rules bounded to that Project.</span>
                 </div>
               ) : (
                 <div className="project-registry-grid">
@@ -123,7 +202,6 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                           <button className={active ? "ghost-button" : "primary-button"} type="button" disabled={active} onClick={() => void useProject(project.name)}>
                             {active ? "Current project" : "Open project"}
                           </button>
-                          <button className="ghost-button" type="button" onClick={() => setActiveTab("settings", `Configure ${project.name}.`)}>Configure</button>
                           {active ? <button className="ghost-button" type="button" onClick={() => setView("knowledge")}>Knowledge</button> : null}
                         </div>
                       </article>
