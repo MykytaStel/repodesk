@@ -159,9 +159,15 @@ export async function flushCodeWorkspaceDrafts(): Promise<void> {
   if (pending.length > 0) await Promise.all(pending);
 }
 
+/** Drop a recovery draft intentionally. A write already in flight is allowed to
+ * finish first, then the persisted draft is deleted, so it cannot be recreated
+ * after the user's discard/save decision. */
 export async function discardCodeWorkspaceDraft(projectName: string, path: string): Promise<void> {
-  await flushCodeWorkspaceDraft(projectName, path);
-  unstageCodeWorkspaceDraft(projectName, path);
+  const key = draftKey(projectName, path);
+  staged.delete(key);
+  if (staged.size === 0) cancelDebounce();
+  const pending = writeChains.get(key);
+  if (pending) await pending;
   await deleteCodeWorkspaceDraft(path, projectName);
 }
 
