@@ -69,6 +69,7 @@ export function ChangesTab({
   const unstaged = listFromRecord(git, ["unstaged", "unstaged_files", "modified_files"]);
   const untracked = listFromRecord(git, ["untracked", "untracked_files"]);
   const governance = engineering.data?.change_governance ?? null;
+  const passport = engineering.data?.changeset_passport ?? null;
 
   const statusOf = (file: string): FileStatus | null =>
     staged.includes(file)
@@ -177,7 +178,7 @@ export function ChangesTab({
         <div className="changes-focus-actions">
           <button className="tiny-button" onClick={refreshWorkspace}>Refresh</button>
           <button className="tiny-button" onClick={() => setEvidenceOpen((open) => !open)}>
-            Evidence{governance?.gate.ready ? " ✓" : blocker ? " !" : ""}
+            Passport{governance?.gate.ready ? " ✓" : blocker ? " !" : ""}
           </button>
           <button
             className={`tiny-button${findingsOpen ? " active" : ""}`}
@@ -198,7 +199,7 @@ export function ChangesTab({
           <strong>{gateLabel}</strong>
           {blocker ? <small>{blocker}</small> : <small>{governance?.changeset_id ?? "No active ChangeSet"}</small>}
           <button className="link-cta" onClick={() => setEvidenceOpen((open) => !open)}>
-            {evidenceOpen ? "Hide evidence" : "Inspect evidence"}
+            {evidenceOpen ? "Hide passport" : "Inspect passport"}
           </button>
         </div>
       ) : (
@@ -217,6 +218,7 @@ export function ChangesTab({
       {evidenceOpen && hasTask ? (
         <ChangeGovernancePanel
           governance={governance}
+          passport={passport}
           loading={engineering.isLoading}
           error={engineering.isError ? engineering.error : null}
         />
