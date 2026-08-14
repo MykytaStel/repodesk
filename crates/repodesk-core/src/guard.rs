@@ -3,10 +3,16 @@ use std::path::Path;
 use std::process::Command;
 
 use crate::errors::RepoDeskResult;
+use crate::memory::retrieval::{SliceRender, memory_slice};
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
 use crate::tokens::estimate_file;
 use crate::usage::budget::{BudgetLevel, evaluate_context, load_budget_config};
+
+/// Keep the execution gate aligned with the legacy-memory slice currently used
+/// by `context::build_context`. This compatibility constant can move into the
+/// shared context policy once the legacy Memory Brain is fully retired.
+const MEMORY_PREFLIGHT_BUDGET_TOKENS: usize = 800;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GuardLevel {
@@ -71,6 +77,33 @@ pub fn preflight(agent: &str) -> RepoDeskResult<GuardResult> {
             BudgetLevel::Ok => {
                 reasons.push("Context budget verdict is OK.".to_string());
             }
+        }
+    }
+
+    // `context::build_context` historically treated Memory Brain retrieval as
+    // best-effort. The execution boundary must not inherit that behaviour:
+    // missing/corrupt memory state or pinned constraints that cannot fit the
+    // hard slice budget are safety failures, not optional context degradation.
+    match memory_slice(&project.name, MEMORY_PREFLIGHT_BUDGET_TOKENS) {
+        Ok(slice) => {
+            if let Some(reason) = memory_boundary_block_reason(&slice) {
+                level = GuardLevel::Block;
+                reasons.push(reason);
+                recommendations.push(
+                    "Reduce, archive, or consolidate pinned project memory before starting an agent."
+                        .to_string(),
+                );
+            }
+        }
+        Err(error) => {
+            level = GuardLevel::Block;
+            reasons.push(format!(
+                "Project memory could not be reconstructed safely: {error}"
+            ));
+            recommendations.push(
+                "Repair project memory storage before sending repository context to an agent."
+                    .to_string(),
+            );
         }
     }
 
@@ -161,6 +194,23 @@ pub fn preflight(agent: &str) -> RepoDeskResult<GuardResult> {
         reasons,
         recommendations,
     })
+}
+
+fn memory_boundary_block_reason(slice: &SliceRender) -> Option<String> {
+    if slice.pinned_overflow_ids.is_empty() {
+        return None;
+    }
+
+    let ids = slice
+        .pinned_overflow_ids
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(format!(
+        "Pinned project memory exceeds the hard {}-token execution budget; omitted pinned ids: {}.",
+        MEMORY_PREFLIGHT_BUDGET_TOKENS, ids
+    ))
 }
 
 pub fn format_guard_result(result: &GuardResult) -> String {
@@ -268,6 +318,36 @@ mod tests {
     #[test]
     fn expected_prompt_file_is_none_for_unknown_agent() {
         assert_eq!(expected_prompt_file(Path::new("/runs"), "mystery"), None);
+    }
+
+    #[test]
+    fn pinned_memory_overflow_is_an_execution_blocker() {
+        let slice = SliceRender {
+            markdown: String::new(),
+            estimated_tokens: 800,
+            included_ids: vec![1],
+            excluded_ids: vec![2],
+            pinned_overflow_ids: vec![2],
+            total_active: 2,
+            budget_exhausted: true,
+        };
+        let reason = memory_boundary_block_reason(&slice).expect("block reason");
+        assert!(reason.contains("hard 800-token"));
+        assert!(reason.contains("2"));
+    }
+
+    #[test]
+    fn ordinary_memory_exclusion_is_not_a_safety_blocker() {
+        let slice = SliceRender {
+            markdown: "bounded".to_string(),
+            estimated_tokens: 700,
+            included_ids: vec![1],
+            excluded_ids: vec![2],
+            pinned_overflow_ids: Vec::new(),
+            total_active: 2,
+            budget_exhausted: true,
+        };
+        assert!(memory_boundary_block_reason(&slice).is_none());
     }
 
     #[test]
