@@ -12,7 +12,9 @@ use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::process_io::{BoundedTee, drain_bounded_to_writer};
 
 use super::changeset::{capture_changeset, git_porcelain};
-use super::{CodingAgentCommandSpec, CodingAgentExecution, apply_sanitized_env, validate_command_spec};
+use super::{
+    CodingAgentCommandSpec, CodingAgentExecution, apply_sanitized_env, validate_command_spec,
+};
 
 const OUTPUT_TRUNCATION_MARKER: &str = "\n[output truncated]";
 
