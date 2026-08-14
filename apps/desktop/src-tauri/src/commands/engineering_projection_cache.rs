@@ -12,9 +12,9 @@ use std::time::SystemTime;
 
 use repodesk_core::RepoDeskResult;
 use repodesk_core::engineering::{
-    AiUsageReport, EngineeringEvent, EngineeringIntelligence, StrategyFeedbackReport,
-    derive_ai_usage_report, derive_engineering_intelligence, derive_strategy_feedback,
-    event_ledger_path, read_events,
+    AiUsageReport, EngineeringEvent, EngineeringIntelligence, EventLedgerRevision,
+    StrategyFeedbackReport, derive_ai_usage_report, derive_engineering_intelligence,
+    derive_strategy_feedback, event_ledger_path, event_ledger_revision, read_events,
 };
 
 const MAX_STABLE_READ_ATTEMPTS: usize = 3;
@@ -23,9 +23,10 @@ const MAX_CACHED_RUN_DIRS: usize = 16;
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LedgerStamp {
     path: PathBuf,
-    exists: bool,
-    len: u64,
-    modified: Option<SystemTime>,
+    canonical: Option<EventLedgerRevision>,
+    legacy_exists: bool,
+    legacy_len: u64,
+    legacy_modified: Option<SystemTime>,
 }
 
 #[derive(Debug)]
@@ -83,18 +84,21 @@ fn derive_projection(events: Vec<EngineeringEvent>) -> Arc<EngineeringProjection
 
 fn ledger_stamp(run_dir: &Path) -> RepoDeskResult<LedgerStamp> {
     let path = event_ledger_path(run_dir);
+    let canonical = event_ledger_revision(run_dir)?;
     match fs::metadata(&path) {
         Ok(metadata) => Ok(LedgerStamp {
             path,
-            exists: true,
-            len: metadata.len(),
-            modified: metadata.modified().ok(),
+            canonical,
+            legacy_exists: true,
+            legacy_len: metadata.len(),
+            legacy_modified: metadata.modified().ok(),
         }),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(LedgerStamp {
             path,
-            exists: false,
-            len: 0,
-            modified: None,
+            canonical,
+            legacy_exists: false,
+            legacy_len: 0,
+            legacy_modified: None,
         }),
         Err(error) => Err(error.into()),
     }
@@ -132,82 +136,142 @@ mod tests {
     use repodesk_core::engineering::{
         EngineeringEvent, EngineeringEventKind, WorkItemId, append_event,
     };
-    use tempfile::tempdir;
+    use serial_test::serial;
+    use tempfile::TempDir;
 
-    fn event(kind: EngineeringEventKind) -> EngineeringEvent {
-        EngineeringEvent::new("RepoDesk", WorkItemId::try_new("task-cache").unwrap(), kind)
+    const PROJECT: &str = "RepoDesk";
+
+    fn isolated_home() -> TempDir {
+        let home = tempfile::tempdir().unwrap();
+        // SAFETY: every test in this module is serialized because REPODESK_HOME
+        // is process-global.
+        unsafe {
+            std::env::set_var("REPODESK_HOME", home.path());
+        }
+        repodesk_core::init::init_home().unwrap();
+        home
+    }
+
+    fn run_dir(home: &TempDir, work_item_id: &str) -> PathBuf {
+        let run_dir = home.path().join("runs").join(PROJECT).join(work_item_id);
+        fs::create_dir_all(&run_dir).unwrap();
+        run_dir
+    }
+
+    fn event(work_item_id: &str, kind: EngineeringEventKind) -> EngineeringEvent {
+        EngineeringEvent::new(
+            PROJECT,
+            WorkItemId::try_new(work_item_id).unwrap(),
+            kind,
+        )
     }
 
     #[test]
+    #[serial]
     fn unchanged_ledger_reuses_the_same_projection_snapshot() {
-        let run_dir = tempdir().unwrap();
+        let home = isolated_home();
+        let run_dir = run_dir(&home, "task-cache");
         append_event(
-            run_dir.path(),
-            &event(EngineeringEventKind::WorkItemCreated),
+            &run_dir,
+            &event("task-cache", EngineeringEventKind::WorkItemCreated),
         )
         .unwrap();
 
-        let first = load_engineering_projection(run_dir.path()).unwrap();
-        let second = load_engineering_projection(run_dir.path()).unwrap();
+        let first = load_engineering_projection(&run_dir).unwrap();
+        let second = load_engineering_projection(&run_dir).unwrap();
 
         assert!(Arc::ptr_eq(&first, &second));
         assert_eq!(first.intelligence.event_count, 1);
     }
 
     #[test]
+    #[serial]
     fn appended_event_invalidates_cached_projection() {
-        let run_dir = tempdir().unwrap();
+        let home = isolated_home();
+        let run_dir = run_dir(&home, "task-cache");
         append_event(
-            run_dir.path(),
-            &event(EngineeringEventKind::WorkItemCreated),
+            &run_dir,
+            &event("task-cache", EngineeringEventKind::WorkItemCreated),
         )
         .unwrap();
-        let first = load_engineering_projection(run_dir.path()).unwrap();
+        let first = load_engineering_projection(&run_dir).unwrap();
 
-        append_event(run_dir.path(), &event(EngineeringEventKind::ContextBuilt)).unwrap();
-        let second = load_engineering_projection(run_dir.path()).unwrap();
+        append_event(
+            &run_dir,
+            &event("task-cache", EngineeringEventKind::ContextBuilt),
+        )
+        .unwrap();
+        let second = load_engineering_projection(&run_dir).unwrap();
 
         assert!(!Arc::ptr_eq(&first, &second));
         assert_eq!(second.intelligence.event_count, 2);
     }
 
     #[test]
-    fn changed_corrupt_ledger_is_not_hidden_by_previous_cache_entry() {
-        let run_dir = tempdir().unwrap();
+    #[serial]
+    fn unrelated_work_item_does_not_invalidate_cached_projection() {
+        let home = isolated_home();
+        let first_dir = run_dir(&home, "task-cache-a");
+        let second_dir = run_dir(&home, "task-cache-b");
         append_event(
-            run_dir.path(),
-            &event(EngineeringEventKind::WorkItemCreated),
+            &first_dir,
+            &event("task-cache-a", EngineeringEventKind::WorkItemCreated),
         )
         .unwrap();
-        load_engineering_projection(run_dir.path()).unwrap();
+        let first = load_engineering_projection(&first_dir).unwrap();
+
+        append_event(
+            &second_dir,
+            &event("task-cache-b", EngineeringEventKind::ContextBuilt),
+        )
+        .unwrap();
+        let first_again = load_engineering_projection(&first_dir).unwrap();
+
+        assert!(Arc::ptr_eq(&first, &first_again));
+        assert_eq!(first_again.intelligence.event_count, 1);
+    }
+
+    #[test]
+    #[serial]
+    fn changed_corrupt_legacy_ledger_is_not_hidden_by_previous_cache_entry() {
+        let home = isolated_home();
+        let run_dir = run_dir(&home, "task-cache");
+        append_event(
+            &run_dir,
+            &event("task-cache", EngineeringEventKind::WorkItemCreated),
+        )
+        .unwrap();
+        load_engineering_projection(&run_dir).unwrap();
 
         fs::write(
-            event_ledger_path(run_dir.path()),
+            event_ledger_path(&run_dir),
             "{not-json}\nmore-corruption\n",
         )
         .unwrap();
 
-        assert!(load_engineering_projection(run_dir.path()).is_err());
+        assert!(load_engineering_projection(&run_dir).is_err());
     }
 
     #[test]
-    fn different_run_directories_keep_independent_cache_entries() {
-        let first_dir = tempdir().unwrap();
-        let second_dir = tempdir().unwrap();
+    #[serial]
+    fn different_work_items_keep_independent_cache_entries() {
+        let home = isolated_home();
+        let first_dir = run_dir(&home, "task-cache-a");
+        let second_dir = run_dir(&home, "task-cache-b");
         append_event(
-            first_dir.path(),
-            &event(EngineeringEventKind::WorkItemCreated),
+            &first_dir,
+            &event("task-cache-a", EngineeringEventKind::WorkItemCreated),
         )
         .unwrap();
         append_event(
-            second_dir.path(),
-            &event(EngineeringEventKind::ContextBuilt),
+            &second_dir,
+            &event("task-cache-b", EngineeringEventKind::ContextBuilt),
         )
         .unwrap();
 
-        let first = load_engineering_projection(first_dir.path()).unwrap();
-        let second = load_engineering_projection(second_dir.path()).unwrap();
-        let first_again = load_engineering_projection(first_dir.path()).unwrap();
+        let first = load_engineering_projection(&first_dir).unwrap();
+        let second = load_engineering_projection(&second_dir).unwrap();
+        let first_again = load_engineering_projection(&first_dir).unwrap();
 
         assert!(!Arc::ptr_eq(&first, &second));
         assert!(Arc::ptr_eq(&first, &first_again));
