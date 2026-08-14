@@ -15,7 +15,15 @@ use repodesk_core::code_workspace_search::{
     CodeProjectSearchInput, CodeProjectSearchResult, CodeQuickOpenResult,
     invalidate_active_quick_open_index, search_active_code_workspace, search_code_project,
 };
-use repodesk_core::projects::get_active_project;
+use repodesk_core::projects::{ProjectConfig, get_active_project, get_project};
+
+fn draft_project(project_name: Option<&str>) -> Result<ProjectConfig, String> {
+    match project_name {
+        Some(name) => get_project(name),
+        None => get_active_project(),
+    }
+    .map_err(|error| error.to_string())
+}
 
 #[tauri::command]
 pub fn code_workspace_snapshot() -> Result<CodeWorkspaceSnapshot, String> {
@@ -39,8 +47,9 @@ pub fn code_workspace_save(
 #[tauri::command]
 pub async fn code_workspace_draft_save(
     input: CodeDraftSaveInput,
+    project_name: Option<String>,
 ) -> Result<CodeDraftRecord, String> {
-    let project = get_active_project().map_err(|error| error.to_string())?;
+    let project = draft_project(project_name.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || save_project_code_draft(project, input))
         .await
         .map_err(|error| format!("Draft save worker failed: {error}"))?
@@ -50,8 +59,9 @@ pub async fn code_workspace_draft_save(
 #[tauri::command]
 pub async fn code_workspace_draft_load(
     input: CodeDraftLoadInput,
+    project_name: Option<String>,
 ) -> Result<Option<CodeDraftRecovery>, String> {
-    let project = get_active_project().map_err(|error| error.to_string())?;
+    let project = draft_project(project_name.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || load_project_code_draft(project, input))
         .await
         .map_err(|error| format!("Draft load worker failed: {error}"))?
@@ -59,8 +69,11 @@ pub async fn code_workspace_draft_load(
 }
 
 #[tauri::command]
-pub async fn code_workspace_draft_delete(relative_path: String) -> Result<bool, String> {
-    let project = get_active_project().map_err(|error| error.to_string())?;
+pub async fn code_workspace_draft_delete(
+    relative_path: String,
+    project_name: Option<String>,
+) -> Result<bool, String> {
+    let project = draft_project(project_name.as_deref())?;
     tauri::async_runtime::spawn_blocking(move || delete_project_code_draft(project, &relative_path))
         .await
         .map_err(|error| format!("Draft delete worker failed: {error}"))?
