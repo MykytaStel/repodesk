@@ -19,7 +19,7 @@ use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::git_workspace::{self, GitFileChange};
 
 mod process;
-use process::read_bounded;
+use process::{probe_version, read_bounded, run_probe_command};
 
 /// Maximum diff size kept on a [`CodingAgentExecution`] / written to a receipt.
 /// A larger diff is truncated with a trailing marker so the run record never
@@ -532,60 +532,6 @@ fn non_secret_label(value: Option<&str>) -> Option<String> {
     safe.then(|| value.to_string())
 }
 
-struct ProbeCommandOutput {
-    status_success: bool,
-    stdout: String,
-    stderr: String,
-}
-
-impl ProbeCommandOutput {
-    fn combined(&self) -> String {
-        if self.stderr.trim().is_empty() {
-            self.stdout.clone()
-        } else if self.stdout.trim().is_empty() {
-            self.stderr.clone()
-        } else {
-            format!("{}\n{}", self.stdout, self.stderr)
-        }
-    }
-}
-
-fn run_probe_command(binary: &str, args: &[&str]) -> Option<ProbeCommandOutput> {
-    if validate_token("program", binary).is_err()
-        || args
-            .iter()
-            .any(|arg| validate_token("argument", arg).is_err())
-    {
-        return None;
-    }
-    let mut command = Command::new(binary);
-    command
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    apply_sanitized_env(&mut command);
-    let mut child = command.spawn().ok()?;
-    let status_success = match child.wait_timeout(Duration::from_secs(5)).ok()? {
-        Some(status) => status.success(),
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-    };
-    let output = child.wait_with_output().ok()?;
-    let (stdout, _) = truncate_to_bytes(&String::from_utf8_lossy(&output.stdout), 8_000);
-    let (stderr, _) = truncate_to_bytes(&String::from_utf8_lossy(&output.stderr), 8_000);
-    let (stdout, _) = crate::security::redact_secrets(&stdout);
-    let (stderr, _) = crate::security::redact_secrets(&stderr);
-    Some(ProbeCommandOutput {
-        status_success,
-        stdout,
-        stderr,
-    })
-}
-
 fn safe_status_detail(output: &str) -> Option<String> {
     first_meaningful_line(output).and_then(|line| {
         let (redacted, _) = crate::security::redact_secrets(&line);
@@ -607,37 +553,6 @@ fn home_dir() -> Option<PathBuf> {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
         .map(PathBuf::from)
-}
-
-/// Run `<binary> --version` argv-only with a short timeout and return the first
-/// non-empty trimmed line of stdout (falling back to stderr). Any failure —
-/// missing binary, non-zero exit, timeout, empty output — yields `None`.
-fn probe_version(binary: &str) -> Option<String> {
-    if validate_token("program", binary).is_err() {
-        return None;
-    }
-    let mut child = Command::new(binary)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .ok()?;
-
-    match child.wait_timeout(Duration::from_secs(5)).ok()? {
-        Some(status) if status.success() => {}
-        Some(_) => return None,
-        None => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return None;
-        }
-    }
-
-    let output = child.wait_with_output().ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    first_meaningful_line(&stdout).or_else(|| first_meaningful_line(&stderr))
 }
 
 fn first_meaningful_line(text: &str) -> Option<String> {
