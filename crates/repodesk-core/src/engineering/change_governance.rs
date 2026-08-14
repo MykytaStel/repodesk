@@ -1,9 +1,9 @@
 //! Deterministic governance read model for the latest Work Item ChangeSet.
 //!
-//! RepoDesk derives this report entirely from the task-local engineering ledger
-//! plus the versioned Work Item Contract. It does not inspect or trust frontend
-//! state, and it never treats an agent's textual claim as proof of review or
-//! verification.
+//! RepoDesk derives the historical projection from the canonical engineering
+//! ledger plus the versioned Work Item Contract. Live callers must additionally
+//! reconcile a passed verification event with the current canonical run receipt
+//! before the commit gate may claim the ChangeSet is ready.
 
 use std::collections::BTreeSet;
 
@@ -69,6 +69,13 @@ pub struct ChangeVerificationEvidence {
     pub command_count: usize,
     pub evidence: Vec<EvidenceRef>,
     pub error: Option<String>,
+    /// `None` means this is only the historical ledger projection. Normal live
+    /// Changes snapshots reconcile it against the canonical TaskRunReceipt and
+    /// current Git tree before exposing commit readiness.
+    #[serde(default)]
+    pub fresh: Option<bool>,
+    #[serde(default)]
+    pub stale_reason: Option<String>,
 }
 
 impl Default for ChangeVerificationEvidence {
@@ -79,6 +86,8 @@ impl Default for ChangeVerificationEvidence {
             command_count: 0,
             evidence: Vec::new(),
             error: None,
+            fresh: None,
+            stale_reason: None,
         }
     }
 }
@@ -100,6 +109,7 @@ pub enum CommitGateState {
     VerificationRequired,
     VerificationRunning,
     VerificationFailed,
+    VerificationStale,
     Ready,
     Committed,
 }
@@ -140,6 +150,50 @@ pub fn load_change_governance(task: &TaskInfo) -> RepoDeskResult<ChangeGovernanc
         &events,
         &contract,
     ))
+}
+
+/// Reconcile the historical event projection with the authoritative live
+/// VerificationReceipt. A successful `VerificationFinished` event is immutable
+/// history; it is not proof that the *current* HEAD/index still match what was
+/// verified. Only this reconciliation may turn the event projection into live
+/// commit readiness.
+pub fn reconcile_verification_freshness(
+    snapshot: &mut ChangeGovernanceSnapshot,
+    fresh: bool,
+    stale_reason: Option<String>,
+) {
+    if snapshot.verification.state != ChangeVerificationState::Passed {
+        snapshot.verification.fresh = None;
+        snapshot.verification.stale_reason = None;
+        return;
+    }
+
+    snapshot.verification.fresh = Some(fresh);
+    snapshot.verification.stale_reason = if fresh {
+        None
+    } else {
+        Some(stale_reason.unwrap_or_else(|| {
+            "The VerificationReceipt no longer matches the current reviewed ChangeSet tree."
+                .to_string()
+        }))
+    };
+
+    // Preserve earlier/higher-priority blockers such as scope or review. The
+    // freshness reconciliation only replaces a gate that would otherwise claim
+    // a passed historical verification makes this ChangeSet commit-ready.
+    if !fresh && snapshot.gate.state == CommitGateState::Ready {
+        let reason = snapshot
+            .verification
+            .stale_reason
+            .clone()
+            .unwrap_or_else(|| "Verification is stale for the current ChangeSet.".to_string());
+        snapshot.gate = CommitGate {
+            state: CommitGateState::VerificationStale,
+            ready: false,
+            blockers: vec![reason],
+            warnings: snapshot.gate.warnings.clone(),
+        };
+    }
 }
 
 pub fn record_active_scope_override(reason: &str) -> RepoDeskResult<ChangeGovernanceSnapshot> {
@@ -419,6 +473,8 @@ fn derive_verification(
                         .get("error")
                         .and_then(Value::as_str)
                         .map(str::to_string),
+                    fresh: None,
+                    stale_reason: None,
                 };
             }
             EngineeringEventKind::VerificationStarted => {
@@ -688,6 +744,25 @@ mod tests {
         ]
     }
 
+    fn accepted_verified_events() -> Vec<EngineeringEvent> {
+        let mut events = changeset_events();
+        let changeset = ChangeSetId::try_new("run-1-changeset").unwrap();
+        let verification = crate::engineering::domain::VerificationId::try_new("verify-1").unwrap();
+        events.push(
+            event(EngineeringEventKind::ChangeSetReviewed)
+                .with_changeset(changeset.clone())
+                .with_attribute("decision", Value::String("accept".into())),
+        );
+        events.push(
+            event(EngineeringEventKind::VerificationFinished)
+                .with_changeset(changeset)
+                .with_verification(verification)
+                .with_attribute("success", Value::Bool(true))
+                .with_attribute("command_count", json!(2)),
+        );
+        events
+    }
+
     #[test]
     fn violation_blocks_readiness_until_human_override() {
         let mut events = changeset_events();
@@ -720,32 +795,61 @@ mod tests {
     }
 
     #[test]
-    fn accepted_and_verified_changeset_is_ready() {
-        let mut events = changeset_events();
-        let changeset = ChangeSetId::try_new("run-1-changeset").unwrap();
-        let verification = crate::engineering::domain::VerificationId::try_new("verify-1").unwrap();
-        events.push(
-            event(EngineeringEventKind::ChangeSetReviewed)
-                .with_changeset(changeset.clone())
-                .with_attribute("decision", Value::String("accept".into())),
-        );
-        events.push(
-            event(EngineeringEventKind::VerificationFinished)
-                .with_changeset(changeset)
-                .with_verification(verification)
-                .with_attribute("success", Value::Bool(true))
-                .with_attribute("command_count", json!(2)),
-        );
-
-        let report = derive_change_governance(
+    fn accepted_and_verified_changeset_is_ready_after_freshness_reconciliation() {
+        let events = accepted_verified_events();
+        let mut report = derive_change_governance(
             "task-1",
             &events,
             &contract(ScopeComplianceStatus::Compliant),
         );
         assert_eq!(report.review_state, ChangeReviewState::Accepted);
         assert_eq!(report.verification.state, ChangeVerificationState::Passed);
+        assert_eq!(report.verification.fresh, None);
+        assert_eq!(report.gate.state, CommitGateState::Ready);
+
+        reconcile_verification_freshness(&mut report, true, None);
+        assert_eq!(report.verification.fresh, Some(true));
         assert_eq!(report.gate.state, CommitGateState::Ready);
         assert!(report.gate.ready);
+    }
+
+    #[test]
+    fn stale_passed_verification_cannot_keep_commit_gate_ready() {
+        let events = accepted_verified_events();
+        let mut report = derive_change_governance(
+            "task-1",
+            &events,
+            &contract(ScopeComplianceStatus::Compliant),
+        );
+
+        reconcile_verification_freshness(
+            &mut report,
+            false,
+            Some("Index tree changed after verification.".into()),
+        );
+
+        assert_eq!(report.verification.fresh, Some(false));
+        assert_eq!(report.gate.state, CommitGateState::VerificationStale);
+        assert!(!report.gate.ready);
+        assert_eq!(
+            report.gate.blockers,
+            vec!["Index tree changed after verification."]
+        );
+    }
+
+    #[test]
+    fn stale_verification_does_not_hide_scope_blocker() {
+        let events = accepted_verified_events();
+        let mut report = derive_change_governance(
+            "task-1",
+            &events,
+            &contract(ScopeComplianceStatus::Violation),
+        );
+
+        reconcile_verification_freshness(&mut report, false, None);
+
+        assert_eq!(report.gate.state, CommitGateState::ScopeViolation);
+        assert!(!report.gate.ready);
     }
 
     #[test]
