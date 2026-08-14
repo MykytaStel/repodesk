@@ -234,13 +234,8 @@ pub fn cost_trend(days: usize) -> RepoDeskResult<Vec<CostTrendPoint>> {
                     continue;
                 };
                 let date = dt.with_timezone(&Utc).date_naive();
-                let cost = ledger_row_cost(
-                    &cost_config,
-                    &agent,
-                    &model,
-                    input_tokens,
-                    output_tokens,
-                );
+                let cost =
+                    ledger_row_cost(&cost_config, &agent, &model, input_tokens, output_tokens);
                 let entry = by_date.entry(date).or_insert((0, 0.0));
                 entry.0 += input_tokens + output_tokens;
                 entry.1 += cost;
