@@ -4,7 +4,6 @@
 //! argv-only command specs, and the low-level process runner used after the
 //! orchestrator has explicit human approval. No `sh -c`.
 
-use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File};
 use std::io::Write;
@@ -16,17 +15,14 @@ use serde::{Deserialize, Serialize};
 use wait_timeout::ChildExt;
 
 use crate::errors::{RepoDeskError, RepoDeskResult};
-use crate::git_workspace::{self, GitFileChange};
+use crate::git_workspace::GitFileChange;
 
 mod auth;
+mod changeset;
 mod process;
 use auth::{detect_authentication, home_dir};
+use changeset::{capture_changeset, git_porcelain};
 use process::{probe_version, read_bounded};
-
-/// Maximum diff size kept on a [`CodingAgentExecution`] / written to a receipt.
-/// A larger diff is truncated with a trailing marker so the run record never
-/// balloons; the full working tree is still on disk for the human to inspect.
-const MAX_DIFF_BYTES: usize = 200 * 1024;
 
 /// Caps on the agent output kept on a [`CodingAgentExecution`]. The raw streams
 /// are still on disk (restrictive perms); these bound what enters a run record
@@ -463,103 +459,6 @@ pub fn run_coding_agent_command(
     })
 }
 
-/// The working-tree changeset a run produced.
-struct Changeset {
-    changed_files: Vec<GitFileChange>,
-    diff: String,
-    diff_truncated: bool,
-    diff_path: Option<String>,
-}
-
-/// Compare the post-run git status to the pre-run snapshot, capture the unified
-/// diff of the tracked changes, and write it to a `.diff` receipt. Returns an
-/// empty changeset when `cwd` is not a git repo or nothing changed.
-fn capture_changeset(
-    cwd: &Path,
-    output_dir: &Path,
-    safe_id: &str,
-    stamp: u128,
-    pre_status: Option<&str>,
-) -> Changeset {
-    let empty = Changeset {
-        changed_files: Vec::new(),
-        diff: String::new(),
-        diff_truncated: false,
-        diff_path: None,
-    };
-    let Some(pre) = pre_status else {
-        return empty;
-    };
-    let post = git_workspace::run_git_captured(cwd, &["status", "--porcelain=v1"]);
-    let changed_files = changed_since(pre, &post);
-    if changed_files.is_empty() {
-        return empty;
-    }
-
-    // Staged + unstaged tracked diffs; neither needs an existing HEAD, so this
-    // works in a brand-new repo too. Untracked files are listed in
-    // `changed_files` but their content is not inlined here.
-    let mut raw_diff = git_workspace::run_git_captured(cwd, &["diff", "--no-color"]);
-    let cached = git_workspace::run_git_captured(cwd, &["diff", "--cached", "--no-color"]);
-    if !cached.trim().is_empty() {
-        if !raw_diff.trim().is_empty() {
-            raw_diff.push('\n');
-        }
-        raw_diff.push_str(&cached);
-    }
-
-    let (diff, diff_truncated) = truncate_to_bytes(&raw_diff, MAX_DIFF_BYTES);
-    let diff_path = {
-        let path = output_dir.join(format!("{safe_id}-{stamp}.diff"));
-        match fs::write(&path, diff.as_bytes()) {
-            Ok(()) => Some(path.display().to_string()),
-            Err(_) => None,
-        }
-    };
-
-    Changeset {
-        changed_files,
-        diff,
-        diff_truncated,
-        diff_path,
-    }
-}
-
-/// Porcelain status of `cwd`, or `None` when it is not inside a git work tree.
-fn git_porcelain(cwd: &Path) -> Option<String> {
-    let inside = git_workspace::run_git_captured(cwd, &["rev-parse", "--is-inside-work-tree"]);
-    if inside.trim() != "true" {
-        return None;
-    }
-    Some(git_workspace::run_git_captured(
-        cwd,
-        &["status", "--porcelain=v1"],
-    ))
-}
-
-/// Porcelain lines present after the run but not before it — the files the run
-/// added or whose status it changed.
-fn changed_since(pre: &str, post: &str) -> Vec<GitFileChange> {
-    let pre_lines: HashSet<&str> = pre.lines().collect();
-    post.lines()
-        .filter(|line| !pre_lines.contains(*line))
-        .filter_map(git_workspace::parse_porcelain_line)
-        .collect()
-}
-
-/// Truncate `text` to at most `max` bytes on a char boundary, appending a marker
-/// when truncated. Returns `(text, was_truncated)`.
-fn truncate_to_bytes(text: &str, max: usize) -> (String, bool) {
-    if text.len() <= max {
-        return (text.to_string(), false);
-    }
-    let mut end = max;
-    while end > 0 && !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    (format!("{}\n[diff truncated]", &text[..end]), true)
-}
-
 pub fn preview_coding_agent_handoff(
     value: &str,
     writes_allowed: bool,
@@ -867,27 +766,6 @@ mod tests {
             .expect("timeout result");
         assert_eq!(result.status, "timed_out");
         assert!(result.timed_out);
-    }
-
-    #[test]
-    fn truncate_to_bytes_marks_when_over_limit() {
-        assert_eq!(
-            truncate_to_bytes("short", 100),
-            ("short".to_string(), false)
-        );
-        let (text, truncated) = truncate_to_bytes("abcdefgh", 4);
-        assert!(truncated);
-        assert!(text.starts_with("abcd"));
-        assert!(text.contains("[diff truncated]"));
-    }
-
-    #[test]
-    fn changed_since_reports_only_new_status_lines() {
-        let pre = " M seed.txt\n";
-        let post = " M seed.txt\n M other.rs\n?? added.txt\n";
-        let changed = changed_since(pre, post);
-        let paths: Vec<&str> = changed.iter().map(|c| c.path.as_str()).collect();
-        assert_eq!(paths, vec!["other.rs", "added.txt"]);
     }
 
     #[cfg(unix)]
