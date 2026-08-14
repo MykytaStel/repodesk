@@ -48,4 +48,30 @@ mod tests {
         assert_eq!(capture.bytes, vec![b'x'; 32]);
         assert!(capture.truncated);
     }
+
+    #[test]
+    fn tee_drain_bounds_memory_and_persisted_bytes_independently() {
+        let input = (0..=255).cycle().take(1024).collect::<Vec<u8>>();
+        let mut persisted = Vec::new();
+
+        let capture = drain_bounded_to_writer(Cursor::new(&input), &mut persisted, 32, 64).unwrap();
+
+        assert_eq!(capture.bytes, input[..32]);
+        assert_eq!(persisted, input[..64]);
+        assert!(capture.retained_truncated);
+        assert!(capture.persisted_truncated);
+    }
+
+    #[test]
+    fn tee_drain_keeps_small_stream_complete() {
+        let input = b"hello executor";
+        let mut persisted = Vec::new();
+
+        let capture = drain_bounded_to_writer(Cursor::new(input), &mut persisted, 64, 64).unwrap();
+
+        assert_eq!(capture.bytes, input);
+        assert_eq!(persisted, input);
+        assert!(!capture.retained_truncated);
+        assert!(!capture.persisted_truncated);
+    }
 }
