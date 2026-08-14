@@ -1,19 +1,7 @@
 import type { TabId, Theme } from "../shared/types/api";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ThemeMenu } from "./ThemeMenu";
-import { APP_TABS, type AppTab } from "./tabs";
-import { TabIcon } from "./NavIcons";
-
-// Keep the drawer contextual rather than turning it into a second navigation
-// tree. The command palette remains the escape hatch for advanced/legacy tools.
-const RELATED: Partial<Record<TabId, TabId[]>> = {
-  work: ["memory", "orchestrate"],
-  code: ["git", "memory"],
-  changes: ["git", "audit"],
-  history: ["memory", "outcomes"],
-  projects: ["memory", "settings", "models-cost"],
-  memory: ["work", "history"],
-};
+import type { AppTab } from "./tabs";
 
 interface WorkspaceSidebarProps {
   activeTab: TabId;
@@ -29,18 +17,6 @@ interface WorkspaceSidebarProps {
   onNavigate: (tab: TabId, detail?: string) => void;
 }
 
-function RelatedItem({ tab, active, onSelect }: { tab: AppTab; active: boolean; onSelect: () => void }) {
-  return (
-    <button type="button" className={`workspace-side-link${active ? " active" : ""}`} onClick={onSelect}>
-      <span className="workspace-side-link-icon" aria-hidden="true"><TabIcon id={tab.id} /></span>
-      <span>
-        <strong>{tab.title}</strong>
-        <small>{tab.subtitle}</small>
-      </span>
-    </button>
-  );
-}
-
 export function WorkspaceSidebar({
   activeTab,
   activeTabInfo,
@@ -54,16 +30,13 @@ export function WorkspaceSidebar({
   onThemeChange,
   onNavigate,
 }: WorkspaceSidebarProps) {
-  const explicit = RELATED[activeTab];
-  const relatedTabs = (explicit
-    ? explicit.map((id) => APP_TABS.find((tab) => tab.id === id)).filter(Boolean)
-    : APP_TABS.filter((tab) => tab.group === activeTabInfo.group && tab.id !== activeTab && tab.tier === "more").slice(0, 3)) as AppTab[];
+  void activeTab;
 
   return (
     <aside className="workspace-sidebar" aria-label="Workspace context">
       <div className="workspace-sidebar-scroll">
         <header className="workspace-sidebar-heading">
-          <p className="eyebrow">{activeTabInfo.group}</p>
+          <p className="eyebrow">Current surface</p>
           <h2>{activeTabInfo.title}</h2>
           <p>{activeTabInfo.subtitle}</p>
         </header>
@@ -77,7 +50,7 @@ export function WorkspaceSidebar({
         </section>
 
         <section className="workspace-sidebar-section">
-          <span className="workspace-sidebar-label">Current work</span>
+          <span className="workspace-sidebar-label">Current engineering state</span>
           <button
             type="button"
             className="workspace-context-row"
@@ -86,38 +59,34 @@ export function WorkspaceSidebar({
             <span className={`workspace-context-dot${hasTask ? " ok" : ""}`} />
             <span>
               <strong>{hasTask ? taskTitle : "No active Work Item"}</strong>
-              <small>{hasTask ? "Bounded engineering task" : "Work starts from a bounded task"}</small>
+              <small>{hasTask ? "Goal, scope and next safe action" : "Work starts from a bounded task"}</small>
             </span>
           </button>
           <button
             type="button"
             className="workspace-context-row"
-            onClick={() => onNavigate("changes", dirty ? "Review workspace changes." : "Working tree is clean.")}
+            onClick={() => onNavigate("changes", dirty ? "Review the current ChangeSet." : "Working tree is clean.")}
           >
             <span className={`workspace-context-dot${!dirty ? " ok" : " warning"}`} />
             <span>
-              <strong>{dirty ? `${dirtyCount} workspace changes` : "Git clean"}</strong>
-              <small>{dirty ? "Review before verification" : "No uncommitted changes"}</small>
+              <strong>{dirty ? `${dirtyCount} workspace changes` : "Working tree clean"}</strong>
+              <small>{dirty ? "Review → verify → commit" : "No uncommitted delta"}</small>
             </span>
           </button>
           {!hasProject ? <p className="workspace-sidebar-empty">Connect a project to activate repository-aware surfaces.</p> : null}
         </section>
 
-        {relatedTabs.length > 0 ? (
-          <section className="workspace-sidebar-section">
-            <span className="workspace-sidebar-label">Related</span>
-            <div className="workspace-side-links">
-              {relatedTabs.map((tab) => (
-                <RelatedItem key={tab.id} tab={tab} active={activeTab === tab.id} onSelect={() => onNavigate(tab.id)} />
-              ))}
-            </div>
-          </section>
-        ) : null}
+        <section className="workspace-sidebar-section">
+          <span className="workspace-sidebar-label">Navigation</span>
+          <p className="workspace-sidebar-empty">
+            Use the activity rail for Work, Code, Changes, Runs and Projects. This drawer only describes the current context.
+          </p>
+        </section>
       </div>
 
       <footer className="workspace-sidebar-footer">
         <ThemeMenu theme={theme} onChange={onThemeChange} />
-        <button type="button" className="workspace-settings-link" onClick={() => onNavigate("settings", "Opened RepoDesk settings.")}>Settings</button>
+        <button type="button" className="workspace-settings-link" onClick={() => onNavigate("settings", "Opened global RepoDesk settings.")}>Settings</button>
       </footer>
     </aside>
   );

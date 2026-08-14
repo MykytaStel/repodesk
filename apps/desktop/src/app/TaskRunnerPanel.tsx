@@ -23,8 +23,10 @@ const KIND_LABEL: Record<ProjectTaskKind, string> = {
 };
 
 function statusLabel(status: TaskRunStatus): string {
+  if (status === "passed") return "Manual pass";
+  if (status === "failed") return "Manual fail";
   if (status === "timeout") return "Timed out";
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  return "Blocked";
 }
 
 function durationLabel(durationMs: number): string {
@@ -38,13 +40,7 @@ function resultTone(status: TaskRunStatus): string {
   return "danger";
 }
 
-function TaskRow({
-  task,
-  result,
-  busy,
-  onRun,
-  onInspect,
-}: {
+function TaskRow({ task, result, busy, onRun, onInspect }: {
   task: ProjectTask;
   result: TaskRunResult | null;
   busy: boolean;
@@ -69,14 +65,7 @@ function TaskRow({
         ) : (
           <span className="task-not-run">Not run</span>
         )}
-        <button
-          type="button"
-          className="tiny-button task-run-button"
-          disabled={busy || !task.runnable}
-          onClick={onRun}
-        >
-          Run
-        </button>
+        <button type="button" className="tiny-button task-run-button" disabled={busy || !task.runnable} onClick={onRun}>Run</button>
       </div>
     </div>
   );
@@ -89,37 +78,22 @@ function TaskRunDetail({ result }: { result: TaskRunResult }) {
   ].filter(Boolean).join("\n\n");
 
   return (
-    <section className="task-run-detail" aria-label={`Last run for ${result.label}`}>
+    <section className="task-run-detail" aria-label={`Manual check result for ${result.label}`}>
       <header>
-        <div>
-          <strong>{result.label}</strong>
-          <code>{result.command}</code>
-        </div>
+        <div><strong>{result.label}</strong><code>{result.command}</code></div>
         <div className="task-run-detail-meta">
           <span className={`pill ${resultTone(result.status)}`}>{statusLabel(result.status)}</span>
           <span>{durationLabel(result.duration_ms)}</span>
           {result.exit_code !== null ? <span>exit {result.exit_code}</span> : null}
         </div>
       </header>
-      {output ? (
-        <pre>{output}</pre>
-      ) : (
-        <div className="task-run-clean-output">No command output.</div>
-      )}
-      {(result.stdout_truncated || result.stderr_truncated) ? (
-        <small className="task-output-note">Output is bounded to the most recent 64 KiB per stream.</small>
-      ) : null}
+      {output ? <pre>{output}</pre> : <div className="task-run-clean-output">No command output.</div>}
+      {(result.stdout_truncated || result.stderr_truncated) ? <small className="task-output-note">Output is bounded to the most recent 64 KiB per stream.</small> : null}
     </section>
   );
 }
 
-export function TaskRunnerPanel({
-  active,
-  onOpenProblems,
-}: {
-  active: boolean;
-  onOpenProblems: () => void;
-}) {
+export function TaskRunnerPanel({ active, onOpenProblems }: { active: boolean; onOpenProblems: () => void }) {
   const { hasProject, projectName } = useWorkspace();
   const queryClient = useQueryClient();
   const [results, setResults] = useState<Record<string, TaskRunResult>>({});
@@ -184,14 +158,14 @@ export function TaskRunnerPanel({
   }
 
   if (snapshot.isLoading) {
-    return <div className="task-runner-empty"><strong>Loading tasks…</strong></div>;
+    return <div className="task-runner-empty"><strong>Loading manual checks…</strong></div>;
   }
 
   return (
     <div className="task-runner-panel">
       <div className="task-runner-toolbar">
         <div className="task-runner-heading">
-          <strong>Project tasks</strong>
+          <strong>Manual checks</strong>
           <span>{snapshot.data?.project ?? projectName}</span>
           <small>{tasks.length} configured</small>
           {snapshot.data?.truncated ? <small className="warn">list capped</small> : null}
@@ -199,24 +173,20 @@ export function TaskRunnerPanel({
         <div className="task-runner-actions">
           {summary.failed > 0 ? <button type="button" className="tiny-button" onClick={onOpenProblems}>Problems {summary.failed}</button> : null}
           <button type="button" className="tiny-button" disabled={busy} onClick={() => void snapshot.refetch()}>Refresh</button>
-          <button
-            type="button"
-            className="primary-button compact"
-            disabled={busy || runnableCount === 0}
-            onClick={() => runAll.mutate()}
-          >
-            {runAll.isPending ? "Running…" : "Run all"}
+          <button type="button" className="primary-button compact" disabled={busy || runnableCount === 0} onClick={() => runAll.mutate()}>
+            {runAll.isPending ? "Running…" : "Run all checks"}
           </button>
         </div>
+      </div>
+
+      <div className="notice neutral">
+        Manual check results are local workbench feedback, not Verification Receipts. They do not satisfy the ChangeSet verification or commit gate; use Changes → Verify to bind proof to the current reviewed change.
       </div>
 
       {error ? <div className="task-runner-error">{errorToMessage(error)}</div> : null}
 
       {tasks.length === 0 ? (
-        <div className="task-runner-empty">
-          <strong>No project tasks configured.</strong>
-          <span>RepoDesk exposes only allowlisted checks from this project's configuration.</span>
-        </div>
+        <div className="task-runner-empty"><strong>No project checks configured.</strong><span>RepoDesk exposes only allowlisted checks from this project&apos;s configuration.</span></div>
       ) : (
         <div className="task-runner-list">
           {tasks.map((task) => (

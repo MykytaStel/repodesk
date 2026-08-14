@@ -28,19 +28,17 @@ function InspectorMetric({ label, value, detail }: { label: string; value: strin
 function activeViewHint(activeTab: TabId): string {
   switch (activeTab) {
     case "work":
-      return "Current Work Item evidence without leaving the focused task canvas.";
+      return "Evidence for the active Work Item and its current gate.";
     case "code":
-      return "Repository context for the current code view.";
+      return "Repository evidence relevant to the current code workspace.";
     case "changes":
-      return "Scope and verification evidence behind the current changeset.";
+      return "Scope, review and verification evidence behind the current ChangeSet.";
     case "history":
-      return "Current Work Item state while you inspect historical runs.";
-    case "memory":
-      return "Accepted Project Knowledge can enter future bounded context packs.";
+      return "Current Work Item state while you inspect execution receipts.";
     case "projects":
-      return "Project-level engineering state and reusable knowledge live here.";
+      return "Durable project rules, knowledge and reusable work templates.";
     default:
-      return "Read-only engineering context for the current surface.";
+      return "Read-only engineering evidence for the current workspace.";
   }
 }
 
@@ -68,10 +66,10 @@ export function WorkspaceInspector({
   const governance = snapshot.data?.change_governance;
 
   return (
-    <aside className="workspace-inspector" aria-label="Inspector">
+    <aside className="workspace-inspector" aria-label="Engineering evidence inspector">
       <div className="workspace-inspector-scroll">
         <header className="workspace-inspector-heading">
-          <p className="eyebrow">Inspector</p>
+          <p className="eyebrow">Evidence inspector</p>
           <h2>{hasTask ? taskTitle : "Workspace"}</h2>
           <p>{activeViewHint(activeTab)}</p>
         </header>
@@ -81,7 +79,7 @@ export function WorkspaceInspector({
           <InspectorMetric
             label="Project"
             value={projectName || "Not connected"}
-            detail={dirty ? `${dirtyCount} uncommitted changes` : "Git working tree clean"}
+            detail={dirty ? `${dirtyCount} uncommitted changes` : "Working tree clean"}
           />
         </section>
 
@@ -106,21 +104,21 @@ export function WorkspaceInspector({
               <InspectorMetric
                 label="Change coverage"
                 value={coverage?.change_coverage == null ? "—" : `${Math.round(coverage.change_coverage * 100)}%`}
-                detail={coverage ? `${coverage.changed_files_present_in_context.length}/${coverage.changed_files.length} changed files prepared` : "Known after a changeset follows context"}
+                detail={coverage ? `${coverage.changed_files_present_in_context.length}/${coverage.changed_files.length} changed files prepared` : "Known after a ChangeSet follows context"}
               />
             </section>
 
             <section className="inspector-section">
-              <span className="inspector-section-label">Current gate</span>
+              <span className="inspector-section-label">Current trust gate</span>
               <InspectorMetric
                 label="Review"
                 value={governance?.review_state ?? "—"}
-                detail={governance?.changeset_id ? governance.changeset_id : "No current changeset"}
+                detail={governance?.changeset_id ? governance.changeset_id : "No current ChangeSet"}
               />
               <InspectorMetric
                 label="Verification"
                 value={governance?.verification.state ?? "—"}
-                detail={governance ? `${governance.verification.command_count} recorded commands` : "Loading evidence"}
+                detail={governance ? `${governance.verification.command_count} receipt command(s)` : "Loading evidence"}
               />
               <InspectorMetric
                 label="Commit"
@@ -130,14 +128,14 @@ export function WorkspaceInspector({
             </section>
 
             <section className="inspector-section">
-              <span className="inspector-section-label">History</span>
+              <span className="inspector-section-label">Execution evidence</span>
               <InspectorMetric
                 label="Executions"
                 value={report ? `${report.execution.completed}/${report.execution.attempts}` : "—"}
                 detail={report ? `${report.execution.unique_workers} workers · ${report.execution.handoffs} handoffs` : "Loading evidence"}
               />
               <InspectorMetric
-                label="Verification"
+                label="Verification receipts"
                 value={report ? `${report.verification.passed}/${report.verification.finished}` : "—"}
                 detail={report ? `${report.verification.failed} failed across ${report.verification.commands_run} commands` : "Loading evidence"}
               />
@@ -147,7 +145,7 @@ export function WorkspaceInspector({
       </div>
 
       <footer className="workspace-inspector-footer">
-        <button type="button" className="workspace-inspector-action" onClick={() => onNavigate("memory", "Opened reviewed Project Knowledge.")}>Project Knowledge</button>
+        <button type="button" className="workspace-inspector-action" onClick={() => onNavigate("projects", "Opened project rules and reviewed knowledge.")}>Project context</button>
         <button type="button" className="workspace-inspector-action" onClick={() => onNavigate("work", "Opened full Work Item evidence.")}>Open Work</button>
       </footer>
     </aside>
