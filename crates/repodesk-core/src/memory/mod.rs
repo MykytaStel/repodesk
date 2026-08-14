@@ -5,6 +5,7 @@
 //! - [`model`]      — the [`MemoryEntry`] data model + provenance helpers.
 //! - [`store`]      — SQLite CRUD (add/list/get/update/delete/pin/status/search).
 //! - [`retrieval`]  — deterministic ranking + budgeted "memory slice" for prompts.
+//! - [`context_source`] — fail-closed policy for structured vs legacy context material.
 //! - [`consolidate`]— render the active brain to a human-readable `memory.md`.
 //!
 //! - [`capture`]    — extract memory candidates from an AI response (proposals).
@@ -13,6 +14,7 @@
 
 pub mod capture;
 pub mod consolidate;
+pub mod context_source;
 pub mod llm;
 pub mod merge;
 pub mod model;
@@ -24,6 +26,7 @@ pub(crate) mod test_support;
 
 pub use capture::{capture_from_text, capture_from_text_smart};
 pub use consolidate::consolidate_project_memory;
+pub use context_source::{MemoryContextSource, context_source_for_slice};
 pub use llm::BrainLlm;
 pub use merge::{ScanSummary, accept_proposal, reconcile_conflict, reject_proposal, scan};
 pub use model::{
