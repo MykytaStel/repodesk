@@ -5,6 +5,10 @@ use std::process::Command;
 
 use crate::projects;
 
+mod process;
+pub use process::run_git_captured;
+pub(crate) use process::run_git_captured_bounded;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitFileChange {
     pub path: String,
@@ -201,27 +205,6 @@ fn run_git(project_path: &Path, args: &[&str]) -> std::io::Result<GitOutput> {
         ok: output.status.success(),
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
     })
-}
-
-pub fn run_git_captured(project_path: &Path, args: &[&str]) -> String {
-    match Command::new("git")
-        .args(args)
-        .current_dir(project_path)
-        .output()
-    {
-        Ok(output) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).to_string()
-        }
-        Ok(output) => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if stderr.trim().is_empty() {
-                String::from_utf8_lossy(&output.stdout).to_string()
-            } else {
-                stderr.to_string()
-            }
-        }
-        Err(error) => format!("failed to run git {}: {}", args.join(" "), error),
-    }
 }
 
 /// The unified diff for a single file in the working tree. `cached` selects the
