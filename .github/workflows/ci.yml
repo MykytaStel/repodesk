@@ -21,6 +21,7 @@ jobs:
   verify:
     name: Gates (fmt, clippy, tests, frontend, secret-scan)
     runs-on: ubuntu-22.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -79,6 +80,7 @@ jobs:
   e2e-playwright:
     name: E2E smoke (Playwright, mock IPC)
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -116,6 +118,7 @@ jobs:
   supply-chain:
     name: Supply chain (cargo-deny)
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Gates on RustSec vulnerabilities, the license allowlist, and unknown sources
@@ -129,6 +132,7 @@ jobs:
   secret-scan-gitleaks:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     # On pull_request events gitleaks-action lists the PR's commits via the API,
     # which needs pull-requests: read (the default token lacks it -> 403).
     permissions:
@@ -148,6 +152,7 @@ jobs:
   coverage:
     name: Coverage (report only)
     runs-on: ubuntu-22.04
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Tauri system dependencies
