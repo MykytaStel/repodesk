@@ -9,7 +9,6 @@ import {
 } from "../../shared/api/credentials";
 
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { pickDirectory, basename } from "../../shared/api/dialog";
 import { useToast } from "../../shared/ui/Toast";
 import { useSettings } from "./useSettings";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
@@ -29,20 +28,14 @@ export function SettingsTab() {
     apiEnvDiagnostic,
     projectMemory,
     isLoading: isBusy,
-    setupForm,
-    setSetupForm,
-    setupNotice,
     memoryAppendInput,
     setMemoryAppendInput,
     saveSettings,
     isSavingSettings,
     handleAppendMemory,
     isAppendingMemory,
-    addProjectFromSetup,
-    isAddingProject,
   } = useSettings();
 
-  const [showConnect, setShowConnect] = useState(false);
   const [keyDraft, setKeyDraft] = useState({ anthropic: "", openai: "", gemini: "" });
 
   const loadProjectMemory = () => {
@@ -58,7 +51,6 @@ export function SettingsTab() {
     try {
       await startLocalServer(provider);
       toast.success(`Launched ${provider}, waiting for server...`);
-      // wait a bit for server to start before refreshing
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: queryKeys.models.health });
       }, 3000);
@@ -72,11 +64,9 @@ export function SettingsTab() {
     try {
       await saveSettings({
         ...providerSettings,
-        // A blank field keeps the existing key (backend preserves the masked value).
         anthropic_api_key: keyDraft.anthropic.trim() || providerSettings.anthropic_api_key,
         openai_api_key: keyDraft.openai.trim() || providerSettings.openai_api_key,
         gemini_api_key: keyDraft.gemini.trim() || providerSettings.gemini_api_key,
-        // Pasting a key enables the matching API provider for routing + discovery.
         anthropic_api_enabled: keyDraft.anthropic.trim() ? true : providerSettings.anthropic_api_enabled,
         openai_api_enabled: keyDraft.openai.trim() ? true : providerSettings.openai_api_enabled,
         gemini_api_enabled: keyDraft.gemini.trim() ? true : providerSettings.gemini_api_enabled,
@@ -112,17 +102,6 @@ export function SettingsTab() {
     }
   };
 
-  const browseForProjectPath = async () => {
-    const path = await pickDirectory();
-    if (!path) return;
-    setSetupForm((prev) => ({
-      ...prev,
-      projectPath: path,
-      // Default the name from the folder when the user hasn't typed one.
-      projectName: prev.projectName.trim() ? prev.projectName : basename(path),
-    }));
-  };
-
   if (!providerSettings) {
     return <div className="content-grid"><section className="panel"><p>Loading settings...</p></section></div>;
   }
@@ -130,11 +109,10 @@ export function SettingsTab() {
     <div className="content-grid">
       <section className="hero-panel wide-panel">
         <p className="eyebrow">Settings</p>
-        <h1>API keys, providers, and workspace.</h1>
+        <h1>API keys, providers, and preferences.</h1>
         <p className="lead">Paste your own Anthropic, OpenAI, and Gemini API keys below — they're stored locally in <code>~/.repodesk</code>, never committed, never sent to repos or context packs. Local engines (Ollama, LM Studio) need no key.</p>
       </section>
 
-      {/* API keys — the thing most people come here for, so it's first. */}
       <section className="panel wide-panel flex-col gap-lg">
         <div className="panel-title-row">
           <div>
@@ -195,37 +173,6 @@ export function SettingsTab() {
       </section>
 
       <SecureKeychainSection />
-
-      {/* Connect project — collapsed by default; usually a one-time action. */}
-      <section className="panel wide-panel">
-        <div className="panel-title-row">
-          <div>
-            <p className="eyebrow">Workspace</p>
-            <h2>Active project: {projectName}</h2>
-          </div>
-          <button className="ghost-button" onClick={() => setShowConnect((v) => !v)}>
-            {showConnect ? "Close" : "+ Connect a project"}
-          </button>
-        </div>
-        {showConnect && (
-          <div className="form-stack" style={{ marginTop: "var(--space-4)" }}>
-            <label>Project name<input value={setupForm.projectName} onChange={(event) => setSetupForm({ ...setupForm, projectName: event.target.value })} /></label>
-            <label>Project path
-              <div className="input-with-action">
-                <input value={setupForm.projectPath} onChange={(event) => setSetupForm({ ...setupForm, projectPath: event.target.value })} placeholder="/Users/you/code/my-app" />
-                <button type="button" className="ghost-button" onClick={() => void browseForProjectPath()}>Browse…</button>
-              </div>
-            </label>
-            <label>Project type<input value={setupForm.projectType} onChange={(event) => setSetupForm({ ...setupForm, projectType: event.target.value })} /></label>
-            <label>Main language<input value={setupForm.mainLanguage} onChange={(event) => setSetupForm({ ...setupForm, mainLanguage: event.target.value })} /></label>
-            <button className="primary-button full" onClick={() => void addProjectFromSetup().catch(() => undefined)} disabled={isAddingProject || isBusy}>
-              {isAddingProject ? "Adding and activating..." : "Add and activate project"}
-            </button>
-            {setupNotice && <div className={`notice ${setupNotice.tone}`}>{setupNotice.message}</div>}
-            <p className="muted text-sm">Create and switch tasks from the <strong>Workflow</strong> tab.</p>
-          </div>
-        )}
-      </section>
 
       <IdePreferencesPanel />
 
@@ -314,7 +261,6 @@ export function SettingsTab() {
           </button>
         </div>
       </section>
-
     </div>
   );
 }
@@ -481,7 +427,7 @@ function LocalModelSelect({
   onLaunch: () => void;
 }) {
   const isReachable = health?.reachability === "working";
-  
+
   return (
     <label>
       <div className="flex items-center gap-sm" style={{ marginBottom: 4 }}>
@@ -501,10 +447,10 @@ function LocalModelSelect({
             ))}
           </select>
         ) : (
-          <input 
-            value={value} 
-            onChange={(e) => onChange(e.target.value)} 
-            placeholder={isReachable ? "No models found" : `Enter ${providerId} model name`} 
+          <input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={isReachable ? "No models found" : `Enter ${providerId} model name`}
           />
         )}
         {!isReachable && (
