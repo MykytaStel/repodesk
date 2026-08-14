@@ -46,8 +46,8 @@ jobs:
           )
           replace_once(
               "crates/repodesk-core/src/engineering/events.rs",
-              "pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {\n    let task_id = run_dir\n        .file_name()\n        .map(|value| value.to_string_lossy().to_string());\n    let project = run_dir\n        .parent()\n        .and_then(Path::file_name)\n        .map(|value| value.to_string_lossy().to_string());\n\n    let mut canonical = read_engineering_events(usize::MAX)?;",
-              "pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {\n    let (project, task_id) = event_scope(run_dir);\n\n    let mut canonical = read_engineering_events(usize::MAX)?;",
+              "pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {\n    let task_id = run_dir\n        .file_name()\n        .map(|value| value.to_string_lossy().to_string());\n    let project = run_dir\n        .parent()\n        .and_then(Path::file_name)\n        .map(|value| value.to_string_lossy().to_string());\n\n    let mut canonical = read_engineering_events(usize::MAX)?\n",
+              "pub fn read_events(run_dir: &Path) -> RepoDeskResult<Vec<EngineeringEvent>> {\n    let (project, task_id) = event_scope(run_dir);\n\n    let mut canonical = read_engineering_events(usize::MAX)?\n",
           )
           replace_once(
               "crates/repodesk-core/src/engineering/mod.rs",
