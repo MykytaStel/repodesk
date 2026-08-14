@@ -4,9 +4,7 @@
 //! This module owns the separate question of whether that proof is still bound
 //! to the current canonical run receipt and Git tree.
 
-use super::{
-    ChangeGovernanceSnapshot, ChangeVerificationState, CommitGate, CommitGateState,
-};
+use super::{ChangeGovernanceSnapshot, ChangeVerificationState, CommitGate, CommitGateState};
 
 pub fn reconcile_verification_freshness(
     snapshot: &mut ChangeGovernanceSnapshot,

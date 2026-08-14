@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use crate::workflow::TaskRunReceipt;
 
 use super::{
-    AcceptanceEvidenceReport, ChangeGovernanceSnapshot, ChangeReviewState,
-    ChangeVerificationState, CommitGate, ScopeComplianceStatus,
+    AcceptanceEvidenceReport, ChangeGovernanceSnapshot, ChangeReviewState, ChangeVerificationState,
+    CommitGate, ScopeComplianceStatus,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,9 +92,7 @@ pub fn derive_changeset_passport(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engineering::{
-        ChangeOrigin, ChangeVerificationEvidence, CommitGateState,
-    };
+    use crate::engineering::{ChangeOrigin, ChangeVerificationEvidence, CommitGateState};
 
     fn governance() -> ChangeGovernanceSnapshot {
         ChangeGovernanceSnapshot {

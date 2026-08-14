@@ -236,11 +236,8 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
             .map(|value| value.goal.as_str())
             .unwrap_or_default()
     );
-    let mut pipeline_candidates = build_pipeline_candidates(
-        &bounded_input,
-        contract.is_some(),
-        memory_source.locator(),
-    );
+    let mut pipeline_candidates =
+        build_pipeline_candidates(&bounded_input, contract.is_some(), memory_source.locator());
     for candidate in &mut pipeline_candidates {
         apply_context_relevance(candidate, &relevance_text, &changed_files);
     }
