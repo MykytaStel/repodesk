@@ -14,6 +14,7 @@ pub mod code_workspace;
 pub mod code_workspace_ops;
 pub mod code_workspace_search;
 pub mod context;
+pub(crate) mod context_memory;
 pub mod context_freshness;
 pub mod context_packing;
 pub mod context_pipeline;
