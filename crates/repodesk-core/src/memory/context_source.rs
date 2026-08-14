@@ -32,9 +32,8 @@ impl MemoryContextSource {
 pub fn context_source_for_slice(slice: &SliceRender) -> RepoDeskResult<MemoryContextSource> {
     if !slice.pinned_overflow_ids.is_empty() {
         return Err(RepoDeskError::Api(format!(
-            "context construction blocked: {} pinned project-memory record(s) do not fit the {} token memory budget (ids: {})",
+            "context construction blocked: {} pinned project-memory record(s) do not fit the configured memory budget (ids: {})",
             slice.pinned_overflow_ids.len(),
-            slice.estimated_tokens,
             slice
                 .pinned_overflow_ids
                 .iter()
