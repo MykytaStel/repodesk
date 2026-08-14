@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   patch:
-    if: ${{ hashFiles('.github/apply-safe-quit-patch.py') != '' }}
     runs-on: ubuntu-22.04
     timeout-minutes: 5
     steps:
