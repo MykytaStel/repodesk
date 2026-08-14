@@ -19,7 +19,7 @@ use crate::engineering::{
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::git_workspace::run_git_captured as run_git;
 use crate::init;
-use crate::memory::{MemoryContextSource, context_source_for_slice};
+use crate::memory::resolve_context_memory;
 use crate::paths::RepoDeskPaths;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
@@ -116,23 +116,14 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
     let engineering_knowledge_observed_at =
         engineering_knowledge_observed_at(&engineering_knowledge.included_ids);
 
-    // Structured Memory Brain retrieval is authoritative when active records
-    // exist. Retrieval errors and pinned overflow fail context construction;
-    // neither may silently downgrade into the historical memory.md file.
-    let memory_slice =
-        crate::memory::retrieval::memory_slice(&project.name, MEMORY_BUDGET_TOKENS)?;
-    let memory_source = context_source_for_slice(&memory_slice)?;
-    let legacy_memory_path = project_meta_dir.join("memory.md");
-    let (memory, memory_observed_at) = match memory_source {
-        MemoryContextSource::StructuredSlice => (
-            memory_slice.markdown.clone(),
-            memory_slice_observed_at(&project.name, &memory_slice.included_ids),
-        ),
-        MemoryContextSource::LegacyFile => (
-            read_optional_file(&legacy_memory_path),
-            file_observed_at(&legacy_memory_path),
-        ),
-    };
+    let memory_context = resolve_context_memory(
+        &project.name,
+        MEMORY_BUDGET_TOKENS,
+        &project_meta_dir.join("memory.md"),
+    )?;
+    let memory_source = memory_context.source;
+    let memory_observed_at = memory_context.observed_at;
+    let memory = memory_context.markdown;
     let decisions = read_optional_file(&project_meta_dir.join("decisions.md"));
     let risks = read_optional_file(&project_meta_dir.join("risks.md"));
 
@@ -456,25 +447,6 @@ fn engineering_knowledge_observed_at(included_ids: &[String]) -> Option<DateTime
         .filter(|record| included.contains(record.id.as_str()))
         .map(|record| record.updated_at)
         .min()
-}
-
-fn memory_slice_observed_at(project: &str, included_ids: &[i64]) -> Option<DateTime<Utc>> {
-    if included_ids.is_empty() {
-        return None;
-    }
-    let included = included_ids.iter().copied().collect::<HashSet<_>>();
-
-    crate::memory::store::list_active(project)
-        .ok()?
-        .into_iter()
-        .filter(|entry| included.contains(&entry.id))
-        .map(|entry| entry.updated_at.unwrap_or(entry.timestamp))
-        .min()
-}
-
-fn file_observed_at(path: &std::path::Path) -> Option<DateTime<Utc>> {
-    let modified = fs::metadata(path).ok()?.modified().ok()?;
-    Some(DateTime::<Utc>::from(modified))
 }
 
 fn apply_named_freshness(
@@ -876,11 +848,7 @@ mod tests {
             agent_notes: "notes",
         };
 
-        let candidates = build_pipeline_candidates(
-            &input,
-            true,
-            MemoryContextSource::StructuredSlice.locator(),
-        );
+        let candidates = build_pipeline_candidates(&input, true, "memory-brain:active-slice");
         let required = candidates
             .iter()
             .filter(|candidate| candidate.required)
@@ -894,37 +862,6 @@ mod tests {
         assert!(required.contains(&"agent_notes"));
         assert!(!required.contains(&"repository_map"));
         assert!(!required.contains(&"legacy_memory"));
-    }
-
-    #[test]
-    fn pipeline_records_actual_memory_source_locator() {
-        let input = ContextPackInput {
-            project_metadata: "project",
-            repository_map: "repo map",
-            task_metadata: "task meta",
-            work_item_contract: "contract",
-            task_markdown: "task body",
-            scoped_files: "files",
-            engineering_knowledge: "knowledge",
-            memory: "legacy",
-            decisions: "decisions",
-            risks: "risks",
-            checks: "checks",
-            ignore_rules: "ignore",
-            git_state: "git",
-            agent_notes: "notes",
-        };
-
-        let candidates = build_pipeline_candidates(
-            &input,
-            true,
-            MemoryContextSource::LegacyFile.locator(),
-        );
-        let memory = candidates
-            .iter()
-            .find(|candidate| candidate.id == "legacy_memory")
-            .unwrap();
-        assert_eq!(memory.provenance.locator, "project:memory.md");
     }
 
     #[test]
@@ -962,11 +899,7 @@ mod tests {
             git_state: "git",
             agent_notes: "notes",
         };
-        let mut candidates = build_pipeline_candidates(
-            &input,
-            true,
-            MemoryContextSource::StructuredSlice.locator(),
-        );
+        let mut candidates = build_pipeline_candidates(&input, true, "memory-brain:active-slice");
         let observed_at = Utc::now() - Duration::days(7);
 
         apply_named_freshness(&mut candidates, "repository_map", Some(observed_at));
