@@ -2,12 +2,13 @@
 //!
 //! This is the link that was missing: it turns the stored brain into a compact
 //! "memory slice" that gets injected into every agent prompt (via `context.rs`
-//! and `smart_context.rs`). Ranking is a pure function (easy to test); the
-//! `memory_slice` wrapper does the IO.
+//! and `smart_context.rs`). The ranking core accepts an explicit clock so the
+//! same inputs can be replayed exactly; the `memory_slice` wrapper supplies the
+//! current time for normal interactive use.
 
 use std::collections::{BTreeMap, HashSet};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::RepoDeskResult;
@@ -16,7 +17,6 @@ use crate::tokens::estimate_text;
 use super::model::MemoryEntry;
 use super::store;
 
-// ── Scoring weights (tunable) ────────────────────────────────────────────────
 const PINNED_BOOST: f64 = 10_000.0;
 const SALIENCE_WEIGHT: f64 = 100.0;
 const CONFIDENCE_WEIGHT: f64 = 20.0;
@@ -26,7 +26,6 @@ const RECENCY_WEIGHT: f64 = 40.0;
 const RECENCY_HALFLIFE_DAYS: f64 = 30.0;
 const MAX_LINE_CHARS: usize = 240;
 
-/// Keywords distilled from the active task, used for relevance overlap.
 #[derive(Debug, Clone, Default)]
 pub struct TaskSignals {
     pub keywords: HashSet<String>,
@@ -44,7 +43,6 @@ impl TaskSignals {
     }
 }
 
-/// An entry with its computed relevance score.
 #[derive(Debug, Clone)]
 pub struct ScoredEntry {
     pub entry: MemoryEntry,
@@ -52,14 +50,17 @@ pub struct ScoredEntry {
     pub reasons: Vec<String>,
 }
 
-/// Result of selecting a budgeted slice of memory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SliceRender {
     pub markdown: String,
     pub estimated_tokens: usize,
     pub included_ids: Vec<i64>,
     pub excluded_ids: Vec<i64>,
+    #[serde(default)]
+    pub pinned_overflow_ids: Vec<i64>,
     pub total_active: usize,
+    #[serde(default)]
+    pub budget_exhausted: bool,
 }
 
 impl SliceRender {
@@ -68,9 +69,11 @@ impl SliceRender {
     }
 }
 
-/// Rank active entries by relevance to the task. Pure + deterministic.
-pub fn rank_for_task(signals: &TaskSignals, entries: &[MemoryEntry]) -> Vec<ScoredEntry> {
-    let now = Utc::now();
+pub fn rank_for_task_at(
+    signals: &TaskSignals,
+    entries: &[MemoryEntry],
+    now: DateTime<Utc>,
+) -> Vec<ScoredEntry> {
     let mut scored: Vec<ScoredEntry> = entries
         .iter()
         .filter(|e| e.is_active())
@@ -80,7 +83,6 @@ pub fn rank_for_task(signals: &TaskSignals, entries: &[MemoryEntry]) -> Vec<Scor
 
             let salience = entry.salience.clamp(0.0, 1.0);
             score += salience * SALIENCE_WEIGHT;
-
             score += entry.confidence.clamp(0.0, 1.0) * CONFIDENCE_WEIGHT;
 
             let days = (now - entry.timestamp).num_days().max(0) as f64;
@@ -119,56 +121,86 @@ pub fn rank_for_task(signals: &TaskSignals, entries: &[MemoryEntry]) -> Vec<Scor
     scored
 }
 
-/// Greedily select ranked entries under a token budget and render the slice.
-/// Pinned entries are always included (they bypass the budget) so durable
-/// constraints are never silently dropped.
+pub fn rank_for_task(signals: &TaskSignals, entries: &[MemoryEntry]) -> Vec<ScoredEntry> {
+    rank_for_task_at(signals, entries, Utc::now())
+}
+
 pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender {
     let total_active = scored.len();
-    let mut running = HEADER_TOKEN_OVERHEAD;
+    let mut running = HEADER_TOKEN_OVERHEAD.min(token_budget);
     let mut included: Vec<&MemoryEntry> = Vec::new();
     let mut included_ids = Vec::new();
     let mut excluded_ids = Vec::new();
+    let mut pinned_overflow_ids = Vec::new();
 
-    for s in scored {
-        let line = render_line(&s.entry);
+    for scored_entry in scored {
+        let line = render_line(&scored_entry.entry);
         let line_tokens = estimate_text(&line).estimated_tokens;
-        if s.entry.pinned || running + line_tokens <= token_budget {
-            running += line_tokens;
-            included.push(&s.entry);
-            included_ids.push(s.entry.id);
+        if running.saturating_add(line_tokens) <= token_budget {
+            running = running.saturating_add(line_tokens);
+            included.push(&scored_entry.entry);
+            included_ids.push(scored_entry.entry.id);
         } else {
-            excluded_ids.push(s.entry.id);
+            excluded_ids.push(scored_entry.entry.id);
+            if scored_entry.entry.pinned {
+                pinned_overflow_ids.push(scored_entry.entry.id);
+            }
         }
     }
 
-    let markdown = render_markdown(&included);
-    let estimated_tokens = estimate_text(&markdown).estimated_tokens;
+    let (markdown, estimated_tokens) = loop {
+        let rendered = render_markdown(&included);
+        let estimate = estimate_text(&rendered).estimated_tokens;
+        if estimate <= token_budget {
+            break (rendered, estimate);
+        }
+
+        // Framing is lower value than the selected memories themselves. Before
+        // evicting a pinned or otherwise high-ranked entry, drop the intro and
+        // category headings and try the compact representation.
+        let compact = render_compact_markdown(&included);
+        let compact_estimate = estimate_text(&compact).estimated_tokens;
+        if compact_estimate <= token_budget {
+            break (compact, compact_estimate);
+        }
+
+        let Some(removed) = included.pop() else {
+            break (String::new(), 0);
+        };
+        included_ids.retain(|id| *id != removed.id);
+        if !excluded_ids.contains(&removed.id) {
+            excluded_ids.push(removed.id);
+        }
+        if removed.pinned && !pinned_overflow_ids.contains(&removed.id) {
+            pinned_overflow_ids.push(removed.id);
+        }
+    };
+
+    let budget_exhausted =
+        !scored.is_empty() && (!excluded_ids.is_empty() || estimated_tokens >= token_budget);
 
     SliceRender {
         markdown,
         estimated_tokens,
         included_ids,
         excluded_ids,
+        pinned_overflow_ids,
         total_active,
+        budget_exhausted,
     }
 }
 
-/// IO wrapper: load active memory for `project`, rank against the active task,
-/// and render a budgeted slice. Never fails on a missing/unset task — it just
-/// ranks without keyword signals.
 pub fn memory_slice(project: &str, token_budget: usize) -> RepoDeskResult<SliceRender> {
     let entries = store::list_active(project)?;
     let signals = active_task_signals();
-    let scored = rank_for_task(&signals, &entries);
+    let scored = rank_for_task_at(&signals, &entries, Utc::now());
     Ok(render_slice(&scored, token_budget))
 }
 
-/// Convenience for context builders that only want the markdown body.
 pub fn memory_slice_markdown(project: &str, token_budget: usize) -> RepoDeskResult<String> {
     Ok(memory_slice(project, token_budget)?.markdown)
 }
 
-/// Build task signals from the active task (title + task.md), best-effort.
 fn active_task_signals() -> TaskSignals {
     let Ok(task) = crate::tasks::show_active_task() else {
         return TaskSignals::default();
@@ -214,6 +246,14 @@ fn render_markdown(entries: &[&MemoryEntry]) -> String {
     out
 }
 
+fn render_compact_markdown(entries: &[&MemoryEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| render_line(entry))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn render_line(entry: &MemoryEntry) -> String {
     let pin = if entry.pinned { " (pinned)" } else { "" };
     format!(
@@ -253,7 +293,6 @@ fn keyword_overlap(signals: &TaskSignals, entry: &MemoryEntry) -> usize {
         .count()
 }
 
-/// Lowercase alphanumeric tokens of length >= 3, minus a small stopword set.
 fn tokenize(text: &str) -> HashSet<String> {
     text.split(|c: char| !c.is_alphanumeric())
         .map(|w| w.to_lowercase())
@@ -297,12 +336,22 @@ fn is_stopword(word: &str) -> bool {
 mod tests {
     use super::*;
     use crate::memory::model::{NewMemoryInput, status};
-    use chrono::Duration;
+    use chrono::{Duration, TimeZone};
 
-    fn entry(id: i64, content: &str, category: &str, tags: &[&str]) -> MemoryEntry {
-        let mut e = MemoryEntry {
+    fn fixed_now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 8, 14, 9, 0, 0).unwrap()
+    }
+
+    fn entry_at(
+        id: i64,
+        content: &str,
+        category: &str,
+        tags: &[&str],
+        timestamp: DateTime<Utc>,
+    ) -> MemoryEntry {
+        MemoryEntry {
             id,
-            timestamp: Utc::now(),
+            timestamp,
             project: "demo".into(),
             content: content.into(),
             category: category.into(),
@@ -317,9 +366,11 @@ mod tests {
             supersedes_id: None,
             content_hash: String::new(),
             updated_at: None,
-        };
-        e.timestamp = Utc::now();
-        e
+        }
+    }
+
+    fn entry(id: i64, content: &str, category: &str, tags: &[&str]) -> MemoryEntry {
+        entry_at(id, content, category, tags, fixed_now())
     }
 
     #[test]
@@ -329,8 +380,7 @@ mod tests {
         pinned.salience = 0.0;
         let relevant = entry(2, "auth payments api design", "decision", &["auth"]);
         let signals = TaskSignals::from_text("improve auth payments flow");
-
-        let ranked = rank_for_task(&signals, &[relevant, pinned]);
+        let ranked = rank_for_task_at(&signals, &[relevant, pinned], fixed_now());
         assert_eq!(ranked[0].entry.id, 1, "pinned entry must rank first");
     }
 
@@ -339,24 +389,90 @@ mod tests {
         let relevant = entry(1, "decision about auth tokens", "decision", &["auth"]);
         let irrelevant = entry(2, "note about logging colors", "general", &["ui"]);
         let signals = TaskSignals::from_text("rework the auth tokens module");
-
-        let ranked = rank_for_task(&signals, &[irrelevant, relevant]);
+        let ranked = rank_for_task_at(&signals, &[irrelevant, relevant], fixed_now());
         assert_eq!(ranked[0].entry.id, 1);
     }
 
     #[test]
     fn recency_breaks_ties_when_no_signals() {
-        let mut older = entry(1, "older note", "general", &[]);
-        older.timestamp = Utc::now() - Duration::days(120);
-        let newer = entry(2, "newer note", "general", &[]);
-
-        let ranked = rank_for_task(&TaskSignals::default(), &[older, newer]);
+        let now = fixed_now();
+        let older = entry_at(1, "older note", "general", &[], now - Duration::days(120));
+        let newer = entry_at(2, "newer note", "general", &[], now);
+        let ranked = rank_for_task_at(&TaskSignals::default(), &[older, newer], now);
         assert_eq!(ranked[0].entry.id, 2);
     }
 
     #[test]
-    fn render_slice_respects_budget_but_keeps_pinned() {
-        let signals = TaskSignals::default();
+    fn ranking_is_replayable_with_explicit_clock() {
+        let now = fixed_now();
+        let entries = vec![
+            entry_at(
+                1,
+                "old auth rule",
+                "constraint",
+                &["auth"],
+                now - Duration::days(90),
+            ),
+            entry_at(
+                2,
+                "new auth rule",
+                "constraint",
+                &["auth"],
+                now - Duration::days(2),
+            ),
+        ];
+        let signals = TaskSignals::from_text("auth change");
+        let first = rank_for_task_at(&signals, &entries, now);
+        let second = rank_for_task_at(&signals, &entries, now);
+        assert_eq!(
+            first.iter().map(|entry| entry.entry.id).collect::<Vec<_>>(),
+            second
+                .iter()
+                .map(|entry| entry.entry.id)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            first.iter().map(|entry| entry.score).collect::<Vec<_>>(),
+            second.iter().map(|entry| entry.score).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn render_slice_never_exceeds_hard_budget_even_for_pinned_entries() {
+        let mut entries = Vec::new();
+        for i in 0..12 {
+            let mut pinned = entry(
+                i,
+                &format!(
+                    "critical pinned constraint number {i} with enough descriptive text to consume context tokens"
+                ),
+                "constraint",
+                &[],
+            );
+            pinned.pinned = true;
+            entries.push(pinned);
+        }
+        let scored = rank_for_task_at(&TaskSignals::default(), &entries, fixed_now());
+        let render = render_slice(&scored, 80);
+        assert!(render.estimated_tokens <= 80);
+        assert!(!render.pinned_overflow_ids.is_empty());
+        assert!(render.budget_exhausted);
+        assert!(render.included_ids.len() < entries.len());
+    }
+
+    #[test]
+    fn zero_budget_produces_no_memory_payload() {
+        let mut pinned = entry(999, "critical pinned constraint", "constraint", &[]);
+        pinned.pinned = true;
+        let scored = rank_for_task_at(&TaskSignals::default(), &[pinned], fixed_now());
+        let render = render_slice(&scored, 0);
+        assert!(render.markdown.is_empty());
+        assert_eq!(render.estimated_tokens, 0);
+        assert_eq!(render.pinned_overflow_ids, vec![999]);
+    }
+
+    #[test]
+    fn ordinary_budget_drops_low_rank_entries() {
         let mut entries = Vec::new();
         for i in 0..50 {
             entries.push(entry(
@@ -369,31 +485,22 @@ mod tests {
         let mut pinned = entry(999, "critical pinned constraint", "constraint", &[]);
         pinned.pinned = true;
         entries.push(pinned);
-
-        let scored = rank_for_task(&signals, &entries);
+        let scored = rank_for_task_at(&TaskSignals::default(), &entries, fixed_now());
         let render = render_slice(&scored, 60);
-
-        assert!(
-            render.included_ids.contains(&999),
-            "pinned must survive budget"
-        );
-        assert!(
-            !render.excluded_ids.is_empty(),
-            "budget should drop some entries"
-        );
+        assert!(render.included_ids.contains(&999));
+        assert!(!render.excluded_ids.is_empty());
         assert!(render.included_ids.len() < entries.len());
+        assert!(render.estimated_tokens <= 60);
     }
 
     #[test]
     fn ignores_non_active_entries() {
         let mut archived = entry(1, "archived note", "general", &[]);
         archived.status = status::ARCHIVED.into();
-        let ranked = rank_for_task(&TaskSignals::default(), &[archived]);
+        let ranked = rank_for_task_at(&TaskSignals::default(), &[archived], fixed_now());
         assert!(ranked.is_empty());
     }
 
-    // Keep NewMemoryInput referenced so the import is meaningful in this file's
-    // test surface even as the suite grows.
     #[allow(dead_code)]
     fn _input_smoke() -> NewMemoryInput {
         NewMemoryInput::human("demo", "x", "general", &[])
