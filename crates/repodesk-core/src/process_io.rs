@@ -50,7 +50,9 @@ pub(crate) fn drain_bounded_bytes(mut reader: impl Read, max: usize) -> io::Resu
 /// The two budgets are independent: a run record can stay compact while a larger
 /// diagnostic prefix is persisted. Excess bytes are deliberately discarded only
 /// after being read, which keeps the child pipe flowing without allowing either
-/// RAM or per-stream disk usage to grow with untrusted output volume.
+/// RAM or per-stream disk usage to grow with untrusted output volume. A writer
+/// failure is deferred until EOF so a full/broken diagnostic disk cannot stop
+/// pipe drainage and deadlock the child.
 pub(crate) fn drain_bounded_to_writer(
     mut reader: impl Read,
     mut writer: impl Write,
@@ -61,6 +63,7 @@ pub(crate) fn drain_bounded_to_writer(
     let mut persisted = 0usize;
     let mut retained_truncated = false;
     let mut persisted_truncated = false;
+    let mut write_error = None;
     let mut buffer = [0u8; 8 * 1024];
 
     loop {
@@ -78,15 +81,23 @@ pub(crate) fn drain_bounded_to_writer(
 
         let persist_remaining = persist_max.saturating_sub(persisted);
         let persist = persist_remaining.min(read);
-        if persist > 0 {
-            writer.write_all(&buffer[..persist])?;
-            persisted = persisted.saturating_add(persist);
+        if persist > 0 && write_error.is_none() {
+            match writer.write_all(&buffer[..persist]) {
+                Ok(()) => persisted = persisted.saturating_add(persist),
+                Err(error) => {
+                    write_error = Some(error);
+                    persisted_truncated = true;
+                }
+            }
         }
-        if persist < read {
+        if persist < read || write_error.is_some() {
             persisted_truncated = true;
         }
     }
 
+    if let Some(error) = write_error {
+        return Err(error);
+    }
     writer.flush()?;
     Ok(BoundedTee {
         bytes: retained,
@@ -99,6 +110,18 @@ pub(crate) fn drain_bounded_to_writer(
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("simulated disk failure"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     #[test]
     fn drain_retains_only_the_budget_but_consumes_the_stream() {
@@ -132,5 +155,16 @@ mod tests {
         assert_eq!(persisted, input);
         assert!(!capture.retained_truncated);
         assert!(!capture.persisted_truncated);
+    }
+
+    #[test]
+    fn tee_drain_continues_to_eof_after_writer_failure() {
+        let input = vec![b'x'; 1024];
+        let mut reader = Cursor::new(&input);
+
+        let result = drain_bounded_to_writer(&mut reader, FailingWriter, 32, 64);
+
+        assert!(result.is_err());
+        assert_eq!(reader.position(), input.len() as u64);
     }
 }
