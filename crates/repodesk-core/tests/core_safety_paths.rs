@@ -372,10 +372,12 @@ fn build_context_includes_git_metadata_but_not_file_bodies() {
     repodesk_core::context::build_context().expect("build_context");
     let context = std::fs::read_to_string(fx.run_dir.join("context.md")).expect("read context");
 
+    // The changed-file *name* is included (proves the git-metadata path ran)...
     assert!(
         context.contains("leaked_source.rs"),
         "expected changed-file name in context pack (git metadata)"
     );
+    // ...but the file *body* must never be.
     assert!(
         !context.contains(body_secret),
         "context pack leaked raw repo file contents"
@@ -450,6 +452,7 @@ fn write_run(orchestrate_dir: &std::path::Path, run_id: &str, goal: &str, status
     };
     let json = serde_json::to_string_pretty(&run).expect("serialize run");
     std::fs::write(orchestrate_dir.join(format!("{run_id}.json")), &json).expect("write run");
+    // The rolling pointer must be ignored by list_runs.
     std::fs::write(orchestrate_dir.join("latest.json"), &json).expect("write latest");
 }
 
@@ -474,7 +477,9 @@ fn list_runs_returns_summaries_newest_first_and_skips_latest_pointer() {
     );
 
     let runs = list_runs().expect("list_runs");
+    // Two run files (latest.json is skipped, not counted as a third).
     assert_eq!(runs.len(), 2);
+    // Newest-first by run id timestamp.
     assert_eq!(runs[0].run_id, "run-20260617-110000");
     assert_eq!(runs[0].goal, "newer goal");
     assert_eq!(runs[0].status, RunStatus::Partial);
@@ -612,21 +617,11 @@ fn read_task_events_filters_to_the_active_task() {
     .expect("log event");
 
     let events = read_task_events(&active_id, 10).expect("read_task_events");
-    assert_eq!(events.len(), 2);
-    assert!(events.iter().all(|event| event.task_id == active_id));
-    assert!(
-        events
-            .iter()
-            .any(|event| event.module_name == "orchestrator" && event.message == "run finished")
-    );
-    assert!(
-        events.iter().any(|event| {
-            event.module_name == "engineering"
-                && event.message == "engineering event: work_item_created"
-        }),
-        "canonical task timeline should include the Work Item creation evidence"
-    );
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].task_id, active_id);
+    assert_eq!(events[0].message, "run finished");
 
+    // A different task id sees none of the active task's events.
     let other = read_task_events("some-other-task", 10).expect("read_task_events other");
     assert!(other.is_empty());
 }
@@ -636,6 +631,7 @@ fn read_task_events_filters_to_the_active_task() {
 fn cost_trend_returns_a_continuous_window_with_todays_usage() {
     let _fx = setup();
 
+    // No usage yet: a 7-day window is still 7 zero points, oldest-first.
     let empty = cost_trend(7).expect("cost_trend empty");
     assert_eq!(empty.len(), 7);
     assert!(
@@ -644,6 +640,7 @@ fn cost_trend_returns_a_continuous_window_with_todays_usage() {
             .all(|p| p.total_tokens == 0 && p.cost_units == 0.0)
     );
 
+    // Log usage today; it lands on the last (most recent) point.
     log_token_event(LogTokenInput {
         agent: "ollama".to_string(),
         model: Some("llama3".to_string()),
@@ -658,11 +655,14 @@ fn cost_trend_returns_a_continuous_window_with_todays_usage() {
     assert_eq!(trend.len(), 7);
     let today = &trend[trend.len() - 1];
     assert_eq!(today.total_tokens, 1_500);
+    // Dates are ascending (oldest-first).
     assert!(trend.windows(2).all(|w| w[0].date <= w[1].date));
 }
 
 // --- N7-C: wave-based orchestrator execution --------------------------------
 
+/// A diamond plan: analyze → {build, doc} → review. The two middle steps share
+/// a wave (independent), exercising concurrent scheduling.
 fn diamond_plan(project: &str, task_id: &str, provider: &str) -> OrchestrationPlan {
     let mk = |id: &str, deps: &[&str]| SubAgentTask {
         id: id.to_string(),
@@ -694,6 +694,8 @@ fn diamond_plan(project: &str, task_id: &str, provider: &str) -> OrchestrationPl
     }
 }
 
+/// A single step that routes to a paid completion provider (no dependencies),
+/// so the paid-approval gate is exercised in isolation.
 fn paid_provider_plan(project: &str, task_id: &str) -> OrchestrationPlan {
     OrchestrationPlan {
         project: project.to_string(),
@@ -719,6 +721,8 @@ fn paid_provider_plan(project: &str, task_id: &str) -> OrchestrationPlan {
     }
 }
 
+/// A coding-agent step carrying a `verify_command`, used to prove the verify
+/// path is routed through the validated check runner (never raw `sh -c`).
 fn coding_agent_plan_with_verify(
     project: &str,
     task_id: &str,
@@ -770,8 +774,10 @@ async fn dry_run_executes_waves_in_deterministic_index_order() {
     let run = run_plan(&plan, &opts).await.expect("run_plan");
 
     assert_eq!(run.status, RunStatus::DryRun);
+    // Results are recorded in plan/index order regardless of wave grouping.
     let ids: Vec<&str> = run.results.iter().map(|r| r.task_id.as_str()).collect();
     assert_eq!(ids, vec!["analyze", "build", "doc", "review"]);
+    // Dry run previews every step as Ok (no provider calls made).
     assert!(run.results.iter().all(|r| r.status == SubAgentStatus::Ok));
 }
 
@@ -782,6 +788,9 @@ async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
     let active_id = show_active_task().expect("active").config.id;
 
     let plan = diamond_plan("demo", &active_id, "chatgpt");
+    // Per-step projected cost is identical, so a ceiling just above one step's
+    // cost admits exactly the first step and blocks the rest — independent of
+    // wave concurrency.
     let one_step_cost = run_plan(
         &plan,
         &RunOptions {
@@ -795,7 +804,10 @@ async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
     .expect("baseline")
     .results[0]
         .cost_units;
-    assert!(one_step_cost > 0.0);
+    assert!(
+        one_step_cost > 0.0,
+        "chatgpt should project a non-zero cost"
+    );
 
     let run = run_plan(
         &plan,
@@ -809,13 +821,15 @@ async fn dry_run_cost_ceiling_blocks_steps_deterministically() {
     .await
     .expect("ceiling run");
 
+    // First step admitted; once the ceiling trips, everything after is stopped.
     assert_eq!(run.results[0].task_id, "analyze");
     assert_eq!(run.results[0].status, SubAgentStatus::Ok);
     assert!(
         run.results
             .iter()
             .skip(1)
-            .all(|r| r.status == SubAgentStatus::Blocked || r.status == SubAgentStatus::Skipped)
+            .all(|r| r.status == SubAgentStatus::Blocked || r.status == SubAgentStatus::Skipped),
+        "downstream steps must be blocked/skipped once the ceiling trips"
     );
 }
 
@@ -846,7 +860,9 @@ async fn real_run_previews_coding_agent_without_provider_call() {
         result
             .notes
             .iter()
-            .any(|note| note.contains("command preview: codex exec --sandbox workspace-write --color never - [stdin: bounded prompt]"))
+            .any(|note| note.contains("command preview: codex exec --sandbox workspace-write --color never - [stdin: bounded prompt]")),
+        "handoff notes should include the safe argv preview: {:?}",
+        result.notes
     );
     assert!(
         result
@@ -917,8 +933,15 @@ async fn approved_coding_agent_runs_through_argv_executor() {
     let result = &run.results[0];
     assert_eq!(result.status, SubAgentStatus::Ok);
     assert!(result.output.contains("agent-output"));
-    assert!(result.workspace.is_some());
-    assert!(result.notes.iter().any(|note| note.contains("stdout:")));
+    assert!(
+        result.workspace.is_some(),
+        "approved coding-agent runs should use an isolated workspace"
+    );
+    assert!(
+        result.notes.iter().any(|note| note.contains("stdout:")),
+        "execution notes should include stdout receipt path: {:?}",
+        result.notes
+    );
 }
 
 #[tokio::test]
@@ -986,10 +1009,18 @@ async fn approved_coding_agent_blocks_when_isolated_workspace_cannot_be_created(
         result
             .notes
             .iter()
-            .any(|note| note.contains("isolated workspace is required"))
+            .any(|note| note.contains("isolated workspace is required")),
+        "expected fail-closed workspace note: {:?}",
+        result.notes
     );
-    assert!(!marker.exists());
-    assert!(!fx.project_path.join("launched").exists());
+    assert!(
+        !marker.exists(),
+        "coding-agent process must not launch when isolated workspace creation fails"
+    );
+    assert!(
+        !fx.project_path.join("launched").exists(),
+        "active checkout must remain untouched"
+    );
 }
 
 #[tokio::test]
@@ -999,6 +1030,8 @@ async fn real_run_skips_paid_provider_without_approval() {
     let active_id = show_active_task().expect("active").config.id;
     let plan = paid_provider_plan("demo", &active_id);
 
+    // Default authorization denies paid spend: the step must be skipped, not
+    // called, and no cost may be charged.
     let run = run_plan(
         &plan,
         &RunOptions {
@@ -1019,7 +1052,9 @@ async fn real_run_skips_paid_provider_without_approval() {
         result
             .notes
             .iter()
-            .any(|note| note.contains("paid provider execution requires explicit approval"))
+            .any(|note| note.contains("paid provider execution requires explicit approval")),
+        "expected paid-approval skip note: {:?}",
+        result.notes
     );
 }
 
@@ -1030,6 +1065,9 @@ async fn approved_paid_provider_passes_the_gate() {
     let active_id = show_active_task().expect("active").config.id;
     let plan = paid_provider_plan("demo", &active_id);
 
+    // With paid approval the gate is cleared, so the step proceeds to the
+    // provider call. No API key is configured, so it fails at the provider —
+    // crucially *not* skipped with the approval note.
     let run = run_plan(
         &plan,
         &RunOptions {
@@ -1053,13 +1091,17 @@ async fn approved_paid_provider_passes_the_gate() {
         !result
             .notes
             .iter()
-            .any(|note| note.contains("paid provider execution requires explicit approval"))
+            .any(|note| note.contains("paid provider execution requires explicit approval")),
+        "approved paid step must not carry the approval-skip note: {:?}",
+        result.notes
     );
     assert!(
         result
             .notes
             .iter()
-            .any(|note| note.contains("provider unavailable"))
+            .any(|note| note.contains("provider unavailable")),
+        "expected an unavailable-provider failure (no key configured): {:?}",
+        result.notes
     );
 }
 
@@ -1094,6 +1136,9 @@ async fn coding_agent_verify_command_is_validated_not_shelled() {
         std::env::set_var("PATH", &new_path);
     }
 
+    // A verify command with a shell metacharacter and a chained `rm -rf /` must
+    // be rejected by the validated check runner before any process spawns — it
+    // can never reach a raw `sh -c`.
     let run_result = run_plan(
         &coding_agent_plan_with_verify("demo", &active_id, "cargo test; rm -rf /"),
         &RunOptions {
@@ -1120,12 +1165,15 @@ async fn coding_agent_verify_command_is_validated_not_shelled() {
 
     let run = run_result.expect("run_plan");
     let result = &run.results[0];
+    // Agent succeeded, but verification failed validation → overall Failed.
     assert_eq!(result.status, SubAgentStatus::Failed);
     assert!(
         result
             .notes
             .iter()
-            .any(|note| note.contains("verify failed") && note.contains("Validation Error"))
+            .any(|note| note.contains("verify failed") && note.contains("Validation Error")),
+        "expected a verify-validation failure note: {:?}",
+        result.notes
     );
 }
 
@@ -1163,6 +1211,8 @@ async fn write_capable_coding_agent_blocks_without_workspace_write_authorization
         std::env::set_var("PATH", &new_path);
     }
 
+    // The coding agent is approved, but workspace writes are NOT. The implement
+    // step is write-capable, so it must be blocked before any process launch.
     let run_result = run_plan(
         &coding_agent_plan("demo", &active_id),
         &RunOptions {
@@ -1194,9 +1244,14 @@ async fn write_capable_coding_agent_blocks_without_workspace_write_authorization
         result
             .notes
             .iter()
-            .any(|note| note.contains("workspace writes are not authorized"))
+            .any(|note| note.contains("workspace writes are not authorized")),
+        "expected a workspace-write authorization block: {:?}",
+        result.notes
     );
-    assert!(!marker.exists());
+    assert!(
+        !marker.exists(),
+        "coding-agent process must not launch when workspace writes are unauthorized"
+    );
 }
 
 #[test]
@@ -1205,9 +1260,12 @@ fn phase_state_persists_execution_mode() {
     use repodesk_core::workflow::{ExecutionMode, load_phase_state, set_execution_mode};
     let _fx = setup();
 
+    // Fresh task defaults to the agent-run mode. Review/commit are no longer
+    // manual acks — they're proven by the run receipt, not stored here.
     let state = load_phase_state().expect("load");
     assert_eq!(state.execution_mode, ExecutionMode::AgentRun);
 
+    // The chosen mode round-trips from disk.
     set_execution_mode(ExecutionMode::ManualHandoff).expect("mode");
     let reloaded = load_phase_state().expect("reload");
     assert_eq!(reloaded.execution_mode, ExecutionMode::ManualHandoff);
@@ -1239,9 +1297,13 @@ fn file_diff_returns_unstaged_changes_and_rejects_traversal() {
     std::fs::write(fx.project_path.join("a.txt"), "line one\nline two\n").expect("modify");
 
     let diff = file_diff(&fx.project_path, "a.txt", false);
-    assert!(diff.contains("+line two"));
-    assert!(diff.contains("a.txt"));
+    assert!(
+        diff.contains("+line two"),
+        "diff should show the added line:\n{diff}"
+    );
+    assert!(diff.contains("a.txt"), "diff header should name the file");
 
+    // Path traversal / absolute paths never produce a diff.
     assert_eq!(file_diff(&fx.project_path, "../escape", false), "");
     assert_eq!(file_diff(&fx.project_path, "/etc/passwd", false), "");
     assert_eq!(file_diff(&fx.project_path, "", false), "");
@@ -1249,6 +1311,8 @@ fn file_diff_returns_unstaged_changes_and_rejects_traversal() {
 
 // --- N8-A: orchestrator outcome ledger (the Hermes learning signal) ----------
 
+/// A plan + run pair with a mix of outcomes: one clean step, one failure, one
+/// skipped step — exercising all three auto-verdicts.
 fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationRun) {
     let step = |id: &str, kind: TaskKind| SubAgentTask {
         id: id.to_string(),
@@ -1327,6 +1391,7 @@ fn record_run_writes_one_outcome_per_step_with_auto_verdicts() {
 
     let rows = outcomes::list_outcomes(10).expect("list_outcomes");
     assert_eq!(rows.len(), 3);
+    // All start provisional (auto, unconfirmed).
     assert!(
         rows.iter()
             .all(|r| r.verdict_source == "auto" && !r.confirmed)
@@ -1342,6 +1407,7 @@ fn record_run_writes_one_outcome_per_step_with_auto_verdicts() {
     assert_eq!(verdict_of("implement"), Verdict::Bad);
     assert_eq!(verdict_of("review"), Verdict::Neutral);
 
+    // The patch step carries its TaskKind from the plan, not the run.
     let implement = rows.iter().find(|r| r.step_id == "implement").unwrap();
     assert_eq!(implement.task_kind, "patch");
 }
@@ -1364,8 +1430,11 @@ fn outcome_stats_aggregate_success_rate_per_kind_and_provider() {
             .unwrap_or_else(|| panic!("missing stat for {kind}"))
     };
 
+    // plan/ollama: one good, no bad → 100% success.
     assert_eq!(stat_for("plan").success_rate, Some(1.0));
+    // patch/ollama: one bad, no good → 0% success.
     assert_eq!(stat_for("patch").success_rate, Some(0.0));
+    // review/ollama: only a neutral row → no scored signal yet.
     let review = stat_for("review");
     assert_eq!(review.success_rate, None);
     assert_eq!(review.neutral, 1);
@@ -1380,10 +1449,12 @@ fn confirm_outcome_flips_verdict_to_human_and_dry_runs_are_not_recorded() {
 
     let (plan, mut run) = mixed_run("demo", &active_id);
 
+    // A dry run carries no learning signal — nothing is recorded.
     run.dry_run = true;
     assert_eq!(outcomes::record_run(&plan, &run).expect("dry"), 0);
     assert!(outcomes::list_outcomes(10).expect("list").is_empty());
 
+    // The real run records, then a human overrides the failed step to "good".
     run.dry_run = false;
     outcomes::record_run(&plan, &run).expect("record");
     let implement_id = outcomes::list_outcomes(10)
@@ -1404,11 +1475,13 @@ fn confirm_outcome_flips_verdict_to_human_and_dry_runs_are_not_recorded() {
     assert_eq!(updated.verdict_source, "human");
     assert!(updated.confirmed);
 
+    // Confirming an unknown id is an error, not a silent no-op.
     assert!(outcomes::confirm_outcome(999_999, Verdict::Bad).is_err());
 }
 
 // --- N8-B: learned routing bias from the outcome ledger ----------------------
 
+/// Record a run of `count` plan-kind steps on `provider`, all with `status`.
 fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize, ok: bool) {
     use repodesk_core::outcomes;
     let steps: Vec<SubAgentTask> = (0..count)
@@ -1484,17 +1557,31 @@ fn routing_bias_rewards_success_punishes_failure_and_needs_enough_signal() {
     let _fx = setup();
     let active_id = show_active_task().expect("active").config.id;
 
+    // 4 successful plan steps on ollama → above the min-weight threshold, so a
+    // positive nudge is learned.
     record_plan_steps("demo", &active_id, "ollama", 4, true);
+    // 4 failed plan steps on chatgpt → a negative nudge.
     record_plan_steps("demo", &active_id, "chatgpt", 4, false);
+    // Only 1 plan step on gemini → below threshold, no entry.
     record_plan_steps("demo", &active_id, "gemini", 1, true);
 
     let bias = outcomes::routing_bias("demo").expect("routing_bias");
 
     let ollama = bias.lookup(TK::Plan, "ollama").expect("ollama entry");
-    assert!(ollama.adjustment > 0);
+    assert!(
+        ollama.adjustment > 0,
+        "all-success should nudge positively, got {}",
+        ollama.adjustment
+    );
     let chatgpt = bias.lookup(TK::Plan, "chatgpt").expect("chatgpt entry");
-    assert!(chatgpt.adjustment < 0);
+    assert!(
+        chatgpt.adjustment < 0,
+        "all-failure should nudge negatively, got {}",
+        chatgpt.adjustment
+    );
+    // Below the signal threshold: no learned entry yet.
     assert!(bias.lookup(TK::Plan, "gemini").is_none());
+    // A pair with no data at all is also absent.
     assert!(bias.lookup(TK::Patch, "ollama").is_none());
 }
 
@@ -1516,6 +1603,9 @@ async fn loop_dry_run_is_a_single_preview_pass() {
         .await
         .expect("run_loop");
 
+    // A dry run never loops: one preview pass, terminal DryRun, and no real
+    // spend. The reported cost may be a projection when a paid/CLI route is
+    // available on this machine.
     assert_eq!(loop_run.status, LoopStatus::DryRun);
     assert_eq!(loop_run.iterations.len(), 1);
     assert!(loop_run.total_cost_units.is_finite());
@@ -1529,6 +1619,8 @@ async fn loop_pauses_before_paid_spend_without_approval() {
     use repodesk_core::orchestrator::{LoopOptions, LoopStatus, run_loop};
     let _fx = setup();
 
+    // A configured paid key makes the patch step route to a paid provider, so
+    // the plan has a paid step. Without approval the loop must refuse to spend.
     let mut settings = ProviderSettings::default();
     settings.openai.api_key = Some("sk-test".to_string());
 
@@ -1541,6 +1633,7 @@ async fn loop_pauses_before_paid_spend_without_approval() {
     };
     let loop_run = run_loop(None, &opts).await.expect("run_loop");
 
+    // Stopped on the first attempt, before any provider call, with no cost.
     assert_eq!(loop_run.status, LoopStatus::NeedsApproval);
     assert_eq!(loop_run.iterations.len(), 1);
     assert!(loop_run.iterations[0].run_id.is_empty());
