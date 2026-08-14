@@ -182,11 +182,14 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
             detail: "commit blocked: Safe Commit Manifest belongs to a different run".to_string(),
         });
     }
-    let reviewed_tree = manifest.reviewed_tree_sha.clone().ok_or_else(|| {
-        RepoDeskError::RoutingFailed {
-            detail: "commit blocked: Safe Commit Manifest has no exact reviewed tree".to_string(),
-        }
-    })?;
+    let reviewed_tree =
+        manifest
+            .reviewed_tree_sha
+            .clone()
+            .ok_or_else(|| RepoDeskError::RoutingFailed {
+                detail: "commit blocked: Safe Commit Manifest has no exact reviewed tree"
+                    .to_string(),
+            })?;
     let staged = manifest.staged_paths.clone();
     let project_path = active_project_path()?;
 

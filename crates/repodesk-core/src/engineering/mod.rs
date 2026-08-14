@@ -120,8 +120,8 @@ pub use run_observability::{
     RunEfficiency, RunObservabilityReport, RunStrategyObservability, derive_run_observability,
 };
 pub use safe_commit_manifest::{
-    SAFE_COMMIT_MANIFEST_VERSION, SafeCommitManifest, SafeCommitState,
-    derive_safe_commit_manifest, load_active_safe_commit_manifest,
+    SAFE_COMMIT_MANIFEST_VERSION, SafeCommitManifest, SafeCommitState, derive_safe_commit_manifest,
+    load_active_safe_commit_manifest,
 };
 pub use strategy_adaptation::derive_ai_strategy_with_feedback;
 pub use strategy_feedback::{

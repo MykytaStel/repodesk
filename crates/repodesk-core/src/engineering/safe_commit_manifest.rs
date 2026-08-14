@@ -106,10 +106,14 @@ pub fn derive_safe_commit_manifest(
     let mut warnings = Vec::new();
 
     if scope.status == ScopeComplianceStatus::Unconfigured {
-        warnings.push("Engineering Contract scope is not configured; legacy scope policy applies.".into());
+        warnings.push(
+            "Engineering Contract scope is not configured; legacy scope policy applies.".into(),
+        );
     }
     if !acceptance.configured {
-        warnings.push("Acceptance criteria are not configured; legacy acceptance policy applies.".into());
+        warnings.push(
+            "Acceptance criteria are not configured; legacy acceptance policy applies.".into(),
+        );
     }
 
     let run_id = receipt.map(|value| value.run_id.clone());
@@ -172,7 +176,10 @@ pub fn derive_safe_commit_manifest(
             value.decision == ReviewDecision::Accepted
                 && value.run_id == receipt.run_id
                 && value.changeset_digest == digest
-                && value.index_tree_after_accept.as_deref().is_some_and(|tree| !tree.is_empty())
+                && value
+                    .index_tree_after_accept
+                    .as_deref()
+                    .is_some_and(|tree| !tree.is_empty())
         });
         if !review_valid {
             blockers.push("The exact current ChangeSet has not been reviewed and accepted.".into());
@@ -191,11 +198,14 @@ pub fn derive_safe_commit_manifest(
                 );
             }
             if !scope.allowed {
-                warnings.push("The historical commit no longer satisfies the current scope policy.".into());
+                warnings.push(
+                    "The historical commit no longer satisfies the current scope policy.".into(),
+                );
             }
             if acceptance.configured && (acceptance.failed > 0 || acceptance.unproven > 0) {
                 warnings.push(
-                    "The historical commit does not have complete current acceptance evidence.".into(),
+                    "The historical commit does not have complete current acceptance evidence."
+                        .into(),
                 );
             }
         } else {
@@ -226,9 +236,9 @@ pub fn derive_safe_commit_manifest(
 
             if !scope.allowed {
                 blockers.push(
-                    scope
-                        .blocker_message()
-                        .unwrap_or_else(|| "Engineering Contract scope policy blocks commit.".into()),
+                    scope.blocker_message().unwrap_or_else(|| {
+                        "Engineering Contract scope policy blocks commit.".into()
+                    }),
                 );
             }
 
@@ -309,7 +319,9 @@ pub fn load_active_safe_commit_manifest() -> RepoDeskResult<SafeCommitManifest> 
         .as_ref()
         .and_then(|value| value.finish.as_ref())
         .filter(|finish| commit_exists(&project.path, &finish.commit_sha))
-        .and_then(|finish| crate::workflow::receipt::commit_tree_sha(&project.path, &finish.commit_sha));
+        .and_then(|finish| {
+            crate::workflow::receipt::commit_tree_sha(&project.path, &finish.commit_sha)
+        });
 
     derive_safe_commit_manifest(
         &task.config.id,
@@ -400,7 +412,8 @@ fn digest_manifest(manifest: &SafeCommitManifest) -> RepoDeskResult<String> {
         blockers: &manifest.blockers,
         warnings: &manifest.warnings,
     };
-    let bytes = serde_json::to_vec(&payload).map_err(|error| RepoDeskError::Api(error.to_string()))?;
+    let bytes =
+        serde_json::to_vec(&payload).map_err(|error| RepoDeskError::Api(error.to_string()))?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 
@@ -418,11 +431,11 @@ mod tests {
     use chrono::Utc;
 
     use super::*;
-    use crate::engineering::{
-        AcceptanceCriterionEvidence, AcceptanceCriterionStatus,
-    };
+    use crate::engineering::{AcceptanceCriterionEvidence, AcceptanceCriterionStatus};
     use crate::orchestrator::{RunStatus, SubAgentStatus};
-    use crate::workflow::{ExecutionMode, ExecutionReceipt, ReviewReceipt, StepReceipt, VerificationReceipt};
+    use crate::workflow::{
+        ExecutionMode, ExecutionReceipt, ReviewReceipt, StepReceipt, VerificationReceipt,
+    };
 
     fn receipt() -> TaskRunReceipt {
         TaskRunReceipt {
@@ -533,7 +546,12 @@ mod tests {
         )
         .unwrap();
         assert!(!manifest.ready);
-        assert!(manifest.blockers.iter().any(|value| value.contains("unproven")));
+        assert!(
+            manifest
+                .blockers
+                .iter()
+                .any(|value| value.contains("unproven"))
+        );
     }
 
     #[test]
@@ -550,8 +568,18 @@ mod tests {
         )
         .unwrap();
         assert!(!manifest.ready);
-        assert!(manifest.blockers.iter().any(|value| value.contains("staged index")));
-        assert!(manifest.blockers.iter().any(|value| value.contains("path set")));
+        assert!(
+            manifest
+                .blockers
+                .iter()
+                .any(|value| value.contains("staged index"))
+        );
+        assert!(
+            manifest
+                .blockers
+                .iter()
+                .any(|value| value.contains("path set"))
+        );
     }
 
     #[test]
@@ -573,7 +601,12 @@ mod tests {
         )
         .unwrap();
         assert!(manifest.ready);
-        assert!(manifest.warnings.iter().any(|value| value.contains("Acceptance criteria")));
+        assert!(
+            manifest
+                .warnings
+                .iter()
+                .any(|value| value.contains("Acceptance criteria"))
+        );
     }
 
     #[test]
