@@ -139,6 +139,11 @@ pub fn read_token_report() -> RepoDeskResult<TokenReport> {
                     });
                 }
 
+                let model = if model.trim().is_empty() {
+                    "unknown".to_string()
+                } else {
+                    model
+                };
                 if let Some(existing) = report
                     .by_model
                     .iter_mut()
@@ -179,10 +184,27 @@ pub struct CostTrendPoint {
     pub cost_units: f64,
 }
 
+fn ledger_row_cost(
+    config: &crate::usage::cost::CostConfig,
+    agent: &str,
+    model: &str,
+    input_tokens: usize,
+    output_tokens: usize,
+) -> f64 {
+    let model = if model.trim().is_empty() {
+        "unknown"
+    } else {
+        model
+    };
+    crate::usage::cost::estimate_model_cost(config, agent, model, input_tokens, output_tokens)
+        .estimated_cost_units
+}
+
 /// Aggregate the token ledger into a per-UTC-day cost trend over the last
 /// `days` calendar days (oldest-first, days with no usage included as zero so
-/// the sparkline has a continuous x-axis). Cost is derived per ledger row from
-/// the agent's configured rate, mirroring `read_token_report`'s cost model.
+/// the sparkline has a continuous x-axis). Cost is derived from each recorded
+/// `(provider, model)` pair instead of collapsing all models under one provider
+/// rate.
 pub fn cost_trend(days: usize) -> RepoDeskResult<Vec<CostTrendPoint>> {
     use std::collections::HashMap;
 
@@ -193,30 +215,27 @@ pub fn cost_trend(days: usize) -> RepoDeskResult<Vec<CostTrendPoint>> {
     let mut by_date: HashMap<chrono::NaiveDate, (usize, f64)> = HashMap::new();
 
     if let Ok(conn) = crate::persistence::db::init_db()
-        && let Ok(mut stmt) =
-            conn.prepare("SELECT timestamp, agent, input_tokens, output_tokens FROM token_ledger")
+        && let Ok(mut stmt) = conn.prepare(
+            "SELECT timestamp, agent, model, input_tokens, output_tokens FROM token_ledger",
+        )
     {
         let rows = stmt.query_map([], |row| {
             let timestamp_str: String = row.get(0)?;
             let agent: String = row.get(1)?;
-            let input_tokens: usize = row.get(2)?;
-            let output_tokens: usize = row.get(3)?;
-            Ok((timestamp_str, agent, input_tokens, output_tokens))
+            let model: String = row.get(2)?;
+            let input_tokens: usize = row.get(3)?;
+            let output_tokens: usize = row.get(4)?;
+            Ok((timestamp_str, agent, model, input_tokens, output_tokens))
         });
 
         if let Ok(rows) = rows {
-            for (timestamp_str, agent, input_tokens, output_tokens) in rows.flatten() {
+            for (timestamp_str, agent, model, input_tokens, output_tokens) in rows.flatten() {
                 let Ok(dt) = chrono::DateTime::parse_from_rfc3339(&timestamp_str) else {
                     continue;
                 };
                 let date = dt.with_timezone(&Utc).date_naive();
-                let cost = crate::usage::cost::estimate_agent_cost(
-                    &cost_config,
-                    &agent,
-                    input_tokens,
-                    output_tokens,
-                )
-                .estimated_cost_units;
+                let cost =
+                    ledger_row_cost(&cost_config, &agent, &model, input_tokens, output_tokens);
                 let entry = by_date.entry(date).or_insert((0, 0.0));
                 entry.0 += input_tokens + output_tokens;
                 entry.1 += cost;
@@ -369,7 +388,8 @@ pub fn format_token_report(report: &TokenReport) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_token_report_content;
+    use super::{ledger_row_cost, parse_token_report_content};
+    use crate::usage::cost::{AgentRate, CostConfig};
 
     #[test]
     fn aggregates_new_ledger_by_agent_and_model() {
@@ -404,5 +424,34 @@ timestamp,project,task_id,agent,category,input_tokens,output_tokens,total_tokens
         assert_eq!(report.total_tokens, 75);
         assert_eq!(report.by_model[0].agent, "codex");
         assert_eq!(report.by_model[0].model, "unknown");
+    }
+
+    #[test]
+    fn ledger_row_cost_uses_recorded_model_identity() {
+        let config = CostConfig {
+            currency_label: "USD".to_string(),
+            rates: vec![
+                AgentRate {
+                    agent: "provider".to_string(),
+                    model: "cheap".to_string(),
+                    input_cost_per_1k_units: 1.0,
+                    output_cost_per_1k_units: 1.0,
+                    notes: "cheap".to_string(),
+                },
+                AgentRate {
+                    agent: "provider".to_string(),
+                    model: "expensive".to_string(),
+                    input_cost_per_1k_units: 10.0,
+                    output_cost_per_1k_units: 10.0,
+                    notes: "expensive".to_string(),
+                },
+            ],
+        };
+
+        let cheap = ledger_row_cost(&config, "provider", "cheap", 1_000, 0);
+        let expensive = ledger_row_cost(&config, "provider", "expensive", 1_000, 0);
+
+        assert_eq!(cheap, 1.0);
+        assert_eq!(expensive, 10.0);
     }
 }

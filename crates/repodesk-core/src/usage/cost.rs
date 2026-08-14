@@ -141,33 +141,27 @@ pub fn reset_cost_config() -> RepoDeskResult<CostConfig> {
     Ok(config)
 }
 
-pub fn estimate_agent_cost(
+fn conservative_fallback(agent: &str, model: &str) -> AgentRate {
+    AgentRate {
+        agent: agent.to_ascii_lowercase(),
+        model: if model.trim().is_empty() {
+            "unknown".to_string()
+        } else {
+            model.to_string()
+        },
+        input_cost_per_1k_units: 1.0,
+        output_cost_per_1k_units: 3.0,
+        notes: "No exact model rate is configured. Using conservative placeholder cost units; add this provider/model to costs.toml for meaningful accounting."
+            .to_string(),
+    }
+}
+
+fn estimate_with_rate(
     config: &CostConfig,
-    agent: &str,
+    rate: &AgentRate,
     input_tokens: usize,
     output_tokens: usize,
 ) -> CostEstimate {
-    let normalized = agent.to_ascii_lowercase();
-    let rate = config
-        .rates
-        .iter()
-        .find(|rate| rate.agent.eq_ignore_ascii_case(&normalized));
-
-    let fallback;
-    let rate = match rate {
-        Some(rate) => rate,
-        None => {
-            fallback = AgentRate {
-                agent: normalized.clone(),
-                model: "unknown".to_string(),
-                input_cost_per_1k_units: 1.0,
-                output_cost_per_1k_units: 3.0,
-                notes: "Unknown agent. Using conservative placeholder cost units.".to_string(),
-            };
-            &fallback
-        }
-    };
-
     let input_cost = (input_tokens as f64 / 1000.0) * rate.input_cost_per_1k_units;
     let output_cost = (output_tokens as f64 / 1000.0) * rate.output_cost_per_1k_units;
 
@@ -176,11 +170,66 @@ pub fn estimate_agent_cost(
         model: rate.model.clone(),
         input_tokens,
         output_tokens,
-        total_tokens: input_tokens + output_tokens,
+        total_tokens: input_tokens.saturating_add(output_tokens),
         estimated_cost_units: input_cost + output_cost,
         currency_label: config.currency_label.clone(),
         note: rate.notes.clone(),
     }
+}
+
+/// Estimate a recorded provider/model pair. Exact model identity is part of the
+/// accounting key: a cheaper model must never silently inherit another model's
+/// rate merely because both are served by the same provider.
+///
+/// A user may configure `model = "*"` as an explicit provider-wide fallback.
+/// Otherwise an unknown model receives a conservative placeholder estimate and
+/// an explanatory note rather than a misleading default-model price.
+pub fn estimate_model_cost(
+    config: &CostConfig,
+    agent: &str,
+    model: &str,
+    input_tokens: usize,
+    output_tokens: usize,
+) -> CostEstimate {
+    let normalized_agent = agent.trim().to_ascii_lowercase();
+    let normalized_model = model.trim();
+
+    let exact = config.rates.iter().find(|rate| {
+        rate.agent.eq_ignore_ascii_case(&normalized_agent)
+            && rate.model.eq_ignore_ascii_case(normalized_model)
+    });
+    let wildcard = config.rates.iter().find(|rate| {
+        rate.agent.eq_ignore_ascii_case(&normalized_agent) && rate.model.trim() == "*"
+    });
+
+    if let Some(rate) = exact.or(wildcard) {
+        return estimate_with_rate(config, rate, input_tokens, output_tokens);
+    }
+
+    let fallback = conservative_fallback(&normalized_agent, normalized_model);
+    estimate_with_rate(config, &fallback, input_tokens, output_tokens)
+}
+
+/// Planning helper for callers that know a provider but have not selected a
+/// concrete model yet. It intentionally uses the provider's first configured
+/// rate. Recorded usage must call [`estimate_model_cost`] instead.
+pub fn estimate_agent_cost(
+    config: &CostConfig,
+    agent: &str,
+    input_tokens: usize,
+    output_tokens: usize,
+) -> CostEstimate {
+    let normalized = agent.trim().to_ascii_lowercase();
+    if let Some(rate) = config
+        .rates
+        .iter()
+        .find(|rate| rate.agent.eq_ignore_ascii_case(&normalized))
+    {
+        return estimate_with_rate(config, rate, input_tokens, output_tokens);
+    }
+
+    let fallback = conservative_fallback(&normalized, "unknown");
+    estimate_with_rate(config, &fallback, input_tokens, output_tokens)
 }
 
 pub fn format_cost_config(config: &CostConfig) -> String {
@@ -243,15 +292,24 @@ pub fn format_cost_report(config: &CostConfig, report: &TokenReport) -> String {
     output.push_str("Cost report:\n\n");
     output.push_str(&format!("Entries: {}\n", report.entries_count));
     output.push_str(&format!("Total tokens: {}\n\n", report.total_tokens));
-    output.push_str("By agent:\n");
+    output.push_str("By provider/model:\n");
 
-    for item in &report.by_agent {
-        let estimate =
-            estimate_agent_cost(config, &item.agent, item.input_tokens, item.output_tokens);
+    for item in &report.by_model {
+        let estimate = estimate_model_cost(
+            config,
+            &item.agent,
+            &item.model,
+            item.input_tokens,
+            item.output_tokens,
+        );
         total_cost += estimate.estimated_cost_units;
         output.push_str(&format!(
-            "  - {}: tokens={}, estimated_cost={:.4} {}\n",
-            item.agent, item.total_tokens, estimate.estimated_cost_units, estimate.currency_label
+            "  - {}/{}: tokens={}, estimated_cost={:.4} {}\n",
+            item.agent,
+            item.model,
+            item.total_tokens,
+            estimate.estimated_cost_units,
+            estimate.currency_label
         ));
     }
 
@@ -262,4 +320,65 @@ pub fn format_cost_report(config: &CostConfig, report: &TokenReport) -> String {
     output.push_str("\nThis is a planning estimate. Real billing depends on the provider/model.\n");
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model_rate(agent: &str, model: &str, input: f64, output: f64) -> AgentRate {
+        AgentRate {
+            agent: agent.to_string(),
+            model: model.to_string(),
+            input_cost_per_1k_units: input,
+            output_cost_per_1k_units: output,
+            notes: format!("fixture {agent}/{model}"),
+        }
+    }
+
+    #[test]
+    fn recorded_model_selects_exact_rate_for_same_provider() {
+        let config = CostConfig {
+            currency_label: "USD".to_string(),
+            rates: vec![
+                model_rate("provider", "cheap", 1.0, 2.0),
+                model_rate("provider", "expensive", 10.0, 20.0),
+            ],
+        };
+
+        let cheap = estimate_model_cost(&config, "provider", "cheap", 1_000, 1_000);
+        let expensive = estimate_model_cost(&config, "provider", "expensive", 1_000, 1_000);
+
+        assert_eq!(cheap.model, "cheap");
+        assert_eq!(cheap.estimated_cost_units, 3.0);
+        assert_eq!(expensive.model, "expensive");
+        assert_eq!(expensive.estimated_cost_units, 30.0);
+    }
+
+    #[test]
+    fn unknown_recorded_model_does_not_inherit_default_model_rate() {
+        let config = CostConfig {
+            currency_label: "USD".to_string(),
+            rates: vec![model_rate("provider", "default", 0.1, 0.2)],
+        };
+
+        let estimate = estimate_model_cost(&config, "provider", "other", 1_000, 1_000);
+
+        assert_eq!(estimate.model, "other");
+        assert_eq!(estimate.estimated_cost_units, 4.0);
+        assert!(estimate.note.contains("No exact model rate"));
+    }
+
+    #[test]
+    fn explicit_wildcard_rate_can_cover_provider_models() {
+        let config = CostConfig {
+            currency_label: "USD".to_string(),
+            rates: vec![model_rate("provider", "*", 2.0, 5.0)],
+        };
+
+        let estimate = estimate_model_cost(&config, "provider", "new-model", 1_000, 1_000);
+
+        assert_eq!(estimate.estimated_cost_units, 7.0);
+        assert_eq!(estimate.model, "*");
+    }
 }
