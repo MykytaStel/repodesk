@@ -15,6 +15,9 @@ use crate::persistence::db::{get_db_path, init_db};
 use crate::projects::read_active_project;
 use crate::tasks::show_active_task;
 
+mod revision;
+pub use revision::{EngineeringEventRevision, engineering_event_revision};
+
 const EVENT_SCHEMA_VERSION: i64 = 1;
 const LEGACY_IMPORT_KEY: &str = "legacy_event_journal_jsonl_v1";
 const MAX_LEGACY_JOURNAL_BYTES: u64 = 16 * 1024 * 1024;

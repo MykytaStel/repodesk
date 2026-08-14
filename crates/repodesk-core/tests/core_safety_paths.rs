@@ -617,9 +617,20 @@ fn read_task_events_filters_to_the_active_task() {
     .expect("log event");
 
     let events = read_task_events(&active_id, 10).expect("read_task_events");
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].task_id, active_id);
-    assert_eq!(events[0].message, "run finished");
+    assert_eq!(events.len(), 2);
+    assert!(events.iter().all(|event| event.task_id == active_id));
+    assert!(
+        events
+            .iter()
+            .any(|event| event.module_name == "orchestrator" && event.message == "run finished")
+    );
+    assert!(
+        events.iter().any(|event| {
+            event.module_name == "engineering"
+                && event.message == "engineering event: work_item_created"
+        }),
+        "canonical task timeline should include the Work Item creation evidence"
+    );
 
     // A different task id sees none of the active task's events.
     let other = read_task_events("some-other-task", 10).expect("read_task_events other");
