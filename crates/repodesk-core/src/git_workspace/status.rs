@@ -352,8 +352,9 @@ mod tests {
 
     #[test]
     fn diagnostic_projection_is_bounded_and_escaped() {
-        let snapshot = parse_status_stream(Cursor::new(b"?? weird\nname.txt\0 M other.txt\0"), 10, 1024)
-            .unwrap();
+        let snapshot =
+            parse_status_stream(Cursor::new(b"?? weird\nname.txt\0 M other.txt\0"), 10, 1024)
+                .unwrap();
         let (diagnostic, truncated) = snapshot.diagnostic_porcelain(20);
         assert!(diagnostic.len() <= 20);
         assert!(truncated);
