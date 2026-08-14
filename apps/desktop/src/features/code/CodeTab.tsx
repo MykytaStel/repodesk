@@ -43,6 +43,7 @@ const MAX_OPEN_TABS = 8;
 const MAX_CACHED_PROJECT_SESSIONS = 2;
 
 type EditorTab = {
+  id: string;
   kind: "workspace" | "library";
   path: string;
   libraryHandle: string | null;
@@ -60,7 +61,7 @@ type CodeSideMode = "explorer" | "search";
 
 type CachedCodeSession = {
   tabs: EditorTab[];
-  activePath: string | null;
+  activeTabId: string | null;
   touchedAt: number;
 };
 
@@ -76,15 +77,23 @@ const STATUS_LABEL: Record<CodeWorkspaceFileStatus, string> = {
   conflict: "!",
 };
 
+function workspaceTabId(project: string, path: string): string {
+  return `workspace:${project}:${path}`;
+}
+
+function libraryTabId(handle: string): string {
+  return `library:${handle}`;
+}
+
 function cloneTabs(tabs: EditorTab[]): EditorTab[] {
   return tabs.map((tab) => ({ ...tab }));
 }
 
-function rememberCodeSession(project: string, tabs: EditorTab[], activePath: string | null) {
+function rememberCodeSession(project: string, tabs: EditorTab[], activeTabId: string | null) {
   const workspaceTabs = tabs.filter((tab) => tab.kind === "workspace");
   codeSessionCache.set(project, {
     tabs: cloneTabs(workspaceTabs),
-    activePath: workspaceTabs.some((tab) => tab.path === activePath) ? activePath : null,
+    activeTabId: workspaceTabs.some((tab) => tab.id === activeTabId) ? activeTabId : null,
     touchedAt: Date.now(),
   });
 
@@ -98,8 +107,9 @@ function rememberCodeSession(project: string, tabs: EditorTab[], activePath: str
   }
 }
 
-function toTab(document: CodeWorkspaceDocument): EditorTab {
+function toWorkspaceTab(document: CodeWorkspaceDocument, project: string): EditorTab {
   return {
+    id: workspaceTabId(project, document.path),
     kind: "workspace",
     path: document.path,
     libraryHandle: null,
@@ -115,6 +125,7 @@ function toTab(document: CodeWorkspaceDocument): EditorTab {
 
 function toLibraryTab(document: Awaited<ReturnType<typeof readCodeLibraryDocument>>): EditorTab {
   return {
+    id: libraryTabId(document.handle),
     kind: "library",
     path: document.display_path,
     libraryHandle: document.handle,
@@ -140,7 +151,7 @@ export function CodeTab({
   const { hasProject, projectName } = useWorkspace();
   const queryClient = useQueryClient();
   const [tabs, setTabs] = useState<EditorTab[]>([]);
-  const [activePath, setActivePath] = useState<string | null>(null);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<string | null>(null);
   const [view, setView] = useState<EditorView>("edit");
   const [diff, setDiff] = useState("");
@@ -165,8 +176,9 @@ export function CodeTab({
   const review = useMutation({ mutationFn: runRepopilotReview });
   const findings = useMemo(() => groupByFile(review.data), [review.data]);
   const findingsByFile = useMemo(() => new Map(findings.map((group) => [group.file, group])), [findings]);
-  const activeTab = tabs.find((tab) => tab.path === activePath) ?? null;
-  const activeFindings = activePath ? findingsByFile.get(activePath) : undefined;
+  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null;
+  const activeWorkspacePath = activeTab?.kind === "workspace" ? activeTab.path : null;
+  const activeFindings = activeWorkspacePath ? findingsByFile.get(activeWorkspacePath) : undefined;
   const dirtyCount = tabs.filter((tab) => tab.dirty).length;
   const idePreferences = useIdePreferences();
   const { confirm: confirmEditorDecision, dialog: editorDecisionDialog } = useIdeDecisionDialog();
@@ -174,13 +186,13 @@ export function CodeTab({
   useEffect(() => {
     const previousProject = sessionProjectRef.current;
     if (previousProject && previousProject !== projectName) {
-      rememberCodeSession(previousProject, tabs, activePath);
+      rememberCodeSession(previousProject, tabs, activeTabId);
     }
 
     sessionProjectRef.current = projectName ?? null;
     const cached = projectName ? codeSessionCache.get(projectName) : null;
     setTabs(cached ? cloneTabs(cached.tabs) : []);
-    setActivePath(cached?.activePath ?? null);
+    setActiveTabId(cached?.activeTabId ?? null);
     setWorkspaceError(null);
     setView("edit");
     setInsightsOpen(false);
@@ -192,8 +204,8 @@ export function CodeTab({
 
   useEffect(() => {
     const project = sessionProjectRef.current;
-    if (project) rememberCodeSession(project, tabs, activePath);
-  }, [activePath, tabs]);
+    if (project) rememberCodeSession(project, tabs, activeTabId);
+  }, [activeTabId, tabs]);
 
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
@@ -205,14 +217,14 @@ export function CodeTab({
   }, [tabs]);
 
   useEffect(() => {
-    if (view !== "diff" || !activePath || activeTab?.kind !== "workspace") return;
+    if (view !== "diff" || !activeWorkspacePath) return;
     let cancelled = false;
     setDiffLoading(true);
     setDiff("");
     const load = async () => {
       try {
-        let next = await callCommand<string>("git_file_diff", { path: activePath, cached: false });
-        if (!next.trim()) next = await callCommand<string>("git_file_diff", { path: activePath, cached: true });
+        let next = await callCommand<string>("git_file_diff", { path: activeWorkspacePath, cached: false });
+        if (!next.trim()) next = await callCommand<string>("git_file_diff", { path: activeWorkspacePath, cached: true });
         if (!cancelled) setDiff(next.trim());
       } catch (error) {
         if (!cancelled) setDiff(errorToMessage(error));
@@ -224,7 +236,7 @@ export function CodeTab({
     return () => {
       cancelled = true;
     };
-  }, [activePath, activeTab?.kind, view]);
+  }, [activeWorkspacePath, view]);
 
   const persistDraft = useCallback((tab: EditorTab): Promise<void> => {
     if (tab.kind !== "workspace" || !tab.dirty) return Promise.resolve();
@@ -268,6 +280,7 @@ export function CodeTab({
 
   const save = useMutation({
     mutationFn: async (tab: EditorTab) => {
+      if (tab.kind !== "workspace") throw new Error("Library documents are read-only.");
       const pendingDraft = draftWritesRef.current.get(tab.path);
       if (pendingDraft) await pendingDraft;
       const result = await saveCodeWorkspaceDocument({
@@ -282,9 +295,11 @@ export function CodeTab({
       }
       return result;
     },
-    onSuccess: (result) => {
+    onSuccess: (result, savedTab) => {
       const saved = result.document;
-      setTabs((current) => current.map((tab) => tab.path === saved.path ? toTab(saved) : tab));
+      const project = sessionProjectRef.current ?? projectName ?? "unknown";
+      const refreshed = { ...toWorkspaceTab(saved, project), id: savedTab.id };
+      setTabs((current) => current.map((tab) => tab.id === savedTab.id ? refreshed : tab));
       setWorkspaceError(null);
       void queryClient.invalidateQueries({ queryKey: CODE_WORKSPACE_KEY });
       void queryClient.invalidateQueries({ queryKey: ["git"] });
@@ -296,9 +311,12 @@ export function CodeTab({
 
   const openFile = useCallback(async (file: CodeWorkspaceFile, forceReload = false) => {
     if (file.blocked || openingRef.current) return;
-    const existing = tabs.find((tab) => tab.path === file.path);
+    const project = projectName ?? workspace.data?.project;
+    if (!project) return;
+    const targetId = workspaceTabId(project, file.path);
+    const existing = tabs.find((tab) => tab.id === targetId);
     if (existing && !forceReload) {
-      setActivePath(file.path);
+      setActiveTabId(targetId);
       setView("edit");
       return;
     }
@@ -318,10 +336,10 @@ export function CodeTab({
       }
     }
 
-    let evictPath: string | null = null;
+    let evictId: string | null = null;
     if (!existing && tabs.length >= MAX_OPEN_TABS) {
-      evictPath = tabs.find((tab) => !tab.dirty)?.path ?? null;
-      if (!evictPath) {
+      evictId = tabs.find((tab) => !tab.dirty)?.id ?? null;
+      if (!evictId) {
         setWorkspaceError(`Code Workspace keeps at most ${MAX_OPEN_TABS} open files. Save or close one first.`);
         return;
       }
@@ -332,7 +350,7 @@ export function CodeTab({
     setWorkspaceError(null);
     try {
       const document = await readCodeWorkspaceDocument(file.path);
-      let openedTab = toTab(document);
+      let openedTab = toWorkspaceTab(document, project);
       try {
         const recovery = await loadCodeWorkspaceDraft({
           path: document.path,
@@ -361,8 +379,8 @@ export function CodeTab({
         setDraftError(`Draft recovery is unavailable for ${fileName(document.path)}: ${errorToMessage(error)}`);
       }
       setTabs((current) => {
-        const withoutEvicted = evictPath ? current.filter((tab) => tab.path !== evictPath) : current;
-        const existingIndex = withoutEvicted.findIndex((tab) => tab.path === document.path);
+        const withoutEvicted = evictId ? current.filter((tab) => tab.id !== evictId) : current;
+        const existingIndex = withoutEvicted.findIndex((tab) => tab.id === openedTab.id);
         if (existingIndex >= 0) {
           const next = [...withoutEvicted];
           next[existingIndex] = openedTab;
@@ -370,7 +388,7 @@ export function CodeTab({
         }
         return [...withoutEvicted, openedTab];
       });
-      setActivePath(document.path);
+      setActiveTabId(openedTab.id);
       setView("edit");
     } catch (error) {
       setWorkspaceError(errorToMessage(error));
@@ -378,21 +396,22 @@ export function CodeTab({
       openingRef.current = false;
       setOpeningPath(null);
     }
-  }, [confirmEditorDecision, discardPersistedDraft, tabs]);
+  }, [confirmEditorDecision, discardPersistedDraft, projectName, tabs, workspace.data?.project]);
 
   const openLibrary = useCallback(async (request: CodeWorkspaceOpenRequest) => {
     if (!request.libraryHandle || openingRef.current) return;
-    const existing = tabs.find((tab) => tab.kind === "library" && tab.path === request.path);
+    const targetId = libraryTabId(request.libraryHandle);
+    const existing = tabs.find((tab) => tab.id === targetId);
     if (existing) {
-      setActivePath(existing.path);
+      setActiveTabId(existing.id);
       setView("edit");
       return;
     }
 
-    let evictPath: string | null = null;
+    let evictId: string | null = null;
     if (tabs.length >= MAX_OPEN_TABS) {
-      evictPath = tabs.find((tab) => !tab.dirty)?.path ?? null;
-      if (!evictPath) {
+      evictId = tabs.find((tab) => !tab.dirty)?.id ?? null;
+      if (!evictId) {
         setWorkspaceError(`Code Workspace keeps at most ${MAX_OPEN_TABS} open files. Save or close one first.`);
         return;
       }
@@ -405,10 +424,10 @@ export function CodeTab({
       const document = await readCodeLibraryDocument(request.libraryHandle);
       const tab = toLibraryTab(document);
       setTabs((current) => [
-        ...(evictPath ? current.filter((item) => item.path !== evictPath) : current),
+        ...(evictId ? current.filter((item) => item.id !== evictId) : current),
         tab,
       ]);
-      setActivePath(tab.path);
+      setActiveTabId(tab.id);
       setView("edit");
     } catch (error) {
       setWorkspaceError(errorToMessage(error));
@@ -440,38 +459,39 @@ export function CodeTab({
     return () => window.removeEventListener(CODE_OPEN_EVENT, consumeRequest);
   }, [openFile, openLibrary, workspace.data]);
 
-  const closeTab = async (path: string) => {
-    const target = tabs.find((tab) => tab.path === path);
-    if (target?.dirty) {
+  const closeTab = async (tabId: string) => {
+    const target = tabs.find((tab) => tab.id === tabId);
+    if (!target) return;
+    if (target.dirty) {
       const discard = await confirmEditorDecision({
         title: "Close unsaved file?",
-        message: `Discard unsaved changes in ${fileName(path)} and close this editor tab?`,
+        message: `Discard unsaved changes in ${fileName(target.path)} and close this editor tab?`,
         confirmLabel: "Discard and close",
         danger: true,
       });
       if (!discard) return;
       if (target.kind === "workspace") {
         try {
-          await discardPersistedDraft(path);
+          await discardPersistedDraft(target.path);
         } catch (error) {
-          setDraftError(`Could not discard the recovery draft for ${fileName(path)}: ${errorToMessage(error)}`);
+          setDraftError(`Could not discard the recovery draft for ${fileName(target.path)}: ${errorToMessage(error)}`);
           return;
         }
       }
     }
-    const index = tabs.findIndex((tab) => tab.path === path);
-    const nextTabs = tabs.filter((tab) => tab.path !== path);
+    const index = tabs.findIndex((tab) => tab.id === tabId);
+    const nextTabs = tabs.filter((tab) => tab.id !== tabId);
     setTabs(nextTabs);
-    if (activePath === path) {
-      setActivePath(nextTabs[Math.min(index, nextTabs.length - 1)]?.path ?? null);
+    if (activeTabId === tabId) {
+      setActiveTabId(nextTabs[Math.min(index, nextTabs.length - 1)]?.id ?? null);
       setView("edit");
     }
   };
 
   const updateActiveContent = (content: string) => {
-    if (!activePath) return;
+    if (!activeTabId) return;
     setTabs((current) => current.map((tab) => (
-      tab.path === activePath && tab.kind === "workspace" ? { ...tab, content, dirty: true } : tab
+      tab.id === activeTabId && tab.kind === "workspace" ? { ...tab, content, dirty: true } : tab
     )));
   };
 
@@ -495,39 +515,49 @@ export function CodeTab({
 
   const handleWorkspaceMutation = useCallback(async (result: CodeWorkspaceMutationResult) => {
     setWorkspaceError(null);
+    const project = projectName ?? workspace.data?.project;
+    if (!project) {
+      setWorkspaceError("The active project changed while the workspace mutation was completing.");
+      await refreshMutationProjections();
+      return;
+    }
 
     if (result.kind === "file_created") {
       const document = await readCodeWorkspaceDocument(result.path);
-      let evictPath: string | null = null;
+      const openedTab = toWorkspaceTab(document, project);
+      let evictId: string | null = null;
       if (tabs.length >= MAX_OPEN_TABS) {
-        evictPath = tabs.find((tab) => !tab.dirty)?.path ?? null;
-        if (!evictPath) {
+        evictId = tabs.find((tab) => !tab.dirty)?.id ?? null;
+        if (!evictId) {
           setWorkspaceError(`Created ${result.path}, but all ${MAX_OPEN_TABS} editor tabs have unsaved changes. Close or save one to open it.`);
           await refreshMutationProjections();
           return;
         }
       }
       setTabs((current) => [
-        ...(evictPath ? current.filter((tab) => tab.path !== evictPath) : current),
-        toTab(document),
+        ...(evictId ? current.filter((tab) => tab.id !== evictId) : current),
+        openedTab,
       ]);
-      setActivePath(document.path);
+      setActiveTabId(openedTab.id);
       setView("edit");
     } else if (result.kind === "file_renamed" && result.previous_path) {
       const document = await readCodeWorkspaceDocument(result.path);
+      const previousId = workspaceTabId(project, result.previous_path);
+      const renamedTab = toWorkspaceTab(document, project);
       setTabs((current) => current.map((tab) => (
-        tab.path === result.previous_path ? toTab(document) : tab
+        tab.id === previousId ? renamedTab : tab
       )));
-      setActivePath((current) => current === result.previous_path ? result.path : current);
+      setActiveTabId((current) => current === previousId ? renamedTab.id : current);
       setView("edit");
     } else if (result.kind === "file_deleted") {
-      setTabs((current) => current.filter((tab) => tab.path !== result.path));
-      setActivePath((current) => current === result.path ? null : current);
+      const deletedId = workspaceTabId(project, result.path);
+      setTabs((current) => current.filter((tab) => tab.id !== deletedId));
+      setActiveTabId((current) => current === deletedId ? null : current);
       setView("edit");
     }
 
     await refreshMutationProjections();
-  }, [refreshMutationProjections, tabs]);
+  }, [projectName, refreshMutationProjections, tabs, workspace.data?.project]);
 
   const workspaceActions = useCodeWorkspaceActions({
     getOpenDocument: (path) => {
@@ -567,7 +597,7 @@ export function CodeTab({
       ) : (
         <CodeWorkspaceTree
           files={workspace.data.files}
-          activePath={activePath}
+          activePath={activeWorkspacePath}
           onOpen={(file) => void openFile(file)}
           onSearchProject={() => setSideMode("search")}
           onNewFile={workspaceActions.requestCreateFile}
@@ -646,14 +676,14 @@ export function CodeTab({
         <div className="code-tab-strip" role="tablist" aria-label="Open files">
           {tabs.length === 0 ? <span className="code-tabs-empty">Open a file from Explorer.</span> : null}
           {tabs.map((tab) => (
-            <div className={`code-file-tab${tab.path === activePath ? " active" : ""}`} key={tab.path}>
+            <div className={`code-file-tab${tab.id === activeTabId ? " active" : ""}`} key={tab.id}>
               <button
                 type="button"
                 role="tab"
-                aria-selected={tab.path === activePath}
+                aria-selected={tab.id === activeTabId}
                 className="code-file-tab-select"
                 onClick={() => {
-                  setActivePath(tab.path);
+                  setActiveTabId(tab.id);
                   setView("edit");
                 }}
                 title={tab.path}
@@ -668,7 +698,7 @@ export function CodeTab({
                 type="button"
                 className="code-tab-close"
                 aria-label={`Close ${fileName(tab.path)}`}
-                onClick={() => void closeTab(tab.path)}
+                onClick={() => void closeTab(tab.id)}
               >×</button>
             </div>
           ))}
@@ -684,7 +714,7 @@ export function CodeTab({
         {workspaceError ? (
           <div className="code-workspace-message danger">
             <span>{workspaceError}</span>
-            {activeTab && workspaceError.includes("changed outside RepoDesk") ? (
+            {activeTab?.kind === "workspace" && workspaceError.includes("changed outside RepoDesk") ? (
               <button
                 type="button"
                 className="tiny-button"
@@ -756,10 +786,10 @@ export function CodeTab({
             />
           )}
 
-          {repoIntelOpen && activePath ? (
+          {repoIntelOpen && activeWorkspacePath ? (
             <RepositoryIntelligenceDrawer
               projectName={projectName}
-              path={activePath}
+              path={activeWorkspacePath}
               onClose={() => setRepoIntelOpen(false)}
             />
           ) : null}
@@ -769,12 +799,12 @@ export function CodeTab({
               <div className="code-insights-head">
                 <div>
                   <strong>Engineering findings</strong>
-                  <span>{activePath ? fileName(activePath) : "Current changes"}</span>
+                  <span>{activeWorkspacePath ? fileName(activeWorkspacePath) : "Current changes"}</span>
                 </div>
                 <button type="button" onClick={() => setInsightsOpen(false)} aria-label="Close findings">×</button>
               </div>
               {review.data.error ? <div className="notice danger">{review.data.error}</div> : null}
-              {activePath ? (
+              {activeWorkspacePath ? (
                 activeFindings ? (
                   <ul className="findings-list">
                     {activeFindings.findings.map((finding, index) => <FindingRow key={index} finding={finding} />)}
