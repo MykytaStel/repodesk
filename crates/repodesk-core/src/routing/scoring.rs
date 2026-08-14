@@ -268,9 +268,8 @@ pub fn score_capacity(
     if let Some(max_cost_units) = request.max_cost_units
         && capacity.estimated_cost_units > max_cost_units
     {
-        score -= 20;
-        warnings.push(format!(
-            "Estimated cost {:.4} exceeds preference {:.4}.",
+        blockers.push(format!(
+            "Estimated cost {:.4} exceeds maximum {:.4}.",
             capacity.estimated_cost_units, max_cost_units
         ));
     }
@@ -407,6 +406,25 @@ mod tests {
         });
         assert!(candidate.blocked);
         assert!(candidate.blockers.iter().any(|b| b.contains("hard limit")));
+    }
+
+    #[test]
+    fn max_cost_units_is_a_hard_constraint() {
+        let candidate = score(TaskKind::Plan, |req, cap| {
+            req.max_cost_units = Some(0.5);
+            cap.estimated_cost_units = 0.75;
+        });
+        assert!(candidate.blocked);
+        assert!(candidate.blockers.iter().any(|b| b.contains("maximum")));
+    }
+
+    #[test]
+    fn cost_at_or_below_maximum_remains_eligible() {
+        let candidate = score(TaskKind::Plan, |req, cap| {
+            req.max_cost_units = Some(1.0);
+            cap.estimated_cost_units = 1.0;
+        });
+        assert!(!candidate.blocked);
     }
 
     #[test]
