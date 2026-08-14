@@ -277,31 +277,84 @@ impl Default for SecurityPolicy {
     }
 }
 
+/// Classify a repository-relative path at the central file-access boundary.
+///
+/// The policy intentionally reasons about path segments, basenames, extensions
+/// and delimiter-separated words. It does **not** block arbitrary substrings:
+/// ordinary source files such as `tokens.ts`, `privateRoute.tsx`, or
+/// `credentials_form.tsx` must remain editable just because their domain uses a
+/// security-related word.
 pub fn is_blocked_path(path: &str) -> Option<String> {
-    let lower = path.to_lowercase();
+    let normalized = path.replace('\\', "/").to_ascii_lowercase();
+    let file_name = normalized.rsplit('/').next().unwrap_or(&normalized);
 
-    // `.env` files specifically follow the dotenv naming convention (`.env`,
-    // `.env.local`, `.env.production`, ...). Matching the raw substring
-    // ".env" anywhere in the path (as the other fragments below still do)
-    // false-positives on unrelated files that merely contain "env" preceded
-    // by a dot, e.g. `message.envelope.ts` or `release.environment.yml`.
-    let file_name = lower.rsplit('/').next().unwrap_or(&lower);
+    // Dotenv files follow a concrete naming convention.
     if file_name == ".env" || file_name.starts_with(".env.") || file_name.ends_with(".env") {
         return Some("secret-like path blocked".into());
     }
 
-    let blocked_fragments = ["secret", "credential", "private", "token", "id_rsa"];
-    let blocked_suffixes = [
-        ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif", ".webp",
-        ".pdf", ".zip",
-    ];
+    // Known credential stores/directories are sensitive regardless of the file
+    // nested inside them.
+    if normalized
+        .split('/')
+        .any(|segment| matches!(segment, ".ssh" | ".aws" | ".gnupg"))
+    {
+        return Some("credential store path blocked".into());
+    }
 
-    if blocked_fragments.iter().any(|item| lower.contains(item)) {
+    let blocked_exact_names = [
+        "id_rsa",
+        "id_dsa",
+        "id_ecdsa",
+        "id_ed25519",
+        ".netrc",
+        ".npmrc",
+        ".pypirc",
+        "credentials",
+        "token",
+        "secret",
+    ];
+    if blocked_exact_names.contains(&file_name) {
         return Some("secret-like path blocked".into());
     }
 
-    if blocked_suffixes.iter().any(|item| lower.ends_with(item)) {
+    let blocked_suffixes = [
+        ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif",
+        ".webp", ".pdf", ".zip",
+    ];
+    if blocked_suffixes
+        .iter()
+        .any(|item| file_name.ends_with(item))
+    {
         return Some("binary or sensitive file type blocked".into());
+    }
+
+    // Source-code filenames are allowed to use domain words like `token` and
+    // `credentials`. For non-source artifacts/config files, delimiter-separated
+    // secret nouns are treated conservatively.
+    let source_extensions = [
+        "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "kt", "kts", "swift",
+        "c", "h", "cc", "cpp", "cxx", "hpp", "cs", "rb", "php", "ex", "exs", "scala", "sh", "zsh",
+        "fish",
+    ];
+    let extension = file_name.rsplit_once('.').map(|(_, ext)| ext);
+    let source_like = extension.is_some_and(|ext| source_extensions.contains(&ext));
+    if !source_like {
+        let sensitive_words = [
+            "secret",
+            "secrets",
+            "credential",
+            "credentials",
+            "token",
+            "tokens",
+        ];
+        let has_sensitive_word = file_name
+            .split(|ch: char| !ch.is_ascii_alphanumeric())
+            .filter(|word| !word.is_empty())
+            .any(|word| sensitive_words.contains(&word));
+        if has_sensitive_word {
+            return Some("secret-like path blocked".into());
+        }
     }
 
     None
@@ -337,7 +390,7 @@ fn secret_detectors() -> &'static [(&'static str, Regex)] {
                 Regex::new(
                     r"(?s)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----|-----BEGIN [A-Z ]*PRIVATE KEY-----",
                 )
-                    .unwrap(),
+                .unwrap(),
             ),
         ]
     })
@@ -396,20 +449,27 @@ mod tests {
     }
 
     #[test]
-    fn blocked_path_flags_secret_fragments() {
+    fn blocked_path_flags_secret_artifacts_not_source_vocabulary() {
         assert!(is_blocked_path(".env").is_some());
         assert!(is_blocked_path("config/.env.local").is_some());
         assert!(is_blocked_path("home/user/id_rsa").is_some());
         assert!(is_blocked_path("my_secret_notes.txt").is_some());
         assert!(is_blocked_path("path/to/credentials.json").is_some());
+
+        assert!(is_blocked_path("src/tokens.ts").is_none());
+        assert!(is_blocked_path("src/privateRoute.tsx").is_none());
+        assert!(is_blocked_path("src/credentials_form.tsx").is_none());
+        assert!(is_blocked_path("src/my_secret_sauce.rs").is_none());
     }
 
     #[test]
-    fn blocked_path_flags_sensitive_suffixes() {
+    fn blocked_path_flags_sensitive_suffixes_and_stores() {
         assert!(is_blocked_path("server.pem").is_some());
         assert!(is_blocked_path("key.p12").is_some());
         assert!(is_blocked_path("data/app.sqlite").is_some());
         assert!(is_blocked_path("diagram.png").is_some());
+        assert!(is_blocked_path("~/.ssh/config").is_some());
+        assert!(is_blocked_path("C:\\Users\\me\\.aws\\credentials").is_some());
     }
 
     #[test]
@@ -420,13 +480,9 @@ mod tests {
 
     #[test]
     fn env_fragment_does_not_false_positive_on_unrelated_filenames() {
-        // Regression: a raw substring match for ".env" blocked any path that
-        // happened to contain "env" preceded by a dot, even when it had
-        // nothing to do with dotenv secrets.
         assert!(is_blocked_path("src/message.envelope.ts").is_none());
         assert!(is_blocked_path("config/release.environment.yml").is_none());
         assert!(is_blocked_path("docs/environment.md").is_none());
-        // The real dotenv convention is still blocked.
         assert!(is_blocked_path(".env").is_some());
         assert!(is_blocked_path("config/.env.local").is_some());
         assert!(is_blocked_path("config/.env.production").is_some());
@@ -463,7 +519,6 @@ mod tests {
     #[test]
     fn secret_scan_is_clean_on_ordinary_text() {
         assert!(scan_text_for_secrets("just some regular prose without secrets").is_empty());
-        // A short token value should not trip the 20+ char generic heuristic.
         assert!(scan_text_for_secrets("token=short").is_empty());
     }
 

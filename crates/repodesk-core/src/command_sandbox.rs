@@ -40,7 +40,7 @@ pub fn sandbox_rules() -> Vec<SandboxRule> {
         SandboxRule {
             name: "secret_access".to_string(),
             verdict: "block".to_string(),
-            pattern: ".env, *.pem, *.key, credentials, token".to_string(),
+            pattern: ".env, *.pem, *.key, credential stores and secret artifacts".to_string(),
             reason: "Potential secret exposure.".to_string(),
         },
         SandboxRule {
@@ -229,7 +229,6 @@ fn has_privileged_shell(tokens: &[String]) -> bool {
         return true;
     }
 
-    // Check for chmod 777
     if let Some(pos) = tokens.iter().position(|t| t == "chmod")
         && pos + 1 < tokens.len()
         && tokens[pos + 1] == "777"
@@ -261,40 +260,14 @@ fn has_remote_shell_pipe(tokens: &[String]) -> bool {
 }
 
 fn has_secret_access(tokens: &[String]) -> bool {
-    for token in tokens {
-        let lower = token.to_lowercase();
-        let file_name = std::path::Path::new(&lower)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or(&lower);
-
-        if file_name == ".env" || file_name.starts_with(".env.") {
-            return true;
-        }
-
-        if file_name.ends_with(".pem") || file_name.ends_with(".key") {
-            return true;
-        }
-
-        if lower.starts_with("api_key=")
+    tokens.iter().any(|token| {
+        let lower = token.to_ascii_lowercase();
+        lower.starts_with("api_key=")
             || lower.starts_with("token=")
             || lower.starts_with("secret=")
             || lower.starts_with("credentials=")
-        {
-            return true;
-        }
-
-        if file_name == "api_key"
-            || file_name == "token"
-            || file_name == "secret"
-            || file_name == "credentials"
-            || file_name == "id_rsa"
-            || file_name == "credentials.json"
-        {
-            return true;
-        }
-    }
-    false
+            || crate::security::is_blocked_path(token).is_some()
+    })
 }
 
 fn has_publish_or_force_push(tokens: &[String]) -> bool {
@@ -369,9 +342,6 @@ mod tests {
 
     #[test]
     fn dangerous_delete_flags_bare_glob_star_target() {
-        // Regression: `rm -rf *` deletes everything in the current directory
-        // (shell-expanded before rm even runs) just as destructively as
-        // `rm -rf .`, but the bare `*` token wasn't in the target list.
         let tokens = |command: &str| {
             command
                 .split_whitespace()
@@ -422,6 +392,7 @@ mod tests {
             "credentials=abc",
             "config/id_rsa",
             "config/credentials.json",
+            "~/.ssh/config",
         ];
 
         for token in secret_tokens {
