@@ -11,10 +11,7 @@ pub(crate) struct BoundedBytes {
     pub(crate) truncated: bool,
 }
 
-pub(crate) fn drain_bounded_bytes(
-    mut reader: impl Read,
-    max: usize,
-) -> io::Result<BoundedBytes> {
+pub(crate) fn drain_bounded_bytes(mut reader: impl Read, max: usize) -> io::Result<BoundedBytes> {
     let mut retained = Vec::with_capacity(max.min(64 * 1024));
     let mut buffer = [0u8; 8 * 1024];
     let mut truncated = false;

@@ -89,7 +89,9 @@ pub fn command_policy_text() -> String {
     let mut output = String::new();
     output.push_str("Command policy:\n\n");
     output.push_str("RepoDesk must classify and judge commands before an agent executes them.\n");
-    output.push_str("This policy gate is not an OS/process sandbox and does not contain a child process.\n");
+    output.push_str(
+        "This policy gate is not an OS/process sandbox and does not contain a child process.\n",
+    );
     output.push_str("Patch agents must not receive unrestricted shell access.\n\n");
     output.push_str("Rules:\n");
 
@@ -297,7 +299,9 @@ fn has_publish_or_force_push(tokens: &[String]) -> bool {
     if tokens.len() >= 2 {
         if tokens[0] == "git"
             && tokens[1] == "push"
-            && tokens.iter().any(|token| token == "--force" || token == "-f")
+            && tokens
+                .iter()
+                .any(|token| token == "--force" || token == "-f")
         {
             return true;
         }
