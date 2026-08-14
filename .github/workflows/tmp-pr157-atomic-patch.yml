@@ -26,29 +26,40 @@ jobs:
 
           path = Path("crates/repodesk-core/tests/core_safety_paths.rs")
           text = path.read_text()
-          old = '''    let events = read_task_events(&active_id, 10).expect("read_task_events");
-          assert_eq!(events.len(), 1);
-          assert_eq!(events[0].task_id, active_id);
-          assert_eq!(events[0].message, "run finished");
-          '''
-          new = '''    let events = read_task_events(&active_id, 10).expect("read_task_events");
-          assert_eq!(events.len(), 2);
-          assert!(events.iter().all(|event| event.task_id == active_id));
-          assert!(
-              events
-                  .iter()
-                  .any(|event| event.module_name == "orchestrator" && event.message == "run finished")
-          );
-          assert!(
-              events.iter().any(|event| {
-                  event.module_name == "engineering"
-                      && event.message == "engineering event: work_item_created"
-              }),
-              "canonical task timeline should include the Work Item creation evidence"
-          );
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected exactly one test block, found {text.count(old)}")
+          i = " " * 4
+          i2 = " " * 8
+          i3 = " " * 12
+          i4 = " " * 16
+
+          old = "\n".join([
+              i + 'let events = read_task_events(&active_id, 10).expect("read_task_events");',
+              i + 'assert_eq!(events.len(), 1);',
+              i + 'assert_eq!(events[0].task_id, active_id);',
+              i + 'assert_eq!(events[0].message, "run finished");',
+              '',
+          ])
+          new = "\n".join([
+              i + 'let events = read_task_events(&active_id, 10).expect("read_task_events");',
+              i + 'assert_eq!(events.len(), 2);',
+              i + 'assert!(events.iter().all(|event| event.task_id == active_id));',
+              i + 'assert!(',
+              i2 + 'events',
+              i3 + '.iter()',
+              i3 + '.any(|event| event.module_name == "orchestrator" && event.message == "run finished")',
+              i + ');',
+              i + 'assert!(',
+              i2 + 'events.iter().any(|event| {',
+              i3 + 'event.module_name == "engineering"',
+              i4 + '&& event.message == "engineering event: work_item_created"',
+              i2 + '}),',
+              i2 + '"canonical task timeline should include the Work Item creation evidence"',
+              i + ');',
+              '',
+          ])
+
+          matches = text.count(old)
+          if matches != 1:
+              raise SystemExit(f"expected exactly one test block, found {matches}")
           path.write_text(text.replace(old, new, 1))
 
           helper = Path(".github/workflows/tmp-pr157-atomic-patch.yml")
