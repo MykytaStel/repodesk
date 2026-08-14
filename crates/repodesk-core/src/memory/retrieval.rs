@@ -61,6 +61,11 @@ pub struct SliceRender {
     pub total_active: usize,
     #[serde(default)]
     pub budget_exhausted: bool,
+    /// Oldest observation represented by the final included slice. Carry this
+    /// with the bounded result so context preparation never has to re-read the
+    /// complete project memory merely to reconstruct provenance.
+    #[serde(default)]
+    pub observed_at: Option<DateTime<Utc>>,
 }
 
 impl SliceRender {
@@ -178,6 +183,10 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
 
     let budget_exhausted =
         !scored.is_empty() && (!excluded_ids.is_empty() || estimated_tokens >= token_budget);
+    let observed_at = included
+        .iter()
+        .map(|entry| entry.updated_at.unwrap_or(entry.timestamp))
+        .min();
 
     SliceRender {
         markdown,
@@ -187,6 +196,7 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
         pinned_overflow_ids,
         total_active,
         budget_exhausted,
+        observed_at,
     }
 }
 
@@ -469,6 +479,20 @@ mod tests {
         assert!(render.markdown.is_empty());
         assert_eq!(render.estimated_tokens, 0);
         assert_eq!(render.pinned_overflow_ids, vec![999]);
+        assert_eq!(render.observed_at, None);
+    }
+
+    #[test]
+    fn slice_carries_oldest_included_provenance_without_a_second_store_read() {
+        let now = fixed_now();
+        let mut older = entry_at(1, "older included rule", "constraint", &[], now - Duration::days(8));
+        older.updated_at = Some(now - Duration::days(6));
+        let newer = entry_at(2, "newer included rule", "constraint", &[], now - Duration::days(2));
+        let scored = rank_for_task_at(&TaskSignals::default(), &[older, newer], now);
+        let render = render_slice(&scored, 500);
+
+        assert_eq!(render.included_ids.len(), 2);
+        assert_eq!(render.observed_at, Some(now - Duration::days(6)));
     }
 
     #[test]
