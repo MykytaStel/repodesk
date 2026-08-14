@@ -319,8 +319,8 @@ pub fn is_blocked_path(path: &str) -> Option<String> {
     }
 
     let blocked_suffixes = [
-        ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg",
-        ".gif", ".webp", ".pdf", ".zip",
+        ".pem", ".key", ".p12", ".pfx", ".sqlite", ".db", ".png", ".jpg", ".jpeg", ".gif", ".webp",
+        ".pdf", ".zip",
     ];
     if blocked_suffixes
         .iter()
