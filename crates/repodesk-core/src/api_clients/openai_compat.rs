@@ -12,6 +12,8 @@ use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::{LlmRequest, LlmResponse, ProviderFuture};
 
+const MAX_ERROR_DETAIL_CHARS: usize = 2_000;
+
 pub struct OpenAiCompatClient {
     api_key: String,
     base_url: String,
@@ -117,6 +119,17 @@ fn extract_text(response: &ChatResponse) -> String {
         .unwrap_or_default()
 }
 
+fn safe_error_detail(value: &str) -> String {
+    let (redacted, _) = crate::security::redact_secrets(value);
+    let mut chars = redacted.chars();
+    let limited: String = chars.by_ref().take(MAX_ERROR_DETAIL_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{limited}…")
+    } else {
+        limited
+    }
+}
+
 impl super::LlmProvider for OpenAiCompatClient {
     fn generate(
         &self,
@@ -168,7 +181,8 @@ impl super::LlmProvider for OpenAiCompatClient {
                 });
             }
             if !status.is_success() {
-                let detail = resp.text().await.unwrap_or_default();
+                let raw_detail = resp.text().await.unwrap_or_default();
+                let detail = safe_error_detail(&raw_detail);
                 return Err(RepoDeskError::Api(format!(
                     "{label} API error {status}: {detail}"
                 )));
@@ -225,5 +239,16 @@ mod tests {
         assert_eq!(extract_text(&parsed), "Hi there");
         assert_eq!(parsed.usage.prompt_tokens, 10);
         assert_eq!(parsed.usage.completion_tokens, 3);
+    }
+
+    #[test]
+    fn provider_error_detail_is_redacted_and_bounded() {
+        let secret = ["sk-", "fixture_", "redaction_", "value_1234567890"].concat();
+        let detail = format!("api_key={secret} {}", "x".repeat(3_000));
+        let safe = safe_error_detail(&detail);
+
+        assert!(!safe.contains(&secret));
+        assert!(safe.contains("[REDACTED:"));
+        assert!(safe.chars().count() <= MAX_ERROR_DETAIL_CHARS + 1);
     }
 }

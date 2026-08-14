@@ -128,11 +128,58 @@ pub fn presets() -> Vec<ProviderPreset> {
     ]
 }
 
+fn base_url_host(value: &str) -> Option<String> {
+    let normalized = value.trim();
+    let rest = normalized
+        .strip_prefix("http://")
+        .or_else(|| normalized.strip_prefix("https://"))?;
+    let authority = rest.split(['/', '?', '#']).next()?.trim();
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+
+    let host = if let Some(bracketed) = authority.strip_prefix('[') {
+        let end = bracketed.find(']')?;
+        &bracketed[..end]
+    } else {
+        authority.split(':').next().unwrap_or(authority)
+    };
+
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_ascii_lowercase())
+    }
+}
+
 pub fn is_local_base_url(value: &str) -> bool {
-    let normalized = value.trim().to_ascii_lowercase();
-    normalized.starts_with("http://localhost")
-        || normalized.starts_with("http://127.0.0.1")
-        || normalized.starts_with("http://[::1]")
+    matches!(
+        base_url_host(value).as_deref(),
+        Some("localhost" | "127.0.0.1" | "::1")
+    )
+}
+
+fn validate_provider_base_url(value: &str) -> RepoDeskResult<String> {
+    let base = value.trim().trim_end_matches('/');
+    if base_url_host(base).is_none() {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: "base URL must be a valid http:// or https:// URL without embedded credentials"
+                .to_string(),
+        });
+    }
+
+    if base.starts_with("https://") {
+        return Ok(base.to_string());
+    }
+
+    if base.starts_with("http://") && is_local_base_url(base) {
+        return Ok(base.to_string());
+    }
+
+    Err(RepoDeskError::RoutingFailed {
+        detail: "remote custom providers must use HTTPS; plain HTTP is allowed only for localhost/127.0.0.1/::1"
+            .to_string(),
+    })
 }
 
 fn slugify(value: &str) -> String {
@@ -242,13 +289,7 @@ fn save_custom_provider_with(
             detail: "a custom provider needs a label".to_string(),
         });
     }
-    let base = provider.base_url.trim();
-    if !(base.starts_with("http://") || base.starts_with("https://")) {
-        return Err(RepoDeskError::RoutingFailed {
-            detail: "base URL must start with http:// or https://".to_string(),
-        });
-    }
-    provider.base_url = base.trim_end_matches('/').to_string();
+    provider.base_url = validate_provider_base_url(&provider.base_url)?;
     if provider.id.trim().is_empty() {
         provider.id = slugify(&provider.label);
     } else {
@@ -407,10 +448,34 @@ mod tests {
     }
 
     #[test]
-    fn local_base_url_detection_is_loopback_only() {
+    fn local_base_url_detection_is_exactly_loopback() {
         assert!(is_local_base_url("http://localhost:1234"));
         assert!(is_local_base_url("http://127.0.0.1:1234"));
+        assert!(is_local_base_url("http://[::1]:1234"));
+        assert!(is_local_base_url("https://localhost:1234"));
+        assert!(!is_local_base_url("http://localhost.evil.example"));
+        assert!(!is_local_base_url("http://127.0.0.1.evil.example"));
         assert!(!is_local_base_url("https://api.deepseek.com"));
+    }
+
+    #[test]
+    fn remote_provider_transport_requires_https() {
+        assert!(validate_provider_base_url("https://api.example.com").is_ok());
+        assert!(validate_provider_base_url("http://localhost:11434").is_ok());
+        assert!(validate_provider_base_url("http://127.0.0.1:1234").is_ok());
+        assert!(validate_provider_base_url("http://api.example.com").is_err());
+        assert!(validate_provider_base_url("http://localhost.evil.example").is_err());
+        assert!(validate_provider_base_url("https://user:pass@example.com").is_err());
+    }
+
+    #[test]
+    fn rejected_remote_http_provider_never_writes_a_credential() {
+        let resolver = MemoryResolver::default();
+        let mut provider = provider_with_key("fixture-secret-that-must-stay-local");
+        provider.base_url = "http://api.example.com".to_string();
+
+        assert!(save_custom_provider_with(provider, &resolver).is_err());
+        assert!(resolver.0.lock().unwrap().is_empty());
     }
 
     #[test]
