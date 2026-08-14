@@ -2,47 +2,26 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   WORK_ENGINEERING_SNAPSHOT_KEY,
+  linkChangesAcceptanceEvidence,
   recordScopeOverride,
+  type AcceptanceCriterionEvidence,
   type ChangeGovernanceSnapshot,
   type ChangeSetPassport,
-  type CommitGateState,
+  type SafeCommitManifest,
   type WorkEngineeringSnapshot,
 } from "../../shared/api/engineering";
 import { workVerify } from "../../shared/api/orchestrate";
 import { errorToMessage } from "../../shared/utils/helpers";
 
-function gateLabel(state: CommitGateState): string {
-  switch (state) {
-    case "no_change_set": return "No ChangeSet";
-    case "scope_violation": return "Scope blocked";
-    case "needs_review": return "Needs review";
-    case "rejected": return "Rejected";
-    case "verification_required": return "Needs verification";
-    case "verification_running": return "Verifying";
-    case "verification_failed": return "Verification failed";
-    case "verification_stale": return "Verification stale";
-    case "ready": return "Ready to commit";
-    case "committed": return "Committed";
-  }
+function safeStateLabel(manifest: SafeCommitManifest): string {
+  if (manifest.state === "ready") return "Ready to commit";
+  if (manifest.state === "committed") return "Committed";
+  return "Commit blocked";
 }
 
-function gateTone(state: CommitGateState): string {
-  switch (state) {
-    case "ready":
-    case "committed":
-      return "ok";
-    case "scope_violation":
-    case "rejected":
-    case "verification_failed":
-    case "verification_stale":
-      return "danger";
-    case "needs_review":
-    case "verification_required":
-    case "verification_running":
-      return "warn";
-    default:
-      return "neutral";
-  }
+function safeStateTone(manifest: SafeCommitManifest): string {
+  if (manifest.state === "ready" || manifest.state === "committed") return "ok";
+  return "danger";
 }
 
 function reviewLabel(value: ChangeGovernanceSnapshot["review_state"]): string {
@@ -80,6 +59,19 @@ function shortSha(value: string | null): string {
   return value.slice(0, Math.min(value.length, 12));
 }
 
+function criterionTone(criterion: AcceptanceCriterionEvidence): string {
+  if (criterion.status === "proven" && !criterion.stale) return "ok";
+  if (criterion.status === "failed") return "danger";
+  return "warn";
+}
+
+function criterionLabel(criterion: AcceptanceCriterionEvidence): string {
+  if (criterion.stale) return "Stale";
+  if (criterion.status === "proven") return "Proven";
+  if (criterion.status === "failed") return "Failed";
+  return "Unproven";
+}
+
 function EvidenceCell({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
     <div className="change-evidence-cell">
@@ -93,17 +85,20 @@ function EvidenceCell({ label, value, detail }: { label: string; value: string; 
 export function ChangeGovernancePanel({
   governance,
   passport,
+  manifest,
   loading,
   error,
 }: {
   governance: ChangeGovernanceSnapshot | null;
   passport: ChangeSetPassport | null;
+  manifest: SafeCommitManifest | null;
   loading: boolean;
   error: unknown;
 }) {
   const queryClient = useQueryClient();
   const [showOverride, setShowOverride] = useState(false);
   const [overrideReason, setOverrideReason] = useState("");
+  const [criterionCommands, setCriterionCommands] = useState<Record<string, string>>({});
 
   const refreshTrustState = () => {
     void queryClient.invalidateQueries({ queryKey: WORK_ENGINEERING_SNAPSHOT_KEY });
@@ -128,10 +123,19 @@ export function ChangeGovernancePanel({
     onSuccess: refreshTrustState,
   });
 
+  const linkEvidence = useMutation({
+    mutationFn: ({ criterionId, command }: { criterionId: string; command: string }) =>
+      linkChangesAcceptanceEvidence(criterionId, command),
+    onSuccess: (snapshot) => {
+      queryClient.setQueryData(WORK_ENGINEERING_SNAPSHOT_KEY, snapshot);
+      refreshTrustState();
+    },
+  });
+
   if (error) {
     return <div className="notice danger">Change governance unavailable: {errorToMessage(error)}</div>;
   }
-  if (loading || !governance || !passport) {
+  if (loading || !governance || !passport || !manifest) {
     return <div className="change-evidence-loading">Loading ChangeSet evidence…</div>;
   }
 
@@ -140,18 +144,32 @@ export function ChangeGovernancePanel({
   const canVerify = governance.gate.state === "verification_required"
     || governance.gate.state === "verification_failed"
     || governance.gate.state === "verification_stale";
-  const acceptanceValue = passport.acceptance.configured
-    ? `${passport.acceptance.proven}/${passport.acceptance.total} proven`
+  const acceptanceValue = manifest.acceptance.configured
+    ? `${manifest.acceptance.proven}/${manifest.acceptance.criteria.length} proven`
     : "Not configured";
+  const commands = manifest.verification_commands;
+  const fallbackCommand = commands.find((command) => command.success)?.command ?? commands[0]?.command ?? "";
+  const canLinkEvidence = governance.verification.state === "passed"
+    && governance.verification.fresh === true
+    && commands.length > 0
+    && manifest.state !== "committed";
+
+  const selectedCommand = (criterion: AcceptanceCriterionEvidence): string => {
+    const explicit = criterionCommands[criterion.criterion_id];
+    if (explicit && commands.some((command) => command.command === explicit)) return explicit;
+    if (criterion.command && commands.some((command) => command.command === criterion.command)) return criterion.command;
+    return fallbackCommand;
+  };
 
   return (
     <section className="change-evidence" aria-label="ChangeSet evidence">
       <div className="change-evidence-head">
         <div>
-          <p className="eyebrow">ChangeSet Passport</p>
+          <p className="eyebrow">Safe Commit Manifest</p>
           <strong>{governance.changeset_id ? `ChangeSet ${changeset}` : "No recorded ChangeSet"}</strong>
+          <small className="muted">Manifest {shortSha(manifest.manifest_digest)}</small>
         </div>
-        <span className={`pill ${gateTone(governance.gate.state)}`}>{gateLabel(governance.gate.state)}</span>
+        <span className={`pill ${safeStateTone(manifest)}`}>{safeStateLabel(manifest)}</span>
       </div>
 
       <div className="change-evidence-grid">
@@ -167,37 +185,51 @@ export function ChangeGovernancePanel({
         />
         <EvidenceCell
           label="Scope"
-          value={overridden ? "Overridden" : governance.scope_status.split("_").join(" ")}
-          detail={`${passport.changed_file_count} recorded file${passport.changed_file_count === 1 ? "" : "s"}`}
+          value={manifest.scope.overridden ? "Overridden" : manifest.scope.status.split("_").join(" ")}
+          detail={`${manifest.reviewed_paths.length} reviewed path${manifest.reviewed_paths.length === 1 ? "" : "s"}`}
         />
         <EvidenceCell label="Review" value={reviewLabel(governance.review_state)} />
         <EvidenceCell
+          label="Reviewed tree"
+          value={shortSha(manifest.reviewed_tree_sha)}
+          detail={manifest.verification_tree_sha === manifest.reviewed_tree_sha ? "Matches verification tree" : "Not bound"}
+        />
+        <EvidenceCell
           label="Verification"
           value={verificationLabel(governance)}
-          detail={governance.verification.command_count > 0 ? `${governance.verification.command_count} canonical commands` : undefined}
+          detail={commands.length > 0 ? `${commands.length} canonical commands` : undefined}
         />
         <EvidenceCell
           label="Acceptance"
           value={acceptanceValue}
-          detail={passport.acceptance.failed > 0
-            ? `${passport.acceptance.failed} failed`
-            : passport.acceptance.unproven > 0
-              ? `${passport.acceptance.unproven} unproven`
-              : passport.acceptance.configured ? "All criteria evidenced" : undefined}
+          detail={manifest.acceptance.failed > 0
+            ? `${manifest.acceptance.failed} failed`
+            : manifest.acceptance.unproven > 0
+              ? `${manifest.acceptance.unproven} unproven or stale`
+              : manifest.acceptance.configured ? "All criteria evidenced" : undefined}
+        />
+        <EvidenceCell
+          label={manifest.state === "committed" ? "Commit" : "Current HEAD"}
+          value={shortSha(manifest.commit_sha ?? manifest.current_head_sha)}
+          detail={manifest.state === "committed" ? "Resulting tree is evidence-bound" : "Verification parent boundary"}
         />
       </div>
 
-      {governance.gate.blockers.length > 0 ? (
+      {manifest.blockers.length > 0 ? (
         <div className="change-evidence-message danger">
-          <strong>Blocked</strong>
-          <span>{governance.gate.blockers[0]}</span>
+          <strong>Commit blockers</strong>
+          <ul className="change-evidence-list">
+            {manifest.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+          </ul>
         </div>
       ) : null}
 
-      {governance.gate.warnings.length > 0 ? (
+      {manifest.warnings.length > 0 ? (
         <div className="change-evidence-message">
-          <strong>Note</strong>
-          <span>{governance.gate.warnings[0]}</span>
+          <strong>Compatibility notes</strong>
+          <ul className="change-evidence-list">
+            {manifest.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+          </ul>
         </div>
       ) : null}
 
@@ -222,6 +254,65 @@ export function ChangeGovernancePanel({
         </div>
       ) : null}
       {verify.isError ? <div className="notice danger">{errorToMessage(verify.error)}</div> : null}
+
+      {manifest.acceptance.configured ? (
+        <div className="acceptance-matrix">
+          <div className="acceptance-matrix-head">
+            <div>
+              <p className="eyebrow">Acceptance Evidence Matrix</p>
+              <strong>{manifest.acceptance.proven}/{manifest.acceptance.criteria.length} criteria proven</strong>
+            </div>
+            <span className={`pill ${manifest.acceptance.failed > 0 ? "danger" : manifest.acceptance.unproven > 0 ? "warn" : "ok"}`}>
+              {manifest.acceptance.failed > 0 ? "Failed evidence" : manifest.acceptance.unproven > 0 ? "Incomplete" : "Complete"}
+            </span>
+          </div>
+          <div className="acceptance-matrix-rows">
+            {manifest.acceptance.criteria.map((criterion) => {
+              const command = selectedCommand(criterion);
+              return (
+                <div className="acceptance-matrix-row" key={criterion.criterion_id}>
+                  <div className="acceptance-criterion-copy">
+                    <span className={`pill ${criterionTone(criterion)}`}>{criterionLabel(criterion)}</span>
+                    <strong>{criterion.criterion}</strong>
+                    {criterion.command ? <code>{criterion.command}</code> : <small>No canonical command linked yet.</small>}
+                    {criterion.stale_reason ? <small className="danger-text">{criterion.stale_reason}</small> : null}
+                  </div>
+                  {canLinkEvidence ? (
+                    <div className="acceptance-link-control">
+                      <select
+                        value={command}
+                        onChange={(event) => setCriterionCommands((current) => ({
+                          ...current,
+                          [criterion.criterion_id]: event.target.value,
+                        }))}
+                        aria-label={`Verification command for ${criterion.criterion}`}
+                      >
+                        {commands.map((item) => (
+                          <option key={item.command} value={item.command}>
+                            {item.success ? "PASS" : "FAIL"} · {item.command}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        className="tiny-button"
+                        disabled={!command || linkEvidence.isPending}
+                        onClick={() => linkEvidence.mutate({ criterionId: criterion.criterion_id, command })}
+                      >
+                        {criterion.command ? "Relink evidence" : "Link evidence"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          {manifest.acceptance.criteria.length === 0 ? (
+            <p className="muted">No acceptance criteria are configured for this Work Item.</p>
+          ) : null}
+          {linkEvidence.isError ? <div className="notice danger">{errorToMessage(linkEvidence.error)}</div> : null}
+        </div>
+      ) : null}
 
       {governance.scope_override ? (
         <div className="change-override-receipt">

@@ -22,6 +22,7 @@ pub mod knowledge;
 pub mod knowledge_lifecycle;
 pub mod run_evidence;
 pub mod run_observability;
+pub mod safe_commit_manifest;
 pub mod strategy_adaptation;
 pub mod strategy_feedback;
 pub mod strategy_instrumentation;
@@ -117,6 +118,10 @@ pub use run_evidence::{
 pub use run_observability::{
     RunContextObservability, RunDisposition, RunDispositionStage, RunDispositionState,
     RunEfficiency, RunObservabilityReport, RunStrategyObservability, derive_run_observability,
+};
+pub use safe_commit_manifest::{
+    SAFE_COMMIT_MANIFEST_VERSION, SafeCommitManifest, SafeCommitState, derive_safe_commit_manifest,
+    load_active_safe_commit_manifest,
 };
 pub use strategy_adaptation::derive_ai_strategy_with_feedback;
 pub use strategy_feedback::{

@@ -3,7 +3,6 @@
 //! Finish phases turn green only on proof, and both refuse to act on anything
 //! outside the reviewed changeset.
 
-use std::collections::HashSet;
 use std::process::Command;
 
 use chrono::Utc;
@@ -12,9 +11,8 @@ use crate::engineering::instrumentation::VerificationFinishedTelemetry;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::receipt::{
-    CheckReceipt, FinishReceipt, ReviewDecision, VerificationReceipt, commit_exists,
-    commit_tree_sha, head_sha, index_tree_sha, load_receipt, reviewed_tree_sha_for, save_receipt,
-    staged_paths,
+    CheckReceipt, FinishReceipt, VerificationReceipt, commit_exists, commit_tree_sha, head_sha,
+    index_tree_sha, load_receipt, reviewed_tree_sha_for, save_receipt,
 };
 
 /// Result of running final verification.
@@ -148,9 +146,11 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     Ok(VerificationOutcome { success, commands })
 }
 
-/// Commit **only** the already-staged, reviewed changeset — never `git add -A`.
-/// Refuses unless Review, Verification, the current index, and the resulting
-/// commit all resolve to the same exact tree SHA.
+/// Commit **only** the exact ChangeSet authorized by the canonical Safe Commit
+/// Manifest — never `git add -A`. The manifest is the same read model rendered
+/// by Changes, so operator readiness and the actual Finish gate cannot drift.
+/// After Git returns success, the resulting commit tree is independently
+/// compared with the reviewed tree to catch hooks or unexpected index mutation.
 pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     let message = message.trim();
     if message.is_empty() {
@@ -164,99 +164,38 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         });
     }
 
+    let manifest = crate::engineering::load_active_safe_commit_manifest()?;
+    if let Some(detail) = manifest.blocker_message() {
+        return Err(RepoDeskError::RoutingFailed { detail });
+    }
+    if !manifest.ready {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: "commit blocked: Safe Commit Manifest is not ready".to_string(),
+        });
+    }
+
     let mut receipt = load_receipt()?.ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "no run to commit — run the agent first".to_string(),
     })?;
-    let project_path = active_project_path()?;
-    let run_digest = receipt.execution.changeset_digest.clone();
-
-    // 1. The run's changeset must have been accepted (this run, this digest).
-    // `load_receipt` already invalidates an unfinished Accepted review when the
-    // staged tree changed, so a stale Accept cannot reach this point as current
-    // evidence.
-    let review = receipt
-        .review
-        .as_ref()
-        .filter(|r| r.decision == ReviewDecision::Accepted && r.run_id == receipt.run_id)
-        .filter(|r| Some(&r.changeset_digest) == run_digest.as_ref())
-        .ok_or_else(|| RepoDeskError::RoutingFailed {
-            detail: "commit blocked: the run's exact changes have not been reviewed and accepted"
-                .to_string(),
-        })?;
-    let reviewed: HashSet<&str> = review.reviewed_paths.iter().map(String::as_str).collect();
-
-    // 2. Apply RepoDesk 2 Engineering Contract policy to the exact canonical
-    // reviewed path set. Tasks without a typed contract keep the legacy commit
-    // flow; a real scope violation requires an explicit current HumanOverride.
-    let scope_policy = crate::engineering::load_active_commit_scope_policy(
-        &receipt.run_id,
-        &review.reviewed_paths,
-    )?;
-    if let Some(detail) = scope_policy.blocker_message() {
-        return Err(RepoDeskError::RoutingFailed { detail });
+    if manifest.run_id.as_deref() != Some(receipt.run_id.as_str()) {
+        return Err(RepoDeskError::RoutingFailed {
+            detail: "commit blocked: Safe Commit Manifest belongs to a different run".to_string(),
+        });
     }
-
-    // 3. Resolve the current tree and prove it is exactly the one accepted in
-    // Review. Then require Verification to be fresh against that same tree.
-    let head = head_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
-        detail: "active project is not a git repository with a commit".to_string(),
-    })?;
-    let tree = index_tree_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
-        detail: "could not read the staged index tree".to_string(),
-    })?;
     let reviewed_tree =
-        reviewed_tree_sha_for(&receipt, &tree)?.ok_or_else(|| RepoDeskError::RoutingFailed {
-            detail: "commit blocked: no exact reviewed tree exists for this changeset".to_string(),
-        })?;
-    let digest = run_digest
-        .clone()
-        .unwrap_or_else(|| super::receipt::changeset_digest(&[]));
-    let verified = receipt
-        .verification
-        .as_ref()
-        .map(|v| {
-            v.run_id == receipt.run_id
-                && v.index_tree_sha == reviewed_tree
-                && v.valid_for(&head, &tree, &digest)
-        })
-        .unwrap_or(false);
-    if !verified {
-        return Err(RepoDeskError::RoutingFailed {
-            detail: "commit blocked: verification is missing, stale, or belongs to a different reviewed tree — run verification again"
-                .to_string(),
-        });
-    }
+        manifest
+            .reviewed_tree_sha
+            .clone()
+            .ok_or_else(|| RepoDeskError::RoutingFailed {
+                detail: "commit blocked: Safe Commit Manifest has no exact reviewed tree"
+                    .to_string(),
+            })?;
+    let staged = manifest.staged_paths.clone();
+    let project_path = active_project_path()?;
 
-    // 4. The index must hold exactly the reviewed path set — no stray files.
-    // Tree equality above is the content proof; this path check remains for a
-    // precise operator-facing error when an unexpected file is staged.
-    let staged = staged_paths(&project_path);
-    if staged.is_empty() {
-        return Err(RepoDeskError::RoutingFailed {
-            detail: "commit blocked: nothing is staged — accept the reviewed changes first"
-                .to_string(),
-        });
-    }
-    let stray: Vec<String> = staged
-        .iter()
-        .filter(|path| !reviewed.contains(path.as_str()))
-        .cloned()
-        .collect();
-    if !stray.is_empty() {
-        return Err(RepoDeskError::RoutingFailed {
-            detail: format!(
-                "commit blocked: the index holds files outside the reviewed changeset: {}. \
-                 Unstage them so the commit stays bounded to this task.",
-                stray.join(", ")
-            ),
-        });
-    }
-
-    // 5. Commit the existing index (no `git add`). Afterwards, independently
-    // read the tree stored by the new commit and compare it with the reviewed
-    // tree. This catches any hook/unexpected index mutation that happened inside
-    // `git commit`: such a commit exists, but RepoDesk refuses to mint Finish
-    // evidence for content the human did not accept.
+    // Commit the already-reviewed index (no `git add`). The manifest has proven
+    // exact path/tree equality, current successful verification, scope policy,
+    // and configured acceptance evidence immediately before this side effect.
     let output = Command::new("git")
         .arg("-C")
         .arg(&project_path)
@@ -274,6 +213,8 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
         });
     }
 
+    // A hook can mutate the index while `git commit` runs. Never mint Finish
+    // evidence until the committed object itself proves the exact reviewed tree.
     let commit_sha = head_sha(&project_path).ok_or_else(|| RepoDeskError::RoutingFailed {
         detail: "commit succeeded but HEAD could not be read".to_string(),
     })?;
@@ -288,7 +229,8 @@ pub fn commit_reviewed_index(message: &str) -> RepoDeskResult<CommitOutcome> {
     if committed_tree != reviewed_tree {
         return Err(RepoDeskError::RoutingFailed {
             detail: format!(
-                "commit integrity violation: commit {commit_sha} contains tree {committed_tree}, but the accepted and verified tree was {reviewed_tree}. Finish was not recorded; inspect the commit before continuing."
+                "commit integrity violation: commit {commit_sha} contains tree {committed_tree}, but Safe Commit Manifest {} authorized reviewed tree {reviewed_tree}. Finish was not recorded; inspect the commit before continuing.",
+                manifest.manifest_digest
             ),
         });
     }

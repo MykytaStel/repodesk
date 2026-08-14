@@ -194,6 +194,97 @@
 .changes-finding-group code { min-width: 0; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .changes-finding-group span { color: var(--muted); font-size: 9px; }
 
+/* Safe Commit Manifest owns the final acceptance-evidence matrix. */
+.change-evidence-list {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 3px;
+}
+
+.acceptance-matrix {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.acceptance-matrix-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.acceptance-matrix-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.acceptance-matrix-head .eyebrow { margin: 0; }
+.acceptance-matrix-head strong { font-size: 11px; }
+
+.acceptance-matrix-rows {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.acceptance-matrix-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 38%);
+  gap: 12px;
+  align-items: center;
+  padding: 8px 9px;
+  background: var(--surface-2);
+}
+
+.acceptance-matrix-row + .acceptance-matrix-row { border-top: 1px solid var(--border); }
+
+.acceptance-criterion-copy {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 7px;
+  align-items: center;
+}
+
+.acceptance-criterion-copy strong,
+.acceptance-criterion-copy code,
+.acceptance-criterion-copy small {
+  min-width: 0;
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
+.acceptance-criterion-copy .pill { grid-row: 1 / span 3; align-self: start; }
+.acceptance-criterion-copy strong { font-size: 10px; }
+.acceptance-criterion-copy code,
+.acceptance-criterion-copy small { color: var(--muted); font-size: 9px; }
+.acceptance-criterion-copy .danger-text { color: var(--danger); }
+
+.acceptance-link-control {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.acceptance-link-control select {
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 9px;
+}
+
 /* Focus-workspace polish formerly mixed into shell-owned files. */
 .changes-focus-layout { gap: 12px; }
 .changes-focus-header { min-height: 42px; padding: 2px 2px 11px; }
@@ -263,6 +354,7 @@
 
 @media (max-width: 900px) {
   .changes-focus-workspace { grid-template-columns: 220px minmax(0, 1fr); }
+  .acceptance-matrix-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 700px) {
@@ -270,4 +362,5 @@
   .changes-focus-workspace { grid-template-columns: 170px minmax(0, 1fr); }
   .changes-gate-bar { grid-template-columns: auto minmax(0, 1fr) auto; }
   .changes-gate-bar > small { display: none; }
+  .acceptance-link-control { grid-template-columns: 1fr; }
 }

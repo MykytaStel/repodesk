@@ -2,13 +2,13 @@ use repodesk_core::engineering::{
     AiUsageReport, ChangeGovernanceSnapshot, ChangeSetPassport, ChangeVerificationState,
     ContextInspectorReport, EngineeringIntelligence, EngineeringKnowledgeLifecycleReport,
     EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot, RunEvidenceSnapshot,
-    RunObservabilityReport, StrategyFeedbackReport, WorkItemContractSnapshot,
+    RunObservabilityReport, SafeCommitManifest, StrategyFeedbackReport, WorkItemContractSnapshot,
     WorkItemContractUpdate, accept_active_engineering_knowledge, active_verification_is_fresh,
     archive_active_engineering_knowledge, capture_active_verified_command,
     derive_change_governance, derive_changeset_passport, derive_engineering_knowledge_lifecycle,
     derive_run_observability, derive_work_item_contract_snapshot, link_active_acceptance_evidence,
     load_active_acceptance_evidence, load_active_engineering_knowledge,
-    load_active_run_evidence_from_events, load_context_inspector,
+    load_active_run_evidence_from_events, load_active_safe_commit_manifest, load_context_inspector,
     propose_active_engineering_knowledge, read_work_item_contract,
     reconcile_verification_freshness, reconfirm_active_engineering_knowledge,
     record_active_scope_override, save_active_work_item_contract,
@@ -51,6 +51,7 @@ pub struct WorkEngineeringSnapshot {
     pub work_item_contract: Option<WorkItemContractSnapshot>,
     pub change_governance: Option<ChangeGovernanceSnapshot>,
     pub changeset_passport: Option<ChangeSetPassport>,
+    pub safe_commit_manifest: Option<SafeCommitManifest>,
     pub run_evidence: Option<RunEvidenceSnapshot>,
     pub run_observability: Option<RunObservabilityReport>,
     pub knowledge: Option<EngineeringKnowledgeSnapshot>,
@@ -127,6 +128,7 @@ pub fn work_engineering_intelligence(
                 work_item_contract: None,
                 change_governance: None,
                 changeset_passport: None,
+                safe_commit_manifest: None,
                 run_evidence: None,
                 run_observability: None,
                 knowledge,
@@ -175,6 +177,10 @@ pub fn work_engineering_intelligence(
     let acceptance = load_active_acceptance_evidence().map_err(ErrorPayload::from)?;
     let changeset_passport =
         derive_changeset_passport(&change_governance, &acceptance, receipt.as_ref());
+    // Safe Commit Manifest is the final live commit contract. It deliberately
+    // reuses canonical receipt/scope/acceptance sources rather than deriving a
+    // second UI-only readiness rule.
+    let safe_commit_manifest = load_active_safe_commit_manifest().map_err(ErrorPayload::from)?;
 
     let run_evidence = match run_evidence_id {
         Some(run_id) => Some(
@@ -194,6 +200,7 @@ pub fn work_engineering_intelligence(
         work_item_contract: Some(work_item_contract),
         change_governance: Some(change_governance),
         changeset_passport: Some(changeset_passport),
+        safe_commit_manifest: Some(safe_commit_manifest),
         run_evidence,
         run_observability,
         knowledge,
