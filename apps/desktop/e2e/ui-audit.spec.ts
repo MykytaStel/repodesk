@@ -62,16 +62,15 @@ for (const viewport of [
   });
 }
 
-test("shared table primitives are ready before Runs is activated", async ({ page }) => {
+test("Settings utility styles are ready without activating Runs", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await installMockIpc(page, currentOnboardedFixtures);
   await page.goto("/");
 
-  await openFromPalette(page, "System Registry");
-  await expect(page.getByRole("heading", { name: "Agent skills & context boundaries" })).toBeVisible();
+  await openFromPalette(page, "Go to Settings");
+  await expect(page.getByRole("heading", { name: "Runtime configuration" })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Runs —/ })).toHaveAttribute("aria-pressed", "false");
-
-  expect(await page.locator(".table-list").first().evaluate((element) => getComputedStyle(element).display)).toBe("grid");
+  expect(await page.locator(".settings-grid").first().evaluate((element) => getComputedStyle(element).display)).toBe("grid");
 });
 
 test("Work keeps two columns on desktop and one column at narrow width", async ({ page }) => {
@@ -100,7 +99,7 @@ test("Runs workspace adapts from desktop to narrow columns", async ({ page }) =>
   expect(await gridColumnCount(page, ".runs-shell")).toBe(1);
 });
 
-test("History rows preserve utility layout and narrow metadata alignment", async ({ page }) => {
+test("Run outcome rows preserve utility layout and narrow metadata alignment", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await installMockIpc(page, {
     ...currentOnboardedFixtures,
@@ -119,7 +118,6 @@ test("History rows preserve utility layout and narrow metadata alignment", async
 
   await page.getByRole("button", { name: /^Runs —/ }).click();
   await waitForPrimaryRoute(page, "Runs");
-
   await page.getByRole("tab", { name: "Provider outcomes" }).click();
   await expect(page.getByRole("heading", { name: "Outcome ledger" })).toBeVisible();
   const outcomeRow = page.locator(".table-row").first();

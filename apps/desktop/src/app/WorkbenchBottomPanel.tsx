@@ -129,8 +129,6 @@ export function WorkbenchBottomPanel({ open, onClose, requestedTab }: WorkbenchB
     clearProblems();
   }, [projectName]);
 
-  // The panel stays mounted so PTY sessions survive hide/show, but historical
-  // action output is only requested once the user actually opens the panel.
   useEffect(() => {
     if (!open || historyLoaded.current) return;
     historyLoaded.current = true;
@@ -149,20 +147,13 @@ export function WorkbenchBottomPanel({ open, onClose, requestedTab }: WorkbenchB
           source: "action",
         }));
         setLogs((current) => [...historyLogs, ...current].slice(-MAX_PANEL_LOGS));
-
-        // Rehydrate diagnostics from oldest -> newest so the latest relevant
-        // check always owns the current `check` source bucket regardless of the
-        // backend's history ordering.
         for (const action of ordered) captureActionDiagnostics(action);
       })
       .catch(() => {
         historyLoaded.current = false;
-        // Output is auxiliary shell evidence. A missing history should not break the workspace.
       });
   }, [open, projectName]);
 
-  // Cheap IPC metadata remains useful even while the panel is hidden. Result
-  // payloads are not retained here; explicit Debug owns bounded payload capture.
   useEffect(() => {
     const onDebug = (event: Event) => {
       const detail = (event as CustomEvent<DebugEventDetail>).detail;
@@ -198,18 +189,14 @@ export function WorkbenchBottomPanel({ open, onClose, requestedTab }: WorkbenchB
   };
 
   return (
-    <section
-      className={`workbench-bottom-panel${open ? "" : " hidden"}`}
-      aria-label="Workbench bottom panel"
-      aria-hidden={!open}
-    >
+    <section className={`workbench-bottom-panel${open ? "" : " hidden"}`} aria-label="Workbench bottom panel" aria-hidden={!open}>
       <header className="bottom-panel-tabs">
         <div className="bottom-panel-tab-list" role="tablist" aria-label="Bottom panel views">
           <button type="button" className={activeTab === "problems" ? "active" : ""} onClick={() => selectTab("problems")}>
             Problems <span>{problemSnapshot.diagnostics.length}</span>
           </button>
           <button type="button" className={activeTab === "tasks" ? "active" : ""} onClick={() => selectTab("tasks")}>
-            Tasks
+            Checks
           </button>
           <button type="button" className={activeTab === "output" ? "active" : ""} onClick={() => selectTab("output")}>
             Output <span>{logs.length}</span>
@@ -224,11 +211,7 @@ export function WorkbenchBottomPanel({ open, onClose, requestedTab }: WorkbenchB
         </div>
       </header>
 
-      {activeTab === "problems" ? (
-        <div className="bottom-panel-content problems-host">
-          <ProblemsPanel />
-        </div>
-      ) : null}
+      {activeTab === "problems" ? <div className="bottom-panel-content problems-host"><ProblemsPanel /></div> : null}
 
       <div className={`bottom-panel-task-host${activeTab === "tasks" ? "" : " bottom-panel-view-hidden"}`}>
         <TaskRunnerPanel active={open && activeTab === "tasks"} onOpenProblems={() => selectTab("problems")} />
@@ -238,9 +221,7 @@ export function WorkbenchBottomPanel({ open, onClose, requestedTab }: WorkbenchB
         <div className="bottom-panel-content" ref={scrollRef}>
           {logs.length === 0 ? (
             <div className="bottom-panel-empty"><strong>No output yet.</strong><span>RepoDesk actions and API activity will appear here.</span></div>
-          ) : (
-            logs.map((log) => <LogRow key={log.id} log={log} />)
-          )}
+          ) : logs.map((log) => <LogRow key={log.id} log={log} />)}
         </div>
       ) : null}
 

@@ -1,7 +1,5 @@
-import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { auditRecent, auditVerify, type AuditEvent, type ChainVerification } from "../../shared/api/audit";
-import { queryKeys } from "../../shared/api/queries";
+import { auditSnapshot, type CanonicalAuditEvent } from "../../shared/api/audit";
 import { EmptyState, MetricCard, errorToMessage, formatNumber } from "../../shared/ui/SharedComponents";
 import "./audit-route.css";
 import "../routing/routing-feature.css";
@@ -25,176 +23,133 @@ function formatRelative(value: string | undefined): string {
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return `${days}d ago`;
-}
-
-function shortHash(hash: string): string {
-  if (!hash) return "-";
-  return hash.length <= 16 ? hash : `${hash.slice(0, 10)}...${hash.slice(-6)}`;
+  return `${Math.round(hours / 24)}d ago`;
 }
 
 function truncateDetail(value: string): string {
   const trimmed = value.trim();
-  if (trimmed.length <= 220) return trimmed || "-";
-  return `${trimmed.slice(0, 220)}...`;
+  if (trimmed.length <= 240) return trimmed || "—";
+  return `${trimmed.slice(0, 240)}…`;
 }
 
-function actionTone(actionType: string): PillTone {
-  const lower = actionType.toLowerCase();
-  if (/(block|deny|secret|tamper|broken|fail|error)/.test(lower)) return "danger";
-  if (/(warn|network|paid|external|override)/.test(lower)) return "warn";
-  if (/(verify|safe|approved|ok|passed)/.test(lower)) return "ok";
-  if (/(agent|command|workflow|task|file|orchestrat)/.test(lower)) return "accent";
-  return "neutral";
+function eventTone(level: string): PillTone {
+  switch (level.toLowerCase()) {
+    case "error": return "danger";
+    case "security": return "danger";
+    case "warn":
+    case "warning": return "warn";
+    case "ui": return "accent";
+    default: return "neutral";
+  }
 }
 
-function integrityTone(verification: ChainVerification | undefined): "ok" | "warn" | "neutral" {
-  if (!verification) return "neutral";
-  return verification.valid ? "ok" : "warn";
-}
-
-function integrityValue(verification: ChainVerification | undefined, isLoading: boolean): string {
-  if (isLoading) return "Checking";
-  if (!verification) return "Unavailable";
-  return verification.valid ? "Verified" : "Broken";
-}
-
-function AuditEventRow({ event }: { event: AuditEvent }) {
+function AuditEventRow({ event }: { event: CanonicalAuditEvent }) {
   return (
     <div className="table-row flex-col items-start gap-sm">
       <div className="w-full flex justify-between items-center gap-sm">
         <div className="flex-col gap-xs">
-          <strong>{event.project_name || "Unknown project"}</strong>
-          <span>{truncateDetail(event.details)}</span>
+          <strong>{event.project || "Unbound project"}</strong>
+          <span>{truncateDetail(event.message)}</span>
         </div>
-        <span className={`pill ${actionTone(event.action_type)}`}>{event.action_type}</span>
+        <span className={`pill ${eventTone(event.level)}`}>{event.level}</span>
       </div>
       <div className="row-meta">
         <span>{formatTimestamp(event.timestamp)}</span>
-        <code title={event.hash}>{shortHash(event.hash)}</code>
+        <code>{event.module_name}</code>
+        {event.task_id ? <code title={event.task_id}>Work Item · {event.task_id}</code> : null}
       </div>
     </div>
   );
 }
 
 export function AuditTab() {
-  const eventsQuery = useQuery({
-    queryKey: queryKeys.audit.recent(RECENT_LIMIT),
-    queryFn: () => auditRecent(RECENT_LIMIT),
-  });
-  const verificationQuery = useQuery({
-    queryKey: queryKeys.audit.verify,
-    queryFn: auditVerify,
+  const snapshotQuery = useQuery({
+    queryKey: ["runs", "canonical-ledger", RECENT_LIMIT],
+    queryFn: () => auditSnapshot(RECENT_LIMIT),
   });
 
-  const events = eventsQuery.data ?? [];
-  const verification = verificationQuery.data;
-  const isLoading = eventsQuery.isLoading || verificationQuery.isLoading;
-  const isRefreshing = eventsQuery.isFetching || verificationQuery.isFetching;
-  const error = eventsQuery.error ?? verificationQuery.error;
+  const snapshot = snapshotQuery.data;
+  const events = snapshot?.entries ?? [];
   const latest = events[0];
-
-  const projectCount = useMemo(() => {
-    const projects = new Set(events.map((event) => event.project_name).filter(Boolean));
-    return projects.size;
-  }, [events]);
-
-  const refresh = () => {
-    void eventsQuery.refetch();
-    void verificationQuery.refetch();
-  };
+  const error = snapshotQuery.error;
+  const securityCount = snapshot?.counts_by_severity.security ?? 0;
+  const errorCount = snapshot?.counts_by_severity.error ?? 0;
+  const warningCount = (snapshot?.counts_by_severity.warn ?? 0) + (snapshot?.counts_by_severity.warning ?? 0);
 
   return (
     <div className="content-grid dashboard-grid">
       <section className="hero-panel wide-panel">
-        <p className="eyebrow">Audit trail</p>
-        <h1>{integrityValue(verification, isLoading)} hash chain.</h1>
+        <p className="eyebrow">Canonical engineering ledger</p>
+        <h1>{error ? "Ledger integrity blocked." : snapshotQuery.isLoading ? "Verifying ledger…" : "Verified evidence projection."}</h1>
         <p className="lead">
-          RepoDesk reads the local JSONL audit trail and verifies every event hash against the
-          previous event. No synthetic rows are shown here.
+          This view is backed by RepoDesk&apos;s canonical SQLite engineering ledger. The backend verifies
+          every sequence number and hash-chain link before returning any rows; a corrupt ledger fails closed.
         </p>
         <div className="button-row">
-          <button className="primary-button" onClick={refresh} disabled={isRefreshing}>
-            {isRefreshing ? "Refreshing..." : "Refresh audit"}
+          <button className="primary-button" onClick={() => void snapshotQuery.refetch()} disabled={snapshotQuery.isFetching}>
+            {snapshotQuery.isFetching ? "Verifying…" : "Refresh evidence"}
           </button>
         </div>
       </section>
 
-      {error && <div className="notice danger wide-panel">{errorToMessage(error)}</div>}
-      {verification && !verification.valid && <div className="notice danger wide-panel">{verification.message}</div>}
+      {error ? <div className="notice danger wide-panel">{errorToMessage(error)}</div> : null}
 
       <div className="card-row">
         <MetricCard
-          label="Chain integrity"
-          value={integrityValue(verification, isLoading)}
-          detail={verification?.message ?? "Waiting for verification result"}
-          tone={integrityTone(verification)}
+          label="Ledger integrity"
+          value={error ? "Blocked" : snapshotQuery.isLoading ? "Checking" : "Verified"}
+          detail={error ? "No evidence is trusted until the ledger verifies." : "Full sequence/hash chain verified before projection."}
+          tone={error ? "warn" : snapshotQuery.isLoading ? "neutral" : "ok"}
         />
         <MetricCard
           label="Total events"
-          value={formatNumber(verification?.total_events ?? events.length)}
-          detail={
-            projectCount
-              ? `Recent window spans ${projectCount} project${projectCount === 1 ? "" : "s"}`
-              : "No project rows loaded"
-          }
+          value={formatNumber(snapshot?.total_entries ?? 0)}
+          detail={`${formatNumber(snapshot?.returned ?? 0)} newest rows retained in this view`}
         />
         <MetricCard
-          label="Last action"
+          label="Last event"
           value={formatRelative(latest?.timestamp)}
-          detail={latest ? `${latest.action_type} in ${latest.project_name || "Unknown"}` : "Nothing recorded yet"}
+          detail={latest ? `${latest.module_name} · ${latest.project || "unbound"}` : "Nothing recorded yet"}
         />
       </div>
 
       <section className="panel wide-panel">
         <div className="panel-title-row compact">
           <div>
-            <p className="eyebrow">Recent events</p>
+            <p className="eyebrow">Severity across verified ledger</p>
+            <h2>{securityCount + errorCount + warningCount} attention events</h2>
+          </div>
+          <div className="row-meta">
+            <span className="pill danger">{securityCount} security</span>
+            <span className="pill danger">{errorCount} error</span>
+            <span className="pill warn">{warningCount} warn</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel wide-panel">
+        <div className="panel-title-row compact">
+          <div>
+            <p className="eyebrow">Recent canonical events</p>
             <h2>Newest first</h2>
           </div>
           <span className="pill neutral">{formatNumber(events.length)}</span>
         </div>
-        {isLoading ? (
-          <p className="muted">Loading audit trail...</p>
+        {snapshotQuery.isLoading ? (
+          <p className="muted">Verifying and loading engineering evidence…</p>
         ) : events.length === 0 ? (
           <EmptyState
-            message="No audit events recorded yet."
-            hint="Actions that write to the hash-chained audit log will appear here."
+            message="No canonical engineering events recorded yet."
+            hint="Work Item, execution, review, verification and UI evidence will appear here through the single SQLite ledger."
           />
         ) : (
           <div className="table-list">
             {events.map((event, index) => (
-              <AuditEventRow key={`${event.hash}-${event.timestamp}-${index}`} event={event} />
+              <AuditEventRow key={`${event.timestamp}-${event.module_name}-${index}`} event={event} />
             ))}
           </div>
         )}
       </section>
-
-      {verification && (
-        <section className="panel wide-panel">
-          <div className="panel-title-row compact">
-            <div>
-              <p className="eyebrow">Verification receipt</p>
-              <h2>SHA-256 chain status</h2>
-            </div>
-            <span className={`pill ${verification.valid ? "ok" : "danger"}`}>
-              {verification.valid ? "valid" : "invalid"}
-            </span>
-          </div>
-          <div className="route-summary-grid">
-            <div>
-              <span>Total events</span>
-              <strong>{formatNumber(verification.total_events)}</strong>
-            </div>
-            <div>
-              <span>Broken at</span>
-              <strong>{verification.broken_at ?? "-"}</strong>
-            </div>
-          </div>
-          <p className="muted m-0">{verification.message}</p>
-        </section>
-      )}
     </div>
   );
 }

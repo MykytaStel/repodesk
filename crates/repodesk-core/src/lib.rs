@@ -4,7 +4,6 @@ pub mod agents;
 pub mod ai_adapters;
 pub mod ai_discovery;
 pub mod api_clients;
-pub mod audit;
 pub mod brain;
 
 pub mod capabilities;

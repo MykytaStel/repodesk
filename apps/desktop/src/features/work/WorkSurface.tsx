@@ -34,8 +34,8 @@ const INSPECTOR_META: Record<Exclude<Inspector, null>, { title: string; hint: st
     hint: "The exact bounded context decisions RepoDesk can hand to workers.",
   },
   intelligence: {
-    title: "AI Usage Intelligence",
-    hint: "Explainable context, orchestration and outcome-efficiency signals from Work Item evidence.",
+    title: "Engineering Intelligence",
+    hint: "Explainable context, execution and outcome-efficiency signals from Work Item evidence.",
   },
 };
 
@@ -67,7 +67,7 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
 
   return (
     <div className={`work-workbench-v3${inspector ? " inspector-open" : ""}`}>
-      <aside className="work-command-rail" aria-label="Active Work Item navigation">
+      <aside className="work-command-rail" aria-label="Active Work Item evidence">
         <section className="work-rail-identity">
           <span className="eyebrow">Work item</span>
           <strong title={taskTitle || undefined}>{taskTitle || "No Work Item selected"}</strong>
@@ -95,64 +95,18 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
 
         {hasTask ? <WorkIntelligenceRailSummary /> : null}
 
-        <nav className="work-rail-section" aria-label="Work Item evidence">
+        <nav className="work-rail-section" aria-label="Inspect Work Item evidence">
           <span className="work-rail-label">Inspect</span>
-          <button
-            type="button"
-            className={inspector === "contract" ? "active" : ""}
-            onClick={() => toggleInspector("contract")}
-            disabled={!hasTask}
-            aria-pressed={inspector === "contract"}
-          >
-            <span>Contract</span>
-            <small>Scope + acceptance</small>
+          <button type="button" className={inspector === "contract" ? "active" : ""} onClick={() => toggleInspector("contract")} disabled={!hasTask} aria-pressed={inspector === "contract"}>
+            <span>Contract</span><small>Scope + acceptance</small>
           </button>
-          <button
-            type="button"
-            className={inspector === "context" ? "active" : ""}
-            onClick={() => toggleInspector("context")}
-            disabled={!hasTask}
-            aria-pressed={inspector === "context"}
-          >
-            <span>Context</span>
-            <small>AI packet evidence</small>
+          <button type="button" className={inspector === "context" ? "active" : ""} onClick={() => toggleInspector("context")} disabled={!hasTask} aria-pressed={inspector === "context"}>
+            <span>Context</span><small>Bounded evidence</small>
           </button>
-          <button
-            type="button"
-            className={inspector === "intelligence" ? "active" : ""}
-            onClick={() => toggleInspector("intelligence")}
-            disabled={!hasTask}
-            aria-pressed={inspector === "intelligence"}
-          >
-            <span>Intelligence</span>
-            <small>Tokens + agents + outcomes</small>
+          <button type="button" className={inspector === "intelligence" ? "active" : ""} onClick={() => toggleInspector("intelligence")} disabled={!hasTask} aria-pressed={inspector === "intelligence"}>
+            <span>Intelligence</span><small>Efficiency + outcomes</small>
           </button>
         </nav>
-
-        <nav className="work-rail-section work-rail-related" aria-label="Related work surfaces">
-          <span className="work-rail-label">Related</span>
-          <button type="button" onClick={() => setActiveTab("code")} disabled={!projectName}>
-            <span>Code</span><small>Repository</small>
-          </button>
-          <button type="button" onClick={() => setActiveTab("changes")} disabled={!projectName}>
-            <span>Changes</span><small>Diff + review</small>
-          </button>
-          <button type="button" onClick={() => setActiveTab("history")} disabled={!hasTask}>
-            <span>Runs</span><small>Execution evidence</small>
-          </button>
-          <button type="button" onClick={() => setActiveTab("memory")} disabled={!projectName}>
-            <span>Knowledge</span><small>Project memory</small>
-          </button>
-        </nav>
-
-        <button
-          type="button"
-          className="work-rail-orchestrate"
-          onClick={() => setActiveTab("orchestrate")}
-          disabled={!hasTask}
-        >
-          Advanced orchestration
-        </button>
       </aside>
 
       <section className="work-primary-pane" aria-label="Current Work Item">
@@ -167,18 +121,10 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
               <strong>{inspectorMeta.title}</strong>
               <small>{inspectorMeta.hint}</small>
             </div>
-            <button type="button" className="work-inspector-close" onClick={() => setInspector(null)} aria-label="Close inspector">
-              ×
-            </button>
+            <button type="button" className="work-inspector-close" onClick={() => setInspector(null)} aria-label="Close inspector">×</button>
           </header>
           <div className="work-inspector-body">
-            {inspector === "contract" ? (
-              <WorkItemContractCard />
-            ) : inspector === "context" ? (
-              <ContextInspectorCard />
-            ) : (
-              <WorkIntelligenceCard />
-            )}
+            {inspector === "contract" ? <WorkItemContractCard /> : inspector === "context" ? <ContextInspectorCard /> : <WorkIntelligenceCard />}
           </div>
         </aside>
       ) : null}

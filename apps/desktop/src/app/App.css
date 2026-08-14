@@ -23,7 +23,6 @@
 @import "./styles/focus-context-bar.css" layer(legacy);
 @import "./styles/focus-density.css" layer(legacy);
 @import "../features/code/code-editor-polish.css" layer(legacy);
-@import "./styles/ide-polish-v1.css" layer(legacy);
-@import "./styles/workbench-polish-v2.css" layer(legacy);
+@import "./styles/workspace-context.css" layer(legacy);
 
 @import "./styles/visual-language-2026.css" layer(product);

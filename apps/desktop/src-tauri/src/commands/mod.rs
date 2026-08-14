@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub mod action_service;
-pub mod audit;
 pub mod backup;
 pub mod credentials;
 pub mod custom_providers;
@@ -40,7 +39,6 @@ pub use system::*;
 pub use tokens::*;
 pub use workflow::*;
 
-pub use audit::*;
 pub use backup::*;
 pub use credentials::*;
 pub use custom_providers::*;

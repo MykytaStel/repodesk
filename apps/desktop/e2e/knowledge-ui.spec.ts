@@ -6,8 +6,8 @@ test.describe("balanced Knowledge layout", () => {
   test.beforeEach(async ({ page }) => {
     await installMockIpc(page, currentOnboardedFixtures);
     await page.goto("/");
-    await page.getByRole("button", { name: "Show workspace sidebar" }).click();
-    await page.locator(".workspace-sidebar").getByRole("button", { name: /^Knowledge/ }).click();
+    await page.getByRole("button", { name: /^Projects —/ }).click();
+    await page.getByRole("tab", { name: "Knowledge" }).click();
     await expect(page.getByRole("heading", { name: "Engineering knowledge" })).toBeVisible();
   });
 

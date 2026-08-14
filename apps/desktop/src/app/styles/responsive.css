@@ -8,7 +8,6 @@
   .shell-feedback { margin-top: calc(var(--space-5) * -0.45); }
   .two-column-grid { grid-template-columns: 1fr; }
   .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .playbook-route,
   .memory-flow-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -50,15 +49,10 @@
     margin-top: calc(var(--space-4) * -0.5);
   }
   .shell-feedback-view,
-  .shell-feedback-last,
-  .playbook-card {
+  .shell-feedback-last {
     align-items: flex-start;
     grid-template-columns: 1fr;
   }
-  .playbook-card-actions {
-    justify-items: start;
-  }
-  .playbook-route,
   .memory-flow-grid {
     grid-template-columns: 1fr;
   }

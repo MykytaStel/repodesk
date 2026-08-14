@@ -5,13 +5,15 @@ import {
   DEFAULT_ECONOMY_MODE,
   DEFAULT_THEME,
   ECONOMY_MODES,
+  LEGACY_TAB_ALIASES,
   STORAGE_KEYS,
   TAB_IDS,
   THEMES,
 } from "./constants";
 
 export function readStoredActiveTab(): TabId {
-  return readStoredValue(STORAGE_KEYS.activeTab, TAB_IDS, DEFAULT_ACTIVE_TAB);
+  const stored = readStoredValue(STORAGE_KEYS.activeTab, TAB_IDS, DEFAULT_ACTIVE_TAB);
+  return LEGACY_TAB_ALIASES[stored] ?? stored;
 }
 
 export function readStoredEconomyMode(): EconomyMode {

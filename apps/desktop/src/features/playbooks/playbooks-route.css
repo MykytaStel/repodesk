@@ -1,1 +1,126 @@
-@import "../dashboard/dashboard-layout.css" layer(legacy);
+/* Work Templates owns its route-specific layout. These rules used to live in
+   eager global components/responsive CSS and a retired Dashboard stylesheet.
+   Keeping them here means opening RepoDesk does not download template-only CSS. */
+.playbook-list {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.playbook-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(132px, auto);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+}
+
+.playbook-copy {
+  min-width: 0;
+}
+
+.playbook-copy p {
+  margin: 5px 0 0;
+  font-size: var(--text-sm);
+}
+
+.playbook-route {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.playbook-route > div {
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+
+.playbook-route span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.playbook-route strong {
+  display: block;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.38;
+}
+
+.playbook-card-actions {
+  display: grid;
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.playbook-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.playbook-form label {
+  display: grid;
+  gap: 4px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.playbook-form input,
+.playbook-form select {
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-body);
+  color: var(--text);
+  font: inherit;
+}
+
+.playbook-form-check {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+}
+
+.playbook-result {
+  display: grid;
+  gap: 3px;
+  margin-bottom: var(--space-3);
+}
+
+.playbook-result span {
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+@media (max-width: 1180px) {
+  .playbook-route {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .dashboard-grid,
+  .playbook-card,
+  .playbook-route {
+    grid-template-columns: 1fr;
+  }
+
+  .playbook-card {
+    align-items: flex-start;
+  }
+
+  .playbook-card-actions {
+    justify-items: start;
+  }
+}

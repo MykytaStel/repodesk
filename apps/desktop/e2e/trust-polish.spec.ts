@@ -63,9 +63,9 @@ test("About presents the engineering-workspace identity and restores focus", asy
   await expect(dialog).toBeHidden();
   await expect(opener).toBeFocused();
 
-  await openFromPalette(page, "Go to Dashboard");
+  await openFromPalette(page, "Go to Work");
   await expect(page.getByText("RepoDesk cockpit")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Project state, context, and verification evidence." })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Current Work Item" })).toBeVisible();
 });
 
 test("project switcher distinguishes registry failure from an empty registry", async ({ page }) => {
@@ -92,7 +92,7 @@ test("project switcher distinguishes registry failure from an empty registry", a
   await expect(page.getByText("No matching projects.")).toHaveCount(0);
 });
 
-test("artifact viewer clears stale identity across reopen and failure", async ({ page }) => {
+test("legacy route migration and artifact viewer preserve fresh identity across reopen and failure", async ({ page }) => {
   await installMockIpc(page, {
     ...currentOnboardedFixtures,
     read_artifact: {
@@ -121,25 +121,30 @@ test("artifact viewer clears stale identity across reopen and failure", async ({
     },
   });
   await page.goto("/");
+
+  // Historical token analytics was a product destination. Persisted state must
+  // migrate to its canonical owner instead of keeping a dead route alive.
   await page.evaluate(() => window.localStorage.setItem("repodesk.activeTab", "tokens"));
   await page.reload();
-  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("tokens");
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("settings");
+  await expect(page.getByRole("heading", { name: "API keys, providers, and workspace." })).toBeVisible();
+  await openFromPalette(page, "Go to Work");
 
-  await expect(page.locator("main").getByText("Tokens", { exact: true }).first()).toBeVisible();
-  const view = page.locator("main .table-row").filter({ hasText: "Context pack" }).getByRole("button", { name: "View" });
-  await view.click();
+  // Artifact viewing now starts from the owning Work action rather than a
+  // retired token dashboard. Reopening must never flash stale identity/content.
+  await openFromPalette(page, "Build bounded context");
   let dialog = page.getByRole("dialog", { name: "First context artifact" });
   await expect(dialog).toContainText("/tmp/first-context.md");
   await dialog.getByRole("button", { name: "Close" }).click();
 
-  await view.click();
+  await openFromPalette(page, "Build bounded context");
   dialog = page.getByRole("dialog", { name: "Artifact" });
   await expect(dialog).toContainText("Loading artifact content…");
   await expect(dialog).not.toContainText("/tmp/first-context.md");
   await expect(page.getByRole("dialog", { name: "Fresh context artifact" })).toContainText("/tmp/fresh-context.md");
   await page.getByRole("dialog", { name: "Fresh context artifact" }).getByRole("button", { name: "Close" }).click();
 
-  await view.click();
+  await openFromPalette(page, "Build bounded context");
   dialog = page.getByRole("dialog", { name: "Artifact" });
   await expect(dialog.getByRole("alert")).toContainText("artifact unavailable");
   await expect(dialog).not.toContainText("/tmp/fresh-context.md");
@@ -281,47 +286,26 @@ test("a failed optional feature load is contained by its local error boundary", 
   await expect(paletteButton).toBeVisible();
 });
 
-test("Orchestrate cleanup uses a RepoDesk decision instead of a browser dialog", async ({ page }) => {
-  await installMockIpc(page, {
-    ...currentOnboardedFixtures,
-    orchestrate_worktrees: [
-      {
-        workspace_id: "wt-trust-polish",
-        run_id: "run-trust-polish",
-        step_id: "implement",
-        path: "/tmp/repodesk/worktrees/wt-trust-polish",
-        base_commit: "abc123",
-        created_at: "2026-08-13T10:00:00Z",
-        metadata_path: null,
-        git_tracked: true,
-        exists: true,
-        dirty: true,
-        changed_files: ["src/app.ts"],
-        removable: true,
-        warnings: [],
-      },
-    ],
-    orchestrate_cleanup_worktree: {
-      workspace_id: "wt-trust-polish",
-      path: "/tmp/repodesk/worktrees/wt-trust-polish",
-      removed: true,
-      metadata_removed: true,
-      warnings: [],
-    },
-  });
+test("legacy Orchestrate state migrates to Work without exposing a parallel product route", async ({ page }) => {
   let nativeDialogOpened = false;
   page.on("dialog", async (dialog) => {
     nativeDialogOpened = true;
     await dialog.dismiss();
   });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("repodesk.activeTab", "orchestrate");
+  });
+  await installMockIpc(page, currentOnboardedFixtures);
   await page.goto("/");
-  await openFromPalette(page, "Go to Orchestrate");
 
-  await page.getByRole("button", { name: "Cleanup worktree" }).click();
-  const dialog = page.getByRole("dialog", { name: "Remove managed worktree?" });
-  await expect(dialog).toContainText("1 changed file");
+  await expect(page.getByRole("button", { name: /^Work —/ })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("region", { name: "Current Work Item" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("work");
+  await expect(page.getByRole("button", { name: "Advanced orchestration" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Command palette" }).click();
+  const input = page.getByRole("textbox", { name: "Search commands" });
+  await input.fill("Orchestrate");
+  await expect(page.locator(".cmdk-item").filter({ has: page.getByText("Go to Orchestrate", { exact: true }) })).toHaveCount(0);
   expect(nativeDialogOpened).toBe(false);
-
-  await dialog.getByRole("button", { name: "Remove worktree" }).click();
-  await expect.poll(async () => (await recordedCommands(page)).filter((command) => command === "orchestrate_cleanup_worktree").length).toBe(1);
 });
