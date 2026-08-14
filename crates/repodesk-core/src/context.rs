@@ -116,14 +116,15 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
         engineering_knowledge_observed_at(&engineering_knowledge.included_ids);
 
     // Structured Memory Brain retrieval is part of the Prepare trust boundary:
-    // errors and omitted pinned constraints fail closed. The legacy memory.md
-    // compatibility file is consulted only when there are zero active
-    // structured records, never as recovery from a failed or over-budget slice.
+    // errors and omitted pinned constraints fail closed. The compatibility file
+    // is consulted only when the structured store has zero active records.
     let memory_slice =
         crate::memory::retrieval::memory_slice(&project.name, MEMORY_BUDGET_TOKENS)?;
-    let (memory_slice, memory) = prepare_memory_for_context(memory_slice, || {
-        read_optional_file(&project_meta_dir.join("memory.md"))
-    })?;
+    let (memory_slice, memory) = crate::context_memory::prepare_memory_for_context(
+        memory_slice,
+        MEMORY_BUDGET_TOKENS,
+        || read_optional_file(&project_meta_dir.join("memory.md")),
+    )?;
     let memory_observed_at = memory_slice.as_ref().and_then(|slice| slice.observed_at);
     let decisions = read_optional_file(&project_meta_dir.join("decisions.md"));
     let risks = read_optional_file(&project_meta_dir.join("risks.md"));
@@ -446,40 +447,6 @@ fn engineering_knowledge_observed_at(included_ids: &[String]) -> Option<DateTime
         .min()
 }
 
-fn prepare_memory_for_context<F>(
-    mut slice: crate::memory::retrieval::SliceRender,
-    legacy_memory: F,
-) -> RepoDeskResult<(Option<crate::memory::retrieval::SliceRender>, String)>
-where
-    F: FnOnce() -> String,
-{
-    if !slice.pinned_overflow_ids.is_empty() {
-        let ids = slice
-            .pinned_overflow_ids
-            .iter()
-            .map(i64::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(RepoDeskError::Api(format!(
-            "context preparation blocked: pinned project memory does not fit the {MEMORY_BUDGET_TOKENS}-token memory budget (omitted ids: {ids})"
-        )));
-    }
-
-    if slice.total_active == 0 {
-        return Ok((None, legacy_memory()));
-    }
-
-    // Active structured memory owns this source even when ordinary unpinned
-    // entries were all excluded by the hard budget. Never replace that result
-    // with an unrelated legacy memory.md file.
-    let memory = if slice.is_empty() {
-        String::new()
-    } else {
-        std::mem::take(&mut slice.markdown)
-    };
-    Ok((Some(slice), memory))
-}
-
 fn apply_named_freshness(
     candidates: &mut [ContextCandidate],
     candidate_id: &str,
@@ -798,26 +765,7 @@ fn fallback_empty<'a>(value: &'a str, fallback: &'a str) -> &'a str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Duration, TimeZone, Utc};
-    use std::cell::Cell;
-
-    fn memory_slice(
-        total_active: usize,
-        included_ids: Vec<i64>,
-        pinned_overflow_ids: Vec<i64>,
-        markdown: &str,
-    ) -> crate::memory::retrieval::SliceRender {
-        crate::memory::retrieval::SliceRender {
-            estimated_tokens: estimate_text(markdown).estimated_tokens,
-            markdown: markdown.to_string(),
-            included_ids,
-            excluded_ids: Vec::new(),
-            pinned_overflow_ids,
-            total_active,
-            budget_exhausted: false,
-            observed_at: Some(Utc.with_ymd_and_hms(2026, 8, 14, 9, 0, 0).unwrap()),
-        }
-    }
+    use chrono::{Duration, Utc};
 
     #[test]
     fn component_telemetry_records_trimming_without_raw_text() {
@@ -827,70 +775,6 @@ mod tests {
         assert!(component.trimmed);
         assert!(!component.fingerprint.contains("abc"));
         assert_eq!(component.fingerprint.len(), 64);
-    }
-
-    #[test]
-    fn zero_structured_memory_is_the_only_legacy_fallback_case() {
-        let fallback_called = Cell::new(false);
-        let (slice, memory) = prepare_memory_for_context(
-            memory_slice(0, Vec::new(), Vec::new(), "No project memory recorded yet."),
-            || {
-                fallback_called.set(true);
-                "legacy memory.md".to_string()
-            },
-        )
-        .unwrap();
-
-        assert!(slice.is_none());
-        assert_eq!(memory, "legacy memory.md");
-        assert!(fallback_called.get());
-    }
-
-    #[test]
-    fn active_structured_memory_never_falls_back_when_budget_excludes_it() {
-        let fallback_called = Cell::new(false);
-        let (slice, memory) = prepare_memory_for_context(
-            memory_slice(3, Vec::new(), Vec::new(), "No project memory recorded yet."),
-            || {
-                fallback_called.set(true);
-                "must not be used".to_string()
-            },
-        )
-        .unwrap();
-
-        assert!(slice.is_some());
-        assert!(memory.is_empty());
-        assert!(!fallback_called.get());
-    }
-
-    #[test]
-    fn pinned_memory_overflow_blocks_prepare_before_legacy_fallback() {
-        let fallback_called = Cell::new(false);
-        let error = prepare_memory_for_context(
-            memory_slice(2, vec![1], vec![2], "included memory"),
-            || {
-                fallback_called.set(true);
-                "must not be used".to_string()
-            },
-        )
-        .unwrap_err();
-
-        assert!(error.to_string().contains("pinned project memory"));
-        assert!(error.to_string().contains("2"));
-        assert!(!fallback_called.get());
-    }
-
-    #[test]
-    fn active_structured_memory_keeps_its_bounded_payload_and_provenance() {
-        let observed_at = Utc.with_ymd_and_hms(2026, 8, 14, 9, 0, 0).unwrap();
-        let (slice, memory) = prepare_memory_for_context(
-            memory_slice(1, vec![7], Vec::new(), "structured memory"),
-            || "legacy".to_string(),
-        )
-        .unwrap();
-
-        assert_eq!(memory, "structured memory");
-        assert_eq!(slice.unwrap().observed_at, Some(observed_at));
     }
 
     #[test]
