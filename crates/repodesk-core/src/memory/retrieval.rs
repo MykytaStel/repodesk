@@ -97,8 +97,7 @@ pub fn rank_for_task_at(
             score += entry.confidence.clamp(0.0, 1.0) * CONFIDENCE_WEIGHT;
 
             let days = (now - entry.timestamp).num_days().max(0) as f64;
-            let recency =
-                RECENCY_WEIGHT * (RECENCY_HALFLIFE_DAYS / (RECENCY_HALFLIFE_DAYS + days));
+            let recency = RECENCY_WEIGHT * (RECENCY_HALFLIFE_DAYS / (RECENCY_HALFLIFE_DAYS + days));
             score += recency;
 
             if !signals.is_empty() {
@@ -195,8 +194,8 @@ pub fn render_slice(scored: &[ScoredEntry], token_budget: usize) -> SliceRender 
         }
     };
 
-    let budget_exhausted = !scored.is_empty()
-        && (!excluded_ids.is_empty() || estimated_tokens >= token_budget);
+    let budget_exhausted =
+        !scored.is_empty() && (!excluded_ids.is_empty() || estimated_tokens >= token_budget);
 
     SliceRender {
         markdown,
@@ -447,10 +446,7 @@ mod tests {
         let second = rank_for_task_at(&signals, &entries, now);
 
         assert_eq!(
-            first
-                .iter()
-                .map(|entry| entry.entry.id)
-                .collect::<Vec<_>>(),
+            first.iter().map(|entry| entry.entry.id).collect::<Vec<_>>(),
             second
                 .iter()
                 .map(|entry| entry.entry.id)
@@ -468,7 +464,9 @@ mod tests {
         for i in 0..12 {
             let mut pinned = entry(
                 i,
-                &format!("critical pinned constraint number {i} with enough descriptive text to consume context tokens"),
+                &format!(
+                    "critical pinned constraint number {i} with enough descriptive text to consume context tokens"
+                ),
                 "constraint",
                 &[],
             );
