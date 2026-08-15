@@ -214,6 +214,29 @@ fn run_command_times_out_and_kills_child() {
 
 #[cfg(unix)]
 #[test]
+fn runtime_timeout_includes_blocked_stdin_delivery() {
+    use std::time::{Duration, Instant};
+
+    let dir = tempfile::TempDir::new().unwrap();
+    let script = executable_script(dir.path(), "#!/bin/sh\nsleep 3\n");
+    let command = command_for_script(&script);
+    let prompt = "x".repeat(4 * 1024 * 1024);
+    let started = Instant::now();
+
+    let result = run_coding_agent_command(&command, &prompt, dir.path(), dir.path(), 1)
+        .expect("blocked stdin delivery must resolve through the executor timeout");
+
+    assert_eq!(result.status, "timed_out");
+    assert!(result.timed_out);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "executor timeout must include stdin delivery; elapsed={:?}",
+        started.elapsed()
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn run_command_captures_git_changeset() {
     let repo = tempfile::TempDir::new().unwrap();
     let git = |args: &[&str]| {
