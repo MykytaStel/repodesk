@@ -39,7 +39,7 @@ test("Settings is global-only while Projects Knowledge owns repository inputs", 
   await openKnowledge(page);
   await expect(page.getByRole("heading", { name: "Import context from other AI tools" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Compatibility instructions" })).toBeVisible();
-  await expect(page.getByText(/not reviewed Engineering Knowledge/i)).toBeVisible();
+  await expect(page.locator(".project-guidelines-panel")).toContainText("not reviewed Engineering Knowledge");
 });
 
 test("legacy project guideline retrieval fails visibly instead of looking empty", async ({ page }) => {
