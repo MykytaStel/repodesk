@@ -37,10 +37,10 @@ export function useProjectSetup() {
   const [setupNotice, setSetupNotice] = useState<ProjectSetupNotice | null>(null);
   const [activationNotice, setActivationNotice] = useState<ProjectSetupNotice | null>(null);
 
-  const activateProjectCommand = async (name: string) => {
+  const activateProjectCommand = async (name: string, fallbackMessage = `Could not activate project "${name}".`) => {
     const activated = await callCommand<CommandResult>("project_use", { name });
     if (!activated.ok) {
-      throw new Error(activated.stderr || `Could not activate project "${name}".`);
+      throw new Error(activated.stderr || fallbackMessage);
     }
     return name;
   };
@@ -74,7 +74,7 @@ export function useProjectSetup() {
         throw new Error(added.stderr || "Could not add project.");
       }
 
-      await activateProjectCommand(input.name);
+      await activateProjectCommand(input.name, "Project was added, but could not be activated.");
       return { projectName: input.name, alreadyExists };
     },
     onMutate: () => {
@@ -96,7 +96,7 @@ export function useProjectSetup() {
   });
 
   const activateProjectMutation = useMutation({
-    mutationFn: activateProjectCommand,
+    mutationFn: (name: string) => activateProjectCommand(name),
     onMutate: () => {
       setActivationNotice(null);
     },
