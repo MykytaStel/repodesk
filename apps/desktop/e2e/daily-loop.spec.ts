@@ -66,7 +66,7 @@ test.describe("daily loop (onboarded)", () => {
 
   test("Settings owns provider keys and runtime configuration", async ({ page }) => {
     await openFromPalette(page, "Go to Settings");
-    await expect(page.getByRole("heading", { name: "API keys, providers, and workspace." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "API keys, providers, and preferences." })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Bring your own keys" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Runtime configuration" })).toBeVisible();
     await expect(page.getByText("Codex CLI route enabled")).toBeVisible();
