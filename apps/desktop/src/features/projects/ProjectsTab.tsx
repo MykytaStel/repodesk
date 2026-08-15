@@ -48,6 +48,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
     queryFn: () => invoke<ProjectConfigSummary[]>("project_list_configs"),
     enabled: view === "registry",
   });
+  const projectMutationPending = isAddingProject || isActivatingProject;
 
   return (
     <div className="subnav-host projects-tab">
@@ -147,11 +148,11 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                       className="primary-button"
                       type="button"
                       onClick={() => void addProject().catch(() => undefined)}
-                      disabled={isAddingProject}
+                      disabled={projectMutationPending}
                     >
                       {isAddingProject ? "Adding and activating…" : "Add and activate project"}
                     </button>
-                    <button className="ghost-button" type="button" onClick={() => setShowSetup(false)} disabled={isAddingProject}>
+                    <button className="ghost-button" type="button" onClick={() => setShowSetup(false)} disabled={projectMutationPending}>
                       Cancel
                     </button>
                   </div>
@@ -211,7 +212,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                           <button
                             className={active ? "ghost-button" : "primary-button"}
                             type="button"
-                            disabled={active || isActivatingProject}
+                            disabled={active || projectMutationPending}
                             onClick={() => void activateProject(project.name).catch(() => undefined)}
                           >
                             {active ? "Current project" : activating ? "Opening…" : "Open project"}
