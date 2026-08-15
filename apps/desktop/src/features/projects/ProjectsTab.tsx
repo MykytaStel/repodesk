@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import type { TabId } from "../../shared/types/api";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
@@ -30,26 +30,24 @@ const VIEWS: Array<{ id: ProjectsView; label: string }> = [
 export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detail?: string) => void }) {
   const [view, setView] = useState<ProjectsView>("registry");
   const [showSetup, setShowSetup] = useState(false);
-  const queryClient = useQueryClient();
-  const { projectName } = useWorkspace();
+  const { projectName, hasProject } = useWorkspace();
   const {
     setupForm,
     setSetupForm,
     setupNotice,
+    activationNotice,
     browseForProjectPath,
     addProject,
     isAddingProject,
+    activateProject,
+    isActivatingProject,
+    activatingProjectName,
   } = useProjectSetup();
   const projects = useQuery({
     queryKey: ["project_list_configs"],
     queryFn: () => invoke<ProjectConfigSummary[]>("project_list_configs"),
     enabled: view === "registry",
   });
-
-  const useProject = async (name: string) => {
-    await invoke("project_use", { name });
-    await queryClient.invalidateQueries();
-  };
 
   return (
     <div className="subnav-host projects-tab">
@@ -58,7 +56,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
           <p className="eyebrow">Projects</p>
           <strong>Durable repository rules, knowledge and reusable work setup</strong>
         </div>
-        {projectName ? <span className="pill accent">Active · {projectName}</span> : <span className="pill neutral">No active project</span>}
+        {hasProject ? <span className="pill accent">Active · {projectName}</span> : <span className="pill neutral">No active project</span>}
       </div>
 
       <div className="subnav" role="tablist" aria-label="Project views">
@@ -157,7 +155,11 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                       Cancel
                     </button>
                   </div>
-                  {setupNotice ? <div className={`notice ${setupNotice.tone}`}>{setupNotice.message}</div> : null}
+                  {setupNotice ? (
+                    <div className={`notice ${setupNotice.tone}`} role={setupNotice.tone === "danger" ? "alert" : "status"}>
+                      {setupNotice.message}
+                    </div>
+                  ) : null}
                 </div>
               </section>
             ) : null}
@@ -169,6 +171,12 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                   <h2>{projects.data?.length ?? 0} registered</h2>
                 </div>
               </div>
+
+              {activationNotice ? (
+                <div className={`notice ${activationNotice.tone}`} role={activationNotice.tone === "danger" ? "alert" : "status"}>
+                  {activationNotice.message}
+                </div>
+              ) : null}
 
               {projects.isLoading ? (
                 <p className="muted">Loading projects…</p>
@@ -182,7 +190,8 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
               ) : (
                 <div className="project-registry-grid">
                   {projects.data?.map((project) => {
-                    const active = project.name === projectName;
+                    const active = hasProject && project.name === projectName;
+                    const activating = isActivatingProject && activatingProjectName === project.name;
                     return (
                       <article key={project.name} className={`project-registry-card${active ? " active" : ""}`}>
                         <div className="project-registry-head">
@@ -199,8 +208,13 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                           <span>{project.context_ignore?.length ?? 0} context rules</span>
                         </div>
                         <div className="button-row">
-                          <button className={active ? "ghost-button" : "primary-button"} type="button" disabled={active} onClick={() => void useProject(project.name)}>
-                            {active ? "Current project" : "Open project"}
+                          <button
+                            className={active ? "ghost-button" : "primary-button"}
+                            type="button"
+                            disabled={active || isActivatingProject}
+                            onClick={() => void activateProject(project.name).catch(() => undefined)}
+                          >
+                            {active ? "Current project" : activating ? "Opening…" : "Open project"}
                           </button>
                           {active ? <button className="ghost-button" type="button" onClick={() => setView("knowledge")}>Knowledge</button> : null}
                         </div>
