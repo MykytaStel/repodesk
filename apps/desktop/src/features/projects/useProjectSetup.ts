@@ -35,6 +35,23 @@ export function useProjectSetup() {
   const queryClient = useQueryClient();
   const [setupForm, setSetupForm] = useState<ProjectSetupFormState>(INITIAL_PROJECT_SETUP);
   const [setupNotice, setSetupNotice] = useState<ProjectSetupNotice | null>(null);
+  const [activationNotice, setActivationNotice] = useState<ProjectSetupNotice | null>(null);
+
+  const activateProjectCommand = async (name: string) => {
+    const activated = await callCommand<CommandResult>("project_use", { name });
+    if (!activated.ok) {
+      throw new Error(activated.stderr || `Could not activate project "${name}".`);
+    }
+    return name;
+  };
+
+  const invalidateActiveProject = (projectName: string) => {
+    queryClient.invalidateQueries({ queryKey: ["project_list_configs"] });
+    queryClient.invalidateQueries({ queryKey: queryKeys.workspace.snapshot });
+    queryClient.invalidateQueries({ queryKey: queryKeys.workspace.activeProject });
+    queryClient.invalidateQueries({ queryKey: queryKeys.workflow.state });
+    queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
+  };
 
   const addProjectMutation = useMutation({
     mutationFn: async (form: ProjectSetupFormState) => {
@@ -57,11 +74,7 @@ export function useProjectSetup() {
         throw new Error(added.stderr || "Could not add project.");
       }
 
-      const activated = await callCommand<CommandResult>("project_use", { name: input.name });
-      if (!activated.ok) {
-        throw new Error(activated.stderr || "Project was added, but could not be activated.");
-      }
-
+      await activateProjectCommand(input.name);
       return { projectName: input.name, alreadyExists };
     },
     onMutate: () => {
@@ -74,15 +87,26 @@ export function useProjectSetup() {
           ? `Project "${projectName}" already existed, so RepoDesk activated it.`
           : `Project "${projectName}" was added and activated.`,
       });
-      queryClient.invalidateQueries({ queryKey: ["project_list_configs"] });
-      queryClient.invalidateQueries({ queryKey: queryKeys.workspace.snapshot });
-      queryClient.invalidateQueries({ queryKey: queryKeys.workspace.activeProject });
-      queryClient.invalidateQueries({ queryKey: queryKeys.workflow.state });
-      queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
+      invalidateActiveProject(projectName);
     },
     onError: (error) => {
       const normalized = normalizeError(error);
       setSetupNotice({ tone: "danger", message: normalized.message });
+    },
+  });
+
+  const activateProjectMutation = useMutation({
+    mutationFn: activateProjectCommand,
+    onMutate: () => {
+      setActivationNotice(null);
+    },
+    onSuccess: (projectName) => {
+      setActivationNotice({ tone: "ok", message: `Project "${projectName}" is now active.` });
+      invalidateActiveProject(projectName);
+    },
+    onError: (error) => {
+      const normalized = normalizeError(error);
+      setActivationNotice({ tone: "danger", message: normalized.message });
     },
   });
 
@@ -100,8 +124,12 @@ export function useProjectSetup() {
     setupForm,
     setSetupForm,
     setupNotice,
+    activationNotice,
     browseForProjectPath,
     addProject: async () => addProjectMutation.mutateAsync(setupForm),
     isAddingProject: addProjectMutation.isPending,
+    activateProject: async (name: string) => activateProjectMutation.mutateAsync(name),
+    isActivatingProject: activateProjectMutation.isPending,
+    activatingProjectName: activateProjectMutation.variables ?? null,
   };
 }
