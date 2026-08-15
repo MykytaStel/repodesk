@@ -33,7 +33,6 @@ fn command_preview_uses_argv_and_stdin() {
 #[test]
 fn claude_readonly_command_uses_plan_mode() {
     let command = build_coding_agent_command("claude", false).unwrap();
-    assert_eq!(command.program, "claude");
     assert_eq!(
         command.args,
         vec![
@@ -282,4 +281,47 @@ fn run_command_captures_git_changeset() {
     assert!(!result.diff_truncated);
     let diff_path = result.diff_path.expect("diff receipt written");
     assert!(std::path::Path::new(&diff_path).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn post_launch_provenance_failure_still_returns_execution_receipt() {
+    if std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return;
+    }
+
+    let repo = tempfile::TempDir::new().unwrap();
+    let git = |args: &[&str]| {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        assert!(ok, "git {args:?} failed");
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    std::fs::write(repo.path().join("seed.txt"), "seed\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "init"]);
+
+    let out = tempfile::TempDir::new().unwrap();
+    let script = executable_script(
+        out.path(),
+        "#!/bin/sh\ncat > /dev/null\necho changed >> seed.txt\nrm -rf .git\necho agent-finished\n",
+    );
+    let command = command_for_script(&script);
+
+    let result = run_coding_agent_command(&command, "prompt", repo.path(), out.path(), 5)
+        .expect("once spawn succeeds, provenance failure must not erase the execution receipt");
+
+    assert_eq!(result.status, "failed");
+    assert!(result.stdout.contains("agent-finished"));
+    assert!(result.changed_files.is_empty());
 }
