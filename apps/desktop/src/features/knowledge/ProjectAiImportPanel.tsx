@@ -59,8 +59,8 @@ export function ProjectAiImportPanel() {
     <section className="panel wide-panel project-ai-import">
       <div className="panel-title-row">
         <div>
-          <p className="eyebrow">Project AI</p>
-          <h2>Import repo instructions</h2>
+          <p className="eyebrow">Project inputs</p>
+          <h2>Import context from other AI tools</h2>
         </div>
         <div className="button-row">
           <button className="ghost-button" onClick={() => scan.mutate()} disabled={scan.isPending}>
@@ -76,13 +76,14 @@ export function ProjectAiImportPanel() {
         </div>
       </div>
       <p className="muted">
-        Finds AGENTS.md, CLAUDE.md, Cursor/Claude folders, and Copilot instruction files in the
-        active repo. Files with secret-like content are blocked before memory import.
+        Finds AGENTS.md, CLAUDE.md, Cursor/Claude folders, and Copilot instruction files in the active repo.
+        Imported files enter project compatibility memory; they are not reviewed Engineering Knowledge until promoted through the review lifecycle.
+        Files with secret-like content are blocked before import.
       </p>
 
-      {scan.error && <div className="notice danger">{(scan.error as Error).message}</div>}
+      {scan.error && <div className="notice danger" role="alert">{(scan.error as Error).message}</div>}
       {doImport.data && (
-        <div className="notice ok">
+        <div className="notice ok" role="status">
           Imported {doImport.data.imported.length} file(s)
           {doImport.data.skipped.length ? `; skipped ${doImport.data.skipped.length}.` : "."}
         </div>

@@ -91,3 +91,37 @@ test("Projects owns repository project setup instead of global Settings", () => 
     "Projects setup/configuration must not redirect into global Settings",
   );
 });
+
+test("Projects Knowledge owns project-scoped AI import and legacy guidelines", () => {
+  const settingsDir = new URL("../apps/desktop/src/features/settings/", import.meta.url);
+  const settingsSource = readdirSync(settingsDir)
+    .filter((name) => /\.(?:ts|tsx)$/.test(name))
+    .map((name) => readFileSync(new URL(name, settingsDir), "utf8"))
+    .join("\n");
+  const knowledgeDir = new URL("../apps/desktop/src/features/knowledge/", import.meta.url);
+  const knowledgeSource = readdirSync(knowledgeDir)
+    .filter((name) => /\.(?:ts|tsx)$/.test(name))
+    .map((name) => readFileSync(new URL(name, knowledgeDir), "utf8"))
+    .join("\n");
+
+  assert.doesNotMatch(
+    settingsSource,
+    /ProjectAiImportPanel|memory_list|memory_add|Project Memory & Guidelines/,
+    "global Settings must not own repository-specific knowledge inputs",
+  );
+  assert.match(
+    knowledgeSource,
+    /ProjectAiImportPanel|projectAiScan/,
+    "Projects Knowledge must own project AI import",
+  );
+  assert.match(
+    knowledgeSource,
+    /memory_list/,
+    "Projects Knowledge must own legacy project guideline retrieval",
+  );
+  assert.match(
+    knowledgeSource,
+    /memory_add/,
+    "Projects Knowledge must own legacy project guideline writes",
+  );
+});

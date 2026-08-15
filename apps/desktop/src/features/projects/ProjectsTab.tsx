@@ -7,7 +7,7 @@ import "../../shared/ui/secondary-subnav.css";
 import "./projects-route.css";
 import { useProjectSetup } from "./useProjectSetup";
 
-const KnowledgeTab = lazy(() => import("../knowledge/KnowledgeTab").then((module) => ({ default: module.KnowledgeTab })));
+const ProjectKnowledgeWorkspace = lazy(() => import("../knowledge/ProjectKnowledgeWorkspace").then((module) => ({ default: module.ProjectKnowledgeWorkspace })));
 const WorkTemplatesTab = lazy(() => import("../playbooks/PlaybooksTab").then((module) => ({ default: module.PlaybooksTab })));
 
 type ProjectsView = "registry" | "knowledge" | "templates";
@@ -76,7 +76,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
       </div>
 
       <Suspense fallback={<p className="muted">Loading project capability…</p>}>
-        {view === "knowledge" ? <KnowledgeTab /> : null}
+        {view === "knowledge" ? <ProjectKnowledgeWorkspace /> : null}
         {view === "templates" ? <WorkTemplatesTab setActiveTab={setActiveTab} /> : null}
         {view === "registry" ? (
           <div className="content-grid">

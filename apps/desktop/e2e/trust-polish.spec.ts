@@ -127,7 +127,7 @@ test("legacy route migration and artifact viewer preserve fresh identity across 
   await page.evaluate(() => window.localStorage.setItem("repodesk.activeTab", "tokens"));
   await page.reload();
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("settings");
-  await expect(page.getByRole("heading", { name: "API keys, providers, and workspace." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "API keys, providers, and preferences." })).toBeVisible();
   await openFromPalette(page, "Go to Work");
 
   // Artifact viewing now starts from the owning Work action rather than a
