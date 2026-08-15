@@ -27,9 +27,17 @@ describe("RepoDesk desktop — first-run smoke", () => {
     if (await welcomeDialog.isExisting()) {
       await expect(welcomeDialog).toBeDisplayed();
       await expect(welcomeDialog.$("h2")).toHaveText("Your local-first engineering workspace");
-      await welcomeDialog.$(".app-dialog-footer .ghost-button").click();
+      const close = welcomeDialog.$("button[aria-label='Close']");
+      await close.waitForClickable({ timeout: 5_000 });
+      await close.click();
       await welcomeDialog.waitForExist({ reverse: true, timeout: 5_000 });
     }
+
+    const work = $("[aria-label^='Work —']");
+    if ((await work.getAttribute("aria-pressed")) !== "true") {
+      await work.click();
+    }
+    await expect(work).toHaveAttribute("aria-pressed", "true");
 
     const scopeHeading = $("//h2[normalize-space()='Scope']");
     await scopeHeading.waitForExist({ timeout: 30_000 });
