@@ -42,6 +42,10 @@ const noProject: CommandFixtures = {
 async function boot(page: Page, fixtures: CommandFixtures) {
   await installMockIpc(page, fixtures);
   await page.goto("/");
+  const about = page.getByRole("dialog", { name: "Your local-first engineering workspace" });
+  if (await about.isVisible()) {
+    await about.getByRole("button", { name: "Close" }).click();
+  }
 }
 
 test("Scope with a project but no task exposes one task-creation action", async ({ page }) => {
