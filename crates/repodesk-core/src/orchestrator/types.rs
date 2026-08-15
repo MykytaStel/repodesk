@@ -125,6 +125,10 @@ pub struct SubAgentResult {
     /// Receipt file holding the full captured diff for a coding-agent step.
     #[serde(default)]
     pub diff_path: Option<String>,
+    /// Structured evidence degradation/limitations attached to this result.
+    /// Review/history can inspect these without parsing human-facing notes.
+    #[serde(default)]
+    pub evidence_issues: Vec<String>,
     /// Isolated workspace used for this coding-agent step, when one was
     /// created. Review uses this metadata to apply changes back deliberately,
     /// never by assuming same-named active-checkout paths hold the agent output.
