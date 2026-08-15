@@ -27,7 +27,7 @@ describe("RepoDesk desktop — first-run smoke", () => {
     if (await welcomeDialog.isExisting()) {
       await expect(welcomeDialog).toBeDisplayed();
       await expect(welcomeDialog.$("h2")).toHaveText("Your local-first engineering workspace");
-      await welcomeDialog.$(".primary-button").click();
+      await welcomeDialog.$(".app-dialog-footer .ghost-button").click();
       await welcomeDialog.waitForExist({ reverse: true, timeout: 5_000 });
     }
 
