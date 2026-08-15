@@ -104,6 +104,25 @@ fn command_for_script(script: &std::path::Path) -> CodingAgentCommandSpec {
 }
 
 #[cfg(unix)]
+fn init_git_repo(repo: &tempfile::TempDir) {
+    let git = |args: &[&str]| {
+        let ok = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false);
+        assert!(ok, "git {args:?} failed");
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    std::fs::write(repo.path().join("seed.txt"), "seed\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "init"]);
+}
+
+#[cfg(unix)]
 #[test]
 fn run_command_captures_stdout_and_stderr() {
     let dir = tempfile::TempDir::new().unwrap();
@@ -120,6 +139,7 @@ fn run_command_captures_stdout_and_stderr() {
     assert!(!result.stdout_log_truncated);
     assert!(!result.stderr_log_truncated);
     assert!(result.output_capture_issues.is_empty());
+    assert!(result.execution_issues.is_empty());
     assert!(std::path::Path::new(&result.stdout_path).exists());
     assert!(std::path::Path::new(&result.stderr_path).exists());
 }
@@ -149,6 +169,7 @@ fn verbose_run_is_drained_with_hard_memory_and_disk_caps() {
     assert!(result.stdout_log_truncated);
     assert!(result.stderr_log_truncated);
     assert!(result.output_capture_issues.is_empty());
+    assert!(result.execution_issues.is_empty());
     assert!(result.stdout.len() <= limits.stdout_record_bytes);
     assert!(result.stderr.len() <= limits.stderr_record_bytes);
     assert_eq!(
@@ -210,21 +231,12 @@ fn run_command_times_out_and_kills_child() {
         .expect("timeout result");
     assert_eq!(result.status, "timed_out");
     assert!(result.timed_out);
+    assert!(result.execution_issues.is_empty());
 }
 
 #[cfg(unix)]
 #[test]
 fn run_command_captures_git_changeset() {
-    let repo = tempfile::TempDir::new().unwrap();
-    let git = |args: &[&str]| {
-        let ok = std::process::Command::new("git")
-            .args(args)
-            .current_dir(repo.path())
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        assert!(ok, "git {args:?} failed");
-    };
     if std::process::Command::new("git")
         .arg("--version")
         .output()
@@ -232,12 +244,8 @@ fn run_command_captures_git_changeset() {
     {
         return;
     }
-    git(&["init", "-q"]);
-    git(&["config", "user.email", "t@example.com"]);
-    git(&["config", "user.name", "Test"]);
-    std::fs::write(repo.path().join("seed.txt"), "seed\n").unwrap();
-    git(&["add", "."]);
-    git(&["commit", "-qm", "init"]);
+    let repo = tempfile::TempDir::new().unwrap();
+    init_git_repo(&repo);
 
     let out = tempfile::TempDir::new().unwrap();
     let script = executable_script(
@@ -248,6 +256,7 @@ fn run_command_captures_git_changeset() {
 
     let result = run_coding_agent_command(&command, "prompt", repo.path(), out.path(), 5).unwrap();
     assert_eq!(result.status, "ok");
+    assert!(result.execution_issues.is_empty());
     let paths: Vec<&str> = result
         .changed_files
         .iter()
@@ -259,4 +268,40 @@ fn run_command_captures_git_changeset() {
     assert!(!result.diff_truncated);
     let diff_path = result.diff_path.expect("diff receipt written");
     assert!(std::path::Path::new(&diff_path).exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn post_launch_provenance_failure_returns_failed_execution_receipt() {
+    if std::process::Command::new("git")
+        .arg("--version")
+        .output()
+        .is_err()
+    {
+        return;
+    }
+    let repo = tempfile::TempDir::new().unwrap();
+    init_git_repo(&repo);
+
+    let out = tempfile::TempDir::new().unwrap();
+    let script = executable_script(
+        out.path(),
+        "#!/bin/sh\ncat > /dev/null\necho changed >> seed.txt\nrm -rf .git\necho agent-finished\n",
+    );
+    let command = command_for_script(&script);
+
+    let result = run_coding_agent_command(&command, "prompt", repo.path(), out.path(), 5)
+        .expect("a launched executor must return a receipt even when provenance capture degrades");
+
+    assert_eq!(result.status, "failed");
+    assert!(result.stdout.contains("agent-finished"));
+    assert!(result.changed_files.is_empty());
+    assert!(
+        result
+            .execution_issues
+            .iter()
+            .any(|issue| issue.contains("changeset capture failed")),
+        "issues: {:?}",
+        result.execution_issues
+    );
 }
