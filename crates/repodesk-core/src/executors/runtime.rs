@@ -153,6 +153,13 @@ pub(super) fn run_with_limits(
     let stderr_capture = join_capture(stderr_reader, "stderr")?;
     let stdout_log_truncated = stdout_capture.persisted_truncated;
     let stderr_log_truncated = stderr_capture.persisted_truncated;
+    let mut output_capture_issues = Vec::new();
+    if let Some(error) = stdout_capture.persist_error.as_deref() {
+        output_capture_issues.push(format!("stdout raw log persistence failed: {error}"));
+    }
+    if let Some(error) = stderr_capture.persist_error.as_deref() {
+        output_capture_issues.push(format!("stderr raw log persistence failed: {error}"));
+    }
     let (raw_stdout, stdout_truncated) = bounded_text(
         stdout_capture.bytes,
         stdout_capture.retained_truncated,
@@ -164,6 +171,9 @@ pub(super) fn run_with_limits(
         limits.stderr_record_bytes,
     );
 
+    // Capture the workspace delta even when diagnostic persistence degraded: the
+    // executor already ran, so its changeset receipt must not disappear merely
+    // because a log file hit ENOSPC or another local I/O failure.
     let changeset = capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref())?;
 
     let (stdout, mut secrets_redacted) = crate::security::redact_secrets(&raw_stdout);
@@ -186,6 +196,7 @@ pub(super) fn run_with_limits(
         stderr_truncated,
         stdout_log_truncated,
         stderr_log_truncated,
+        output_capture_issues,
         secrets_redacted,
         timed_out,
         changed_files: changeset.changed_files,
