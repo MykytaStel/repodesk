@@ -201,9 +201,9 @@ mod tests {
     #[test]
     fn applying_preferences_preserves_internal_credentials() {
         let mut settings = ProviderSettings {
-            anthropic_api_key: "anthropic-secret".into(),
-            openai_api_key: "openai-secret".into(),
-            gemini_api_key: "gemini-secret".into(),
+            anthropic_api_key: "fixture-a".into(),
+            openai_api_key: "fixture-b".into(),
+            gemini_api_key: "fixture-c".into(),
             ..ProviderSettings::default()
         };
         let preferences = ProviderPreferences {
@@ -216,8 +216,8 @@ mod tests {
 
         assert!(!settings.ollama_enabled);
         assert_eq!(settings.notes, "updated preference");
-        assert_eq!(settings.anthropic_api_key, "anthropic-secret");
-        assert_eq!(settings.openai_api_key, "openai-secret");
-        assert_eq!(settings.gemini_api_key, "gemini-secret");
+        assert_eq!(settings.anthropic_api_key, "fixture-a");
+        assert_eq!(settings.openai_api_key, "fixture-b");
+        assert_eq!(settings.gemini_api_key, "fixture-c");
     }
 }
