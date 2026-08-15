@@ -63,6 +63,11 @@ test("project input tools stay unavailable until a Project is active", async ({ 
     get_active_project_config: null,
   });
 
+  const firstRunDialog = page.getByRole("dialog", { name: "Your local-first engineering workspace" });
+  await expect(firstRunDialog).toBeVisible();
+  await firstRunDialog.getByRole("button", { name: "Get started" }).click();
+  await expect(firstRunDialog).toBeHidden();
+
   await openKnowledgeSurface(page);
   await expect(page.getByText("Connect a project to use Project Knowledge.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Import context from other AI tools" })).toHaveCount(0);
