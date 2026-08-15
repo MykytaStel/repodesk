@@ -9,9 +9,11 @@
 //! - [`context`] — per-sub-agent context packs (reuses smart-context + brain).
 //! - [`strategy`] — evidence-backed plan shaping layered over the stable planner.
 //! - `runner`    — raw gated execution + run persistence (private boundary).
+//! - `coding_agent_result` — durable projection of coding-agent execution evidence.
 //! - `execution_evidence` — public execution boundary + receipt recovery state.
 
 pub mod auto_loop;
+mod coding_agent_result;
 pub mod context;
 mod execution_evidence;
 pub mod manual_import;
