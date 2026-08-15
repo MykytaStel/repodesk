@@ -33,6 +33,7 @@ fn command_preview_uses_argv_and_stdin() {
 #[test]
 fn claude_readonly_command_uses_plan_mode() {
     let command = build_coding_agent_command("claude", false).unwrap();
+    assert_eq!(command.program, "claude");
     assert_eq!(
         command.args,
         vec![
