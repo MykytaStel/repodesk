@@ -28,7 +28,7 @@ test("historical product routes migrate to canonical owners on direct entry", as
   await expect(page.locator(".phase-rail")).toBeVisible();
 
   await openDirectly(page, "models-cost");
-  await expect(page.getByRole("heading", { name: "API keys, providers, and workspace." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "API keys, providers, and preferences." })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("settings");
 });
 
