@@ -214,6 +214,15 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const progress = phase.data;
   const current = progress.phases.find((item) => item.phase === progress.current) ?? progress.phases[0];
   const copy = PHASE_COPY[progress.current];
+  const currentSummary = progress.current === "scope"
+    ? !hasProject
+      ? "Choose the repository for this Work Item"
+      : !hasTask
+        ? "Define the Work Item for this project"
+        : "Project and Work Item are ready"
+    : current.summary;
+  const sharedPrimaryOwner =
+    progress.current === "prepare" || progress.current === "execute" || progress.current === "verify";
   const isAgentRun = progress.execution_mode === "agent_run";
   const latest = latestRun.data ?? null;
   const changedCount = latest
@@ -287,14 +296,6 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
       runCta.mutate(actionId);
       return;
     }
-    if (ctaPhase === "scope") {
-      setActiveTab("settings");
-      return;
-    }
-    if (ctaPhase === "finish") {
-      setActiveTab("changes");
-      return;
-    }
     setActiveTab("orchestrate");
   }
 
@@ -305,7 +306,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           <div>
             <p className="eyebrow">Current step</p>
             <h2>{progress.complete ? "Task complete" : current.title}</h2>
-            <p className="muted">{current.summary}</p>
+            <p className="muted">{currentSummary}</p>
           </div>
           {latest && !latest.dry_run ? (
             <div className="work-run-facts" aria-label="Latest run facts">
@@ -330,7 +331,6 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
 
         <div className="work-current-step">
           <div className="work-current-step-copy">
-            <span className={`pill ${busy ? "warn" : "accent"}`}>{busy ? "Running" : progress.cta.label}</span>
             <strong>{copy.detail}</strong>
             <small>{copy.next}</small>
           </div>
@@ -339,7 +339,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
         {progress.current === "scope" ? (
           <div className="phase-controls compact">
             {!hasProject ? (
-              <button className="secondary-cta" onClick={() => setActiveTab("settings")}>Connect a project</button>
+              <button className="secondary-cta" onClick={() => setActiveTab("projects")}>Connect a project</button>
             ) : !hasTask ? (
               <TaskSwitcher />
             ) : (
@@ -480,12 +480,14 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           </div>
         ) : null}
 
-        <div className="work-cta-row focus">
-          <button className="primary-cta" onClick={handlePrimary} disabled={progress.complete || busy || executeBlocked}>
-            {busy ? "Working…" : progress.cta.label}
-          </button>
-          {executeBlocked ? <span className="muted">Refresh the strategy packet and grant its required approvals before launch.</span> : null}
-        </div>
+        {sharedPrimaryOwner ? (
+          <div className="work-cta-row focus">
+            <button className="primary-cta" onClick={handlePrimary} disabled={progress.complete || busy || executeBlocked}>
+              {busy ? "Working…" : progress.cta.label}
+            </button>
+            {executeBlocked ? <span className="muted">Refresh the strategy packet and grant its required approvals before launch.</span> : null}
+          </div>
+        ) : null}
 
         {mutationError ? <p className="work-error">{mutationError}</p> : null}
       </section>
