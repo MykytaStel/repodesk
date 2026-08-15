@@ -11,7 +11,7 @@ use wait_timeout::ChildExt;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::process_io::{BoundedTee, drain_bounded_to_writer};
 
-use super::changeset::{capture_changeset, git_porcelain};
+use super::changeset::{Changeset, capture_changeset, git_porcelain};
 use super::{
     CodingAgentCommandSpec, CodingAgentExecution, apply_sanitized_env, validate_command_spec,
 };
@@ -101,6 +101,8 @@ pub(super) fn run_with_limits(
             detail: format!("failed to start {}: {error}", command.program),
         })?;
     let runtime_started = Instant::now();
+    let mut execution_issues = Vec::new();
+    let mut force_failed = false;
 
     // Both pipes are drained concurrently for the entire child lifetime. We keep
     // only a bounded prefix in RAM and persist only a larger bounded prefix to
@@ -140,62 +142,100 @@ pub(super) fn run_with_limits(
     let timeout = Duration::from_secs(timeout_secs.max(1));
     let remaining = timeout.saturating_sub(runtime_started.elapsed());
     let wait_result = child.wait_timeout(remaining);
-    let (status_label, exit_code, timed_out) = match wait_result {
+    let (mut status_label, exit_code, timed_out) = match wait_result {
         Ok(Some(status)) => (
             if status.success() { "ok" } else { "failed" },
             status.code(),
             false,
         ),
-        Ok(None) => {
-            let status = terminate_timed_out_child(&mut child)?;
-            ("timed_out", status.code(), true)
-        }
+        Ok(None) => match terminate_timed_out_child(&mut child) {
+            Ok(status) => ("timed_out", status.code(), true),
+            Err(error) => {
+                push_execution_issue(
+                    &mut execution_issues,
+                    format!("timeout termination failed: {error}"),
+                );
+                ("timed_out", None, true)
+            }
+        },
         Err(error) => {
-            let _ = terminate_timed_out_child(&mut child);
-            let _ = join_stdin(stdin_writer);
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
-            return Err(error.into());
+            push_execution_issue(
+                &mut execution_issues,
+                format!("executor wait failed: {error}"),
+            );
+            force_failed = true;
+            let exit_code = match terminate_timed_out_child(&mut child) {
+                Ok(status) => status.code(),
+                Err(terminate_error) => {
+                    push_execution_issue(
+                        &mut execution_issues,
+                        format!("executor termination after wait failure failed: {terminate_error}"),
+                    );
+                    None
+                }
+            };
+            ("failed", exit_code, false)
         }
     };
 
-    let stdin_result = join_stdin(stdin_writer);
-    if !timed_out {
-        stdin_result?;
+    if let Err(error) = join_stdin(stdin_writer)
+        && !timed_out
+    {
+        push_execution_issue(
+            &mut execution_issues,
+            format!("stdin delivery failed: {error}"),
+        );
+        force_failed = true;
     }
 
-    let stdout_capture = join_capture(stdout_reader, "stdout")?;
-    let stderr_capture = join_capture(stderr_reader, "stderr")?;
-    let stdout_log_truncated = stdout_capture.persisted_truncated;
-    let stderr_log_truncated = stderr_capture.persisted_truncated;
+    let stdout_capture = join_capture_receipt(stdout_reader, "stdout", &mut execution_issues);
+    let stderr_capture = join_capture_receipt(stderr_reader, "stderr", &mut execution_issues);
+    if stdout_capture.incomplete || stderr_capture.incomplete {
+        force_failed = true;
+    }
+    let stdout_log_truncated = stdout_capture.capture.persisted_truncated;
+    let stderr_log_truncated = stderr_capture.capture.persisted_truncated;
     let mut output_capture_issues = Vec::new();
-    if let Some(error) = stdout_capture.persist_error.as_deref() {
+    if let Some(error) = stdout_capture.capture.persist_error.as_deref() {
         output_capture_issues.push(format!("stdout raw log persistence failed: {error}"));
     }
-    if let Some(error) = stderr_capture.persist_error.as_deref() {
+    if let Some(error) = stderr_capture.capture.persist_error.as_deref() {
         output_capture_issues.push(format!("stderr raw log persistence failed: {error}"));
     }
     let (raw_stdout, stdout_truncated) = bounded_text(
-        stdout_capture.bytes,
-        stdout_capture.retained_truncated,
+        stdout_capture.capture.bytes,
+        stdout_capture.capture.retained_truncated,
         limits.stdout_record_bytes,
     );
     let (raw_stderr, stderr_truncated) = bounded_text(
-        stderr_capture.bytes,
-        stderr_capture.retained_truncated,
+        stderr_capture.capture.bytes,
+        stderr_capture.capture.retained_truncated,
         limits.stderr_record_bytes,
     );
 
-    // Capture the workspace delta even when diagnostic persistence degraded: the
-    // executor already ran, so its changeset receipt must not disappear merely
-    // because a log file hit ENOSPC or another local I/O failure.
-    let changeset = capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref())?;
+    // Once the executor has launched, provenance degradation must not erase the
+    // execution receipt. Missing ChangeSet evidence stays explicit and empty.
+    let changeset = match capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref()) {
+        Ok(changeset) => changeset,
+        Err(error) => {
+            push_execution_issue(
+                &mut execution_issues,
+                format!("changeset capture failed: {error}"),
+            );
+            force_failed = true;
+            Changeset::empty()
+        }
+    };
 
     let (stdout, mut secrets_redacted) = crate::security::redact_secrets(&raw_stdout);
     let (stderr, stderr_secrets) = crate::security::redact_secrets(&raw_stderr);
     secrets_redacted.extend(stderr_secrets);
     secrets_redacted.sort();
     secrets_redacted.dedup();
+
+    if force_failed && status_label == "ok" {
+        status_label = "failed";
+    }
 
     Ok(CodingAgentExecution {
         executor_id: command.executor_id.clone(),
@@ -212,6 +252,7 @@ pub(super) fn run_with_limits(
         stdout_log_truncated,
         stderr_log_truncated,
         output_capture_issues,
+        execution_issues,
         secrets_redacted,
         timed_out,
         changed_files: changeset.changed_files,
@@ -255,6 +296,45 @@ fn join_capture(
         .join()
         .map_err(|_| RepoDeskError::Api(format!("executor {stream} capture thread panicked")))?
         .map_err(Into::into)
+}
+
+struct ReceiptCapture {
+    capture: BoundedTee,
+    incomplete: bool,
+}
+
+fn join_capture_receipt(
+    handle: JoinHandle<io::Result<BoundedTee>>,
+    stream: &str,
+    execution_issues: &mut Vec<String>,
+) -> ReceiptCapture {
+    match join_capture(handle, stream) {
+        Ok(capture) => ReceiptCapture {
+            capture,
+            incomplete: false,
+        },
+        Err(error) => {
+            push_execution_issue(
+                execution_issues,
+                format!("{stream} capture failed: {error}"),
+            );
+            ReceiptCapture {
+                capture: BoundedTee {
+                    bytes: Vec::new(),
+                    retained_truncated: true,
+                    persisted_truncated: true,
+                    persist_error: None,
+                },
+                incomplete: true,
+            }
+        }
+    }
+}
+
+fn push_execution_issue(issues: &mut Vec<String>, issue: String) {
+    issues.push(issue);
+    issues.sort();
+    issues.dedup();
 }
 
 #[cfg(unix)]
