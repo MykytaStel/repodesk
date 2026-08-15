@@ -221,10 +221,7 @@ pub(super) fn run_with_limits(
     })
 }
 
-fn spawn_stdin_delivery(
-    mut stdin: ChildStdin,
-    prompt: Vec<u8>,
-) -> JoinHandle<io::Result<()>> {
+fn spawn_stdin_delivery(mut stdin: ChildStdin, prompt: Vec<u8>) -> JoinHandle<io::Result<()>> {
     thread::spawn(move || stdin.write_all(&prompt))
 }
 
