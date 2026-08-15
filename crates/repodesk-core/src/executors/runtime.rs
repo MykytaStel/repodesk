@@ -169,7 +169,9 @@ pub(super) fn run_with_limits(
                 Err(terminate_error) => {
                     push_execution_issue(
                         &mut execution_issues,
-                        format!("executor termination after wait failure failed: {terminate_error}"),
+                        format!(
+                            "executor termination after wait failure failed: {terminate_error}"
+                        ),
                     );
                     None
                 }
