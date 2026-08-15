@@ -119,6 +119,7 @@ fn run_command_captures_stdout_and_stderr() {
     assert!(!result.stderr_truncated);
     assert!(!result.stdout_log_truncated);
     assert!(!result.stderr_log_truncated);
+    assert!(result.output_capture_issues.is_empty());
     assert!(std::path::Path::new(&result.stdout_path).exists());
     assert!(std::path::Path::new(&result.stderr_path).exists());
 }
@@ -147,6 +148,7 @@ fn verbose_run_is_drained_with_hard_memory_and_disk_caps() {
     assert!(result.stderr_truncated);
     assert!(result.stdout_log_truncated);
     assert!(result.stderr_log_truncated);
+    assert!(result.output_capture_issues.is_empty());
     assert!(result.stdout.len() <= limits.stdout_record_bytes);
     assert!(result.stderr.len() <= limits.stderr_record_bytes);
     assert_eq!(
