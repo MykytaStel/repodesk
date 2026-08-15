@@ -106,18 +106,13 @@ test("Projects Knowledge owns project-scoped AI import and legacy guidelines", (
 
   assert.doesNotMatch(
     settingsSource,
-    /ai_source_detect|ai_source_import|memory_list|memory_add|Project AI Import|Project Memory & Guidelines/,
+    /ProjectAiImportPanel|memory_list|memory_add|Project Memory & Guidelines/,
     "global Settings must not own repository-specific knowledge inputs",
   );
   assert.match(
     knowledgeSource,
-    /ai_source_detect/,
-    "Projects Knowledge must own project AI source detection",
-  );
-  assert.match(
-    knowledgeSource,
-    /ai_source_import/,
-    "Projects Knowledge must own project AI source import",
+    /ProjectAiImportPanel|projectAiScan/,
+    "Projects Knowledge must own project AI import",
   );
   assert.match(
     knowledgeSource,
