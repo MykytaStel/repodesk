@@ -145,10 +145,14 @@ pub struct CodingAgentExecution {
     pub stdout_log_truncated: bool,
     #[serde(default)]
     pub stderr_log_truncated: bool,
-    /// Evidence degradation discovered after the executor was already launched.
-    /// These issues do not erase the run or its changeset receipt.
+    /// Non-fatal diagnostic persistence degradation after process launch.
     #[serde(default)]
     pub output_capture_issues: Vec<String>,
+    /// Fatal post-launch infrastructure/provenance issues. The execution receipt
+    /// is still returned, but its status is forced to `failed` so downstream
+    /// automation cannot treat degraded evidence as a successful step.
+    #[serde(default)]
+    pub execution_issues: Vec<String>,
     /// Distinct secret kinds redacted out of the in-record output, if any.
     #[serde(default)]
     pub secrets_redacted: Vec<String>,
