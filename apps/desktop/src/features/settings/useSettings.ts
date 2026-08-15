@@ -1,7 +1,5 @@
-import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { callCommand, optionalCommand, queryKeys } from "../../shared/api/queries";
-import { useWorkspace } from "../../shared/hooks/useWorkspace";
 
 interface ProviderSettings {
   ollama_enabled: boolean;
@@ -34,8 +32,6 @@ interface ProviderSettings {
 
 export function useSettings() {
   const queryClient = useQueryClient();
-  const { projectName } = useWorkspace();
-  const [memoryAppendInput, setMemoryAppendInput] = useState("");
 
   const settingsQuery = useQuery({
     queryKey: queryKeys.routing.settings,
@@ -47,12 +43,6 @@ export function useSettings() {
     queryFn: () => optionalCommand<any>("get_api_env_diagnostic"),
   });
 
-  const memoryQuery = useQuery({
-    queryKey: queryKeys.memory.list(projectName),
-    queryFn: () => optionalCommand<any[]>("memory_list", { project: projectName }),
-    enabled: projectName !== "No active project" && projectName !== "-",
-  });
-
   const saveSettingsMutation = useMutation({
     mutationFn: (settings: ProviderSettings) =>
       callCommand<ProviderSettings>("save_provider_settings", { input: settings }),
@@ -61,38 +51,11 @@ export function useSettings() {
     },
   });
 
-  const appendMemoryMutation = useMutation({
-    mutationFn: async (content: string) => {
-      await callCommand("memory_add", {
-        project: projectName,
-        content,
-        category: "general",
-        tags: [],
-      });
-    },
-    onSuccess: () => {
-      setMemoryAppendInput("");
-      queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
-    },
-  });
-
   return {
     providerSettings: settingsQuery.data,
     apiEnvDiagnostic: apiEnvQuery.data,
-    projectMemory: memoryQuery.data || [],
-    isLoading: settingsQuery.isLoading || apiEnvQuery.isLoading || memoryQuery.isLoading,
-
-    memoryAppendInput,
-    setMemoryAppendInput,
-
+    isLoading: settingsQuery.isLoading || apiEnvQuery.isLoading,
     saveSettings: async (settings: ProviderSettings) => saveSettingsMutation.mutateAsync(settings),
     isSavingSettings: saveSettingsMutation.isPending,
-
-    handleAppendMemory: async () => {
-      if (memoryAppendInput.trim()) {
-        await appendMemoryMutation.mutateAsync(memoryAppendInput.trim());
-      }
-    },
-    isAppendingMemory: appendMemoryMutation.isPending,
   };
 }
