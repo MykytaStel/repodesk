@@ -603,102 +603,23 @@ pub async fn run_plan_with_id(
                     combined_stderr,
                 }) => match *execution {
                     Ok(execution) => {
-                        let output_tokens = estimate_text(&execution.stdout).estimated_tokens;
-                        let cost = estimate_agent_cost(
-                            &cost_config,
-                            step.resolved_executor_id(),
-                            meta.input_tokens,
-                            output_tokens,
-                        )
-                        .estimated_cost_units;
-                        state.running_cost += cost - meta.projected_cost;
-                        let _ = log_token_event(LogTokenInput {
-                            agent: step.resolved_executor_id().to_string(),
-                            model: Some(execution.executor_id.clone()),
-                            input_tokens: meta.input_tokens,
-                            output_tokens,
-                            category: "orchestrate".to_string(),
-                            notes: Some(step.id.clone()),
-                        });
-
-                        let final_status = if execution.status == "ok" && !verify_failed {
-                            SubAgentStatus::Ok
-                        } else {
-                            SubAgentStatus::Failed
-                        };
-
-                        let mut notes = vec![
-                            format!("command: {}", execution.command_preview),
-                            format!("stdout: {}", execution.stdout_path),
-                            format!("stderr: {}", execution.stderr_path),
-                            format!("duration_ms: {}", execution.duration_ms),
-                        ];
-                        notes.extend(verify_cmd_notes);
-
-                        let captured = if final_status == SubAgentStatus::Ok {
-                            crate::memory::capture_from_text(
-                                &plan.project,
-                                &plan.task_id,
-                                step.resolved_executor_id(),
-                                &combined_stdout,
-                            )
-                            .map(|proposals| proposals.len())
-                            .unwrap_or(0)
-                        } else {
-                            0
-                        };
-                        if let Some(worktree) = &workspace {
-                            notes.push(format!(
-                                    "isolated workspace: {} (id {}, base {}, metadata {}); review accept can apply it back",
-                                    worktree.path,
-                                    worktree.workspace_id,
-                                    worktree.base_commit,
-                                    worktree.metadata_path.as_deref().unwrap_or("(not recorded)")
-                                ));
-                        }
-                        let changed_files: Vec<String> = execution
-                            .changed_files
-                            .iter()
-                            .map(|change| change.path.clone())
-                            .collect();
-                        if changed_files.is_empty() {
-                            notes.push("changed files: none (no writes detected)".to_string());
-                        } else {
-                            notes.push(format!(
-                                "changed files ({}): {}",
-                                changed_files.len(),
-                                changed_files.join(", ")
-                            ));
-                            if let Some(diff_path) = &execution.diff_path {
-                                notes.push(format!(
-                                    "diff: {diff_path}{}",
-                                    if execution.diff_truncated {
-                                        " (truncated)"
-                                    } else {
-                                        ""
-                                    }
-                                ));
-                            }
-                        }
-                        if execution.timed_out {
-                            notes.push("coding-agent process timed out and was killed".to_string());
-                        }
-                        if !combined_stderr.trim().is_empty() {
-                            notes.push(truncate_note("stderr", &combined_stderr));
-                        }
-                        state.push(SubAgentResult {
-                            status: final_status,
-                            input_tokens: meta.input_tokens,
-                            output_tokens,
-                            output: combined_stdout,
-                            cost_units: cost,
-                            captured_proposals: captured,
-                            changed_files,
-                            diff_path: execution.diff_path.clone(),
-                            workspace: workspace.clone(),
-                            notes,
-                            ..base_result(step)
-                        });
+                        let finalized = super::coding_agent_result::finalize(
+                            super::coding_agent_result::CodingAgentFinalization {
+                                step,
+                                project: &plan.project,
+                                task_id: &plan.task_id,
+                                execution,
+                                workspace,
+                                verify_cmd_notes,
+                                verify_failed,
+                                combined_stdout,
+                                combined_stderr,
+                                input_tokens: meta.input_tokens,
+                                cost_config: &cost_config,
+                            },
+                        );
+                        state.running_cost += finalized.cost_units - meta.projected_cost;
+                        state.push(finalized.result);
                     }
                     Err(error) => {
                         state.running_cost -= meta.projected_cost;
@@ -860,6 +781,7 @@ fn base_result(step: &SubAgentTask) -> SubAgentResult {
         captured_proposals: 0,
         changed_files: Vec::new(),
         diff_path: None,
+        evidence_issues: Vec::new(),
         workspace: None,
         notes: Vec::new(),
     }
