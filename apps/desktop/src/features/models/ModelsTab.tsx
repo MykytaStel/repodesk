@@ -61,7 +61,7 @@ function providerGuidance(provider: ProviderHealth): Guidance {
 
 export function ModelsTab({ setActiveTab }: ModelsTabProps) {
   const { models, workingProviders, modelCount, refreshModels, isRefreshing } = useModels();
-  const { providerSettings, saveSettings } = useSettings();
+  const { providerPreferences, savePreferences } = useSettings();
   const toast = useToast();
   const [recommendations, setRecommendations] = useState<string[]>([]);
 
@@ -84,9 +84,9 @@ export function ModelsTab({ setActiveTab }: ModelsTabProps) {
   };
 
   const handleEnable = async (providerId: string) => {
-    if (!providerSettings) return;
+    if (!providerPreferences) return;
     try {
-      await saveSettings({ ...providerSettings, [`${providerId}_enabled`]: true } as NonNullable<typeof providerSettings>);
+      await savePreferences({ ...providerPreferences, [`${providerId}_enabled`]: true } as NonNullable<typeof providerPreferences>);
       toast.success(`Turned on ${providerId}`);
       setTimeout(() => void refreshModels(), 500);
     } catch (error: any) {
@@ -101,10 +101,10 @@ export function ModelsTab({ setActiveTab }: ModelsTabProps) {
   };
 
   const setAsActive = async (providerId: string, modelId: string) => {
-    if (!providerSettings) return;
+    if (!providerPreferences) return;
     try {
       if (providerId === "ollama") {
-        await saveSettings({ ...providerSettings, ollama_model: modelId });
+        await savePreferences({ ...providerPreferences, ollama_model: modelId });
         toast.success(`Set ${modelId} as active for Ollama`);
       } else {
         toast.info(`Setting active model for ${providerId} is not supported yet`);
@@ -196,7 +196,7 @@ export function ModelsTab({ setActiveTab }: ModelsTabProps) {
               {(provider.models?.length ?? 0) > 0 && (
                 <div className="model-list">
                   {(provider.models ?? []).slice(0, 80).map((model: any) => {
-                    const isActive = provider.id === "ollama" && providerSettings?.ollama_model === model.id;
+                    const isActive = provider.id === "ollama" && providerPreferences?.ollama_model === model.id;
                     return (
                       <div className="model-row" key={`${provider.id}-${model.id}`} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <div>

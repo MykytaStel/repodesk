@@ -20,7 +20,7 @@ export function DebugTab() {
   const { git } = useGit();
   const { tokens } = useTokens();
   const { models } = useModels();
-  const { providerSettings } = useSettings();
+  const { providerPreferences } = useSettings();
 
   const [backupMsg, setBackupMsg] = useState("");
   const [restorePath, setRestorePath] = useState("");
@@ -156,7 +156,7 @@ export function DebugTab() {
       </section>
 
       <section className="panel wide-panel"><p className="eyebrow">Action history</p><pre className="code-panel tall">{(history && history.length) ? stringifyPreview(history, 8000) : "No action history yet."}</pre></section>
-      <section className="panel wide-panel"><p className="eyebrow">Raw state</p><pre className="code-panel tall">{stringifyPreview({ snapshot, workflow, git, tokens, models, providerSettings, dbState }, 14000)}</pre></section>
+      <section className="panel wide-panel"><p className="eyebrow">Raw state</p><pre className="code-panel tall">{stringifyPreview({ snapshot, workflow, git, tokens, models, providerPreferences, dbState }, 14000)}</pre></section>
     </div>
   );
 }

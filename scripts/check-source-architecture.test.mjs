@@ -125,3 +125,54 @@ test("Projects Knowledge owns project-scoped AI import and legacy guidelines", (
     "Projects Knowledge must own legacy project guideline writes",
   );
 });
+
+test("Credentials have one user-triggered mutation owner", () => {
+  const settingsTab = readFileSync(
+    new URL("../apps/desktop/src/features/settings/SettingsTab.tsx", import.meta.url),
+    "utf8",
+  );
+  const settingsHook = readFileSync(
+    new URL("../apps/desktop/src/features/settings/useSettings.ts", import.meta.url),
+    "utf8",
+  );
+  const routingApi = readFileSync(
+    new URL("../apps/desktop/src/shared/api/routing.ts", import.meta.url),
+    "utf8",
+  );
+  const credentialsApi = readFileSync(
+    new URL("../apps/desktop/src/shared/api/credentials.ts", import.meta.url),
+    "utf8",
+  );
+  const tauriLib = readFileSync(
+    new URL("../apps/desktop/src-tauri/src/lib.rs", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(
+    settingsTab,
+    /Save API keys/,
+    "Settings must expose only the dedicated credential editor, not a second generic API-key save action",
+  );
+  assert.doesNotMatch(
+    settingsHook,
+    /saveApiKeys|keyDraft|anthropic_api_key|openai_api_key|gemini_api_key/,
+    "generic Settings state must not own provider secret drafts or map secrets into provider preferences",
+  );
+  assert.doesNotMatch(
+    routingApi,
+    /save_provider_settings|\b(?:anthropic|openai|gemini)_api_key\??\s*:/,
+    "routing/provider preferences must be a non-secret IPC contract",
+  );
+  assert.match(credentialsApi, /credential_set/);
+  assert.match(credentialsApi, /credential_delete/);
+  assert.doesNotMatch(
+    tauriLib,
+    /commands::save_provider_settings/,
+    "the current Tauri invoke surface must not expose the legacy secret-bearing provider settings writer",
+  );
+  assert.match(
+    tauriLib,
+    /commands::save_provider_preferences/,
+    "the Tauri invoke surface must expose a non-secret provider preference writer",
+  );
+});

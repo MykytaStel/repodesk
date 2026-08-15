@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ProviderSettings = {
+export type ProviderPreferences = {
   ollama_enabled: boolean;
   ollama_url: string;
   ollama_model: string;
@@ -18,9 +18,6 @@ export type ProviderSettings = {
   gemini_api_enabled: boolean;
   gemini_api_key_env_var: string;
   anthropic_api_enabled: boolean;
-  anthropic_api_key: string;
-  openai_api_key: string;
-  gemini_api_key: string;
   allow_paid_agents: boolean;
   codex_quota_status: string;
   preferred_patch_provider: string;
@@ -113,14 +110,14 @@ export async function routingSnapshot(economyMode?: string): Promise<RoutingSnap
   return invoke("routing_snapshot", { economyMode });
 }
 
-export async function providerSettings(): Promise<ProviderSettings> {
-  return invoke("provider_settings");
+export async function providerPreferences(): Promise<ProviderPreferences> {
+  return invoke("provider_preferences");
 }
 
-export async function saveProviderSettings(input: ProviderSettings): Promise<ProviderSettings> {
-  return invoke("save_provider_settings", { input });
+export async function saveProviderPreferences(input: ProviderPreferences): Promise<ProviderPreferences> {
+  return invoke("save_provider_preferences", { input });
 }
 
-export async function saveCodexQuotaStatus(status: string): Promise<ProviderSettings> {
+export async function saveCodexQuotaStatus(status: string): Promise<ProviderPreferences> {
   return invoke("save_codex_quota_status", { status });
 }
