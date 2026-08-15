@@ -4,7 +4,7 @@ import { installMockIpc } from "./mock-ipc";
 
 const settingsFixtures = {
   ...onboardedFixtures,
-  provider_settings: {
+  provider_preferences: {
     ollama_enabled: true,
     ollama_url: "http://127.0.0.1:11434",
     ollama_model: "qwen2.5-coder:7b",
@@ -22,16 +22,18 @@ const settingsFixtures = {
     gemini_api_enabled: false,
     gemini_api_key_env_var: "GEMINI_API_KEY",
     anthropic_api_enabled: false,
-    anthropic_api_key: "",
-    openai_api_key: "",
-    gemini_api_key: "",
     allow_paid_agents: false,
     codex_quota_status: "unknown",
-    preferred_patch_provider: "codex",
+    preferred_patch_provider: "codex_cli",
     preferred_compression_provider: "ollama",
-    preferred_review_provider: "codex",
+    preferred_review_provider: "codex_cli",
     notes: "",
   },
+  credential_status: [
+    { key: "openai_api_key", configured: false, hint: "", source: "none" },
+    { key: "anthropic_api_key", configured: false, hint: "", source: "none" },
+    { key: "gemini_api_key", configured: false, hint: "", source: "none" },
+  ],
 };
 
 async function openSettings(page: Page) {

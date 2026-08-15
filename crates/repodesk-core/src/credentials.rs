@@ -33,6 +33,26 @@ pub struct CredentialMetadata {
     pub hint: String,
 }
 
+/// Source of the credential that RepoDesk would currently use for a provider.
+/// This is intentionally non-secret and stable across the Rust/TypeScript IPC seam.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CredentialSource {
+    Keychain,
+    Environment,
+    None,
+}
+
+/// Source-aware, non-secret metadata for the effective provider credential.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EffectiveCredentialMetadata {
+    pub key: String,
+    pub configured: bool,
+    /// A masked hint like `••••1234`, never the full secret.
+    pub hint: String,
+    pub source: CredentialSource,
+}
+
 /// A store of provider secrets. Implementations must never log or echo a secret.
 pub trait CredentialResolver: Send + Sync {
     fn get(&self, key: &str) -> RepoDeskResult<Option<String>>;
@@ -48,6 +68,45 @@ pub trait CredentialResolver: Send + Sync {
             hint: value.as_deref().map(mask_hint).unwrap_or_default(),
         })
     }
+}
+
+/// Resolve only the non-secret metadata needed by status/UI callers.
+///
+/// Keychain absence falls through to the read-only environment resolver. A real
+/// keychain error is propagated instead of being rendered as "not configured";
+/// status surfaces should not hide a broken secure-store boundary.
+pub fn effective_credential_metadata(
+    keychain: &dyn CredentialResolver,
+    environment: &dyn CredentialResolver,
+    key: &str,
+) -> RepoDeskResult<EffectiveCredentialMetadata> {
+    if let Some(value) = keychain.get(key)?.filter(|value| !value.trim().is_empty()) {
+        return Ok(EffectiveCredentialMetadata {
+            key: key.to_string(),
+            configured: true,
+            hint: mask_hint(&value),
+            source: CredentialSource::Keychain,
+        });
+    }
+
+    if let Some(value) = environment
+        .get(key)?
+        .filter(|value| !value.trim().is_empty())
+    {
+        return Ok(EffectiveCredentialMetadata {
+            key: key.to_string(),
+            configured: true,
+            hint: mask_hint(&value),
+            source: CredentialSource::Environment,
+        });
+    }
+
+    Ok(EffectiveCredentialMetadata {
+        key: key.to_string(),
+        configured: false,
+        hint: String::new(),
+        source: CredentialSource::None,
+    })
 }
 
 /// Mask a secret to a short, non-reversible hint: bullets plus the last 4 chars.

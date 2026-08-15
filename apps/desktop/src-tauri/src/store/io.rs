@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use repodesk_core::credentials;
 
-use super::types::{DbStatus, ProviderSettings};
+use super::types::{DbStatus, ProviderPreferences, ProviderSettings};
 
 /// Legacy plaintext settings key ↔ canonical keychain credential key, for the
 /// secrets that now live in the OS keychain instead of the SQLite settings table.
@@ -23,20 +23,6 @@ fn resolve_provider_key(connection: &Connection, setting_key: &str, cred_key: &s
         return secret;
     }
     get_string(connection, setting_key, "").unwrap_or_default()
-}
-
-/// Persist a provider secret to the keychain and clear the legacy plaintext
-/// column. Errors when the keychain write fails, so a secret is never silently
-/// written to plaintext instead.
-fn persist_secret(
-    connection: &Connection,
-    setting_key: &str,
-    cred_key: &str,
-    value: &str,
-) -> Result<(), String> {
-    credentials::store_secret(cred_key, value).map_err(|error| error.to_string())?;
-    // Also covers the empty/clear case (store_secret deletes a blank value).
-    set_setting(connection, setting_key, "")
 }
 
 /// Best-effort, idempotent migration of legacy plaintext API keys into the OS
@@ -311,6 +297,10 @@ pub fn read_provider_settings() -> Result<ProviderSettings, String> {
     })
 }
 
+pub fn read_provider_preferences() -> Result<ProviderPreferences, String> {
+    read_provider_settings().map(|settings| ProviderPreferences::from(&settings))
+}
+
 fn canonical_provider_setting(value: &str) -> String {
     match value.trim() {
         "codex" => "codex_cli".to_string(),
@@ -318,139 +308,145 @@ fn canonical_provider_setting(value: &str) -> String {
     }
 }
 
-pub fn save_provider_settings(mut settings: ProviderSettings) -> Result<ProviderSettings, String> {
-    settings.preferred_patch_provider =
-        canonical_provider_setting(&settings.preferred_patch_provider);
-    settings.preferred_compression_provider =
-        canonical_provider_setting(&settings.preferred_compression_provider);
-    settings.preferred_review_provider =
-        canonical_provider_setting(&settings.preferred_review_provider);
-    validate_provider_settings(&settings)?;
-    let connection = open_db()?;
-
-    set_setting(
-        &connection,
-        "provider.ollama_enabled",
-        &settings.ollama_enabled.to_string(),
-    )?;
-    set_setting(&connection, "provider.ollama_url", &settings.ollama_url)?;
-    set_setting(&connection, "provider.ollama_model", &settings.ollama_model)?;
-    set_setting(
-        &connection,
-        "provider.lm_studio_enabled",
-        &settings.lm_studio_enabled.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.lm_studio_url",
-        &settings.lm_studio_url,
-    )?;
-    set_setting(
-        &connection,
-        "provider.llamafile_enabled",
-        &settings.llamafile_enabled.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.llamafile_url",
-        &settings.llamafile_url,
-    )?;
-    set_setting(
-        &connection,
-        "provider.localai_enabled",
-        &settings.localai_enabled.to_string(),
-    )?;
-    set_setting(&connection, "provider.localai_url", &settings.localai_url)?;
-    set_setting(
-        &connection,
-        "provider.chatgpt_enabled",
-        &settings.chatgpt_enabled.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.codex_enabled",
-        &settings.codex_enabled.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.gemini_enabled",
-        &settings.gemini_enabled.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.openai_api_enabled",
-        &settings.openai_api_enabled.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.openai_api_key_env_var",
-        &settings.openai_api_key_env_var,
-    )?;
-    set_setting(
-        &connection,
-        "provider.gemini_api_enabled",
-        &settings.gemini_api_enabled.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.gemini_api_key_env_var",
-        &settings.gemini_api_key_env_var,
-    )?;
-    set_setting(
-        &connection,
-        "provider.anthropic_api_enabled",
-        &settings.anthropic_api_enabled.to_string(),
-    )?;
-    // Secrets go to the OS keychain, never the plaintext settings table.
-    persist_secret(
-        &connection,
-        "provider.anthropic_api_key",
-        credentials::ANTHROPIC_API_KEY,
-        &settings.anthropic_api_key,
-    )?;
-    persist_secret(
-        &connection,
-        "provider.openai_api_key",
-        credentials::OPENAI_API_KEY,
-        &settings.openai_api_key,
-    )?;
-    persist_secret(
-        &connection,
-        "provider.gemini_api_key",
-        credentials::GEMINI_API_KEY,
-        &settings.gemini_api_key,
-    )?;
-    set_setting(
-        &connection,
-        "provider.allow_paid_agents",
-        &settings.allow_paid_agents.to_string(),
-    )?;
-    set_setting(
-        &connection,
-        "provider.codex_quota_status",
-        &settings.codex_quota_status,
-    )?;
-    set_setting(
-        &connection,
-        "provider.preferred_patch_provider",
-        &settings.preferred_patch_provider,
-    )?;
-    set_setting(
-        &connection,
-        "provider.preferred_compression_provider",
-        &settings.preferred_compression_provider,
-    )?;
-    set_setting(
-        &connection,
-        "provider.preferred_review_provider",
-        &settings.preferred_review_provider,
-    )?;
-    set_setting(&connection, "provider.notes", &settings.notes)?;
-
-    Ok(settings)
+fn canonicalize_preferences(preferences: &mut ProviderPreferences) {
+    preferences.preferred_patch_provider =
+        canonical_provider_setting(&preferences.preferred_patch_provider);
+    preferences.preferred_compression_provider =
+        canonical_provider_setting(&preferences.preferred_compression_provider);
+    preferences.preferred_review_provider =
+        canonical_provider_setting(&preferences.preferred_review_provider);
 }
 
+fn persist_provider_preferences(
+    connection: &Connection,
+    preferences: &ProviderPreferences,
+) -> Result<(), String> {
+    set_setting(
+        connection,
+        "provider.ollama_enabled",
+        &preferences.ollama_enabled.to_string(),
+    )?;
+    set_setting(connection, "provider.ollama_url", &preferences.ollama_url)?;
+    set_setting(
+        connection,
+        "provider.ollama_model",
+        &preferences.ollama_model,
+    )?;
+    set_setting(
+        connection,
+        "provider.lm_studio_enabled",
+        &preferences.lm_studio_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.lm_studio_url",
+        &preferences.lm_studio_url,
+    )?;
+    set_setting(
+        connection,
+        "provider.llamafile_enabled",
+        &preferences.llamafile_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.llamafile_url",
+        &preferences.llamafile_url,
+    )?;
+    set_setting(
+        connection,
+        "provider.localai_enabled",
+        &preferences.localai_enabled.to_string(),
+    )?;
+    set_setting(connection, "provider.localai_url", &preferences.localai_url)?;
+    set_setting(
+        connection,
+        "provider.chatgpt_enabled",
+        &preferences.chatgpt_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.codex_enabled",
+        &preferences.codex_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.gemini_enabled",
+        &preferences.gemini_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.openai_api_enabled",
+        &preferences.openai_api_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.openai_api_key_env_var",
+        &preferences.openai_api_key_env_var,
+    )?;
+    set_setting(
+        connection,
+        "provider.gemini_api_enabled",
+        &preferences.gemini_api_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.gemini_api_key_env_var",
+        &preferences.gemini_api_key_env_var,
+    )?;
+    set_setting(
+        connection,
+        "provider.anthropic_api_enabled",
+        &preferences.anthropic_api_enabled.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.allow_paid_agents",
+        &preferences.allow_paid_agents.to_string(),
+    )?;
+    set_setting(
+        connection,
+        "provider.codex_quota_status",
+        &preferences.codex_quota_status,
+    )?;
+    set_setting(
+        connection,
+        "provider.preferred_patch_provider",
+        &preferences.preferred_patch_provider,
+    )?;
+    set_setting(
+        connection,
+        "provider.preferred_compression_provider",
+        &preferences.preferred_compression_provider,
+    )?;
+    set_setting(
+        connection,
+        "provider.preferred_review_provider",
+        &preferences.preferred_review_provider,
+    )?;
+    set_setting(connection, "provider.notes", &preferences.notes)?;
+    Ok(())
+}
+
+pub fn save_provider_preferences(
+    mut preferences: ProviderPreferences,
+) -> Result<ProviderPreferences, String> {
+    canonicalize_preferences(&mut preferences);
+    validate_provider_preferences(&preferences)?;
+    let connection = open_db()?;
+    persist_provider_preferences(&connection, &preferences)?;
+    Ok(preferences)
+}
+
+#[cfg(test)]
 pub fn validate_provider_settings(settings: &ProviderSettings) -> Result<(), String> {
+    validate_provider_preferences(&ProviderPreferences::from(settings))?;
+    validate_api_key("Anthropic API key", &settings.anthropic_api_key)?;
+    validate_api_key("OpenAI API key", &settings.openai_api_key)?;
+    validate_api_key("Gemini API key", &settings.gemini_api_key)?;
+    Ok(())
+}
+
+pub fn validate_provider_preferences(settings: &ProviderPreferences) -> Result<(), String> {
     validate_local_url("Ollama URL", &settings.ollama_url)?;
     validate_local_url("LM Studio URL", &settings.lm_studio_url)?;
     validate_local_url("Llamafile URL", &settings.llamafile_url)?;
@@ -458,9 +454,6 @@ pub fn validate_provider_settings(settings: &ProviderSettings) -> Result<(), Str
     validate_safe_text("Ollama model", &settings.ollama_model, 80)?;
     validate_env_var("OpenAI API key env var", &settings.openai_api_key_env_var)?;
     validate_env_var("Gemini API key env var", &settings.gemini_api_key_env_var)?;
-    validate_api_key("Anthropic API key", &settings.anthropic_api_key)?;
-    validate_api_key("OpenAI API key", &settings.openai_api_key)?;
-    validate_api_key("Gemini API key", &settings.gemini_api_key)?;
     validate_codex_quota_status(&settings.codex_quota_status)?;
     validate_safe_text("Notes", &settings.notes, 1_000)?;
 
@@ -559,10 +552,10 @@ fn validate_env_var(label: &str, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// A pasted API key may legitimately look like a secret (that's the point), so
-/// it skips the secret-rejecting checks `validate_safe_text`/`validate_env_var`
-/// apply. It only guards length and control characters. Empty is allowed
-/// (key not configured, or "keep existing" handled before save).
+/// Test-only validation for the legacy/internal credential fields retained for
+/// plaintext-to-keychain migration compatibility. Current preference IPC cannot
+/// carry these fields.
+#[cfg(test)]
 fn validate_api_key(label: &str, value: &str) -> Result<(), String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -617,6 +610,7 @@ mod tests {
     #[test]
     fn accepts_local_first_defaults() {
         assert!(validate_provider_settings(&ProviderSettings::default()).is_ok());
+        assert!(validate_provider_preferences(&ProviderPreferences::default()).is_ok());
     }
 
     #[test]
@@ -643,5 +637,15 @@ mod tests {
         };
 
         assert!(validate_provider_settings(&settings).is_err());
+    }
+
+    #[test]
+    fn preference_validation_has_no_secret_input() {
+        let preferences = ProviderPreferences {
+            notes: "api_key=must-not-be-here".into(),
+            ..ProviderPreferences::default()
+        };
+
+        assert!(validate_provider_preferences(&preferences).is_err());
     }
 }

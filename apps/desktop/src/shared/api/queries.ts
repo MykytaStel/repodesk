@@ -116,8 +116,11 @@ export const queryKeys = {
   },
   routing: {
     snapshot: (economyMode: string) => ["routing_snapshot", economyMode] as const,
-    settings: ["provider_settings"] as const,
+    settings: ["provider_preferences"] as const,
     apiEnv: ["get_api_env_diagnostic"] as const,
+  },
+  credentials: {
+    status: ["credential_status"] as const,
   },
   models: {
     health: ["model_health_snapshot"] as const,

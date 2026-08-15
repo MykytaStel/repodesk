@@ -1,8 +1,13 @@
 use super::{
-    ApiEnvDiagnostic, CommandResult, action_catalog, build_product_workflow_state, now_ms,
-    workspace_root,
+    ApiEnvDiagnostic, CommandResult, ErrorPayload, action_catalog, build_product_workflow_state,
+    now_ms, workspace_root,
+};
+use repodesk_core::credentials::{
+    self, ANTHROPIC_API_KEY, GEMINI_API_KEY, KeyringResolver, OPENAI_API_KEY,
 };
 use serde_json::json;
+
+use super::credentials::ConfiguredEnvResolver;
 
 #[tauri::command]
 pub async fn desktop_snapshot() -> serde_json::Value {
@@ -162,18 +167,21 @@ pub async fn desktop_snapshot() -> serde_json::Value {
 }
 
 #[tauri::command]
-pub fn get_api_env_diagnostic() -> ApiEnvDiagnostic {
-    let env_set = |name: &str| {
-        std::env::var(name)
-            .map(|val| !val.trim().is_empty())
-            .unwrap_or(false)
-    };
-    // A key counts as configured if it's stored in-app OR present in the env.
-    let saved = crate::store::read_provider_settings().unwrap_or_default();
-    let stored = |key: &str| !key.trim().is_empty();
-    ApiEnvDiagnostic {
-        openai_api_key_set: stored(&saved.openai_api_key) || env_set("OPENAI_API_KEY"),
-        gemini_api_key_set: stored(&saved.gemini_api_key) || env_set("GEMINI_API_KEY"),
-        anthropic_api_key_set: stored(&saved.anthropic_api_key) || env_set("ANTHROPIC_API_KEY"),
-    }
+pub fn get_api_env_diagnostic() -> Result<ApiEnvDiagnostic, ErrorPayload> {
+    let preferences = crate::store::read_provider_preferences()?;
+    let keychain = KeyringResolver::new();
+    let environment = ConfiguredEnvResolver::new(&preferences);
+
+    let openai =
+        credentials::effective_credential_metadata(&keychain, &environment, OPENAI_API_KEY)?;
+    let gemini =
+        credentials::effective_credential_metadata(&keychain, &environment, GEMINI_API_KEY)?;
+    let anthropic =
+        credentials::effective_credential_metadata(&keychain, &environment, ANTHROPIC_API_KEY)?;
+
+    Ok(ApiEnvDiagnostic {
+        openai_api_key_set: openai.configured,
+        gemini_api_key_set: gemini.configured,
+        anthropic_api_key_set: anthropic.configured,
+    })
 }
