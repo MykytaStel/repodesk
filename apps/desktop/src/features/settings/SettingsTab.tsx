@@ -14,33 +14,23 @@ import { useSettings } from "./useSettings";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { queryKeys } from "../../shared/api/queries";
 import { invoke } from "@tauri-apps/api/core";
-import { startLocalServer, refreshModelHealth, type ModelHealthSnapshot, type ProviderHealth } from "../../shared/api/models";
+import { startLocalServer, type ModelHealthSnapshot, type ProviderHealth } from "../../shared/api/models";
 import { CustomProvidersPanel } from "./CustomProvidersPanel";
-import { ProjectAiImportPanel } from "./ProjectAiImportPanel";
 import { IdePreferencesPanel } from "./IdePreferencesPanel";
 
 export function SettingsTab() {
   const queryClient = useQueryClient();
   const toast = useToast();
-  const { dbState, projectName } = useWorkspace();
+  const { dbState } = useWorkspace();
   const {
     providerSettings,
     apiEnvDiagnostic,
-    projectMemory,
     isLoading: isBusy,
-    memoryAppendInput,
-    setMemoryAppendInput,
     saveSettings,
     isSavingSettings,
-    handleAppendMemory,
-    isAppendingMemory,
   } = useSettings();
 
   const [keyDraft, setKeyDraft] = useState({ anthropic: "", openai: "", gemini: "" });
-
-  const loadProjectMemory = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.memory.list(projectName) });
-  };
 
   const modelHealthQuery = useQuery({
     queryKey: queryKeys.models.health,
@@ -109,7 +99,7 @@ export function SettingsTab() {
     <div className="content-grid">
       <section className="hero-panel wide-panel">
         <p className="eyebrow">Settings</p>
-        <h1>API keys, providers, and workspace.</h1>
+        <h1>API keys, providers, and preferences.</h1>
         <p className="lead">Paste your own Anthropic, OpenAI, and Gemini API keys below — they're stored locally in <code>~/.repodesk</code>, never committed, never sent to repos or context packs. Local engines (Ollama, LM Studio) need no key.</p>
       </section>
 
@@ -218,49 +208,6 @@ export function SettingsTab() {
       </section>
 
       <CustomProvidersPanel />
-
-      <ProjectAiImportPanel />
-
-      <section className="panel wide-panel">
-        <div className="panel-title-row">
-          <div>
-            <p className="eyebrow">Project Memory & Guidelines</p>
-            <h2>Active workspace instructions</h2>
-          </div>
-          <button className="tiny-button" onClick={() => void loadProjectMemory()}>Reload memory</button>
-        </div>
-        <p className="muted" style={{ marginBottom: "12px" }}>
-          This memory is included in all context packs to guide external agents and avoid unwanted token usage on unnecessary directories or patterns.
-        </p>
-        <div className="code-panel compact" style={{ maxHeight: "250px", marginBottom: "14px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
-          {(!projectMemory || projectMemory.length === 0) ? (
-            <div className="muted">No guidelines or memory logs saved yet.</div>
-          ) : (
-            projectMemory.map((entry: any) => (
-              <div key={entry.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.1)", paddingBottom: "8px" }}>
-                <div style={{ fontSize: "0.8em", color: "var(--muted)", marginBottom: "4px" }}>
-                  {new Date(entry.timestamp).toLocaleString()} <span className="pill neutral" style={{ marginLeft: "8px" }}>{entry.category}</span>
-                </div>
-                <div style={{ whiteSpace: "pre-wrap" }}>{entry.content}</div>
-              </div>
-            ))
-          )}
-        </div>
-        <div className="form-stack">
-          <label>
-            Add memory log / rule (e.g. "Do not change public API flags", "Always keep code modifications inside src-tauri/")
-            <textarea
-              rows={3}
-              value={memoryAppendInput}
-              onChange={(event) => setMemoryAppendInput(event.target.value)}
-              placeholder="Guidelines, constraints, or architecture notes for agents to remember..."
-            />
-          </label>
-          <button className="primary-button" onClick={() => void handleAppendMemory()} disabled={isAppendingMemory || isBusy || !memoryAppendInput.trim()}>
-            Add guidelines to memory.md
-          </button>
-        </div>
-      </section>
     </div>
   );
 }
