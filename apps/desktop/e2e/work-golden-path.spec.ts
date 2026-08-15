@@ -87,7 +87,7 @@ test.describe("work tab golden path (onboarded)", () => {
     await page.getByRole("button", { name: "Command palette" }).click();
     await page.getByRole("textbox", { name: "Search commands" }).fill("Go to Settings");
     await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { name: "API keys, providers, and workspace." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "API keys, providers, and preferences." })).toBeVisible();
     await expect(page.getByText("This view crashed")).toHaveCount(0);
 
     await page.getByRole("button", { name: /^Changes —/ }).click();
