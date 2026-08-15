@@ -139,11 +139,16 @@ pub struct CodingAgentExecution {
     #[serde(default)]
     pub stderr_truncated: bool,
     /// Whether the persisted raw diagnostic prefixes reached their independent
-    /// disk budgets. The child pipes are still drained fully after these caps.
+    /// disk budgets or became incomplete because persistence failed. The child
+    /// pipes are still drained fully after a size cap or writer failure.
     #[serde(default)]
     pub stdout_log_truncated: bool,
     #[serde(default)]
     pub stderr_log_truncated: bool,
+    /// Evidence degradation discovered after the executor was already launched.
+    /// These issues do not erase the run or its changeset receipt.
+    #[serde(default)]
+    pub output_capture_issues: Vec<String>,
     /// Distinct secret kinds redacted out of the in-record output, if any.
     #[serde(default)]
     pub secrets_redacted: Vec<String>,
