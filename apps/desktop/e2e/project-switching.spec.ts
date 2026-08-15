@@ -41,9 +41,10 @@ test("Projects uses canonical hasProject semantics for an empty workspace", asyn
     project_list_configs: projects,
   });
 
-  await expect(page.getByText("No active project", { exact: true })).toBeVisible();
-  await expect(page.getByText("Active · No active project", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Active", { exact: true })).toHaveCount(0);
+  const activeProjectPill = page.locator(".changes-summary .pill");
+  await expect(activeProjectPill).toHaveText("No active project");
+  await expect(activeProjectPill).not.toContainText("Active ·");
+  await expect(page.locator(".project-registry-card.active")).toHaveCount(0);
 });
 
 test("project activation fails closed when project_use returns ok false", async ({ page }) => {
