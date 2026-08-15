@@ -23,6 +23,14 @@ describe("RepoDesk desktop — first-run smoke", () => {
   });
 
   it("funnels a throwaway workspace into Work Scope through one project action", async () => {
+    const welcomeDialog = $(".app-dialog[role='dialog']");
+    if (await welcomeDialog.isExisting()) {
+      await expect(welcomeDialog).toBeDisplayed();
+      await expect(welcomeDialog.$("h2")).toHaveText("Your local-first engineering workspace");
+      await welcomeDialog.$(".primary-button").click();
+      await welcomeDialog.waitForExist({ reverse: true, timeout: 5_000 });
+    }
+
     const scopeHeading = $("//h2[normalize-space()='Scope']");
     await scopeHeading.waitForExist({ timeout: 30_000 });
     await expect(scopeHeading).toBeDisplayed();
