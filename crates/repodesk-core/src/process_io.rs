@@ -17,6 +17,7 @@ pub(crate) struct BoundedTee {
     pub(crate) bytes: Vec<u8>,
     pub(crate) retained_truncated: bool,
     pub(crate) persisted_truncated: bool,
+    pub(crate) persist_error: Option<String>,
 }
 
 pub(crate) fn drain_bounded_bytes(mut reader: impl Read, max: usize) -> io::Result<BoundedBytes> {
@@ -51,8 +52,8 @@ pub(crate) fn drain_bounded_bytes(mut reader: impl Read, max: usize) -> io::Resu
 /// diagnostic prefix is persisted. Excess bytes are deliberately discarded only
 /// after being read, which keeps the child pipe flowing without allowing either
 /// RAM or per-stream disk usage to grow with untrusted output volume. A writer
-/// failure is deferred until EOF so a full/broken diagnostic disk cannot stop
-/// pipe drainage and deadlock the child.
+/// failure is recorded and deferred until EOF so a full/broken diagnostic disk
+/// cannot stop pipe drainage and deadlock the child.
 pub(crate) fn drain_bounded_to_writer(
     mut reader: impl Read,
     mut writer: impl Write,
@@ -95,14 +96,18 @@ pub(crate) fn drain_bounded_to_writer(
         }
     }
 
-    if let Some(error) = write_error {
-        return Err(error);
+    if write_error.is_none()
+        && let Err(error) = writer.flush()
+    {
+        write_error = Some(error);
+        persisted_truncated = true;
     }
-    writer.flush()?;
+
     Ok(BoundedTee {
         bytes: retained,
         retained_truncated,
         persisted_truncated,
+        persist_error: write_error.map(|error| error.to_string()),
     })
 }
 
@@ -142,6 +147,7 @@ mod tests {
         assert_eq!(persisted, input[..64]);
         assert!(capture.retained_truncated);
         assert!(capture.persisted_truncated);
+        assert_eq!(capture.persist_error, None);
     }
 
     #[test]
@@ -155,16 +161,22 @@ mod tests {
         assert_eq!(persisted, input);
         assert!(!capture.retained_truncated);
         assert!(!capture.persisted_truncated);
+        assert_eq!(capture.persist_error, None);
     }
 
     #[test]
-    fn tee_drain_continues_to_eof_after_writer_failure() {
+    fn tee_drain_continues_to_eof_and_preserves_capture_after_writer_failure() {
         let input = vec![b'x'; 1024];
         let mut reader = Cursor::new(&input);
 
-        let result = drain_bounded_to_writer(&mut reader, FailingWriter, 32, 64);
+        let capture = drain_bounded_to_writer(&mut reader, FailingWriter, 32, 64).unwrap();
 
-        assert!(result.is_err());
         assert_eq!(reader.position(), input.len() as u64);
+        assert_eq!(capture.bytes, input[..32]);
+        assert!(capture.persisted_truncated);
+        assert_eq!(
+            capture.persist_error.as_deref(),
+            Some("simulated disk failure")
+        );
     }
 }
