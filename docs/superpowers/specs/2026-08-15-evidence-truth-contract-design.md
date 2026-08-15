@@ -14,11 +14,13 @@ The next trust failure is downstream: orchestration currently converts the execu
 
 That ambiguity survives into `StepReceipt` and the Review UI. A loss of evidence can therefore become false certainty.
 
+There is a second boundary problem: evidence-readiness checks exist at workflow level, but `review_run()` itself is a mutating core API and does not currently enforce that gate before applying/staging/restoring paths. A direct Review command must not be able to bypass evidence quality checks.
+
 ## Goal
 
 Make change provenance a first-class typed contract from executor runtime through orchestration, durable workflow receipts, desktop IPC, and Review UI.
 
-RepoDesk must never infer “no writes” from missing evidence.
+RepoDesk must never infer “no writes” from missing evidence, and no Review mutation may occur before the core review boundary proves the execution evidence is ready.
 
 ## Non-goals
 
@@ -56,7 +58,7 @@ For new coding-agent executions the runtime may emit only:
 
 A Git pre-status snapshot and a successful post-status delta are the proof boundary. If the pre-snapshot is absent because the working directory is not a Git work tree, or post-run provenance capture errors, change evidence is `unavailable` rather than an empty successful changeset.
 
-Post-launch provenance failure still returns the executor receipt, appends a bounded `execution_issues` entry, and forces execution status to `failed`. The agent execution is historical fact; evidence quality is a separate typed fact.
+Post-launch provenance failure still returns the executor receipt, appends an `execution_issues` entry, and forces execution status to `failed`. The agent execution is historical fact; evidence quality is a separate typed fact.
 
 A missing persisted `.diff` file does not by itself make path provenance unavailable. The path set is the authority for change attribution; textual diff persistence remains a presentation warning because new/binary files may also lack a normal unified diff.
 
@@ -108,6 +110,8 @@ This distinction matters operationally. `RecoveryRequired` is a persistence prob
 
 `require_review_evidence_ready` accepts only `Ready` and fails closed for `Incomplete`, `RecoveryRequired`, and `NotRequired`, with remediation-specific messages.
 
+Crucially, `review_run()` must call this gate at the top of the core mutation boundary, before resolving review paths or mutating either the active checkout or an isolated worktree. The Tauri `orchestrate_review` command therefore inherits the invariant automatically instead of duplicating it in UI/IPC code. Receipt-recording paths must also refuse to persist a new Review decision for an execution that is not evidence-ready.
+
 ### 5. Desktop IPC exposes evidence quality
 
 `RunDiff` gains:
@@ -117,9 +121,9 @@ This distinction matters operationally. `RecoveryRequired` is a persistence prob
 
 `orchestrate_run_diffs` no longer filters an evidence-bearing coding-agent result out merely because `changed_files` and `diff_path` are empty. A row with `unavailable` or `legacy_unknown` must reach the UI.
 
-`CheckProof` step data should also carry change-evidence status so diagnostic/proof views cannot collapse unknown into zero changes.
+`CheckProof` step data also carries change-evidence status so diagnostic/proof views cannot collapse unknown into zero changes.
 
-No secret values are added to IPC. Evidence issues are infrastructure diagnostics already persisted in the run record; they remain bounded and are never sourced from provider credential material.
+No secret values are added to IPC. Evidence issues are infrastructure diagnostics already persisted in the run record; they are not derived from provider credential values.
 
 ### 6. Review UI is provenance-aware
 
@@ -147,9 +151,10 @@ Non-writing steps created by current code explicitly serialize `not_applicable`,
 2. Only `change_evidence_status=complete` may support that claim.
 3. A current coding-agent run with unavailable Git provenance is not successful automation, even if the child process exits zero.
 4. Receipt persistence failure and change-provenance incompleteness remain separate states with separate remediation.
-5. Review cannot mutate the active checkout unless execution evidence is `Ready`.
-6. Free-form notes are never parsed to determine trust state.
-7. Legacy missing metadata defaults toward uncertainty, never success.
+5. `review_run()` cannot mutate the active checkout or isolated workspace unless execution evidence is `Ready`.
+6. A new Review receipt cannot be recorded unless execution evidence is `Ready`.
+7. Free-form notes are never parsed to determine trust state.
+8. Legacy missing metadata defaults toward uncertainty, never success.
 
 ## Testing strategy
 
@@ -163,7 +168,8 @@ Non-writing steps created by current code explicitly serialize `not_applicable`,
 - `ExecutionEvidenceStatus::Ready` requires every write-capable step to have complete change evidence.
 - `unavailable` and `legacy_unknown` write steps produce `Incomplete`, not `RecoveryRequired`.
 - Non-writing `not_applicable` steps do not block readiness.
-- Review gate rejects `Incomplete` before any checkout mutation.
+- `review_run()` rejects `Incomplete` before any checkout/worktree mutation.
+- Review receipt recording rejects an incomplete execution.
 
 ### Desktop command
 
@@ -179,7 +185,7 @@ Non-writing steps created by current code explicitly serialize `not_applicable`,
 
 ### Regression / architecture ratchet
 
-Add a source invariant preventing the old unqualified `changed files: none (no writes detected)` claim from returning in the coding-agent finalization path, and require the typed evidence field in executor/orchestration/receipt contracts.
+Add a source invariant preventing the old unqualified `changed files: none (no writes detected)` claim from returning in the coding-agent finalization path, require the typed evidence field in executor/orchestration/receipt contracts, and require the core review mutation path to call the evidence-readiness gate.
 
 ## Verification contract
 
