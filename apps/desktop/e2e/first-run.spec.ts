@@ -14,10 +14,10 @@ test.describe("first run (empty workspace)", () => {
     await expect(page.getByRole("heading", { level: 2, name: "Scope" })).toBeVisible();
   });
 
-  test("Work Scope phase funnels into onboarding", async ({ page }) => {
+  test("Work Scope phase funnels into onboarding through one project action", async ({ page }) => {
     const rail = page.locator(".phase-rail");
     await expect(rail.locator(".phase-current")).toContainText("Scope");
-    await expect(page.getByRole("button", { name: "Connect a project" })).toBeVisible();
-    await expect(page.locator(".work-cta-row .primary-cta")).toHaveText("Add or select a project");
+    await expect(page.getByRole("button", { name: "Connect a project", exact: true })).toHaveCount(1);
+    await expect(page.locator(".work-cta-row .primary-cta")).toHaveCount(0);
   });
 });
