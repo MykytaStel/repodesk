@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io;
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -11,7 +11,7 @@ use wait_timeout::ChildExt;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::process_io::{BoundedTee, drain_bounded_to_writer};
 
-use super::changeset::{capture_changeset, git_porcelain};
+use super::changeset::{Changeset, capture_changeset, git_porcelain};
 use super::{
     CodingAgentCommandSpec, CodingAgentExecution, apply_sanitized_env, validate_command_spec,
 };
@@ -76,8 +76,9 @@ pub(super) fn run_with_limits(
     restrict_permissions(&stdout_path);
     restrict_permissions(&stderr_path);
 
-    // Snapshot before launch so post-run provenance can attribute exactly the
-    // working-tree delta produced by this executor invocation.
+    // Everything through this point is pre-launch and may fail normally. Once
+    // spawn succeeds, infrastructure failures become structured receipt issues
+    // instead of erasing the fact that the executor ran.
     let pre_status = git_porcelain(cwd)?;
 
     let mut builder = Command::new(&command.program);
@@ -100,9 +101,6 @@ pub(super) fn run_with_limits(
             detail: format!("failed to start {}: {error}", command.program),
         })?;
 
-    // Both pipes are drained concurrently for the entire child lifetime. We keep
-    // only a bounded prefix in RAM and persist only a larger bounded prefix to
-    // disk; everything beyond both caps is read and discarded to avoid deadlock.
     let stdout = child
         .stdout
         .take()
@@ -124,33 +122,34 @@ pub(super) fn run_with_limits(
         limits.stderr_log_bytes,
     );
 
+    let mut execution_issues = Vec::new();
+    let mut force_failed = false;
     if command.stdin_required
         && let Some(mut stdin) = child.stdin.take()
         && let Err(error) = stdin.write_all(prompt.as_bytes())
     {
-        let _ = child.kill();
-        let _ = child.wait();
-        let _ = stdout_reader.join();
-        let _ = stderr_reader.join();
-        return Err(error.into());
+        execution_issues.push(format!("executor stdin write failed after launch: {error}"));
+        force_failed = true;
+        if let Err(error) = child.kill() {
+            execution_issues.push(format!("executor kill after stdin failure failed: {error}"));
+        }
     }
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
-    let (status_label, exit_code, timed_out) = match child.wait_timeout(timeout)? {
-        Some(status) => (
-            if status.success() { "ok" } else { "failed" },
-            status.code(),
-            false,
-        ),
-        None => {
-            let _ = child.kill();
-            let status = child.wait()?;
-            ("timed_out", status.code(), true)
-        }
-    };
+    let (mut status_label, exit_code, timed_out) =
+        wait_for_child(&mut child, timeout, &mut execution_issues, &mut force_failed);
 
-    let stdout_capture = join_capture(stdout_reader, "stdout")?;
-    let stderr_capture = join_capture(stderr_reader, "stderr")?;
+    let (stdout_capture, stdout_issue) = join_capture(stdout_reader, "stdout");
+    if let Some(issue) = stdout_issue {
+        execution_issues.push(issue);
+        force_failed = true;
+    }
+    let (stderr_capture, stderr_issue) = join_capture(stderr_reader, "stderr");
+    if let Some(issue) = stderr_issue {
+        execution_issues.push(issue);
+        force_failed = true;
+    }
+
     let stdout_log_truncated = stdout_capture.persisted_truncated;
     let stderr_log_truncated = stderr_capture.persisted_truncated;
     let mut output_capture_issues = Vec::new();
@@ -171,10 +170,18 @@ pub(super) fn run_with_limits(
         limits.stderr_record_bytes,
     );
 
-    // Capture the workspace delta even when diagnostic persistence degraded: the
-    // executor already ran, so its changeset receipt must not disappear merely
-    // because a log file hit ENOSPC or another local I/O failure.
-    let changeset = capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref())?;
+    let changeset = match capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref()) {
+        Ok(changeset) => changeset,
+        Err(error) => {
+            execution_issues.push(format!("changeset capture failed after launch: {error}"));
+            force_failed = true;
+            Changeset::empty()
+        }
+    };
+
+    if force_failed && status_label == "ok" {
+        status_label = "failed";
+    }
 
     let (stdout, mut secrets_redacted) = crate::security::redact_secrets(&raw_stdout);
     let (stderr, stderr_secrets) = crate::security::redact_secrets(&raw_stderr);
@@ -197,6 +204,7 @@ pub(super) fn run_with_limits(
         stdout_log_truncated,
         stderr_log_truncated,
         output_capture_issues,
+        execution_issues,
         secrets_redacted,
         timed_out,
         changed_files: changeset.changed_files,
@@ -204,6 +212,53 @@ pub(super) fn run_with_limits(
         diff_truncated: changeset.diff_truncated,
         diff_path: changeset.diff_path,
     })
+}
+
+fn wait_for_child(
+    child: &mut Child,
+    timeout: Duration,
+    issues: &mut Vec<String>,
+    force_failed: &mut bool,
+) -> (&'static str, Option<i32>, bool) {
+    match child.wait_timeout(timeout) {
+        Ok(Some(status)) => status_tuple(status),
+        Ok(None) => {
+            if let Err(error) = child.kill() {
+                issues.push(format!("executor kill after timeout failed: {error}"));
+                *force_failed = true;
+            }
+            match child.wait() {
+                Ok(status) => ("timed_out", status.code(), true),
+                Err(error) => {
+                    issues.push(format!("executor reap after timeout failed: {error}"));
+                    *force_failed = true;
+                    ("timed_out", None, true)
+                }
+            }
+        }
+        Err(error) => {
+            issues.push(format!("executor wait failed after launch: {error}"));
+            *force_failed = true;
+            if let Err(kill_error) = child.kill() {
+                issues.push(format!("executor kill after wait failure failed: {kill_error}"));
+            }
+            match child.wait() {
+                Ok(status) => ("failed", status.code(), false),
+                Err(wait_error) => {
+                    issues.push(format!("executor reap after wait failure failed: {wait_error}"));
+                    ("failed", None, false)
+                }
+            }
+        }
+    }
+}
+
+fn status_tuple(status: ExitStatus) -> (&'static str, Option<i32>, bool) {
+    (
+        if status.success() { "ok" } else { "failed" },
+        status.code(),
+        false,
+    )
 }
 
 fn spawn_capture<R>(
@@ -221,11 +276,29 @@ where
 fn join_capture(
     handle: JoinHandle<io::Result<BoundedTee>>,
     stream: &str,
-) -> RepoDeskResult<BoundedTee> {
-    handle
-        .join()
-        .map_err(|_| RepoDeskError::Api(format!("executor {stream} capture thread panicked")))?
-        .map_err(Into::into)
+) -> (BoundedTee, Option<String>) {
+    match handle.join() {
+        Ok(Ok(capture)) => (capture, None),
+        Ok(Err(error)) => (
+            incomplete_capture(),
+            Some(format!("executor {stream} capture failed after launch: {error}")),
+        ),
+        Err(_) => (
+            incomplete_capture(),
+            Some(format!(
+                "executor {stream} capture thread panicked after launch"
+            )),
+        ),
+    }
+}
+
+fn incomplete_capture() -> BoundedTee {
+    BoundedTee {
+        bytes: Vec::new(),
+        retained_truncated: true,
+        persisted_truncated: true,
+        persist_error: None,
+    }
 }
 
 fn bounded_text(bytes: Vec<u8>, source_truncated: bool, max: usize) -> (String, bool) {
