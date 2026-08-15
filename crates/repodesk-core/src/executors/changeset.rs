@@ -17,7 +17,7 @@ pub(super) struct Changeset {
 }
 
 impl Changeset {
-    fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self {
             changed_files: Vec::new(),
             diff: String::new(),
