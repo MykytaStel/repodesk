@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io;
 use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -92,6 +92,7 @@ pub(super) fn run_with_limits(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     apply_sanitized_env(&mut builder);
+    configure_process_group(&mut builder);
 
     let mut child = builder
         .spawn()
@@ -99,6 +100,7 @@ pub(super) fn run_with_limits(
             provider: command.executor_id.clone(),
             detail: format!("failed to start {}: {error}", command.program),
         })?;
+    let runtime_started = Instant::now();
 
     // Both pipes are drained concurrently for the entire child lifetime. We keep
     // only a bounded prefix in RAM and persist only a larger bounded prefix to
@@ -124,30 +126,43 @@ pub(super) fn run_with_limits(
         limits.stderr_log_bytes,
     );
 
-    if command.stdin_required
-        && let Some(mut stdin) = child.stdin.take()
-        && let Err(error) = stdin.write_all(prompt.as_bytes())
-    {
-        let _ = child.kill();
-        let _ = child.wait();
-        let _ = stdout_reader.join();
-        let _ = stderr_reader.join();
-        return Err(error.into());
-    }
+    // Prompt delivery is part of executor runtime. A child that stops reading
+    // stdin must not be able to block this thread before the timeout starts.
+    let stdin_writer = if command.stdin_required {
+        child
+            .stdin
+            .take()
+            .map(|stdin| spawn_stdin_delivery(stdin, prompt.as_bytes().to_vec()))
+    } else {
+        None
+    };
 
     let timeout = Duration::from_secs(timeout_secs.max(1));
-    let (status_label, exit_code, timed_out) = match child.wait_timeout(timeout)? {
-        Some(status) => (
+    let remaining = timeout.saturating_sub(runtime_started.elapsed());
+    let wait_result = child.wait_timeout(remaining);
+    let (status_label, exit_code, timed_out) = match wait_result {
+        Ok(Some(status)) => (
             if status.success() { "ok" } else { "failed" },
             status.code(),
             false,
         ),
-        None => {
-            let _ = child.kill();
-            let status = child.wait()?;
+        Ok(None) => {
+            let status = terminate_timed_out_child(&mut child)?;
             ("timed_out", status.code(), true)
         }
+        Err(error) => {
+            let _ = terminate_timed_out_child(&mut child);
+            let _ = join_stdin(stdin_writer);
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(error.into());
+        }
     };
+
+    let stdin_result = join_stdin(stdin_writer);
+    if !timed_out {
+        stdin_result?;
+    }
 
     let stdout_capture = join_capture(stdout_reader, "stdout")?;
     let stderr_capture = join_capture(stderr_reader, "stderr")?;
@@ -206,6 +221,23 @@ pub(super) fn run_with_limits(
     })
 }
 
+fn spawn_stdin_delivery(
+    mut stdin: ChildStdin,
+    prompt: Vec<u8>,
+) -> JoinHandle<io::Result<()>> {
+    thread::spawn(move || stdin.write_all(&prompt))
+}
+
+fn join_stdin(handle: Option<JoinHandle<io::Result<()>>>) -> RepoDeskResult<()> {
+    let Some(handle) = handle else {
+        return Ok(());
+    };
+    handle
+        .join()
+        .map_err(|_| RepoDeskError::Api("executor stdin delivery thread panicked".to_string()))?
+        .map_err(Into::into)
+}
+
 fn spawn_capture<R>(
     reader: R,
     file: File,
@@ -226,6 +258,36 @@ fn join_capture(
         .join()
         .map_err(|_| RepoDeskError::Api(format!("executor {stream} capture thread panicked")))?
         .map_err(Into::into)
+}
+
+#[cfg(unix)]
+fn configure_process_group(command: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn configure_process_group(_command: &mut Command) {}
+
+#[cfg(unix)]
+fn terminate_timed_out_child(child: &mut Child) -> RepoDeskResult<ExitStatus> {
+    if let Some(kill_binary) = ["/bin/kill", "/usr/bin/kill"]
+        .into_iter()
+        .find(|path| Path::new(path).is_file())
+    {
+        let process_group = format!("-{}", child.id());
+        let _ = Command::new(kill_binary)
+            .args(["-KILL", "--", &process_group])
+            .status();
+    }
+    let _ = child.kill();
+    child.wait().map_err(Into::into)
+}
+
+#[cfg(not(unix))]
+fn terminate_timed_out_child(child: &mut Child) -> RepoDeskResult<ExitStatus> {
+    let _ = child.kill();
+    child.wait().map_err(Into::into)
 }
 
 fn bounded_text(bytes: Vec<u8>, source_truncated: bool, max: usize) -> (String, bool) {
