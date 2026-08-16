@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import type { TabId } from "../../shared/types/api";
 import * as orchestrateApi from "../../shared/api/orchestrate";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { StatusBadge } from "../../shared/ui/primitives";
 import { ContextInspectorCard } from "./ContextInspectorCard";
 import { WorkIntelligenceCard, WorkIntelligenceRailSummary } from "./WorkIntelligenceCard";
 import { WorkItemContractCard } from "./WorkItemContractCard";
 import { WorkTab } from "./WorkTab";
+import { phaseSemanticState } from "./workSemantic";
 import "../../shared/ui/manual-import.css";
 import "./work-route.css";
 import "../routing/routing-feature.css";
@@ -58,6 +60,10 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
   const phasePercent = progress?.phases.length
     ? Math.round((donePhases / progress.phases.length) * 100)
     : 0;
+  const currentPhaseView = progress?.phases.find((item) => item.phase === progress.current) ?? null;
+  const currentPhaseSemantic = currentPhaseView
+    ? phaseSemanticState(currentPhaseView.status, true)
+    : null;
 
   const toggleInspector = (next: Exclude<Inspector, null>) => {
     setInspector((current) => (current === next ? null : next));
@@ -66,7 +72,7 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
   const inspectorMeta = inspector ? INSPECTOR_META[inspector] : null;
 
   return (
-    <div className={`work-workbench-v3${inspector ? " inspector-open" : ""}`}>
+    <div className={`work-workbench${inspector ? " inspector-open" : ""}`}>
       <aside className="work-command-rail" aria-label="Active Work Item evidence">
         <section className="work-rail-identity">
           <span className="eyebrow">Work item</span>
@@ -77,7 +83,19 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
         <section className="work-rail-phase" aria-label="Workflow position">
           <div className="work-rail-phase-line">
             <span>Current phase</span>
-            <strong>{progress ? PHASE_LABELS[progress.current] : hasTask ? "Loading…" : "—"}</strong>
+            {progress && currentPhaseSemantic ? (
+              <div className="work-rail-phase-state">
+                <strong>{PHASE_LABELS[progress.current]}</strong>
+                <StatusBadge
+                  label={currentPhaseSemantic.label}
+                  tone={currentPhaseSemantic.tone}
+                  role="status"
+                  ariaLabel={`Current phase: ${PHASE_LABELS[progress.current]}`}
+                />
+              </div>
+            ) : (
+              <strong>{hasTask ? "Loading…" : "—"}</strong>
+            )}
           </div>
           <div className="work-rail-progress" aria-hidden="true">
             <span style={{ width: `${phasePercent}%` }} />
