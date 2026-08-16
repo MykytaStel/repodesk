@@ -70,9 +70,7 @@ export function verificationSemantic(governance: ChangeGovernanceSnapshot): Sema
   const verification = governance.verification;
   switch (verification.state) {
     case "passed":
-      if (verification.fresh === false) {
-        return { label: "Passed · stale", tone: "attention", detail: verification.stale_reason ?? "Verification is stale" };
-      }
+      if (verification.fresh === false) return { label: "Passed · stale", tone: "attention" };
       if (verification.fresh === true) return { label: "Passed · current", tone: "positive" };
       return { label: "Passed · unchecked", tone: "attention" };
     case "failed":
