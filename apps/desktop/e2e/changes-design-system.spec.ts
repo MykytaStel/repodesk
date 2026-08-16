@@ -10,37 +10,58 @@ function tabButton(page: Page, name: string) {
 function engineeringSnapshot(options?: {
   attribution?: "exact_isolated" | "manual" | "legacy_unknown" | "unattributed";
   exactRequired?: boolean;
-  gateState?: string;
+  gateState?:
+    | "no_change_set"
+    | "scope_violation"
+    | "needs_review"
+    | "rejected"
+    | "verification_required"
+    | "verification_running"
+    | "verification_failed"
+    | "verification_stale"
+    | "ready"
+    | "committed";
   blockers?: string[];
   verificationState?: "passed" | "failed" | "running" | "not_run";
   verificationFresh?: boolean | null;
   staleReason?: string | null;
-  scopeStatus?: string;
+  scopeViolation?: boolean;
 }) {
   const attribution = options?.attribution ?? "exact_isolated";
   const gateState = options?.gateState ?? "ready";
   const verificationState = options?.verificationState ?? "passed";
   const verificationFresh = options?.verificationFresh ?? true;
   const blockers = options?.blockers ?? [];
+  const scopeStatus = options?.scopeViolation ? "violation" : "compliant";
+  const fileScopeState = options?.scopeViolation ? "out_of_scope" : "allowed";
   const base = currentOnboardedFixtures.work_engineering_intelligence as Record<string, unknown>;
 
   return {
     ...base,
     change_governance: {
+      work_item_id: "task-n2-e2e",
       changeset_id: "run-semantic-changeset",
-      files: [{ path: "src/app.ts", scope_state: options?.scopeStatus ?? "in_scope" }],
+      files: [{ path: "src/app.ts", scope_state: fileScopeState }],
       origin: {
-        workers: [{ id: "codex_cli" }],
+        execution_id: attribution === "manual" ? null : "run-semantic",
+        workers: [{ kind: attribution === "manual" ? "human" : "coding_agent", id: attribution === "manual" ? "human" : "codex_cli", provider: null, model: null }],
         execution_mode: attribution === "manual" ? "manual_handoff" : "agent_run",
       },
+      scope_status: scopeStatus,
       scope_override: null,
       review_state: "accepted",
       verification: {
         state: verificationState,
+        verification_id: verificationState === "not_run" ? null : "verify-semantic",
+        command_count: verificationState === "not_run" ? 0 : 1,
+        evidence: [],
+        error: verificationState === "failed" ? "Verification command failed" : null,
         fresh: verificationFresh,
         stale_reason: options?.staleReason ?? null,
       },
-      gate: { state: gateState },
+      committed: false,
+      commit_sha: null,
+      gate: { state: gateState, ready: gateState === "ready", blockers, warnings: [] },
     },
     changeset_passport: {
       work_item_id: "task-n2-e2e",
@@ -54,33 +75,45 @@ function engineeringSnapshot(options?: {
         reason: attribution === "manual" ? "change entered through an explicit manual handoff" : null,
       },
       changed_file_count: 1,
-      scope_status: options?.scopeStatus ?? "in_scope",
+      scope_status: scopeStatus,
       review_state: "accepted",
       verification_state: verificationState,
-      verification_fresh: verificationFresh,
-      acceptance: { configured: false, criteria: [], proven: 0, failed: 0, unproven: 0 },
+      verification_fresh: verificationFresh === true,
+      acceptance: { configured: false, total: 0, proven: 0, failed: 0, unproven: 0 },
       committed: false,
       commit_sha: null,
-      gate: { state: gateState },
+      gate: { state: gateState, ready: gateState === "ready", blockers, warnings: [] },
     },
     safe_commit_manifest: {
       version: 2,
       work_item_id: "task-n2-e2e",
       run_id: "run-semantic",
-      changeset_id: "run-semantic-changeset",
       changeset_digest: "changeset-digest",
       parent_head_sha: "1111111111111111111111111111111111111111",
       current_head_sha: "2222222222222222222222222222222222222222",
       reviewed_tree_sha: "3333333333333333333333333333333333333333",
       verification_tree_sha: "3333333333333333333333333333333333333333",
-      verification_recorded_at: "2026-08-16T12:00:00Z",
-      verification_commands: [
-        { command: "pnpm test", success: true, exit_code: 0, output_digest: "proof" },
-      ],
+      verification_verified_at: "2026-08-16T12:00:00Z",
+      verification_commands: [{ command: "pnpm test", success: true }],
       reviewed_paths: ["src/app.ts"],
       staged_paths: ["src/app.ts"],
-      scope: { status: options?.scopeStatus ?? "in_scope", overridden: false },
-      acceptance: { configured: false, criteria: [], proven: 0, failed: 0, unproven: 0 },
+      scope: {
+        status: scopeStatus,
+        allowed: !options?.scopeViolation,
+        overridden: false,
+        override_event_id: null,
+        out_of_scope_files: options?.scopeViolation ? ["src/app.ts"] : [],
+        protected_files: [],
+      },
+      acceptance: {
+        configured: false,
+        work_item_id: "task-n2-e2e",
+        current_run_id: "run-semantic",
+        criteria: [],
+        proven: 0,
+        failed: 0,
+        unproven: 0,
+      },
       attribution: {
         strength: attribution,
         workspace_id: attribution === "exact_isolated" ? "wt-run-semantic-implement" : null,
@@ -129,7 +162,6 @@ test.describe("Changes semantic design-system reference", () => {
     const snapshot = engineeringSnapshot({
       attribution: "manual",
       exactRequired: true,
-      gateState: "attribution_required",
       blockers: ["Commit blocked: this Project requires exact producer attribution."],
     });
     await installMockIpc(page, fixturesWithEngineering(snapshot));
@@ -171,7 +203,7 @@ test.describe("Changes semantic design-system reference", () => {
   test("scope violation is critical and exposes one override action", async ({ page }) => {
     const snapshot = engineeringSnapshot({
       gateState: "scope_violation",
-      scopeStatus: "out_of_scope",
+      scopeViolation: true,
       blockers: ["One or more changed paths are outside the Work Item scope."],
     });
     await installMockIpc(page, fixturesWithEngineering(snapshot));
