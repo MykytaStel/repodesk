@@ -1,3 +1,4 @@
+# Sequential retry after the earlier verified patch raced a separate branch-writing test workflow.
 from pathlib import Path
 
 
