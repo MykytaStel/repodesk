@@ -10,6 +10,7 @@ use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
+use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::git_workspace::GitFileChange;
 
@@ -153,6 +154,10 @@ pub struct CodingAgentExecution {
     /// automation cannot treat degraded evidence as a successful step.
     #[serde(default)]
     pub execution_issues: Vec<String>,
+    /// Whether the repository changeset was captured completely. Missing fields
+    /// in historical execution JSON remain conservative rather than becoming proof.
+    #[serde(default)]
+    pub change_evidence_status: ChangeEvidenceStatus,
     /// Distinct secret kinds redacted out of the in-record output, if any.
     #[serde(default)]
     pub secrets_redacted: Vec<String>,

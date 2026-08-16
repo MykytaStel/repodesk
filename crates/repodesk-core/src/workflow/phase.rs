@@ -669,12 +669,16 @@ mod tests {
                         status: SubAgentStatus::Ok,
                         allow_write: false,
                         changed_files: vec![],
+                        change_evidence_status:
+                            crate::change_evidence::ChangeEvidenceStatus::Complete,
                     },
                     StepReceipt {
                         task_id: "impl".into(),
                         status: impl_status,
                         allow_write: true,
                         changed_files: changed,
+                        change_evidence_status:
+                            crate::change_evidence::ChangeEvidenceStatus::Complete,
                     },
                 ],
                 changeset_digest: digest,
