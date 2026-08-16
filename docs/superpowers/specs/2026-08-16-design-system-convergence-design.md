@@ -76,7 +76,7 @@ Raw visual values in route TSX are not part of the target architecture.
 
 ### 2. Semantic primitives
 
-Create focused primitives under a narrow shared boundary, for example:
+Create focused primitives under:
 
 ```text
 apps/desktop/src/shared/ui/primitives/
@@ -138,7 +138,7 @@ There must be no silent fallback that converts an unknown domain state to `neutr
 
 ## Semantic language
 
-Define one shared semantic tone vocabulary independent of raw colors:
+Use this shared semantic tone vocabulary for Cut F:
 
 ```ts
 export type SemanticTone =
@@ -149,9 +149,9 @@ export type SemanticTone =
   | "info";
 ```
 
-Exact names may be adjusted during implementation if existing conventions make a nearby naming set materially cleaner, but the meaning must remain explicit and typed.
+The names above are part of the design contract for this migration and must not be replaced by a parallel tone vocabulary.
 
-Illustrative mappings:
+Canonical illustrative mappings:
 
 ```text
 exact_isolated       -> positive
@@ -160,8 +160,10 @@ unattributed         -> critical
 verification_stale   -> attention
 verification_passed  -> positive
 scope_violation      -> critical
-manual_handoff       -> neutral/info depending on context
+manual_handoff       -> neutral
 ```
+
+A manual handoff remains semantically `neutral` as an attribution fact. If project policy requires exact attribution, the resulting Safe Commit Manifest blocker is presented separately as `critical`; the UI must not distort the attribution fact itself to communicate policy.
 
 Semantic components choose presentation from `SemanticTone`; feature code chooses the tone from domain truth.
 
@@ -390,14 +392,14 @@ After the Changes reference migration:
 
 Ratchets must be deterministic and cheap enough for normal CI.
 
-Expected checks include:
+Required checks include:
 
 - no new raw `#hex` in TSX outside an allowlist/token boundary;
 - no new static inline layout style objects;
 - no new visual `*-vN` naming;
 - no new route-wide polish stylesheets;
 - feature CSS bytes may not exceed reviewed baseline;
-- optional architecture checks preventing reintroduction of substring-based domain status inference.
+- no new substring-based domain status inference for typed engineering state.
 
 The ratchet must not be weakened merely to merge a migration PR.
 
@@ -486,7 +488,7 @@ Tests should assert semantics and behavior, not individual pixel values or arbit
 
 ### Visual regression
 
-Maintain visual regression coverage for:
+Use Playwright screenshot regression for:
 
 - Work;
 - Code;
@@ -504,7 +506,7 @@ CI must prove that migrated code cannot silently reintroduce the banned visual g
 
 Cut F should land as several coherent PRs rather than one frontend-wide rewrite.
 
-Recommended sequence:
+Sequence:
 
 1. semantic primitives + typed semantic vocabulary + Changes reference migration + initial ratchet;
 2. Work migration + lower Work/CSS debt baseline;
@@ -538,7 +540,7 @@ Cut F is complete when:
 3. `StatusBadge`, `EvidenceState`, `PanelHeader`, `EmptyState`, `LoadingState`, `ErrorState`, `InspectorSection`, `ActionBar`, and decision-relevant `Metric` have canonical shared implementations.
 4. Changes serves as the reference evidence-heavy route and does not invent local status/card/action systems.
 5. No new versioned visual generation exists.
-6. New raw TSX hex, static inline layout styles, versioned classes, route-wide polish files, and accidental CSS growth are ratcheted.
+6. New raw TSX hex, static inline layout styles, versioned classes, route-wide polish files, string-inferred typed domain status, and accidental CSS growth are ratcheted.
 7. Historical CSS/classes are removed as their consumers disappear; no replacement `vNext` layer is created.
 8. Loading/error/empty/action behavior is not rebuilt ad hoc per primary feature.
 9. Each primary route has behavior and visual regression coverage for representative states.
