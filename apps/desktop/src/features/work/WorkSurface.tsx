@@ -3,10 +3,12 @@ import { useQuery } from "@tanstack/react-query";
 import type { TabId } from "../../shared/types/api";
 import * as orchestrateApi from "../../shared/api/orchestrate";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { EvidenceState, PanelHeader, StatusBadge } from "../../shared/ui/primitives";
 import { ContextInspectorCard } from "./ContextInspectorCard";
 import { WorkIntelligenceCard, WorkIntelligenceRailSummary } from "./WorkIntelligenceCard";
 import { WorkItemContractCard } from "./WorkItemContractCard";
 import { WorkTab } from "./WorkTab";
+import { workflowPositionSemantic } from "./workSemantic";
 import "../../shared/ui/manual-import.css";
 import "./work-route.css";
 import "../routing/routing-feature.css";
@@ -14,15 +16,6 @@ import "../routing/routing-feature.css";
 const PHASE_KEY = ["work", "phase-state"] as const;
 
 type Inspector = "contract" | "context" | "intelligence" | null;
-
-const PHASE_LABELS: Record<orchestrateApi.Phase, string> = {
-  scope: "Scope",
-  prepare: "Prepare",
-  execute: "Execute",
-  review: "Review",
-  verify: "Verify",
-  finish: "Finish",
-};
 
 const INSPECTOR_META: Record<Exclude<Inspector, null>, { title: string; hint: string }> = {
   contract: {
@@ -51,6 +44,7 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
   });
 
   const progress = phase.data ?? null;
+  const workflowPosition = progress ? workflowPositionSemantic(progress) : null;
   const phaseIndex = progress
     ? Math.max(0, progress.phases.findIndex((item) => item.phase === progress.current))
     : -1;
@@ -75,22 +69,26 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
         </section>
 
         <section className="work-rail-phase" aria-label="Workflow position">
-          <div className="work-rail-phase-line">
-            <span>Current phase</span>
-            <strong>{progress ? PHASE_LABELS[progress.current] : hasTask ? "Loading…" : "—"}</strong>
-          </div>
+          {workflowPosition ? (
+            <EvidenceState
+              label="Current phase"
+              state={workflowPosition.label}
+              tone={workflowPosition.tone}
+              detail={progress?.complete
+                ? "Workflow complete"
+                : `Step ${phaseIndex + 1} of ${progress?.phases.length ?? 0}`}
+            />
+          ) : (
+            <EvidenceState
+              label="Current phase"
+              state={phase.isError ? "Unavailable" : hasTask ? "Loading" : "Not started"}
+              tone={phase.isError ? "critical" : "neutral"}
+              detail={phase.isError ? "Workflow evidence unavailable" : "Select work to begin"}
+            />
+          )}
           <div className="work-rail-progress" aria-hidden="true">
             <span style={{ width: `${phasePercent}%` }} />
           </div>
-          <small>
-            {progress
-              ? progress.complete
-                ? "Workflow complete"
-                : `Step ${phaseIndex + 1} of ${progress.phases.length}`
-              : phase.isError
-                ? "Workflow evidence unavailable"
-                : "Select work to begin"}
-          </small>
         </section>
 
         {hasTask ? <WorkIntelligenceRailSummary /> : null}
@@ -115,14 +113,16 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
 
       {inspector && inspectorMeta ? (
         <aside className="work-inspector-pane" aria-label={inspectorMeta.title}>
-          <header className="work-inspector-header">
-            <div>
-              <span className="eyebrow">Inspector</span>
-              <strong>{inspectorMeta.title}</strong>
-              <small>{inspectorMeta.hint}</small>
-            </div>
-            <button type="button" className="work-inspector-close" onClick={() => setInspector(null)} aria-label="Close inspector">×</button>
-          </header>
+          <div className="work-inspector-header">
+            <PanelHeader
+              eyebrow="Inspector"
+              title={inspectorMeta.title}
+              description={inspectorMeta.hint}
+              trailing={(
+                <button type="button" className="work-inspector-close" onClick={() => setInspector(null)} aria-label="Close inspector">×</button>
+              )}
+            />
+          </div>
           <div className="work-inspector-body">
             {inspector === "contract" ? <WorkItemContractCard /> : inspector === "context" ? <ContextInspectorCard /> : <WorkIntelligenceCard />}
           </div>
