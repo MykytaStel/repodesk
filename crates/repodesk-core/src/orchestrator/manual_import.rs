@@ -125,6 +125,14 @@ pub fn import_manual_changes(source: ManualImportSource) -> RepoDeskResult<Manua
     let now = Utc::now();
     let run_id = format!("manual-{}", now.format("%Y%m%d-%H%M%S-%6f"));
     let timestamp = now.to_rfc3339();
+    let change_evidence_status = crate::change_evidence::ChangeEvidenceStatus::Complete;
+    let change_attribution = crate::change_attribution::classify_step_attribution(
+        &run_id,
+        "manual-handoff",
+        true,
+        change_evidence_status,
+        None,
+    );
     let result = SubAgentResult {
         task_id: "manual-handoff".to_string(),
         agent: "manual".to_string(),
@@ -140,7 +148,8 @@ pub fn import_manual_changes(source: ManualImportSource) -> RepoDeskResult<Manua
         cost_units: 0.0,
         captured_proposals: 0,
         changed_files: changed_files.clone(),
-        change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+        change_evidence_status,
+        change_attribution,
         execution_issues: Vec::new(),
         diff_path: None,
         workspace: None,
@@ -230,7 +239,7 @@ fn write_manual_receipt(
                     status: r.status,
                     allow_write: true,
                     changed_files: r.changed_files.clone(),
-                    change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+                    change_evidence_status: r.change_evidence_status,
                 })
                 .collect(),
             changeset_digest: digest,
