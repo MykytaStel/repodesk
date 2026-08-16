@@ -73,7 +73,7 @@ fn missing_baseline_never_claims_exact_attribution() {
 }
 
 #[test]
-fn complete_non_isolated_capture_is_derived_not_exact() {
+fn complete_non_isolated_capture_stays_unattributed_without_producer_proof() {
     let evidence = classify_step_attribution(
         "run-1",
         "write",
@@ -82,7 +82,7 @@ fn complete_non_isolated_capture_is_derived_not_exact() {
         None,
     );
 
-    assert_eq!(evidence.strength, ChangeAttributionStrength::DerivedPrePost);
+    assert_eq!(evidence.strength, ChangeAttributionStrength::Unattributed);
     assert!(!evidence.strength.is_exact());
 }
 
@@ -156,13 +156,12 @@ fn multi_writer_aggregation_is_conservative() {
         ChangeEvidenceStatus::Complete,
         Some(&managed_worktree("run-1", "write-b", "abc123")),
     );
-    let derived = classify_step_attribution(
-        "run-1",
-        "write-c",
-        false,
-        ChangeEvidenceStatus::Complete,
-        None,
-    );
+    let explicitly_derived = ChangeAttributionEvidence {
+        strength: ChangeAttributionStrength::DerivedPrePost,
+        workspace_id: None,
+        baseline_commit: Some("abc123".into()),
+        reason: Some("separate producer-boundary evidence".into()),
+    };
 
     let compatible_exact = aggregate_change_attribution(&[first.clone(), second]);
     assert_eq!(
@@ -171,7 +170,7 @@ fn multi_writer_aggregation_is_conservative() {
     );
     assert_eq!(compatible_exact.baseline_commit.as_deref(), Some("abc123"));
 
-    let mixed = aggregate_change_attribution(&[first, derived]);
+    let mixed = aggregate_change_attribution(&[first, explicitly_derived]);
     assert_eq!(mixed.strength, ChangeAttributionStrength::DerivedPrePost);
     assert!(!mixed.strength.is_exact());
 }
