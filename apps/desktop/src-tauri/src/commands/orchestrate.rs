@@ -220,6 +220,14 @@ pub fn orchestrate_review(run_id: String, action: String) -> Result<RunReview, E
 }
 
 #[tauri::command]
+pub fn orchestrate_evidence_state(
+    run_id: String,
+) -> Result<orchestrator::ExecutionEvidenceState, ErrorPayload> {
+    validate_run_id(&run_id)?;
+    Ok(orchestrator::evidence_state_for_run(&run_id)?)
+}
+
+#[tauri::command]
 pub fn orchestrate_run_diffs(run_id: String) -> Result<Vec<RunDiff>, ErrorPayload> {
     validate_run_id(&run_id)?;
     let run = orchestrator::load_run(&run_id)?.ok_or_else(|| {
