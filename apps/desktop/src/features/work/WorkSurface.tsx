@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { TabId } from "../../shared/types/api";
 import * as orchestrateApi from "../../shared/api/orchestrate";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
-import { EvidenceState, PanelHeader, StatusBadge } from "../../shared/ui/primitives";
+import { EvidenceState, PanelHeader } from "../../shared/ui/primitives";
 import { ContextInspectorCard } from "./ContextInspectorCard";
 import { WorkIntelligenceCard, WorkIntelligenceRailSummary } from "./WorkIntelligenceCard";
 import { WorkItemContractCard } from "./WorkItemContractCard";
