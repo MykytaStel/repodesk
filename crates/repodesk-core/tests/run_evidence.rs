@@ -60,12 +60,7 @@ fn run() -> OrchestrationRun {
         finished_at: "2026-08-07T18:01:00Z".into(),
         results: vec![
             result("impl", &["src/lib.rs", "src/shared.rs"], 100, 50),
-            result(
-                "tests",
-                &["src/shared.rs", "tests/evidence.rs"],
-                80,
-                30,
-            ),
+            result("tests", &["src/shared.rs", "tests/evidence.rs"], 80, 30),
         ],
         total_input_tokens: 180,
         total_output_tokens: 80,
