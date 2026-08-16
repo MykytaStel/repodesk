@@ -70,11 +70,9 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
       detail="Review is blocked until execution evidence can be verified."
     />
   ) : evidence.data.status === "incomplete" ? (
-    <EvidenceState
-      label="Execution evidence"
-      state={executionEvidenceSemantic(evidence.data.status).label}
-      tone={executionEvidenceSemantic(evidence.data.status).tone}
-      detail="Change evidence unavailable. RepoDesk cannot prove which tracked paths changed. Rerun execution to capture a trustworthy changeset."
+    <ErrorState
+      title="Change evidence unavailable"
+      detail="RepoDesk cannot prove which tracked paths changed. Rerun execution to capture a trustworthy changeset."
     />
   ) : evidence.data.status === "recovery_required" ? (
     <EvidenceState
