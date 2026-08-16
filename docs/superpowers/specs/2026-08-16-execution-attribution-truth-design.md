@@ -4,15 +4,15 @@ Date: 2026-08-16
 
 ## Context
 
-RepoDesk already captures strong execution evidence:
+RepoDesk already has the evidence needed to make producer attribution truthful:
 
-- write-capable coding agents run in RepoDesk-managed detached Git worktrees when supported;
+- supported write-capable coding agents run in RepoDesk-managed detached Git worktrees;
 - `RunWorktree` records `workspace_id`, `run_id`, `step_id`, `path`, `base_commit`, creation time, and recovery metadata;
 - executor results carry changed paths, changeset evidence status, diff receipt path, execution issues, and optional worktree identity;
-- the workflow receipt requires complete changeset provenance before a write-capable step can count as successful;
+- workflow receipts require complete ChangeSet provenance before a write-capable step can count as successful;
 - Changes and Finish already consume canonical receipt/tree/scope/verification/acceptance evidence through the ChangeSet Passport and Safe Commit Manifest.
 
-The remaining gap is semantic: `ChangeSetPassport` currently collapses attribution to `recorded_run | manual | unattributed`. A recorded run proves that RepoDesk has an execution identity, but it does not by itself prove that every changed byte was produced exclusively by that executor.
+The remaining gap is semantic. `ChangeSetPassport` currently collapses producer evidence to `recorded_run | manual | unattributed`. A recorded run proves execution identity, but it does not prove that every changed byte was exclusively produced by that executor.
 
 RepoDesk must not overstate producer attribution.
 
@@ -20,84 +20,82 @@ RepoDesk must not overstate producer attribution.
 
 Use policy-driven enforcement.
 
-Attribution strength is always rendered truthfully, but weak attribution blocks commit only when the active Project explicitly requires exact attribution. Existing projects remain backward compatible.
+Attribution strength is always rendered truthfully. Weak attribution blocks commit only when the active Project explicitly requires exact attribution. Existing projects remain backward compatible.
 
-This is preferable to either making exact attribution mandatory globally, which would break legitimate manual/legacy workflows, or making attribution informational only, which would leave Projects unable to enforce trustworthy-change policy.
+This avoids two bad extremes: globally requiring exact attribution would break legitimate manual/legacy workflows, while informational-only attribution would prevent Projects from enforcing trustworthy-change policy.
 
 ## Goals
 
 1. Make attribution a typed first-class evidence dimension.
 2. Distinguish exact isolated execution from weaker pre/post inference and manual handoff.
 3. Never upgrade evidence strength from metadata that cannot prove exclusivity.
-4. Carry attribution through run evidence, workflow receipt, ChangeSet Passport, Changes UI, and Safe Commit Manifest.
+4. Carry attribution through run evidence, workflow receipt, ChangeSet Passport, Changes, and Safe Commit Manifest.
 5. Allow Projects to require exact attribution for commit readiness.
 6. Preserve backward compatibility for historical receipts and existing project configs.
-7. Add architecture/tests that prevent future Boolean or stringly-typed attribution shortcuts.
+7. Add tests/ratchets that prevent Boolean or stringly-typed attribution shortcuts.
 
 ## Non-goals
 
 - no new event ledger, database, or receipt file;
 - no autonomous push/merge behavior;
 - no OS sandbox claim;
-- no attempt to prove authorship from model output text;
+- no authorship inference from model output text;
 - no broad UI redesign in this cut;
-- no claim that a clean ordinary checkout is exact unless RepoDesk can also prove exclusive workspace ownership.
+- no claim that a clean ordinary checkout is exact without proven exclusive workspace ownership.
 
-## Attribution model
+## Canonical attribution model
 
-Introduce a canonical `ChangeAttributionStrength` shared by core trust projections.
+Introduce one shared core enum:
 
 ```text
 exact_isolated
 exact_clean_workspace
- derived_pre_post
+derived_pre_post
 manual
 unattributed
 legacy_unknown
 ```
 
-Semantics:
-
 ### `exact_isolated`
 
-RepoDesk may emit this only when all of the following are true:
+May be emitted only when all of these are true:
 
 - the write-capable executor ran in a RepoDesk-managed `RunWorktree`;
-- worktree metadata matches the current run and step;
-- a baseline commit is recorded before launch;
-- changeset capture for the step is `complete`;
-- the produced paths are derived from that isolated worktree relative to its recorded baseline;
+- worktree metadata matches the current `run_id` and `step_id`;
+- a baseline commit was recorded before launch;
+- step ChangeSet capture is `complete`;
+- produced paths are derived from that isolated worktree relative to the recorded baseline;
 - no evidence-integrity issue invalidates the workspace/provenance chain.
 
-This is the primary exact-attribution state for the current product.
+This is the only exact state the first implementation is expected to produce.
 
 ### `exact_clean_workspace`
 
-Reserved for a future execution mode where RepoDesk can prove both a clean baseline and exclusive ownership/lease of the execution workspace for the entire run.
+Reserved for a future mode where RepoDesk can prove both a clean baseline and exclusive ownership/lease of the execution workspace for the entire run.
 
-A merely clean ordinary working tree is not sufficient because concurrent human/tool writes cannot be excluded. The first implementation must define the enum/state but must not emit it until an exclusivity mechanism exists.
+A clean normal checkout alone is insufficient because concurrent human/tool writes cannot be excluded. The enum may exist now, but classification must not emit it until exclusivity evidence exists.
 
 ### `derived_pre_post`
 
-RepoDesk has complete before/after Git evidence and a recorded executor run, but the executor ran in a workspace whose exclusivity cannot be proven. The delta is useful evidence but not exact authorship.
+RepoDesk has complete before/after Git evidence and a recorded executor run, but workspace exclusivity cannot be proven. The delta is useful evidence, not exact authorship.
 
 ### `manual`
 
-The change entered through an explicit Manual Handoff/import path. RepoDesk can bind review/verification to the exact resulting tree, but it does not claim the external executor identity as exact producer evidence.
+The change entered through an explicit Manual Handoff/import path. RepoDesk can bind review and verification to the resulting exact tree without claiming an exact external producer.
 
 ### `unattributed`
 
-RepoDesk has a current ChangeSet but no sufficient producer/run identity.
+A current ChangeSet exists but producer/run evidence is insufficient.
 
 ### `legacy_unknown`
 
-Historical serialized evidence predates the attribution field. Deserialization must fail conservative: old data never becomes exact automatically.
+Historical serialized evidence predates attribution. Deserialization is conservative: old evidence never becomes exact automatically.
 
 ## Evidence representation
 
-Add attribution evidence at the step/run boundary rather than deriving it only in the UI.
+Attribution is captured at the step/run boundary, not reconstructed in UI code.
 
-A bounded structure should capture the proof used to classify a write-capable step, for example:
+A focused core structure should carry the proof used to classify a producing step:
 
 ```rust
 pub struct ChangeAttributionEvidence {
@@ -110,12 +108,11 @@ pub struct ChangeAttributionEvidence {
 
 Rules:
 
-- `workspace_id` and `baseline_commit` are evidence metadata, not UI decoration;
-- `reason` is bounded/sanitized and explains downgrades, never contains secret material or unbounded paths/output;
+- `workspace_id` and `baseline_commit` are evidence metadata;
+- `reason` is bounded and sanitized, and explains downgrades only;
 - historical absence defaults to `legacy_unknown`;
-- non-write steps may remain `unattributed`/`legacy_unknown` without blocking run success because producer attribution is relevant to produced ChangeSets, not analysis-only execution.
-
-The canonical classification function lives in core and is reused by orchestration receipt construction and trust projections. UI code does not infer attribution from arbitrary strings.
+- non-write steps do not need exact producer attribution;
+- UI and IPC consumers use the shared type and never classify arbitrary strings themselves.
 
 ## Data flow
 
@@ -134,68 +131,67 @@ For an isolated coding-agent step:
 ```text
 RunWorktree(base_commit, workspace_id, run_id, step_id)
 + complete ChangeSet evidence
-+ matching step/run identity
++ matching run/step identity
 => exact_isolated
 ```
 
-For a recorded non-isolated run with complete pre/post capture:
+For a recorded non-isolated run:
 
 ```text
-recorded executor run
-+ complete ChangeSet evidence
-+ no provable exclusive workspace
+recorded executor
++ complete pre/post ChangeSet evidence
++ no proven exclusive workspace
 => derived_pre_post
 ```
 
-If evidence capture is unavailable/legacy, attribution must not be upgraded merely because a run ID exists.
+Unavailable/legacy ChangeSet evidence can never be upgraded merely because a run ID exists.
 
 ## Receipt compatibility
 
-Extend `StepReceipt` with attribution evidence using `#[serde(default)]`.
+Extend `StepReceipt` with attribution evidence using `#[serde(default)]` so historical receipts deserialize as `legacy_unknown`.
 
-Historical receipts therefore deserialize as `legacy_unknown`.
+`ExecutionReceipt::succeeded()` keeps its current complete-ChangeSet requirement. Exact attribution is not globally required for execution success.
 
-`ExecutionReceipt::succeeded()` keeps its existing changeset-completeness requirement. Exact attribution is not globally required for execution success because project policy controls whether weak attribution is acceptable at commit time.
+The separation is deliberate:
 
-This keeps the separation clear:
+- execution success: did the executor complete with trustworthy ChangeSet capture?
+- attribution: how strongly can RepoDesk connect the ChangeSet to producer(s)?
+- project policy: is that strength sufficient to commit?
 
-- execution success answers whether the executor completed with trustworthy ChangeSet capture;
-- attribution answers how strongly RepoDesk can connect that ChangeSet to a producer;
-- project policy decides whether that strength is sufficient to commit.
+## ChangeSet-level aggregation
 
-## Run-level attribution projection
+The aggregate is deterministic and conservative.
 
-Derive one ChangeSet-level strength from write-capable step evidence.
+For write-capable steps that actually contribute changed paths:
 
-Conservative aggregation:
+1. no contributing write step -> attribution is not required for the run;
+2. all contributing steps `exact_isolated` -> aggregate `exact_isolated`;
+3. all contributing steps `exact_clean_workspace` -> aggregate `exact_clean_workspace`;
+4. a mix of exact states, or any `derived_pre_post`, with complete global pre/post evidence -> aggregate `derived_pre_post`;
+5. all contributing steps `manual` -> aggregate `manual`;
+6. manual mixed with agent-produced changes -> `derived_pre_post` only when complete global pre/post evidence exists, otherwise `unattributed`;
+7. any current contributor with insufficient producer evidence -> `unattributed`;
+8. if the only missing classification is historical absence -> `legacy_unknown`.
 
-- no write-capable steps: attribution is not required for the run;
-- exactly one producing write step: use that step's strength;
-- multiple write steps contributing to the same ChangeSet: the aggregate strength is the weakest contributing attribution state;
-- if any contributing step is `legacy_unknown` or `unattributed`, the ChangeSet must not claim exact attribution;
-- mixed `manual` + agent-produced changes must be represented as non-exact rather than selecting the stronger agent state.
-
-Do not average attribution or turn it into a numeric score.
+`legacy_unknown` is a compatibility state, not a numeric rank. Attribution is never averaged or converted into an “AI confidence” score.
 
 ## ChangeSet Passport
 
-Replace the current coarse `RecordedRun | Manual | Unattributed` projection with the canonical attribution type/evidence.
+Replace the coarse `RecordedRun | Manual | Unattributed` projection with the shared attribution evidence.
 
-The passport should expose:
+Expose:
 
 - attribution strength;
 - producing run ID;
 - baseline commit when known;
 - isolated workspace identity when relevant;
-- a concise explanation suitable for the Why inspector.
+- a concise mechanically-derived explanation for the Why inspector.
 
-The passport remains a derived read model, never a second persistence authority.
+The passport stays a derived read model, never a new persistence authority.
 
 ## Project policy
 
-Extend `ProjectConfig` with a backward-compatible execution/trust policy, defaulting to permissive attribution behavior for existing projects.
-
-Preferred shape:
+Extend `ProjectConfig` with backward-compatible trust policy owned by Projects:
 
 ```rust
 #[derive(Default, Serialize, Deserialize)]
@@ -203,58 +199,48 @@ pub struct ProjectTrustPolicy {
     #[serde(default)]
     pub require_exact_attribution_for_commit: bool,
 }
-```
 
-`ProjectConfig` gets:
-
-```rust
 #[serde(default)]
 pub trust_policy: ProjectTrustPolicy,
 ```
 
-Default: `false`.
+Default is `false`.
 
-The policy belongs to Projects, not Settings.
-
-Projects UI should expose this as an explicit repository policy with wording such as:
+Projects exposes an explicit repository policy:
 
 > Require exact producer attribution before commit
 
-The control must explain that supported isolated coding-agent runs satisfy it; manual or inferred pre/post changes do not.
+The UI explains that supported isolated coding-agent runs satisfy it; manual and inferred pre/post changes do not.
+
+Settings must not own this policy.
 
 ## Safe Commit Manifest
 
-Add attribution to the manifest's deterministic evidence payload and bump its version.
+Add attribution and attribution policy to the deterministic manifest payload and bump the manifest version.
 
-The manifest records:
+Pre-commit rules:
 
-- current ChangeSet attribution strength/evidence;
-- whether project policy requires exact attribution;
-- attribution blocker/warning state.
-
-Rules before commit:
-
-- if `require_exact_attribution_for_commit == false`, weak attribution is visible as a warning but does not independently block commit;
-- if the policy is `true`, only an exact state may satisfy the gate;
-- for the first implementation, `exact_isolated` is the only emitted exact state;
-- `exact_clean_workspace` is accepted by policy semantics but cannot currently be produced;
+- policy `false`: weak attribution is visible as a warning but is not an independent blocker;
+- policy `true`: only an exact state satisfies the attribution gate;
+- first implementation emits `exact_isolated` as the supported exact state;
+- `exact_clean_workspace` is accepted by policy semantics but cannot yet be produced;
 - `derived_pre_post`, `manual`, `unattributed`, and `legacy_unknown` block when exact attribution is required;
-- historical already-committed manifests do not retroactively become invalid; current policy mismatch is shown as historical warning, consistent with current scope/acceptance behavior.
+- already-committed historical state is not rewritten by a later policy change; mismatch is a warning, matching existing scope/acceptance historical semantics.
 
 `Changes readiness == Finish readiness` remains invariant because both consume the same Safe Commit Manifest.
 
 ## UI / UX
 
-This cut changes evidence semantics, not the visual system wholesale.
+This cut changes evidence semantics, not the entire visual system.
 
-Changes should render one compact attribution row in the ChangeSet Passport / trust summary:
+Changes renders one compact attribution row:
 
 ```text
 Producer attribution   Exact · isolated worktree
                        Run abc123 · baseline 7f8…
 ```
 
-Other examples:
+Other states:
 
 ```text
 Producer attribution   Derived · pre/post Git evidence
@@ -262,25 +248,25 @@ Producer attribution   Manual handoff
 Producer attribution   Unknown · legacy evidence
 ```
 
-When project policy blocks commit:
+When policy blocks commit:
 
 ```text
 Commit blocked: this Project requires exact producer attribution.
 Rerun the change with a supported isolated coding agent.
 ```
 
-Avoid green terminology for `derived_pre_post`. It can be valid evidence without being exact evidence.
+`derived_pre_post` must never receive exact/green copy merely because it is valid evidence.
 
-Runs may expose the same immutable attribution evidence for debugging, but mutable policy/review/commit ownership remains in Changes/Projects.
+Runs may expose immutable attribution evidence for debugging. Mutable policy/review/commit ownership stays in Projects/Changes.
 
-## Why inspector behavior
+## Why inspector
 
-The attribution explanation should be mechanically derived from evidence:
+Explanation is deterministic:
 
-- why exact: managed worktree identity + baseline + complete ChangeSet capture;
-- why derived: complete pre/post evidence exists but workspace exclusivity is not proven;
-- why manual: imported/manual execution mode;
-- why unknown: producer/evidence metadata absent or legacy.
+- exact -> managed worktree identity + baseline + complete ChangeSet capture;
+- derived -> complete pre/post evidence, exclusivity not proven;
+- manual -> explicit handoff/import;
+- unknown -> producer/evidence metadata absent or historical.
 
 No LLM-generated explanation is required.
 
@@ -288,110 +274,107 @@ No LLM-generated explanation is required.
 
 Fail closed on evidence corruption, not on policy weakness.
 
-Examples:
+- mismatched worktree `run_id` / `step_id` -> never exact; persist bounded evidence issue;
+- missing baseline on a managed-worktree claim -> never exact;
+- incomplete ChangeSet capture -> existing execution-evidence rules block review and attribution cannot be exact;
+- old receipt with no attribution -> `legacy_unknown`;
+- malformed project trust policy -> project config load fails explicitly;
+- never fabricate `derived_pre_post` when underlying before/after evidence is unavailable.
 
-- mismatched worktree `run_id` / `step_id`: downgrade/block exact classification and persist a bounded evidence issue;
-- missing baseline on a claimed managed worktree: cannot emit `exact_isolated`;
-- incomplete ChangeSet capture: attribution cannot be exact and existing execution-evidence rules already block review;
-- old receipt with no attribution field: `legacy_unknown`;
-- malformed project policy: project config load fails explicitly rather than silently changing policy.
+## Security/privacy
 
-Do not fabricate `derived_pre_post` if the underlying before/after evidence was unavailable.
+- never persist credentials or secret material in attribution reasons;
+- do not expose arbitrary absolute worktree paths in normal Changes UI;
+- workspace IDs and commit SHAs are valid evidence identifiers;
+- reuse existing bounded/sanitized diagnostic conventions;
+- exact producer attribution does not imply OS/process isolation.
 
-## Security and privacy
+## Testing
 
-- never persist credential/provider secret data in attribution reasons;
-- do not expose arbitrary absolute filesystem paths in normal Changes UI;
-- workspace IDs and commit SHAs are acceptable evidence identifiers;
-- existing bounded/sanitized diagnostic conventions apply;
-- attribution does not imply OS/process isolation.
+### Core
 
-## Testing strategy
-
-### Core unit tests
-
-1. managed matching worktree + complete evidence -> `exact_isolated`;
-2. managed worktree with mismatched run/step -> never exact;
-3. managed worktree without baseline -> never exact;
-4. complete non-isolated pre/post evidence -> `derived_pre_post`;
+1. matching managed worktree + complete evidence -> `exact_isolated`;
+2. mismatched run/step -> never exact;
+3. missing baseline -> never exact;
+4. complete non-isolated pre/post -> `derived_pre_post`;
 5. manual handoff -> `manual`;
 6. historical receipt -> `legacy_unknown`;
-7. multi-writer aggregation returns weakest strength;
-8. non-write steps do not make an otherwise valid run attribution-required.
+7. multi-writer aggregation follows the deterministic rules above;
+8. non-write steps do not require exact attribution.
 
-### Receipt compatibility tests
+### Compatibility
 
-- old JSON without attribution deserializes;
+- old receipt JSON without attribution deserializes;
 - new attribution round-trips;
-- exact claim cannot be reconstructed from only `run_id`.
+- exact claim cannot be reconstructed from run ID alone;
+- old project config without `trust_policy` defaults to permissive behavior.
 
-### Safe Commit Manifest tests
+### Safe Commit Manifest
 
-- default project policy + derived attribution -> warning, not blocker;
-- exact-required policy + `exact_isolated` -> attribution gate passes;
-- exact-required policy + derived/manual/unknown/legacy -> blocked;
-- committed historical state surfaces policy mismatch as warning rather than rewriting history;
-- manifest digest changes when attribution or attribution policy changes.
+- default policy + derived attribution -> warning, not blocker;
+- exact-required + `exact_isolated` -> attribution gate passes;
+- exact-required + derived/manual/unknown/legacy -> blocked;
+- committed historical state surfaces later policy mismatch as warning;
+- manifest digest changes when attribution or policy changes.
 
-### UI tests
+### UI
 
-Playwright should cover:
+Playwright covers:
 
-- exact isolated attribution label;
-- derived attribution is not styled/copy-labeled as exact;
-- exact-required policy produces a single actionable commit blocker;
-- legacy attribution displays unknown rather than exact/recorded;
-- Projects owns the exact-attribution policy control; Settings does not.
+- exact isolated label;
+- derived state is not represented as exact;
+- exact-required policy gives one actionable commit blocker;
+- legacy evidence displays unknown;
+- Projects owns the policy control and Settings does not.
 
-Native E2E should cover at least one persisted project-policy toggle/read path if the current native fixture can do so without introducing brittle external-agent dependencies.
+Native E2E should cover one persisted project-policy toggle/read path if current fixtures support it without brittle external-agent dependencies.
 
 ### Architecture ratchet
 
-Add non-regression checks so:
+Prevent regressions where:
 
-- Settings cannot own `require_exact_attribution_for_commit`;
-- UI cannot recreate a second attribution classifier from string matching;
-- ChangeSet Passport and Safe Commit Manifest use the shared core attribution type;
-- the raw `RecordedRun` attribution enum does not return.
+- Settings owns `require_exact_attribution_for_commit`;
+- frontend code recreates attribution classification via string matching;
+- Passport/Manifest diverge from the shared core type;
+- the old `RecordedRun` attribution state returns.
 
 ## Implementation boundaries
 
-Expected primary files/modules:
+Expected primary areas:
 
-- `crates/repodesk-core/src/orchestrator/types.rs`
-- executor/finalization code that constructs `SubAgentResult`
-- `crates/repodesk-core/src/workflow/receipt.rs`
-- a small focused core attribution module rather than growing an existing god-file
-- `crates/repodesk-core/src/engineering/changeset_passport.rs`
-- `crates/repodesk-core/src/engineering/safe_commit_manifest.rs`
-- `crates/repodesk-core/src/projects.rs`
-- Projects/Changes IPC types and UI
-- Playwright/native fixtures/tests
-- `scripts/check-source-architecture.mjs`
+- a small focused core attribution module;
+- `orchestrator/types.rs` and coding-agent result finalization;
+- `workflow/receipt.rs`;
+- `engineering/changeset_passport.rs`;
+- `engineering/safe_commit_manifest.rs`;
+- `projects.rs`;
+- Projects/Changes IPC + UI;
+- Playwright/native fixtures/tests;
+- `scripts/check-source-architecture.mjs`.
 
 Do not introduce another persisted ChangeSet or policy store.
 
 ## Delivery sequence
 
-1. RED tests for canonical attribution classification and legacy deserialization.
-2. Implement typed attribution evidence through executor -> receipt.
+1. RED tests for attribution classification and legacy deserialization.
+2. Typed attribution through executor -> receipt.
 3. RED/green ChangeSet Passport aggregation.
-4. Add backward-compatible Project trust policy.
-5. RED/green Safe Commit Manifest policy binding and version bump.
-6. Surface attribution in Changes and policy in Projects.
-7. Add architecture ratchet.
-8. Run focused Rust/frontend tests.
-9. Run exact-head full CI, Architecture Ratchet, security gates, Playwright, and native E2E before merge.
+4. Backward-compatible Project trust policy.
+5. RED/green Safe Commit Manifest binding + version bump.
+6. Changes/Projects UI.
+7. Architecture ratchet.
+8. Focused Rust/frontend verification.
+9. Exact-head full CI, Architecture Ratchet, security, Playwright, and native E2E before merge.
 
 ## Acceptance contract
 
-This cut is complete when:
+Complete when:
 
-1. RepoDesk never equates “recorded run” with exact producer attribution.
-2. Supported isolated coding-agent execution produces evidence-backed `exact_isolated` attribution.
-3. weaker/manual/legacy paths remain explicitly distinguishable.
-4. old receipts/configs remain readable without being upgraded to stronger claims.
-5. Projects can require exact attribution for commit.
-6. Changes and Finish enforce the exact same attribution policy through one Safe Commit Manifest.
-7. UI can explain why the attribution has its current strength without parsing free-form logs.
+1. “recorded run” is never treated as exact attribution;
+2. supported isolated coding-agent execution produces evidence-backed `exact_isolated`;
+3. weaker/manual/legacy paths remain explicit;
+4. historical receipts/configs stay readable without stronger claims;
+5. Projects can require exact attribution for commit;
+6. Changes and Finish enforce the same policy through one Safe Commit Manifest;
+7. UI can explain attribution strength without parsing free-form logs;
 8. no second attribution classifier or persistence authority exists.
