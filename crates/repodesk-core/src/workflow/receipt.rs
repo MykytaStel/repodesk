@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
+use crate::change_attribution::ChangeAttributionEvidence;
 use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::tasks::show_active_task;
@@ -41,6 +42,10 @@ pub struct StepReceipt {
     /// Whether `changed_files` is complete evidence or only an unknown/unavailable placeholder.
     #[serde(default)]
     pub change_evidence_status: ChangeEvidenceStatus,
+    /// Durable producer-attribution evidence. Historical receipts without this
+    /// field remain conservative and deserialize as `legacy_unknown`.
+    #[serde(default)]
+    pub change_attribution: ChangeAttributionEvidence,
 }
 
 /// Proof of what the run actually did. `Partial` is **not** treated as success:
@@ -584,6 +589,7 @@ pub fn commit_exists(project_path: &Path, sha: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::change_attribution::ChangeAttributionStrength;
     use tempfile::tempdir;
 
     fn step(id: &str, status: SubAgentStatus, allow_write: bool) -> StepReceipt {
@@ -593,6 +599,7 @@ mod tests {
             allow_write,
             changed_files: Vec::new(),
             change_evidence_status: ChangeEvidenceStatus::Complete,
+            change_attribution: ChangeAttributionEvidence::default(),
         }
     }
 
@@ -627,6 +634,36 @@ mod tests {
             }),
             finish: None,
         }
+    }
+
+    #[test]
+    fn legacy_step_receipt_defaults_attribution_to_unknown() {
+        let json = r#"{
+            "task_id":"impl",
+            "status":"ok",
+            "allow_write":true,
+            "changed_files":["src/lib.rs"],
+            "change_evidence_status":"complete"
+        }"#;
+        let receipt: StepReceipt = serde_json::from_str(json).expect("legacy receipt");
+        assert_eq!(
+            receipt.change_attribution.strength,
+            ChangeAttributionStrength::LegacyUnknown
+        );
+    }
+
+    #[test]
+    fn step_receipt_round_trips_typed_attribution() {
+        let mut receipt = step("impl", SubAgentStatus::Ok, true);
+        receipt.change_attribution = ChangeAttributionEvidence {
+            strength: ChangeAttributionStrength::ExactIsolated,
+            workspace_id: Some("workspace-1".into()),
+            baseline_commit: Some("abc123".into()),
+            reason: Some("managed isolated worktree".into()),
+        };
+        let encoded = serde_json::to_string(&receipt).expect("serialize");
+        let decoded: StepReceipt = serde_json::from_str(&encoded).expect("deserialize");
+        assert_eq!(decoded, receipt);
     }
 
     #[test]
