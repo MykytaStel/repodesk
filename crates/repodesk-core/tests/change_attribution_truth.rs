@@ -29,8 +29,14 @@ fn matching_managed_worktree_with_complete_changeset_is_exact_isolated() {
         Some(&workspace),
     );
 
-    assert_eq!(evidence.strength, ChangeAttributionStrength::ExactIsolated);
-    assert_eq!(evidence.workspace_id.as_deref(), Some(workspace.workspace_id.as_str()));
+    assert_eq!(
+        evidence.strength,
+        ChangeAttributionStrength::ExactIsolated
+    );
+    assert_eq!(
+        evidence.workspace_id.as_deref(),
+        Some(workspace.workspace_id.as_str())
+    );
     assert_eq!(evidence.baseline_commit.as_deref(), Some("abc123"));
     assert!(evidence.strength.is_exact());
 }
@@ -48,7 +54,10 @@ fn mismatched_worktree_identity_never_claims_exact_attribution() {
             ChangeEvidenceStatus::Complete,
             Some(workspace),
         );
-        assert_ne!(evidence.strength, ChangeAttributionStrength::ExactIsolated);
+        assert_ne!(
+            evidence.strength,
+            ChangeAttributionStrength::ExactIsolated
+        );
         assert!(!evidence.strength.is_exact());
     }
 }
@@ -65,7 +74,10 @@ fn missing_baseline_never_claims_exact_attribution() {
         Some(&workspace),
     );
 
-    assert_ne!(evidence.strength, ChangeAttributionStrength::ExactIsolated);
+    assert_ne!(
+        evidence.strength,
+        ChangeAttributionStrength::ExactIsolated
+    );
     assert!(!evidence.strength.is_exact());
 }
 
@@ -79,7 +91,10 @@ fn complete_non_isolated_capture_is_derived_not_exact() {
         None,
     );
 
-    assert_eq!(evidence.strength, ChangeAttributionStrength::DerivedPrePost);
+    assert_eq!(
+        evidence.strength,
+        ChangeAttributionStrength::DerivedPrePost
+    );
     assert!(!evidence.strength.is_exact());
 }
 
@@ -95,7 +110,10 @@ fn unavailable_capture_cannot_be_upgraded_to_derived_or_exact() {
         Some(&workspace),
     );
 
-    assert_eq!(evidence.strength, ChangeAttributionStrength::Unattributed);
+    assert_eq!(
+        evidence.strength,
+        ChangeAttributionStrength::Unattributed
+    );
     assert!(!evidence.strength.is_exact());
 }
 
@@ -116,7 +134,10 @@ fn explicit_manual_handoff_is_manual_attribution() {
 #[test]
 fn historical_default_is_conservative_legacy_unknown() {
     let evidence = ChangeAttributionEvidence::default();
-    assert_eq!(evidence.strength, ChangeAttributionStrength::LegacyUnknown);
+    assert_eq!(
+        evidence.strength,
+        ChangeAttributionStrength::LegacyUnknown
+    );
     assert!(!evidence.strength.is_exact());
 }
 
@@ -131,7 +152,10 @@ fn exact_clean_workspace_is_policy_exact_but_not_emitted_by_current_classifier()
         ChangeEvidenceStatus::Complete,
         None,
     );
-    assert_ne!(evidence.strength, ChangeAttributionStrength::ExactCleanWorkspace);
+    assert_ne!(
+        evidence.strength,
+        ChangeAttributionStrength::ExactCleanWorkspace
+    );
 }
 
 #[test]
@@ -159,8 +183,14 @@ fn multi_writer_aggregation_is_conservative() {
     );
 
     let compatible_exact = aggregate_change_attribution(&[first.clone(), second]);
-    assert_eq!(compatible_exact.strength, ChangeAttributionStrength::ExactIsolated);
-    assert_eq!(compatible_exact.baseline_commit.as_deref(), Some("abc123"));
+    assert_eq!(
+        compatible_exact.strength,
+        ChangeAttributionStrength::ExactIsolated
+    );
+    assert_eq!(
+        compatible_exact.baseline_commit.as_deref(),
+        Some("abc123")
+    );
 
     let mixed = aggregate_change_attribution(&[first, derived]);
     assert_eq!(mixed.strength, ChangeAttributionStrength::DerivedPrePost);
