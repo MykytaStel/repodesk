@@ -36,12 +36,14 @@ export function ExecutionPreviewCompact({
 
   return (
     <section className="exec-packet" aria-label="Execution packet preview">
-      <PanelHeader
-        eyebrow="Execution packet"
-        title={`${lead?.executor_label ?? "Worker"} · ${lead?.model ?? "provider default"}`}
-        description="The approved packet below is the boundary RepoDesk will hand to this run."
-        trailing={<StatusBadge label={preparation.label} tone={preparation.tone} />}
-      />
+      <div className="exec-packet-heading">
+        <PanelHeader
+          eyebrow="Execution packet"
+          title={<strong>{lead?.executor_label ?? "Worker"} · {lead?.model ?? "provider default"}</strong>}
+          description="The approved packet below is the boundary RepoDesk will hand to this run."
+          trailing={<StatusBadge label={preparation.label} tone={preparation.tone} />}
+        />
+      </div>
 
       <div className="exec-packet-grid">
         <Metric
