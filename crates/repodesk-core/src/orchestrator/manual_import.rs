@@ -140,6 +140,8 @@ pub fn import_manual_changes(source: ManualImportSource) -> RepoDeskResult<Manua
         cost_units: 0.0,
         captured_proposals: 0,
         changed_files: changed_files.clone(),
+        change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+        execution_issues: Vec::new(),
         diff_path: None,
         workspace: None,
         notes: warnings.clone(),

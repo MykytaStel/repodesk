@@ -138,6 +138,8 @@ mod tests {
             cost_units: 0.0,
             captured_proposals: 0,
             changed_files: Vec::new(),
+            change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+            execution_issues: Vec::new(),
             diff_path: None,
             workspace: None,
             notes: Vec::new(),

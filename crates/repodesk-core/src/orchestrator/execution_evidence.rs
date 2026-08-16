@@ -112,12 +112,7 @@ pub fn evidence_state_for_run(run_id: &str) -> RepoDeskResult<ExecutionEvidenceS
 
     match load_receipt_for_run(run_id) {
         Ok(Some(receipt)) if execution_receipt_matches_run(&receipt, &run) => {
-            return Ok(ExecutionEvidenceState {
-                run_id: run_id.to_string(),
-                status: ExecutionEvidenceStatus::Ready,
-                recoverable: false,
-                detail: None,
-            });
+            return Ok(matching_receipt_state(run_id, &receipt));
         }
         Ok(Some(_)) => {
             return recovery_state(
@@ -161,12 +156,7 @@ pub fn repair_execution_evidence(run_id: &str) -> RepoDeskResult<ExecutionEviden
         && execution_receipt_matches_run(&receipt, &run)
     {
         let _ = clear_recovery_record(run_id);
-        return Ok(ExecutionEvidenceState {
-            run_id: run_id.to_string(),
-            status: ExecutionEvidenceStatus::Ready,
-            recoverable: false,
-            detail: None,
-        });
+        return Ok(matching_receipt_state(run_id, &receipt));
     }
 
     let record = read_recovery_record(run_id)?.ok_or_else(|| routing_error(format!(
@@ -181,20 +171,14 @@ pub fn repair_execution_evidence(run_id: &str) -> RepoDeskResult<ExecutionEviden
     save_receipt(&record.receipt)?;
     let repaired = load_receipt_for_run(run_id)?
         .filter(|receipt| execution_receipt_matches_run(receipt, &run))
-        .is_some();
-    if !repaired {
-        return Err(routing_error(
-            "execution evidence repair did not produce a receipt bound to the persisted run",
-        ));
-    }
+        .ok_or_else(|| {
+            routing_error(
+                "execution evidence repair did not produce a receipt bound to the persisted run",
+            )
+        })?;
     let _ = clear_recovery_record(run_id);
 
-    Ok(ExecutionEvidenceState {
-        run_id: run_id.to_string(),
-        status: ExecutionEvidenceStatus::Ready,
-        recoverable: false,
-        detail: None,
-    })
+    Ok(matching_receipt_state(run_id, &repaired))
 }
 
 /// Fail closed before Review mutates the active checkout.
@@ -228,12 +212,7 @@ fn finalize_execution_evidence(
         && execution_receipt_matches_run(&receipt, run)
     {
         let _ = clear_recovery_record(&run.run_id);
-        return Ok(ExecutionEvidenceState {
-            run_id: run.run_id.clone(),
-            status: ExecutionEvidenceStatus::Ready,
-            recoverable: false,
-            detail: None,
-        });
+        return Ok(matching_receipt_state(&run.run_id, &receipt));
     }
 
     let mode = crate::workflow::load_phase_state()
@@ -247,12 +226,7 @@ fn finalize_execution_evidence(
     match save_receipt(&receipt) {
         Ok(()) => {
             let _ = clear_recovery_record(&run.run_id);
-            Ok(ExecutionEvidenceState {
-                run_id: run.run_id.clone(),
-                status: ExecutionEvidenceStatus::Ready,
-                recoverable: false,
-                detail: None,
-            })
+            Ok(matching_receipt_state(&run.run_id, &receipt))
         }
         Err(error) => {
             let detail = format!("execution receipt persistence failed: {error}");
@@ -309,9 +283,7 @@ fn build_execution_receipt(
                 status: result.status,
                 allow_write: allow_write_of(&result.task_id),
                 changed_files: result.changed_files.clone(),
-                // Until executor provenance is threaded through SubAgentResult,
-                // stay conservative rather than upgrading an empty list to proof.
-                change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
+                change_evidence_status: result.change_evidence_status,
             }
         })
         .collect();
@@ -350,7 +322,10 @@ fn execution_receipt_matches_run(receipt: &TaskRunReceipt, run: &OrchestrationRu
         else {
             return false;
         };
-        if step.status != result.status || step.changed_files != result.changed_files {
+        if step.status != result.status
+            || step.changed_files != result.changed_files
+            || step.change_evidence_status != result.change_evidence_status
+        {
             return false;
         }
     }
@@ -366,6 +341,33 @@ fn execution_receipt_matches_run(receipt: &TaskRunReceipt, run: &OrchestrationRu
     }
     let expected_digest = (!changed.is_empty()).then(|| changeset_digest(&changed));
     receipt.execution.changeset_digest == expected_digest
+}
+
+fn matching_receipt_status(receipt: &TaskRunReceipt) -> ExecutionEvidenceStatus {
+    if receipt
+        .execution
+        .required_steps
+        .iter()
+        .any(|step| step.allow_write && !step.change_evidence_status.is_complete())
+    {
+        ExecutionEvidenceStatus::Incomplete
+    } else {
+        ExecutionEvidenceStatus::Ready
+    }
+}
+
+fn matching_receipt_state(run_id: &str, receipt: &TaskRunReceipt) -> ExecutionEvidenceState {
+    let status = matching_receipt_status(receipt);
+    let detail = (status == ExecutionEvidenceStatus::Incomplete).then(|| {
+        "execution receipt exists, but one or more write-capable steps lack complete changeset provenance; rerun execution before Review"
+            .to_string()
+    });
+    ExecutionEvidenceState {
+        run_id: run_id.to_string(),
+        status,
+        recoverable: false,
+        detail,
+    }
 }
 
 fn recovery_state(run_id: &str, detail: &str) -> RepoDeskResult<ExecutionEvidenceState> {

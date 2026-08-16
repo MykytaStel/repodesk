@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::api_clients::ThinkingLevel;
+use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::routing::types::{ExecutorKind, TaskKind};
 use crate::worktree::RunWorktree;
@@ -122,6 +123,14 @@ pub struct SubAgentResult {
     /// executor kind). The reviewable changeset for an accept/reject decision.
     #[serde(default)]
     pub changed_files: Vec<String>,
+    /// Whether `changed_files` is complete changeset evidence. Historical run
+    /// JSON without this field remains conservative (`legacy_unknown`).
+    #[serde(default)]
+    pub change_evidence_status: ChangeEvidenceStatus,
+    /// Bounded, secret-redacted execution diagnostics that must survive the
+    /// executor boundary without being flattened into misleading notes.
+    #[serde(default)]
+    pub execution_issues: Vec<String>,
     /// Receipt file holding the full captured diff for a coding-agent step.
     #[serde(default)]
     pub diff_path: Option<String>,

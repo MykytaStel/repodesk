@@ -771,6 +771,8 @@ mod tests {
             cost_units: 0.0,
             captured_proposals: 0,
             changed_files: paths.iter().map(|path| path.to_string()).collect(),
+            change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+            execution_issues: Vec::new(),
             diff_path: None,
             workspace: Some(worktree.clone()),
             notes: Vec::new(),

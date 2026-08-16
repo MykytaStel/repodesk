@@ -439,6 +439,8 @@ mod tests {
                 .iter()
                 .map(|path| (*path).to_string())
                 .collect(),
+            change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+            execution_issues: Vec::new(),
             diff_path: diff_path.map(str::to_string),
             workspace: None,
             notes: Vec::new(),

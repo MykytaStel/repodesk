@@ -216,16 +216,13 @@ pub async fn run_loop(goal: Option<String>, opts: &LoopOptions) -> RepoDeskResul
                 && (result.notes.iter().any(|n| n.contains(SAFETY_BLOCK_MARKER))
                     || result.notes.iter().any(|n| n.contains(BUDGET_BLOCK_MARKER)))
         });
-        let evidence_recovery_required = !opts.dry_run
-            && evidence_state_for_run(&run.run_id)?.status
-                == ExecutionEvidenceStatus::RecoveryRequired;
+        let evidence_status = if opts.dry_run {
+            ExecutionEvidenceStatus::NotRequired
+        } else {
+            evidence_state_for_run(&run.run_id)?.status
+        };
 
-        let (note, terminal) = classify(
-            &run.status,
-            guardrail_hit,
-            opts.dry_run,
-            evidence_recovery_required,
-        );
+        let (note, terminal) = classify(&run.status, guardrail_hit, opts.dry_run, evidence_status);
         iterations.push(LoopIteration {
             index,
             run_id: run.run_id.clone(),
@@ -269,7 +266,7 @@ fn classify(
     run_status: &RunStatus,
     guardrail_hit: bool,
     dry_run: bool,
-    evidence_recovery_required: bool,
+    evidence_status: ExecutionEvidenceStatus,
 ) -> (&'static str, Option<LoopStatus>) {
     if dry_run {
         return (
@@ -277,7 +274,7 @@ fn classify(
             Some(LoopStatus::DryRun),
         );
     }
-    if evidence_recovery_required {
+    if evidence_status == ExecutionEvidenceStatus::RecoveryRequired {
         return (
             "execution completed but evidence persistence needs repair — do not rerun the agent",
             Some(LoopStatus::EvidenceRecoveryRequired),
@@ -287,6 +284,12 @@ fn classify(
         return (
             "a safety/budget guardrail blocked a step — needs human intervention",
             Some(LoopStatus::GuardrailBlocked),
+        );
+    }
+    if evidence_status == ExecutionEvidenceStatus::Incomplete {
+        return (
+            "execution evidence is incomplete — rerun execution to capture trustworthy changeset provenance",
+            None,
         );
     }
     match run_status {
@@ -308,7 +311,12 @@ mod tests {
 
     #[test]
     fn dry_run_is_terminal_in_a_single_pass() {
-        let (_, terminal) = classify(&RunStatus::DryRun, false, true, false);
+        let (_, terminal) = classify(
+            &RunStatus::DryRun,
+            false,
+            true,
+            ExecutionEvidenceStatus::NotRequired,
+        );
         assert_eq!(terminal, Some(LoopStatus::DryRun));
     }
 
@@ -349,13 +357,23 @@ mod tests {
 
     #[test]
     fn guardrail_block_stops_without_retry() {
-        let (_, terminal) = classify(&RunStatus::Partial, true, false, false);
+        let (_, terminal) = classify(
+            &RunStatus::Partial,
+            true,
+            false,
+            ExecutionEvidenceStatus::Incomplete,
+        );
         assert_eq!(terminal, Some(LoopStatus::GuardrailBlocked));
     }
 
     #[test]
     fn partial_run_without_guardrail_retries() {
-        let (_, terminal) = classify(&RunStatus::Partial, false, false, false);
+        let (_, terminal) = classify(
+            &RunStatus::Partial,
+            false,
+            false,
+            ExecutionEvidenceStatus::Ready,
+        );
         assert_eq!(terminal, None);
     }
 }
