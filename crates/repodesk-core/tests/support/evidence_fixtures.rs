@@ -67,5 +67,6 @@ pub fn complete_write_step_receipt(task_id: &str, changed_files: Vec<String>) ->
         allow_write: true,
         changed_files,
         change_evidence_status: ChangeEvidenceStatus::Complete,
+        change_attribution: Default::default(),
     }
 }
