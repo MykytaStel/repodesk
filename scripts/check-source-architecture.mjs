@@ -6,11 +6,21 @@ import { resolve } from "node:path";
 export const HARD_SOURCE_LIMIT_BYTES = 28 * 1024;
 const SOURCE_EXTENSIONS = new Set([".rs", ".ts", ".tsx", ".mjs"]);
 
-const CHANGES_SEMANTIC_ADAPTER = "apps/desktop/src/features/changes/changesSemantic.ts";
 const SHARED_PRIMITIVES_INDEX = "apps/desktop/src/shared/ui/primitives/index.ts";
+const CHANGES_SEMANTIC_ADAPTER = "apps/desktop/src/features/changes/changesSemantic.ts";
 const CHANGES_TYPED_SURFACES = [
   "apps/desktop/src/features/changes/ChangesTab.tsx",
   "apps/desktop/src/features/changes/ChangeGovernancePanel.tsx",
+];
+const WORK_SEMANTIC_ADAPTER = "apps/desktop/src/features/work/workSemantic.ts";
+const WORK_TYPED_SURFACES = [
+  "apps/desktop/src/features/work/WorkSurface.tsx",
+  "apps/desktop/src/features/work/WorkTab.tsx",
+  "apps/desktop/src/features/work/ReviewPanel.tsx",
+];
+const WORK_PRIMITIVE_SURFACES = [
+  ...WORK_TYPED_SURFACES,
+  "apps/desktop/src/features/work/ExecutionStrategyControls.tsx",
 ];
 
 function extensionOf(path) {
@@ -134,47 +144,76 @@ function readSource(path) {
   return existsSync(path) ? readFileSync(path, "utf8") : null;
 }
 
-export function evaluateChangesSemanticContract() {
+function evaluateTypedSemanticContract({
+  label,
+  adapterPath,
+  adapterImport,
+  typedSurfaces,
+  primitiveSurfaces = typedSurfaces,
+}) {
   const failures = [];
 
   if (!existsSync(SHARED_PRIMITIVES_INDEX)) {
-    failures.push(`${SHARED_PRIMITIVES_INDEX}: Changes reference migration requires the shared semantic primitive boundary`);
+    failures.push(`${SHARED_PRIMITIVES_INDEX}: ${label} migration requires the shared semantic primitive boundary`);
   }
-  if (!existsSync(CHANGES_SEMANTIC_ADAPTER)) {
-    failures.push(`${CHANGES_SEMANTIC_ADAPTER}: Changes reference migration requires one typed domain-to-semantic adapter`);
+  if (!existsSync(adapterPath)) {
+    failures.push(`${adapterPath}: ${label} migration requires one typed domain-to-semantic adapter`);
   }
 
-  const adapter = readSource(CHANGES_SEMANTIC_ADAPTER);
+  const adapter = readSource(adapterPath);
   if (adapter) {
-    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block)/i.test(adapter)) {
-      failures.push(`${CHANGES_SEMANTIC_ADAPTER}: typed Changes state must not be inferred from status text substrings`);
+    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block|ready|done|stale)/i.test(adapter)) {
+      failures.push(`${adapterPath}: typed ${label} state must not be inferred from status text substrings`);
     }
     if (/statusTone\s*\(/.test(adapter)) {
-      failures.push(`${CHANGES_SEMANTIC_ADAPTER}: typed Changes state must not delegate to statusTone()`);
+      failures.push(`${adapterPath}: typed ${label} state must not delegate to statusTone()`);
     }
   }
 
-  for (const path of CHANGES_TYPED_SURFACES) {
+  for (const path of primitiveSurfaces) {
     const source = readSource(path);
     if (!source) {
-      failures.push(`${path}: expected Changes reference surface is missing`);
+      failures.push(`${path}: expected ${label} semantic surface is missing`);
       continue;
     }
     if (!source.includes('from "../../shared/ui/primitives"')) {
-      failures.push(`${path}: migrated Changes surfaces must consume the shared semantic primitive boundary`);
-    }
-    if (!source.includes('from "./changesSemantic"')) {
-      failures.push(`${path}: migrated Changes surfaces must consume the typed Changes semantic adapter`);
+      failures.push(`${path}: migrated ${label} surfaces must consume the shared semantic primitive boundary`);
     }
     if (/statusTone\s*\(/.test(source)) {
-      failures.push(`${path}: typed Changes state must not call statusTone()`);
+      failures.push(`${path}: typed ${label} state must not call statusTone()`);
     }
-    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block)/i.test(source)) {
-      failures.push(`${path}: typed Changes state must not be inferred from status text substrings`);
+    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block|ready|done|stale)/i.test(source)) {
+      failures.push(`${path}: typed ${label} state must not be inferred from status text substrings`);
+    }
+  }
+
+  for (const path of typedSurfaces) {
+    const source = readSource(path);
+    if (source && !source.includes(`from "${adapterImport}"`)) {
+      failures.push(`${path}: migrated ${label} typed surfaces must consume ${adapterImport}`);
     }
   }
 
   return failures;
+}
+
+export function evaluateChangesSemanticContract() {
+  return evaluateTypedSemanticContract({
+    label: "Changes",
+    adapterPath: CHANGES_SEMANTIC_ADAPTER,
+    adapterImport: "./changesSemantic",
+    typedSurfaces: CHANGES_TYPED_SURFACES,
+  });
+}
+
+export function evaluateWorkSemanticContract() {
+  return evaluateTypedSemanticContract({
+    label: "Work",
+    adapterPath: WORK_SEMANTIC_ADAPTER,
+    adapterImport: "./workSemantic",
+    typedSurfaces: WORK_TYPED_SURFACES,
+    primitiveSurfaces: WORK_PRIMITIVE_SURFACES,
+  });
 }
 
 export function runArchitectureRatchet() {
@@ -203,6 +242,7 @@ export function runArchitectureRatchet() {
   }
 
   failures.push(...evaluateChangesSemanticContract());
+  failures.push(...evaluateWorkSemanticContract());
 
   console.log(`Architecture ratchet: ${paths.length} changed file(s), base ${baseSha.slice(0, 12)}.`);
   console.log(`Hard limit for new/crossing source files: ${HARD_SOURCE_LIMIT_BYTES} bytes (28 KiB).`);
