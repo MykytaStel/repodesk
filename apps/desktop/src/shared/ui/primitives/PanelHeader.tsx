@@ -8,14 +8,12 @@ export type PanelHeaderProps = {
   headingLevel?: 2 | 3 | 4;
 };
 
-export function PanelHeader({ eyebrow, title, description, trailing, headingLevel }: PanelHeaderProps) {
+export function PanelHeader({ eyebrow, title, description, trailing, headingLevel = 2 }: PanelHeaderProps) {
   const titleNode = headingLevel === 2
     ? <h2>{title}</h2>
     : headingLevel === 3
       ? <h3>{title}</h3>
-      : headingLevel === 4
-        ? <h4>{title}</h4>
-        : title;
+      : <h4>{title}</h4>;
 
   return (
     <header className="semantic-panel-header">
