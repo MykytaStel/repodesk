@@ -102,6 +102,7 @@ fn seed_verified_change(project_path: &Path) {
                 allow_write: true,
                 changed_files: changed,
                 change_evidence_status: ChangeEvidenceStatus::Complete,
+                change_attribution: Default::default(),
             }],
             changeset_digest: Some(digest),
         },
