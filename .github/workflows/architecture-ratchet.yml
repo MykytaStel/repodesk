@@ -24,7 +24,7 @@ jobs:
           node-version: 22
 
       - name: Test architecture ratchet
-        run: node --test scripts/check-source-architecture.test.mjs
+        run: node --test scripts/*.test.mjs
 
       - name: Enforce source architecture budget
         env:
