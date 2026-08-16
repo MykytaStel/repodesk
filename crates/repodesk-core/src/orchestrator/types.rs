@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize};
 
 use crate::api_clients::ThinkingLevel;
+use crate::change_attribution::ChangeAttributionEvidence;
 use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::routing::types::{ExecutorKind, TaskKind};
@@ -127,6 +128,10 @@ pub struct SubAgentResult {
     /// JSON without this field remains conservative (`legacy_unknown`).
     #[serde(default)]
     pub change_evidence_status: ChangeEvidenceStatus,
+    /// Typed producer-attribution evidence. Historical run JSON deliberately
+    /// defaults to `legacy_unknown` rather than reconstructing a stronger claim.
+    #[serde(default)]
+    pub change_attribution: ChangeAttributionEvidence,
     /// Bounded, secret-redacted execution diagnostics that must survive the
     /// executor boundary without being flattened into misleading notes.
     #[serde(default)]
@@ -384,7 +389,7 @@ mod tests {
 
     #[test]
     fn detects_unknown_dependency() {
-        let steps = vec![step("a", &["ghost"])];
+        let steps = vec![step("a", &["ghost"] )];
         assert!(matches!(
             topological_order(&steps),
             Err(RepoDeskError::RoutingFailed { .. })
