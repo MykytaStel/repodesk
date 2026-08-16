@@ -80,6 +80,7 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
       state={executionEvidenceSemantic(evidence.data.status).label}
       tone={executionEvidenceSemantic(evidence.data.status).tone}
       detail="Execution finished, but the persisted receipt needs repair. Repair execution evidence; do not rerun the agent."
+      role="alert"
     />
   ) : evidence.data.status === "not_required" ? (
     <EvidenceState
