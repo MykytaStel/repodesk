@@ -17,11 +17,11 @@ use crate::workflow::{
     load_receipt, staged_paths,
 };
 
+use super::changeset_passport::derive_receipt_change_attribution;
 use super::{
     AcceptanceEvidenceReport, CommitScopePolicyDecision, ScopeComplianceStatus,
     load_active_acceptance_evidence, load_active_commit_scope_policy,
 };
-use super::changeset_passport::derive_receipt_change_attribution;
 
 pub const SAFE_COMMIT_MANIFEST_VERSION: u32 = 2;
 
@@ -496,7 +496,6 @@ fn path_set(paths: &[String]) -> BTreeSet<&str> {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
     use super::*;
     use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
     use crate::engineering::{AcceptanceCriterionEvidence, AcceptanceCriterionStatus};
@@ -504,6 +503,7 @@ mod tests {
     use crate::workflow::{
         ExecutionMode, ExecutionReceipt, ReviewReceipt, StepReceipt, VerificationReceipt,
     };
+    use chrono::Utc;
 
     fn receipt() -> TaskRunReceipt {
         TaskRunReceipt {
