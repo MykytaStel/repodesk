@@ -49,3 +49,29 @@ fn evidence_status_has_distinct_incomplete_state() {
         "\"incomplete\""
     );
 }
+
+#[test]
+fn historical_subagent_result_defaults_to_unknown_evidence() {
+    let result: repodesk_core::orchestrator::SubAgentResult =
+        serde_json::from_value(serde_json::json!({
+            "task_id": "legacy",
+            "agent": "manual",
+            "provider": "manual",
+            "model": "external",
+            "status": "ok",
+            "output": "done",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_units": 0.0,
+            "captured_proposals": 0,
+            "changed_files": [],
+            "notes": []
+        }))
+        .expect("historical run results must remain loadable");
+
+    assert_eq!(
+        result.change_evidence_status,
+        ChangeEvidenceStatus::LegacyUnknown
+    );
+    assert!(result.execution_issues.is_empty());
+}

@@ -314,18 +314,41 @@ mod tests {
 
     #[test]
     fn completed_run_succeeds() {
-        let (_, terminal) = classify(&RunStatus::Completed, false, false, false);
+        let (_, terminal) = classify(
+            &RunStatus::Completed,
+            false,
+            false,
+            ExecutionEvidenceStatus::Ready,
+        );
         assert_eq!(terminal, Some(LoopStatus::Succeeded));
     }
 
     #[test]
     fn evidence_recovery_stops_without_retrying_execution() {
-        let (_, terminal) = classify(&RunStatus::Completed, false, false, true);
+        let (_, terminal) = classify(
+            &RunStatus::Completed,
+            false,
+            false,
+            ExecutionEvidenceStatus::RecoveryRequired,
+        );
         assert_eq!(terminal, Some(LoopStatus::EvidenceRecoveryRequired));
     }
 
     #[test]
     fn guardrail_block_stops_without_retry() {
+        #[test]
+        fn incomplete_evidence_retries_execution_instead_of_claiming_success() {
+            let (note, terminal) = classify(
+                &RunStatus::Completed,
+                false,
+                false,
+                ExecutionEvidenceStatus::Incomplete,
+            );
+            assert_eq!(terminal, None);
+            assert!(note.contains("rerun"));
+            assert!(!note.contains("repair"));
+        }
+
         let (_, terminal) = classify(&RunStatus::Partial, true, false, false);
         assert_eq!(terminal, Some(LoopStatus::GuardrailBlocked));
     }

@@ -176,3 +176,31 @@ test("Credentials have one user-triggered mutation owner", () => {
     "the Tauri invoke surface must expose a non-secret provider preference writer",
   );
 });
+
+
+test("execution evidence has one canonical receipt owner and no unknown-to-none copy", () => {
+  const runner = readFileSync(
+    new URL("../crates/repodesk-core/src/orchestrator/runner.rs", import.meta.url),
+    "utf8",
+  );
+  const evidence = readFileSync(
+    new URL("../crates/repodesk-core/src/orchestrator/execution_evidence.rs", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(
+    runner,
+    /fn write_execution_receipt\b|save_receipt\s*\(/,
+    "raw runner must not own canonical execution-receipt persistence",
+  );
+  assert.match(
+    evidence,
+    /save_receipt\s*\(/,
+    "execution_evidence must remain the canonical receipt finalization owner",
+  );
+  assert.doesNotMatch(
+    runner,
+    /no writes detected/,
+    "an empty path list must never be described as proven no-write evidence without provenance",
+  );
+});

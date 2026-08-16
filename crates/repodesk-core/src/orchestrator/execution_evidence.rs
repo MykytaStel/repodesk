@@ -552,6 +552,8 @@ mod tests {
                 cost_units: 0.0,
                 captured_proposals: 0,
                 changed_files: vec!["src/lib.rs".into()],
+                change_evidence_status: ChangeEvidenceStatus::Complete,
+                execution_issues: vec![],
                 diff_path: None,
                 workspace: None::<RunWorktree>,
                 notes: vec![],
@@ -577,6 +579,14 @@ mod tests {
         assert_eq!(receipt.execution.status, RunStatus::Completed);
         assert!(receipt.execution.required_steps[0].allow_write);
         assert_eq!(
+            receipt.execution.required_steps[0].change_evidence_status,
+            ChangeEvidenceStatus::Complete
+        );
+        assert_eq!(
+            matching_receipt_status(&receipt),
+            ExecutionEvidenceStatus::Ready
+        );
+        assert_eq!(
             receipt.execution.changeset_digest,
             Some(changeset_digest(&["src/lib.rs".into()]))
         );
@@ -585,6 +595,48 @@ mod tests {
 
     #[test]
     fn receipt_mismatch_is_not_ready_evidence() {
+        #[test]
+        fn matching_receipt_with_unavailable_write_evidence_is_incomplete() {
+            let mut run = run();
+            run.results[0].change_evidence_status = ChangeEvidenceStatus::Unavailable;
+            let plan = OrchestrationPlan {
+                project: run.project.clone(),
+                task_id: run.task_id.clone(),
+                goal: run.goal.clone(),
+                steps: vec![task("impl", true)],
+            };
+            let receipt =
+                build_execution_receipt(&plan, &run, ExecutionMode::AgentRun, Some("base".into()));
+
+            assert_eq!(
+                receipt.execution.required_steps[0].change_evidence_status,
+                ChangeEvidenceStatus::Unavailable
+            );
+            assert_eq!(
+                matching_receipt_status(&receipt),
+                ExecutionEvidenceStatus::Incomplete
+            );
+        }
+
+        #[test]
+        fn legacy_unknown_non_write_step_does_not_require_changeset_proof() {
+            let mut run = run();
+            run.results[0].change_evidence_status = ChangeEvidenceStatus::LegacyUnknown;
+            let plan = OrchestrationPlan {
+                project: run.project.clone(),
+                task_id: run.task_id.clone(),
+                goal: run.goal.clone(),
+                steps: vec![task("impl", false)],
+            };
+            let receipt =
+                build_execution_receipt(&plan, &run, ExecutionMode::AgentRun, Some("base".into()));
+
+            assert_eq!(
+                matching_receipt_status(&receipt),
+                ExecutionEvidenceStatus::Ready
+            );
+        }
+
         let run = run();
         let plan = OrchestrationPlan {
             project: run.project.clone(),
