@@ -2,14 +2,15 @@
 //!
 //! This is a derived read model, not a new source of truth. It composes the
 //! current TaskRunReceipt, exact Git tree, Engineering Contract scope decision,
-//! and acceptance evidence into the one contract both Changes and Finish use.
-//! A commit is safe only when this manifest is `ready`.
+//! acceptance evidence, and producer attribution into the one contract both
+//! Changes and Finish use. A commit is safe only when this manifest is `ready`.
 
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::change_attribution::ChangeAttributionEvidence;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::workflow::{
     CheckReceipt, ReviewDecision, TaskRunReceipt, commit_exists, head_sha, index_tree_sha,
@@ -20,8 +21,9 @@ use super::{
     AcceptanceEvidenceReport, CommitScopePolicyDecision, ScopeComplianceStatus,
     load_active_acceptance_evidence, load_active_commit_scope_policy,
 };
+use super::changeset_passport::derive_receipt_change_attribution;
 
-pub const SAFE_COMMIT_MANIFEST_VERSION: u32 = 1;
+pub const SAFE_COMMIT_MANIFEST_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -50,6 +52,10 @@ pub struct SafeCommitManifest {
     pub verification_commands: Vec<CheckReceipt>,
     pub scope: CommitScopePolicyDecision,
     pub acceptance: AcceptanceEvidenceReport,
+    /// Durable producer-attribution strength for the current ChangeSet.
+    pub attribution: ChangeAttributionEvidence,
+    /// Project-scoped policy. When true, only exact attribution may reach Ready.
+    pub exact_attribution_required: bool,
     pub commit_sha: Option<String>,
     pub state: SafeCommitState,
     pub ready: bool,
@@ -84,6 +90,8 @@ struct ManifestDigestPayload<'a> {
     verification_commands: &'a [CheckReceipt],
     scope: &'a CommitScopePolicyDecision,
     acceptance: &'a AcceptanceEvidenceReport,
+    attribution: &'a ChangeAttributionEvidence,
+    exact_attribution_required: bool,
     commit_sha: &'a Option<String>,
     state: SafeCommitState,
     ready: bool,
@@ -91,6 +99,9 @@ struct ManifestDigestPayload<'a> {
     warnings: &'a [String],
 }
 
+/// Backward-compatible derivation used by callers that do not own project
+/// policy. Exact attribution stays informational unless the active project
+/// explicitly enables the stricter contract.
 #[allow(clippy::too_many_arguments)]
 pub fn derive_safe_commit_manifest(
     work_item_id: &str,
@@ -101,6 +112,31 @@ pub fn derive_safe_commit_manifest(
     committed_tree_sha: Option<String>,
     scope: CommitScopePolicyDecision,
     acceptance: AcceptanceEvidenceReport,
+) -> RepoDeskResult<SafeCommitManifest> {
+    derive_safe_commit_manifest_with_attribution_policy(
+        work_item_id,
+        receipt,
+        current_head_sha,
+        current_index_tree,
+        live_staged_paths,
+        committed_tree_sha,
+        scope,
+        acceptance,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn derive_safe_commit_manifest_with_attribution_policy(
+    work_item_id: &str,
+    receipt: Option<&TaskRunReceipt>,
+    current_head_sha: Option<String>,
+    current_index_tree: Option<String>,
+    live_staged_paths: Vec<String>,
+    committed_tree_sha: Option<String>,
+    scope: CommitScopePolicyDecision,
+    acceptance: AcceptanceEvidenceReport,
+    exact_attribution_required: bool,
 ) -> RepoDeskResult<SafeCommitManifest> {
     let mut blockers = Vec::new();
     let mut warnings = Vec::new();
@@ -118,6 +154,13 @@ pub fn derive_safe_commit_manifest(
 
     let run_id = receipt.map(|value| value.run_id.clone());
     let changeset_digest = receipt.and_then(|value| value.execution.changeset_digest.clone());
+    let attribution = receipt
+        .map(derive_receipt_change_attribution)
+        .unwrap_or_else(|| ChangeAttributionEvidence {
+            strength: crate::change_attribution::ChangeAttributionStrength::Unattributed,
+            reason: Some("no durable execution receipt is available for this ChangeSet".into()),
+            ..ChangeAttributionEvidence::default()
+        });
     let review = receipt.and_then(|value| value.review.as_ref());
     let verification = receipt.and_then(|value| value.verification.as_ref());
     let finish = receipt.and_then(|value| value.finish.as_ref());
@@ -148,6 +191,20 @@ pub fn derive_safe_commit_manifest(
         blockers.push("No canonical run receipt exists for the active Work Item.".into());
     }
 
+    if exact_attribution_required && !attribution.is_exact() {
+        let message = format!(
+            "Project policy requires exact change attribution; current evidence is {:?}.",
+            attribution.strength
+        );
+        if committed {
+            warnings.push(format!(
+                "{message} This historical commit is not retroactively invalidated."
+            ));
+        } else {
+            blockers.push(message);
+        }
+    }
+
     if let Some(receipt) = receipt {
         let Some(digest) = changeset_digest.as_deref() else {
             blockers.push("No recorded ChangeSet exists for this run.".into());
@@ -165,6 +222,8 @@ pub fn derive_safe_commit_manifest(
                 verification_commands,
                 scope,
                 acceptance,
+                attribution,
+                exact_attribution_required,
                 commit_sha,
                 committed,
                 blockers,
@@ -283,6 +342,8 @@ pub fn derive_safe_commit_manifest(
         verification_commands,
         scope,
         acceptance,
+        attribution,
+        exact_attribution_required,
         commit_sha,
         committed,
         blockers,
@@ -323,7 +384,7 @@ pub fn load_active_safe_commit_manifest() -> RepoDeskResult<SafeCommitManifest> 
             crate::workflow::receipt::commit_tree_sha(&project.path, &finish.commit_sha)
         });
 
-    derive_safe_commit_manifest(
+    derive_safe_commit_manifest_with_attribution_policy(
         &task.config.id,
         receipt.as_ref(),
         current_head,
@@ -332,6 +393,7 @@ pub fn load_active_safe_commit_manifest() -> RepoDeskResult<SafeCommitManifest> 
         committed_tree,
         scope,
         acceptance,
+        project.require_exact_change_attribution,
     )
 }
 
@@ -350,6 +412,8 @@ fn finalize_manifest(
     verification_commands: Vec<CheckReceipt>,
     scope: CommitScopePolicyDecision,
     acceptance: AcceptanceEvidenceReport,
+    attribution: ChangeAttributionEvidence,
+    exact_attribution_required: bool,
     commit_sha: Option<String>,
     committed: bool,
     blockers: Vec<String>,
@@ -379,6 +443,8 @@ fn finalize_manifest(
         verification_commands,
         scope,
         acceptance,
+        attribution,
+        exact_attribution_required,
         commit_sha,
         state,
         ready,
@@ -406,6 +472,8 @@ fn digest_manifest(manifest: &SafeCommitManifest) -> RepoDeskResult<String> {
         verification_commands: &manifest.verification_commands,
         scope: &manifest.scope,
         acceptance: &manifest.acceptance,
+        attribution: &manifest.attribution,
+        exact_attribution_required: manifest.exact_attribution_required,
         commit_sha: &manifest.commit_sha,
         state: manifest.state,
         ready: manifest.ready,
@@ -431,6 +499,7 @@ mod tests {
     use chrono::Utc;
 
     use super::*;
+    use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
     use crate::engineering::{AcceptanceCriterionEvidence, AcceptanceCriterionStatus};
     use crate::orchestrator::{RunStatus, SubAgentStatus};
     use crate::workflow::{
@@ -451,6 +520,7 @@ mod tests {
                     allow_write: true,
                     changed_files: vec!["src/lib.rs".into()],
                     change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+                    change_attribution: exact_attribution(),
                 }],
                 changeset_digest: Some("digest-1".into()),
             },
@@ -474,6 +544,15 @@ mod tests {
                 verified_at: "2026-08-14T00:00:00Z".into(),
             }),
             finish: None,
+        }
+    }
+
+    fn exact_attribution() -> ChangeAttributionEvidence {
+        ChangeAttributionEvidence {
+            strength: ChangeAttributionStrength::ExactIsolated,
+            workspace_id: Some("workspace-1".into()),
+            baseline_commit: Some("base".into()),
+            reason: Some("managed isolated worktree".into()),
         }
     }
 
@@ -531,6 +610,59 @@ mod tests {
         assert_eq!(manifest.state, SafeCommitState::Ready);
         assert!(manifest.ready);
         assert!(manifest.blockers.is_empty());
+        assert_eq!(
+            manifest.attribution.strength,
+            ChangeAttributionStrength::ExactIsolated
+        );
+        assert!(!manifest.exact_attribution_required);
+    }
+
+    #[test]
+    fn exact_attribution_policy_blocks_weaker_evidence() {
+        let mut receipt = receipt();
+        receipt.execution.required_steps[0].change_attribution = ChangeAttributionEvidence {
+            strength: ChangeAttributionStrength::Manual,
+            reason: Some("manual handoff".into()),
+            ..ChangeAttributionEvidence::default()
+        };
+        let manifest = derive_safe_commit_manifest_with_attribution_policy(
+            "task-1",
+            Some(&receipt),
+            Some("head-1".into()),
+            Some("tree-1".into()),
+            vec!["src/lib.rs".into()],
+            None,
+            scope(),
+            acceptance(AcceptanceCriterionStatus::Proven),
+            true,
+        )
+        .unwrap();
+        assert!(!manifest.ready);
+        assert!(manifest.exact_attribution_required);
+        assert!(
+            manifest
+                .blockers
+                .iter()
+                .any(|value| value.contains("requires exact change attribution"))
+        );
+    }
+
+    #[test]
+    fn exact_attribution_policy_accepts_exact_isolated_evidence() {
+        let manifest = derive_safe_commit_manifest_with_attribution_policy(
+            "task-1",
+            Some(&receipt()),
+            Some("head-1".into()),
+            Some("tree-1".into()),
+            vec!["src/lib.rs".into()],
+            None,
+            scope(),
+            acceptance(AcceptanceCriterionStatus::Proven),
+            true,
+        )
+        .unwrap();
+        assert!(manifest.ready);
+        assert!(manifest.exact_attribution_required);
     }
 
     #[test]
