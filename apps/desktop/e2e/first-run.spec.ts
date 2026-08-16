@@ -18,6 +18,6 @@ test.describe("first run (empty workspace)", () => {
     const rail = page.locator(".phase-rail");
     await expect(rail.locator(".phase-current")).toContainText("Scope");
     await expect(page.getByRole("button", { name: "Connect a project", exact: true })).toHaveCount(1);
-    await expect(page.locator(".work-cta-row .primary-cta")).toHaveCount(0);
+    await expect(page.locator(".semantic-action-bar__primary .primary-cta")).toHaveCount(0);
   });
 });
