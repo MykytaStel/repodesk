@@ -103,6 +103,7 @@ fn seed_receipt(run_id: &str, changed: &[&str]) {
                 allow_write: true,
                 changed_files: changed,
                 change_evidence_status: ChangeEvidenceStatus::Complete,
+                change_attribution: Default::default(),
             }],
             changeset_digest: digest,
         },
