@@ -45,11 +45,11 @@ describe("RepoDesk desktop — first-run smoke", () => {
 
     const phases = $("[aria-label='Task phases']");
     await expect(phases).toBeExisting();
-    await expect(phases.$(".phase-current .phase-title")).toHaveText("Scope");
+    await expect(phases.$("[aria-label='Phase Scope: Current']")).toHaveText("Scope");
 
     const connectProject = $("//button[normalize-space()='Connect a project']");
     await expect(connectProject).toBeDisplayed();
-    await expect($(".work-cta-row .primary-cta")).not.toBeExisting();
+    await expect($(".semantic-action-bar__primary .primary-cta")).not.toBeExisting();
 
     await connectProject.click();
     await expect($("[aria-label^='Projects —']")).toHaveAttribute("aria-pressed", "true");
