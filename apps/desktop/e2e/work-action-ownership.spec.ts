@@ -51,29 +51,29 @@ async function boot(page: Page, fixtures: CommandFixtures) {
 test("Scope with a project but no task exposes one task-creation action", async ({ page }) => {
   await boot(page, projectWithoutTask);
 
-  await expect(page.locator(".work-phase-header .muted")).toHaveText("Define the Work Item for this project");
+  await expect(page.locator(".semantic-panel-header__description")).toHaveText("Define the Work Item for this project");
   await expect(page.getByRole("button", { name: "Create task", exact: true })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Create a task", exact: true })).toHaveCount(0);
-  await expect(page.locator(".work-current-step .pill")).toHaveCount(0);
-  await expect(page.locator(".work-cta-row .primary-cta")).toHaveCount(0);
+  await expect(page.locator(".semantic-action-bar__primary .primary-cta")).toHaveCount(0);
 });
 
 test("Scope without a project has one project action and routes it to Projects", async ({ page }) => {
   await boot(page, noProject);
 
-  await expect(page.locator(".work-phase-header .muted")).toHaveText("Choose the repository for this Work Item");
+  await expect(page.locator(".semantic-panel-header__description")).toHaveText("Choose the repository for this Work Item");
   await expect(page.getByRole("button", { name: "Connect a project", exact: true })).toHaveCount(1);
-  await expect(page.locator(".work-cta-row .primary-cta")).toHaveCount(0);
+  await expect(page.locator(".semantic-action-bar__primary .primary-cta")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Connect a project", exact: true }).click();
   await expect(page.getByRole("button", { name: /^Projects —/ })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("Review owns its accept-reject decision without a second generic CTA", async ({ page }) => {
+test("Review owns exactly one primary decision without a second generic CTA", async ({ page }) => {
   await boot(page, reviewFixtures);
 
   await expect(page.getByRole("button", { name: /Accept .* Verify/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Reject .* re-run/ })).toBeVisible();
-  await expect(page.locator(".work-current-step .pill")).toHaveCount(0);
-  await expect(page.locator(".work-cta-row .primary-cta")).toHaveCount(0);
+  const primary = page.locator(".semantic-action-bar__primary .primary-cta");
+  await expect(primary).toHaveCount(1);
+  await expect(primary).toHaveText(/Accept .* Verify/);
 });
