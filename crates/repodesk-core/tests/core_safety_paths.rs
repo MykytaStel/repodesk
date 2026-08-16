@@ -4,10 +4,11 @@
 //! test runs against an isolated temporary home. `REPODESK_HOME` is a process-global
 //! env var, so every test here is `#[serial]` to prevent cross-test interference.
 
+mod support;
+
 use std::path::{Path, PathBuf};
 
 use repodesk_core::api_clients::{ProviderSettings, ThinkingLevel};
-use repodesk_core::change_evidence::ChangeEvidenceStatus;
 use repodesk_core::guard::{GuardLevel, preflight};
 use repodesk_core::judge::{JudgementDecision, judge_agent};
 use repodesk_core::orchestrator::{
@@ -25,6 +26,9 @@ use repodesk_core::tasks::{NewTaskInput, create_task, show_active_task};
 use repodesk_core::usage::token_ledger::{LogTokenInput, cost_trend, log_token_event};
 use repodesk_core::workflow::{ActionRunResult, CommandResult};
 use serial_test::serial;
+use support::evidence_fixtures::{
+    complete_write_step_receipt, isolated_write_result, non_write_result,
+};
 use tempfile::TempDir;
 
 /// An isolated RepoDesk home with one active project and one active task.
@@ -431,24 +435,15 @@ fn write_run(orchestrate_dir: &std::path::Path, run_id: &str, goal: &str, status
         dry_run: false,
         started_at: "2026-06-17T10:00:00Z".to_string(),
         finished_at: "2026-06-17T10:01:00Z".to_string(),
-        results: vec![SubAgentResult {
-            task_id: "step-1".to_string(),
-            agent: "ollama".to_string(),
-            provider: "ollama".to_string(),
-            model: "llama3".to_string(),
-            status: SubAgentStatus::Ok,
-            output: String::new(),
-            input_tokens: 10,
-            output_tokens: 5,
-            cost_units: 0.0,
-            captured_proposals: 0,
-            changed_files: Vec::new(),
-            change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
-            execution_issues: Vec::new(),
-            diff_path: None,
-            workspace: None,
-            notes: Vec::new(),
-        }],
+        results: vec![non_write_result(
+            "step-1",
+            "ollama",
+            "llama3",
+            SubAgentStatus::Ok,
+            10,
+            5,
+            0.0,
+        )],
         total_input_tokens: 10,
         total_output_tokens: 5,
         total_cost_units: 0.0,
@@ -521,24 +516,14 @@ fn review_run_accepts_isolated_worktree_changesets() {
         dry_run: false,
         started_at: "2026-06-17T10:00:00Z".to_string(),
         finished_at: "2026-06-17T10:01:00Z".to_string(),
-        results: vec![SubAgentResult {
-            task_id: "implement".to_string(),
-            agent: "codex_cli".to_string(),
-            provider: "codex_cli".to_string(),
-            model: String::new(),
-            status: SubAgentStatus::Ok,
-            output: String::new(),
-            input_tokens: 10,
-            output_tokens: 5,
-            cost_units: 0.0,
-            captured_proposals: 0,
-            changed_files: changed_files.clone(),
-            change_evidence_status: ChangeEvidenceStatus::Complete,
-            execution_issues: Vec::new(),
-            diff_path: None,
-            workspace: Some(worktree.clone()),
-            notes: Vec::new(),
-        }],
+        results: vec![isolated_write_result(
+            "implement",
+            "codex_cli",
+            changed_files.clone(),
+            worktree.clone(),
+            10,
+            5,
+        )],
         total_input_tokens: 10,
         total_output_tokens: 5,
         total_cost_units: 0.0,
@@ -553,13 +538,10 @@ fn review_run_accepts_isolated_worktree_changesets() {
         base_commit: repodesk_core::workflow::head_sha(&fx.project_path),
         execution: repodesk_core::workflow::ExecutionReceipt {
             status: run.status,
-            required_steps: vec![repodesk_core::workflow::StepReceipt {
-                task_id: "implement".to_string(),
-                status: SubAgentStatus::Ok,
-                allow_write: true,
-                changed_files: changed_files.clone(),
-                change_evidence_status: ChangeEvidenceStatus::Complete,
-            }],
+            required_steps: vec![complete_write_step_receipt(
+                "implement",
+                changed_files.clone(),
+            )],
             changeset_digest: Some(repodesk_core::workflow::changeset_digest(&changed_files)),
         },
         review: None,
@@ -1358,23 +1340,8 @@ fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationR
             step("review", TaskKind::Review),
         ],
     };
-    let result = |id: &str, status: SubAgentStatus, cost: f64| SubAgentResult {
-        task_id: id.to_string(),
-        agent: "ollama".to_string(),
-        provider: "ollama".to_string(),
-        model: "llama3".to_string(),
-        status,
-        output: String::new(),
-        input_tokens: 10,
-        output_tokens: 5,
-        cost_units: cost,
-        captured_proposals: 0,
-        changed_files: Vec::new(),
-        change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
-        execution_issues: Vec::new(),
-        diff_path: None,
-        workspace: None,
-        notes: Vec::new(),
+    let result = |id: &str, status: SubAgentStatus, cost: f64| {
+        non_write_result(id, "ollama", "llama3", status, 10, 5, cost)
     };
     let run = OrchestrationRun {
         run_id: "run-20260619-120000".to_string(),
@@ -1524,27 +1491,20 @@ fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize,
         .collect();
     let results: Vec<SubAgentResult> = steps
         .iter()
-        .map(|s| SubAgentResult {
-            task_id: s.id.clone(),
-            agent: provider.to_string(),
-            provider: provider.to_string(),
-            model: "m".to_string(),
-            status: if ok {
-                SubAgentStatus::Ok
-            } else {
-                SubAgentStatus::Failed
-            },
-            output: String::new(),
-            input_tokens: 1,
-            output_tokens: 1,
-            cost_units: 0.1,
-            captured_proposals: 0,
-            changed_files: Vec::new(),
-            change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
-            execution_issues: Vec::new(),
-            diff_path: None,
-            workspace: None,
-            notes: Vec::new(),
+        .map(|s| {
+            non_write_result(
+                &s.id,
+                provider,
+                "m",
+                if ok {
+                    SubAgentStatus::Ok
+                } else {
+                    SubAgentStatus::Failed
+                },
+                1,
+                1,
+                0.1,
+            )
         })
         .collect();
     let plan = OrchestrationPlan {
