@@ -1,3 +1,4 @@
+# Strict development patch; the workflow removes this helper after focused GREEN verification.
 from pathlib import Path
 
 
