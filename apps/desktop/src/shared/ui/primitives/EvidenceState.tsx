@@ -8,11 +8,12 @@ export type EvidenceStateProps = {
   tone: SemanticTone;
   detail?: string;
   children?: ReactNode;
+  role?: "status" | "alert";
 };
 
-export function EvidenceState({ label, state, tone, detail, children }: EvidenceStateProps) {
+export function EvidenceState({ label, state, tone, detail, children, role }: EvidenceStateProps) {
   return (
-    <div className="semantic-evidence" data-semantic-tone={tone}>
+    <div className="semantic-evidence" data-semantic-tone={tone} role={role}>
       <span className="semantic-evidence__label">{label}</span>
       <div className="semantic-evidence__state">
         <StatusBadge label={state} tone={tone} />

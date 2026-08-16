@@ -7,30 +7,26 @@ import { callCommand } from "../../shared/api/queries";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { useGit } from "../git/useGit";
 import { codeChangedFiles } from "../../shared/utils/helpers";
+import {
+  ActionBar,
+  ErrorState,
+  LoadingState,
+  Metric,
+  PanelHeader,
+  StatusBadge,
+} from "../../shared/ui/primitives";
 import { TaskSwitcher } from "../workflow/TaskSwitcher";
 import { PromptsPanel } from "../workflow/PromptsPanel";
+import { ExecutionPreviewCompact } from "./ExecutionPreviewCompact";
 import { ExecutionStrategyControls } from "./ExecutionStrategyControls";
 import { ReviewPanel } from "./ReviewPanel";
-import type { ExecutionPreview, Phase, PhaseProgress, PhaseStatus } from "../../shared/api/orchestrate";
+import { launchApprovalSemantic, phaseStatusSemantic } from "./workSemantic";
+import type { Phase, PhaseProgress, PhaseStatus } from "../../shared/api/orchestrate";
 import type { AiStrategyMode } from "../../shared/api/strategy";
 import type { TabId } from "../../shared/types/api";
 
 const PHASE_KEY = ["work", "phase-state"] as const;
 const LATEST_RUN_KEY = ["work", "latest-run"] as const;
-
-type ExecutionPacketPreview = ExecutionPreview & {
-  context: {
-    prepared: boolean;
-    context_tokens: number;
-    candidate_tokens: number;
-    token_budget: number | null;
-    included_sources: number;
-    excluded_sources: number;
-    context_fingerprint: string | null;
-    generated_at: string | null;
-    warning: string | null;
-  };
-};
 
 type ExecutionApproval = {
   fingerprint: string;
@@ -192,23 +188,29 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   if (phase.isError) {
     const detail = phase.error instanceof Error ? phase.error.message : String(phase.error);
     return (
-      <section className="work-phase-error" role="alert">
-        <p className="eyebrow">Work evidence unavailable</p>
-        <h2>RepoDesk stopped instead of guessing</h2>
-        <p>
-          The current workflow evidence could not be read safely. Progress is intentionally hidden until the evidence is valid again.
-        </p>
-        <code>{detail}</code>
-        <div className="work-error-actions">
-          <button className="primary-cta" onClick={() => void phase.refetch()}>Retry</button>
-          <button className="secondary-cta" onClick={() => setActiveTab("history")}>Open Runs</button>
-        </div>
-      </section>
+      <div className="work-phase-error">
+        <ErrorState
+          scope="surface"
+          title="RepoDesk stopped instead of guessing"
+          detail={(
+            <>
+              <p>The current workflow evidence could not be read safely. Progress is intentionally hidden until the evidence is valid again.</p>
+              <code>{detail}</code>
+            </>
+          )}
+          action={(
+            <ActionBar
+              primary={<button className="primary-cta" onClick={() => void phase.refetch()}>Retry</button>}
+              secondary={<button className="secondary-cta" onClick={() => setActiveTab("history")}>Open Runs</button>}
+            />
+          )}
+        />
+      </div>
     );
   }
 
   if (phase.isLoading || !phase.data) {
-    return <div className="focus-empty">Loading Work Item flow…</div>;
+    return <LoadingState scope="surface" message="Loading Work Item flow…" />;
   }
 
   const progress = phase.data;
@@ -231,7 +233,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const busy =
     runCta.isPending || runAgent.isPending || review.isPending || verify.isPending || importManual.isPending || commit.isPending;
   const strategyPreview = executePreview.data ?? null;
-  const preview = (strategyPreview?.execution as ExecutionPacketPreview | undefined) ?? null;
+  const preview = strategyPreview?.execution ?? null;
   const planFingerprint = strategyPreview?.plan_fingerprint ?? null;
   const approvalMatchesPreview = Boolean(
     planFingerprint && executionApproval?.fingerprint === planFingerprint,
@@ -247,6 +249,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     Boolean(preview) &&
     (!preview?.requires_coding_agent_approval || approveCodingAgents) &&
     (!preview?.requires_paid_approval || approvePaid);
+  const approvalSemantic = launchApprovalSemantic({ stale: approvalsStale, ready: executeApprovalsMet });
   const executeBlocked =
     progress.current === "execute" &&
     isAgentRun &&
@@ -268,9 +271,9 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   function updateExecutionApproval(kind: "coding" | "paid", checked: boolean) {
     const fingerprint = executePreview.data?.plan_fingerprint;
     if (!fingerprint) return;
-    setExecutionApproval((current) => {
-      const base: ExecutionApproval = current?.fingerprint === fingerprint
-        ? current
+    setExecutionApproval((currentApproval) => {
+      const base: ExecutionApproval = currentApproval?.fingerprint === fingerprint
+        ? currentApproval
         : {
             fingerprint,
             approveCodingAgents: false,
@@ -302,31 +305,36 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   return (
     <div className="work-tab work-focus-layout">
       <section className="work-focus-card">
-        <header className="work-phase-header">
-          <div>
-            <p className="eyebrow">Current step</p>
-            <h2>{progress.complete ? "Task complete" : current.title}</h2>
-            <p className="muted">{currentSummary}</p>
-          </div>
-          {latest && !latest.dry_run ? (
-            <div className="work-run-facts" aria-label="Latest run facts">
-              <span><strong>{changedCount}</strong> files</span>
-              <span><strong>{(latest.total_input_tokens + latest.total_output_tokens).toLocaleString()}</strong> tokens</span>
-              <span><strong>{latest.total_cost_units.toFixed(3)}</strong> cost</span>
-            </div>
-          ) : null}
-        </header>
+        <div className="work-phase-header">
+          <PanelHeader
+            eyebrow="Current step"
+            title={progress.complete ? "Task complete" : current.title}
+            description={currentSummary}
+            trailing={latest && !latest.dry_run ? (
+              <div className="work-run-facts" aria-label="Latest run facts">
+                <Metric label="Files" value={String(changedCount)} />
+                <Metric label="Tokens" value={(latest.total_input_tokens + latest.total_output_tokens).toLocaleString()} />
+                <Metric label="Cost" value={latest.total_cost_units.toFixed(3)} />
+              </div>
+            ) : null}
+          />
+        </div>
 
         <ol className="phase-rail compact" aria-label="Task phases">
-          {progress.phases.map((view) => (
-            <li
-              key={view.phase}
-              className={`phase-chip phase-${view.status}${view.phase === progress.current ? " phase-current" : ""}`}
-            >
-              <span className="phase-glyph" aria-hidden="true"><PhaseStatusIcon status={view.status} /></span>
-              <span className="phase-title">{view.title}</span>
-            </li>
-          ))}
+          {progress.phases.map((view) => {
+            const semantic = phaseStatusSemantic(view.status);
+            return (
+              <li
+                key={view.phase}
+                className={`phase-chip phase-${view.status}${view.phase === progress.current ? " phase-current" : ""}`}
+                data-semantic-tone={semantic.tone}
+                aria-label={`${view.title}: ${semantic.label}`}
+              >
+                <span className="phase-glyph" aria-hidden="true"><PhaseStatusIcon status={view.status} /></span>
+                <span className="phase-title">{view.title}</span>
+              </li>
+            );
+          })}
         </ol>
 
         <div className="work-current-step">
@@ -339,7 +347,10 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
         {progress.current === "scope" ? (
           <div className="phase-controls compact">
             {!hasProject ? (
-              <button className="secondary-cta" onClick={() => setActiveTab("projects")}>Connect a project</button>
+              <ActionBar
+                primary={<button className="primary-cta" onClick={() => setActiveTab("projects")}>Connect a project</button>}
+                detail="Bind the repository before RepoDesk prepares context or delegates work."
+              />
             ) : !hasTask ? (
               <TaskSwitcher />
             ) : (
@@ -388,7 +399,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                           : "Nothing gated launches until you grant the matching capability for this exact plan lock."}
                       </small>
                     </div>
-                    <span>{executeApprovalsMet ? "ready" : "action required"}</span>
+                    <StatusBadge label={approvalSemantic.label} tone={approvalSemantic.tone} />
                   </div>
                   <div className="approval-stack">
                     <label className={`approval-check${preview?.requires_coding_agent_approval && !approveCodingAgents ? " required" : ""}`}>
@@ -431,14 +442,18 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
                     onChange={(event) => setImportPatch(event.target.value)}
                     rows={5}
                   />
-                  <div className="phase-actions">
-                    <button className="secondary-cta" onClick={() => importManual.mutate(importPatch)} disabled={importManual.isPending || !importPatch.trim()}>
-                      Import diff → Review
-                    </button>
-                    <button className="secondary-cta" onClick={() => importManual.mutate(null)} disabled={importManual.isPending}>
-                      Import working tree → Review
-                    </button>
-                  </div>
+                  <ActionBar
+                    secondary={(
+                      <>
+                        <button className="secondary-cta" onClick={() => importManual.mutate(importPatch)} disabled={importManual.isPending || !importPatch.trim()}>
+                          Import diff → Review
+                        </button>
+                        <button className="secondary-cta" onClick={() => importManual.mutate(null)} disabled={importManual.isPending}>
+                          Import working tree → Review
+                        </button>
+                      </>
+                    )}
+                  />
                 </div>
               </details>
             )}
@@ -448,14 +463,18 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
         {progress.current === "review" ? (
           <div className="phase-controls compact">
             <ReviewPanel runId={latest?.run_id ?? null} projectName={projectName} />
-            <div className="phase-actions">
-              <button className="secondary-cta" onClick={() => review.mutate("accept")} disabled={review.isPending || !latest}>
-                Accept &amp; stage → Verify
-              </button>
-              <button className="secondary-cta" onClick={() => review.mutate("reject")} disabled={review.isPending || !latest}>
-                Reject → re-run
-              </button>
-            </div>
+            <ActionBar
+              primary={(
+                <button className="primary-cta" onClick={() => review.mutate("accept")} disabled={review.isPending || !latest}>
+                  Accept &amp; stage → Verify
+                </button>
+              )}
+              destructive={(
+                <button className="secondary-cta" onClick={() => review.mutate("reject")} disabled={review.isPending || !latest}>
+                  Reject → re-run
+                </button>
+              )}
+            />
           </div>
         ) : null}
 
@@ -463,33 +482,43 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
           <div className="phase-controls compact">
             <CommitFiles files={codeChangedFiles(git)} onView={() => setActiveTab("changes")} />
             <div className="work-commit-row">
-              <input
-                className="commit-input"
-                placeholder="Commit message"
-                value={commitMessage}
-                onChange={(event) => setCommitMessage(event.target.value)}
+              <ActionBar
+                secondary={(
+                  <input
+                    className="commit-input"
+                    placeholder="Commit message"
+                    value={commitMessage}
+                    onChange={(event) => setCommitMessage(event.target.value)}
+                  />
+                )}
+                primary={(
+                  <button
+                    className="primary-cta"
+                    onClick={() => commit.mutate(commitMessage.trim())}
+                    disabled={commit.isPending || commitMessage.trim().length === 0}
+                  >
+                    Commit reviewed changes
+                  </button>
+                )}
               />
-              <button
-                className="secondary-cta"
-                onClick={() => commit.mutate(commitMessage.trim())}
-                disabled={commit.isPending || commitMessage.trim().length === 0}
-              >
-                Commit reviewed changes
-              </button>
             </div>
           </div>
         ) : null}
 
         {sharedPrimaryOwner ? (
           <div className="work-cta-row focus">
-            <button className="primary-cta" onClick={handlePrimary} disabled={progress.complete || busy || executeBlocked}>
-              {busy ? "Working…" : progress.cta.label}
-            </button>
-            {executeBlocked ? <span className="muted">Refresh the strategy packet and grant its required approvals before launch.</span> : null}
+            <ActionBar
+              primary={(
+                <button className="primary-cta" onClick={handlePrimary} disabled={progress.complete || busy || executeBlocked}>
+                  {busy ? "Working…" : progress.cta.label}
+                </button>
+              )}
+              detail={executeBlocked ? "Refresh the strategy packet and grant its required approvals before launch." : undefined}
+            />
           </div>
         ) : null}
 
-        {mutationError ? <p className="work-error">{mutationError}</p> : null}
+        {mutationError ? <ErrorState title="Work action failed" detail={mutationError} /> : null}
       </section>
 
       <section className="work-tools-strip">
@@ -500,103 +529,6 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
         <button className="secondary-cta" onClick={() => setActiveTab("orchestrate")}>Open Orchestrate</button>
       </section>
     </div>
-  );
-}
-
-function shortFingerprint(value: string | null): string {
-  if (!value) return "—";
-  return value.length <= 18 ? value : `${value.slice(0, 10)}…${value.slice(-6)}`;
-}
-
-function ExecutionPreviewCompact({
-  preview,
-  loading,
-  error,
-}: {
-  preview: ExecutionPacketPreview | null;
-  loading: boolean;
-  error: string | null;
-}) {
-  if (loading) return <div className="exec-packet-skeleton">Preparing execution contract…</div>;
-  if (error) return <p className="notice danger">Run preview unavailable: {error}</p>;
-  if (!preview || preview.steps.length === 0) return null;
-
-  const lead = preview.steps.find((step) => step.allow_write) ?? preview.steps[preview.steps.length - 1];
-  const context = preview.context;
-  const budgetCopy = context.prepared
-    ? `${context.context_tokens.toLocaleString()}${context.token_budget ? ` / ${context.token_budget.toLocaleString()}` : ""}`
-    : "build on launch";
-
-  return (
-    <section className="exec-packet" aria-label="Execution packet preview">
-      <header className="exec-packet-heading">
-        <div>
-          <span className="eyebrow">Execution packet</span>
-          <strong>{lead?.executor_label ?? "Worker"} · {lead?.model ?? "provider default"}</strong>
-          <small>The approved packet below is the boundary RepoDesk will hand to this run.</small>
-        </div>
-        <span className={`exec-packet-state ${context.prepared ? "ready" : "warning"}`}>
-          {context.prepared ? "prepared" : "rebuild required"}
-        </span>
-      </header>
-
-      <div className="exec-packet-grid">
-        <div className="exec-packet-primary-fact">
-          <span>Context</span>
-          <strong>{budgetCopy}</strong>
-          <small>tokens · {context.included_sources} in / {context.excluded_sources} out</small>
-        </div>
-        <div>
-          <span>Workspace</span>
-          <strong>{preview.isolated_workspace ? "Isolated" : "Active checkout"}</strong>
-          <small>{preview.expected_writes ? "writes expected" : "read-only route"}</small>
-        </div>
-        <div>
-          <span>Run estimate</span>
-          <strong>{preview.total_estimated_tokens.toLocaleString()} tokens</strong>
-          <small>context + planned outputs</small>
-        </div>
-        <div>
-          <span>Cost ceiling view</span>
-          <strong>{preview.total_estimated_cost_units.toFixed(2)} {preview.currency_label}</strong>
-          <small>{preview.requires_paid_approval ? "paid approval required" : "no paid approval"}</small>
-        </div>
-      </div>
-
-      <div className="exec-packet-boundary">
-        <span>
-          <small>Packet fingerprint</small>
-          <code title={context.context_fingerprint ?? undefined}>{shortFingerprint(context.context_fingerprint)}</code>
-        </span>
-        <span>
-          <small>Sources</small>
-          <strong>{context.prepared ? `${context.included_sources} selected` : "not prepared"}</strong>
-        </span>
-        <span>
-          <small>Write scope</small>
-          <strong>{preview.expected_writes ? (preview.isolated_workspace ? "run worktree only" : "workspace") : "none"}</strong>
-        </span>
-      </div>
-
-      {context.warning ? <p className="exec-packet-warning">{context.warning}</p> : null}
-
-      <details className="exec-packet-routing">
-        <summary>{preview.steps.length} routed step{preview.steps.length === 1 ? "" : "s"} · inspect routing</summary>
-        <div className="exec-packet-step-list">
-          {preview.steps.map((step, index) => (
-            <div key={step.step_id}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <div>
-                <strong>{step.title}</strong>
-                <small>{step.executor_label} · {step.model}</small>
-              </div>
-              <code>{step.estimated_input_tokens.toLocaleString()} → {step.estimated_output_tokens.toLocaleString()}</code>
-              <span>{step.allow_write ? "write" : "read"}{step.paid ? " · paid" : ""}</span>
-            </div>
-          ))}
-        </div>
-      </details>
-    </section>
   );
 }
 

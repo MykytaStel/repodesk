@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { evaluateVisualDebtChange } from "./check-source-architecture.mjs";
+import {
+  evaluateVisualDebtChange,
+  evaluateWorkSemanticContract,
+} from "./check-source-architecture.mjs";
 
 function failures(change) {
   return evaluateVisualDebtChange({
@@ -72,4 +75,15 @@ test("ErrorState detail wrapper is block-safe for structured blocker evidence", 
   const source = readFileSync("apps/desktop/src/shared/ui/primitives/ErrorState.tsx", "utf8");
   assert.doesNotMatch(source, /<span>\{detail\}<\/span>/);
   assert.match(source, /className="semantic-state__detail"/);
+});
+
+test("Work migration requires one typed adapter and the shared primitive boundary", () => {
+  assert.deepEqual(evaluateWorkSemanticContract(), []);
+});
+
+test("the grandfathered Work progress width stays the only explicit dynamic inline-style exception", () => {
+  const source = readFileSync("apps/desktop/src/features/work/WorkSurface.tsx", "utf8");
+  const inlineStyles = source.match(/\bstyle\s*=\s*\{\s*\{/g) ?? [];
+  assert.equal(inlineStyles.length, 1);
+  assert.match(source, /style=\{\{ width: `\$\{phasePercent\}%` \}\}/);
 });
