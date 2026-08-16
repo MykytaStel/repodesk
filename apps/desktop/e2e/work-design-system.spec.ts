@@ -68,6 +68,10 @@ function phaseChip(page: Page, title: string) {
   return page.locator(".phase-chip").filter({ hasText: title }).first();
 }
 
+function semanticAncestor(locator: ReturnType<Page["getByText"]>) {
+  return locator.first().locator("xpath=ancestor-or-self::*[@data-semantic-tone][1]");
+}
+
 test.describe("Work design-system convergence", () => {
   test("phase rail, execution packet, and launch approval expose typed semantic state", async ({ page }) => {
     await boot(page);
@@ -145,7 +149,7 @@ test.describe("Work design-system convergence", () => {
       ],
     });
 
-    const evidence = page.getByText(/Change evidence unavailable/).first().locator("xpath=..*").first();
+    const evidence = semanticAncestor(page.getByText(/Change evidence unavailable/));
     await expect(evidence).toHaveAttribute("data-semantic-tone", "critical");
     await expect(page.getByText(/Rerun execution to capture a trustworthy changeset/)).toBeVisible();
     await expect(page.locator(".review-file")).toHaveCount(0);
@@ -162,7 +166,7 @@ test.describe("Work design-system convergence", () => {
       },
     });
 
-    const recovery = page.getByText(/Execution finished, but the persisted receipt needs repair/).first().locator("xpath=..*").first();
+    const recovery = semanticAncestor(page.getByText(/Execution finished, but the persisted receipt needs repair/));
     await expect(recovery).toHaveAttribute("data-semantic-tone", "attention");
     await expect(page.getByText(/do not rerun the agent/i)).toBeVisible();
   });
