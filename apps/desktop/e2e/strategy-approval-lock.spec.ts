@@ -32,7 +32,7 @@ test("capability approvals are invalidated when the exact strategy plan lock cha
   await page.goto("/");
 
   const codingApproval = page.getByRole("checkbox", { name: /Coding agent \+ isolated writes/ });
-  const runButton = page.locator(".work-cta-row .primary-cta");
+  const runButton = page.locator(".semantic-action-bar__primary .primary-cta");
   await expect(codingApproval).toBeVisible();
   await codingApproval.check();
   await expect(runButton).toBeEnabled();
