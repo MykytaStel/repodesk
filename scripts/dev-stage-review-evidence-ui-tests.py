@@ -24,10 +24,18 @@ replace_once(
         notes: [],
 ''',
 )
-replace_once(
-    fixtures,
-    '''  orchestrate_run_diffs: [
-''',
+file = Path(fixtures)
+text = file.read_text()
+review_marker = "export const reviewFixtures: CommandFixtures = {"
+review_start = text.index(review_marker)
+prefix, review_tail = text[:review_start], text[review_start:]
+diffs_marker = "  orchestrate_run_diffs: [\n"
+if review_tail.count(diffs_marker) != 1:
+    raise SystemExit(
+        f"{fixtures}: expected one Review-scoped diff fixture, found {review_tail.count(diffs_marker)}"
+    )
+review_tail = review_tail.replace(
+    diffs_marker,
     '''  orchestrate_evidence_state: {
     run_id: "run-20260101-000000-1-0",
     status: "ready",
@@ -36,8 +44,10 @@ replace_once(
   },
   orchestrate_run_diffs: [
 ''',
+    1,
 )
-file = Path(fixtures)
+file.write_text(prefix + review_tail)
+
 text = file.read_text()
 addition = '''
 
