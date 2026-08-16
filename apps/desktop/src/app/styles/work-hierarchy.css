@@ -1,9 +1,9 @@
-/* Work hierarchy v3 ---------------------------------------------------------
+/* Work hierarchy ------------------------------------------------------------
    Work is the product's operating surface, not a dashboard card stack.
    Keep persistent task/phase navigation on the left, the current action in the
    center, and open evidence as an IDE-style inspector on the right. */
 
-.work-workbench-v3 {
+.work-workbench {
   min-width: 0;
   min-height: 100%;
   display: grid;
@@ -15,8 +15,16 @@
   background: var(--bg);
 }
 
-.work-workbench-v3.inspector-open {
+.work-workbench.inspector-open {
   grid-template-columns: 206px minmax(0, 1fr) minmax(350px, 400px);
+}
+
+.work-focus-layout {
+  gap: 12px;
+}
+
+.work-tab .phase-controls.compact {
+  padding-top: 12px;
 }
 
 .work-command-rail {
@@ -196,43 +204,40 @@
   min-width: 0;
 }
 
-/* The workbench itself is now the outer container. Avoid nesting another large
-   dashboard card inside it; retain the phase surface as the actionable plane. */
-.work-workbench-v3 .work-focus-card {
+.work-workbench .work-focus-card {
   margin: 0;
   border-radius: 9px;
 }
 
-.work-workbench-v3 .work-phase-header {
+.work-workbench .work-phase-header {
   padding-bottom: 10px;
 }
 
-.work-workbench-v3 .work-phase-header h2 {
+.work-workbench .work-phase-header h2 {
   font-size: clamp(18px, 2vw, 24px);
 }
 
-.work-workbench-v3 .phase-rail.compact {
+.work-workbench .phase-rail.compact {
   margin: 0;
   border-radius: 7px;
 }
 
-.work-workbench-v3 .work-current-step {
+.work-workbench .work-current-step {
   margin-block: 8px 0;
 }
 
-.work-workbench-v3 .work-current-step-copy {
+.work-workbench .work-current-step-copy {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px 10px;
 }
 
-.work-workbench-v3 .work-current-step-copy > small {
+.work-workbench .work-current-step-copy > small {
   grid-column: 2;
   font-size: 8.5px;
 }
 
-/* Advanced orchestration is now a persistent rail destination. */
-.work-workbench-v3 .work-tools-strip {
+.work-workbench .work-tools-strip {
   display: none;
 }
 
@@ -305,8 +310,6 @@
   overscroll-behavior: contain;
 }
 
-/* Existing evidence components become inspector content instead of page-level
-   panels. Their domain semantics stay unchanged; only their shell changes. */
 .work-inspector-body > .content-grid,
 .work-inspector-body > .work-contract-shell {
   display: block;
@@ -352,8 +355,8 @@
 }
 
 @media (max-width: 1180px) {
-  .work-workbench-v3,
-  .work-workbench-v3.inspector-open {
+  .work-workbench,
+  .work-workbench.inspector-open {
     grid-template-columns: 190px minmax(0, 1fr);
   }
 
@@ -372,8 +375,8 @@
 }
 
 @media (max-width: 760px) {
-  .work-workbench-v3,
-  .work-workbench-v3.inspector-open {
+  .work-workbench,
+  .work-workbench.inspector-open {
     display: block;
     border-radius: 9px;
   }

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   evaluateVisualDebtChange,
   evaluateWorkSemanticContract,
+  evaluateWorkVisualDebtCleanupContract,
 } from "./check-source-architecture.mjs";
 
 function failures(change) {
@@ -79,6 +80,10 @@ test("ErrorState detail wrapper is block-safe for structured blocker evidence", 
 
 test("Work migration requires one typed adapter and the shared primitive boundary", () => {
   assert.deepEqual(evaluateWorkSemanticContract(), []);
+});
+
+test("Work visual ownership is canonical after semantic convergence", () => {
+  assert.deepEqual(evaluateWorkVisualDebtCleanupContract(), []);
 });
 
 test("the grandfathered Work progress width stays the only explicit dynamic inline-style exception", () => {

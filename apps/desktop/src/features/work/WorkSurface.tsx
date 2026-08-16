@@ -60,7 +60,7 @@ export function WorkSurface({ setActiveTab }: { setActiveTab: (tab: TabId) => vo
   const inspectorMeta = inspector ? INSPECTOR_META[inspector] : null;
 
   return (
-    <div className={`work-workbench-v3${inspector ? " inspector-open" : ""}`}>
+    <div className={`work-workbench${inspector ? " inspector-open" : ""}`}>
       <aside className="work-command-rail" aria-label="Active Work Item evidence">
         <section className="work-rail-identity">
           <span className="eyebrow">Work item</span>

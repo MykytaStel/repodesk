@@ -22,6 +22,12 @@ const WORK_PRIMITIVE_SURFACES = [
   ...WORK_TYPED_SURFACES,
   "apps/desktop/src/features/work/ExecutionStrategyControls.tsx",
 ];
+const WORK_OBSOLETE_VISUAL_PATHS = [
+  "apps/desktop/src/features/work/work-focus-polish.css",
+  "apps/desktop/src/app/styles/work-hierarchy-v3.css",
+];
+const WORK_CANONICAL_HIERARCHY = "apps/desktop/src/app/styles/work-hierarchy.css";
+const WORK_ROUTE_STYLES = "apps/desktop/src/features/work/work-route.css";
 
 function extensionOf(path) {
   const index = path.lastIndexOf(".");
@@ -216,6 +222,40 @@ export function evaluateWorkSemanticContract() {
   });
 }
 
+export function evaluateWorkVisualDebtCleanupContract() {
+  const failures = [];
+
+  for (const path of WORK_OBSOLETE_VISUAL_PATHS) {
+    if (existsSync(path)) {
+      failures.push(`${path}: obsolete Work visual generation must be retired after semantic convergence`);
+    }
+  }
+
+  if (!existsSync(WORK_CANONICAL_HIERARCHY)) {
+    failures.push(`${WORK_CANONICAL_HIERARCHY}: Work must own one canonical non-versioned hierarchy stylesheet`);
+  }
+
+  const workSurface = readSource("apps/desktop/src/features/work/WorkSurface.tsx");
+  if (workSurface && /work-workbench-v\d+/i.test(workSurface)) {
+    failures.push("apps/desktop/src/features/work/WorkSurface.tsx: canonical Work shell must not use a versioned class name");
+  }
+
+  const routeStyles = readSource(WORK_ROUTE_STYLES);
+  if (routeStyles) {
+    if (/work-focus-polish\.css/.test(routeStyles)) {
+      failures.push(`${WORK_ROUTE_STYLES}: obsolete polish stylesheet must not be imported`);
+    }
+    if (/work-hierarchy-v\d+\.css/.test(routeStyles)) {
+      failures.push(`${WORK_ROUTE_STYLES}: canonical hierarchy import must not use a version suffix`);
+    }
+    if (!/work-hierarchy\.css/.test(routeStyles)) {
+      failures.push(`${WORK_ROUTE_STYLES}: canonical Work hierarchy stylesheet must be imported`);
+    }
+  }
+
+  return failures;
+}
+
 export function runArchitectureRatchet() {
   const baseSha = resolveBaseSha();
   const paths = changedPaths(baseSha);
@@ -243,6 +283,7 @@ export function runArchitectureRatchet() {
 
   failures.push(...evaluateChangesSemanticContract());
   failures.push(...evaluateWorkSemanticContract());
+  failures.push(...evaluateWorkVisualDebtCleanupContract());
 
   console.log(`Architecture ratchet: ${paths.length} changed file(s), base ${baseSha.slice(0, 12)}.`);
   console.log(`Hard limit for new/crossing source files: ${HARD_SOURCE_LIMIT_BYTES} bytes (28 KiB).`);
