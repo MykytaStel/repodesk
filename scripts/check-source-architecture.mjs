@@ -12,6 +12,16 @@ const CHANGES_TYPED_SURFACES = [
   "apps/desktop/src/features/changes/ChangesTab.tsx",
   "apps/desktop/src/features/changes/ChangeGovernancePanel.tsx",
 ];
+const WORK_SEMANTIC_ADAPTER = "apps/desktop/src/features/work/workSemantic.ts";
+const WORK_TYPED_SURFACES = [
+  "apps/desktop/src/features/work/WorkTab.tsx",
+  "apps/desktop/src/features/work/ReviewPanel.tsx",
+  "apps/desktop/src/features/work/WorkSurface.tsx",
+];
+const OBSOLETE_WORK_STYLES = [
+  "apps/desktop/src/features/work/work-focus-polish.css",
+  "apps/desktop/src/app/styles/work-hierarchy-v3.css",
+];
 
 function extensionOf(path) {
   const index = path.lastIndexOf(".");
@@ -57,7 +67,7 @@ export function evaluateVisualDebtChange({ path, baseText, currentText, baseSize
 
   if (path.endsWith(".tsx") && currentText != null) {
     const rawHex = /#[0-9a-fA-F]{3,8}\b/g;
-    const inlineStyle = /\bstyle\s*=\s*\{\s*\{/g;
+    const inlineStyle = /\bstyle\s*=\s*\{\s*\{\s*/g;
     const statusTone = /\bstatusTone\s*\(/g;
     const checks = [
       ["raw hex", rawHex],
@@ -177,6 +187,58 @@ export function evaluateChangesSemanticContract() {
   return failures;
 }
 
+export function evaluateWorkSemanticContract() {
+  const failures = [];
+
+  if (!existsSync(SHARED_PRIMITIVES_INDEX)) {
+    failures.push(`${SHARED_PRIMITIVES_INDEX}: Work migration requires the shared semantic primitive boundary`);
+  }
+  if (!existsSync(WORK_SEMANTIC_ADAPTER)) {
+    failures.push(`${WORK_SEMANTIC_ADAPTER}: Work migration requires one typed domain-to-semantic adapter`);
+  }
+
+  const adapter = readSource(WORK_SEMANTIC_ADAPTER);
+  if (adapter) {
+    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block)/i.test(adapter)) {
+      failures.push(`${WORK_SEMANTIC_ADAPTER}: typed Work state must not be inferred from status text substrings`);
+    }
+    if (/statusTone\s*\(/.test(adapter)) {
+      failures.push(`${WORK_SEMANTIC_ADAPTER}: typed Work state must not delegate to statusTone()`);
+    }
+  }
+
+  for (const path of WORK_TYPED_SURFACES) {
+    const source = readSource(path);
+    if (!source) {
+      failures.push(`${path}: expected migrated Work surface is missing`);
+      continue;
+    }
+    if (!source.includes('from "../../shared/ui/primitives"')) {
+      failures.push(`${path}: migrated Work surfaces must consume the shared semantic primitive boundary`);
+    }
+    if (!source.includes('from "./workSemantic"')) {
+      failures.push(`${path}: migrated Work surfaces must consume the typed Work semantic adapter`);
+    }
+    if (/statusTone\s*\(/.test(source)) {
+      failures.push(`${path}: typed Work state must not call statusTone()`);
+    }
+    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block)/i.test(source)) {
+      failures.push(`${path}: typed Work state must not be inferred from status text substrings`);
+    }
+    if (/work-workbench-v\d+/i.test(source)) {
+      failures.push(`${path}: migrated Work shell must use the canonical non-versioned workbench class`);
+    }
+  }
+
+  for (const path of OBSOLETE_WORK_STYLES) {
+    if (existsSync(path)) {
+      failures.push(`${path}: obsolete Work visual generation must be removed by the Work migration`);
+    }
+  }
+
+  return failures;
+}
+
 export function runArchitectureRatchet() {
   const baseSha = resolveBaseSha();
   const paths = changedPaths(baseSha);
@@ -203,6 +265,7 @@ export function runArchitectureRatchet() {
   }
 
   failures.push(...evaluateChangesSemanticContract());
+  failures.push(...evaluateWorkSemanticContract());
 
   console.log(`Architecture ratchet: ${paths.length} changed file(s), base ${baseSha.slice(0, 12)}.`);
   console.log(`Hard limit for new/crossing source files: ${HARD_SOURCE_LIMIT_BYTES} bytes (28 KiB).`);
