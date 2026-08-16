@@ -4,6 +4,13 @@ import * as orchestrate from "../../shared/api/orchestrate";
 import * as memory from "../../shared/api/memory";
 import { queryKeys } from "../../shared/api/queries";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
+import {
+  EmptyState,
+  ErrorState,
+  EvidenceState,
+  LoadingState,
+} from "../../shared/ui/primitives";
+import { executionEvidenceSemantic } from "./workSemantic";
 
 // Review surface: evidence is checked before any diff is read. This keeps the
 // UI fail-closed and prevents an empty/unavailable changeset from being shown
@@ -54,34 +61,49 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
   const pending = proposals.data ?? [];
 
   const evidenceContent = !runId ? (
-    <p className="muted">No run to review yet.</p>
+    <EmptyState message="No run to review" hint="Execute or import a ChangeSet before review." />
   ) : evidence.isLoading ? (
-    <p className="muted">Checking execution evidence…</p>
+    <LoadingState message="Checking execution evidence…" />
   ) : evidence.isError || !evidence.data ? (
-    <p className="muted" role="alert">
-      Evidence status unavailable. Review is blocked until execution evidence can be verified.
-    </p>
+    <ErrorState
+      title="Evidence status unavailable"
+      detail="Review is blocked until execution evidence can be verified."
+    />
   ) : evidence.data.status === "incomplete" ? (
-    <p className="muted" role="alert">
-      Change evidence unavailable. RepoDesk cannot prove which tracked paths changed. Rerun execution to capture a
-      trustworthy changeset.
-    </p>
+    <EvidenceState
+      label="Execution evidence"
+      state={executionEvidenceSemantic(evidence.data.status).label}
+      tone={executionEvidenceSemantic(evidence.data.status).tone}
+      detail="Change evidence unavailable. RepoDesk cannot prove which tracked paths changed. Rerun execution to capture a trustworthy changeset."
+    />
   ) : evidence.data.status === "recovery_required" ? (
-    <p className="muted" role="alert">
-      Execution finished, but the persisted receipt needs repair. Repair execution evidence; do not rerun the agent.
-    </p>
+    <EvidenceState
+      label="Execution evidence"
+      state={executionEvidenceSemantic(evidence.data.status).label}
+      tone={executionEvidenceSemantic(evidence.data.status).tone}
+      detail="Execution finished, but the persisted receipt needs repair. Repair execution evidence; do not rerun the agent."
+    />
   ) : evidence.data.status === "not_required" ? (
-    <p className="muted" role="alert">
-      This was a dry run, so there is no reviewable execution evidence.
-    </p>
+    <EvidenceState
+      label="Execution evidence"
+      state={executionEvidenceSemantic(evidence.data.status).label}
+      tone={executionEvidenceSemantic(evidence.data.status).tone}
+      detail="This was a dry run, so there is no reviewable execution evidence."
+    />
   ) : diffs.isLoading ? (
-    <p className="muted">Loading diff…</p>
+    <LoadingState message="Loading diff evidence…" />
   ) : diffs.isError ? (
-    <p className="muted" role="alert">
-      Diff evidence could not be loaded. Review is blocked until the recorded changes can be read.
-    </p>
+    <ErrorState
+      title="Diff evidence unavailable"
+      detail="Review is blocked until the recorded changes can be read."
+    />
   ) : changedDiffs.length === 0 ? (
-    <p className="muted">Changeset capture is complete; no tracked file changes were produced.</p>
+    <EvidenceState
+      label="ChangeSet capture"
+      state="Complete · no tracked writes"
+      tone="positive"
+      detail="Changeset capture is complete; no tracked file changes were produced."
+    />
   ) : (
     changedDiffs.map((diff) => (
       <details key={diff.task_id} className="review-file">
@@ -91,9 +113,9 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
         {diff.diff.trim() ? (
           <DiffViewer diff={diff.diff} />
         ) : (
-          <p className="muted">No unified diff (new, binary, or already moved).</p>
+          <EmptyState message="No unified diff" hint="The file may be new, binary, or already moved." />
         )}
-        {diff.truncated && <p className="muted">Diff truncated.</p>}
+        {diff.truncated ? <EvidenceState label="Diff" state="Truncated" tone="attention" /> : null}
       </details>
     ))
   );
@@ -109,9 +131,9 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
       <div className="review-block">
         <h4>Add to memory</h4>
         {proposals.isLoading ? (
-          <p className="muted">Loading proposals…</p>
+          <LoadingState message="Loading memory proposals…" />
         ) : pending.length === 0 ? (
-          <p className="muted">No pending memory proposals.</p>
+          <EmptyState message="No pending memory proposals" />
         ) : (
           <ul className="proposal-list">
             {pending.map((proposal) => (
