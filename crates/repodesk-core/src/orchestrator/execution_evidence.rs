@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::change_attribution::classify_step_attribution;
 #[cfg(test)]
 use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
@@ -296,13 +297,20 @@ fn build_execution_receipt(
                     changed.push(path.clone());
                 }
             }
+            let allow_write = allow_write_of(&result.task_id);
             StepReceipt {
                 task_id: result.task_id.clone(),
                 status: result.status,
-                allow_write: allow_write_of(&result.task_id),
+                allow_write,
                 changed_files: result.changed_files.clone(),
                 change_evidence_status: result.change_evidence_status,
-                change_attribution: result.change_attribution.clone(),
+                change_attribution: classify_step_attribution(
+                    &run.run_id,
+                    &result.task_id,
+                    false,
+                    result.change_evidence_status,
+                    result.workspace.as_ref(),
+                ),
             }
         })
         .collect();
@@ -341,10 +349,17 @@ fn execution_receipt_matches_run(receipt: &TaskRunReceipt, run: &OrchestrationRu
         else {
             return false;
         };
+        let expected_attribution = classify_step_attribution(
+            &run.run_id,
+            &result.task_id,
+            false,
+            result.change_evidence_status,
+            result.workspace.as_ref(),
+        );
         if step.status != result.status
             || step.changed_files != result.changed_files
             || step.change_evidence_status != result.change_evidence_status
-            || step.change_attribution != result.change_attribution
+            || step.change_attribution != expected_attribution
         {
             return false;
         }
@@ -558,7 +573,10 @@ mod tests {
             strength: ChangeAttributionStrength::ExactIsolated,
             workspace_id: Some("workspace-1".into()),
             baseline_commit: Some("base".into()),
-            reason: Some("managed isolated worktree".into()),
+            reason: Some(
+                "managed isolated worktree matches run and step identity with complete changeset evidence"
+                    .into(),
+            ),
         }
     }
 
@@ -585,10 +603,17 @@ mod tests {
                 captured_proposals: 0,
                 changed_files: vec!["src/lib.rs".into()],
                 change_evidence_status: ChangeEvidenceStatus::Complete,
-                change_attribution: exact_attribution(),
                 execution_issues: vec![],
                 diff_path: None,
-                workspace: None::<RunWorktree>,
+                workspace: Some(RunWorktree {
+                    workspace_id: "workspace-1".into(),
+                    run_id: "run-test-1".into(),
+                    step_id: "impl".into(),
+                    path: "/tmp/private-worktree".into(),
+                    base_commit: "base".into(),
+                    created_at: "now".into(),
+                    metadata_path: None,
+                }),
                 notes: vec![],
             }],
             total_input_tokens: 1,
@@ -634,7 +659,6 @@ mod tests {
     fn matching_receipt_with_unavailable_write_evidence_is_incomplete() {
         let mut run = run();
         run.results[0].change_evidence_status = ChangeEvidenceStatus::Unavailable;
-        run.results[0].change_attribution = ChangeAttributionEvidence::default();
         let plan = OrchestrationPlan {
             project: run.project.clone(),
             task_id: run.task_id.clone(),
@@ -649,6 +673,10 @@ mod tests {
             ChangeEvidenceStatus::Unavailable
         );
         assert_eq!(
+            receipt.execution.required_steps[0].change_attribution.strength,
+            ChangeAttributionStrength::Unattributed
+        );
+        assert_eq!(
             matching_receipt_status(&receipt),
             ExecutionEvidenceStatus::Incomplete
         );
@@ -658,7 +686,6 @@ mod tests {
     fn legacy_unknown_non_write_step_does_not_require_changeset_proof() {
         let mut run = run();
         run.results[0].change_evidence_status = ChangeEvidenceStatus::LegacyUnknown;
-        run.results[0].change_attribution = ChangeAttributionEvidence::default();
         let plan = OrchestrationPlan {
             project: run.project.clone(),
             task_id: run.task_id.clone(),
