@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::persistence::event_journal::{LogEventInput, log_event};
 use crate::tasks::show_active_task;
@@ -37,6 +38,8 @@ pub enum ExecutionEvidenceStatus {
     Ready,
     /// The agent already ran, but the execution receipt is missing/unusable.
     RecoveryRequired,
+    /// The receipt exists, but its captured changeset provenance is not review-safe.
+    Incomplete,
     /// Dry runs intentionally carry no execution receipt.
     NotRequired,
 }
@@ -202,6 +205,9 @@ pub(crate) fn require_review_evidence_ready(run_id: &str) -> RepoDeskResult<()> 
         ExecutionEvidenceStatus::NotRequired => Err(routing_error(
             "review blocked: dry-run execution has no reviewable execution evidence",
         )),
+        ExecutionEvidenceStatus::Incomplete => Err(routing_error(
+            "review blocked: execution evidence is incomplete; rerun execution to obtain trustworthy changeset provenance",
+        )),
         ExecutionEvidenceStatus::RecoveryRequired => {
             let detail = state
                 .detail
@@ -303,6 +309,9 @@ fn build_execution_receipt(
                 status: result.status,
                 allow_write: allow_write_of(&result.task_id),
                 changed_files: result.changed_files.clone(),
+                // Until executor provenance is threaded through SubAgentResult,
+                // stay conservative rather than upgrading an empty list to proof.
+                change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
             }
         })
         .collect();

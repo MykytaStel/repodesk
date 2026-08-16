@@ -973,6 +973,7 @@ fn write_execution_receipt(plan: &OrchestrationPlan, run: &OrchestrationRun) -> 
                 status: result.status,
                 allow_write: allow_write_of(&result.task_id),
                 changed_files: result.changed_files.clone(),
+                change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::LegacyUnknown,
             }
         })
         .collect();

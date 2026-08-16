@@ -228,6 +228,7 @@ fn write_manual_receipt(
                     status: r.status,
                     allow_write: true,
                     changed_files: r.changed_files.clone(),
+                    change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
                 })
                 .collect(),
             changeset_digest: digest,
