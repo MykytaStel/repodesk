@@ -3,7 +3,7 @@ import type {
   PhaseProgress,
   PhaseStatus,
 } from "../../shared/api/orchestrate";
-import type { SemanticPresentation } from "../../shared/ui/primitives";
+import type { SemanticState } from "../../shared/ui/primitives";
 
 type LaunchApprovalState = "ready" | "action_required" | "stale";
 
@@ -11,7 +11,7 @@ function assertNever(value: never): never {
   throw new Error(`Unhandled Work semantic state: ${String(value)}`);
 }
 
-export function phaseStatusSemantic(status: PhaseStatus): SemanticPresentation {
+export function phaseStatusSemantic(status: PhaseStatus): SemanticState {
   switch (status) {
     case "done":
       return { label: "Done", tone: "positive" };
@@ -26,7 +26,7 @@ export function phaseStatusSemantic(status: PhaseStatus): SemanticPresentation {
   }
 }
 
-export function workflowPositionSemantic(progress: PhaseProgress): SemanticPresentation {
+export function workflowPositionSemantic(progress: PhaseProgress): SemanticState {
   if (progress.complete) {
     return { label: "Workflow complete", tone: "positive", detail: "All canonical Work phases are complete." };
   }
@@ -39,7 +39,7 @@ export function workflowPositionSemantic(progress: PhaseProgress): SemanticPrese
   };
 }
 
-export function executionEvidenceSemantic(status: ExecutionEvidenceStatus): SemanticPresentation {
+export function executionEvidenceSemantic(status: ExecutionEvidenceStatus): SemanticState {
   switch (status) {
     case "ready":
       return { label: "Evidence ready", tone: "positive" };
@@ -54,7 +54,7 @@ export function executionEvidenceSemantic(status: ExecutionEvidenceStatus): Sema
   }
 }
 
-export function packetPreparationSemantic(prepared: boolean): SemanticPresentation {
+export function packetPreparationSemantic(prepared: boolean): SemanticState {
   return prepared
     ? { label: "Prepared", tone: "positive", detail: "Prepared context is bound to this execution packet." }
     : { label: "Rebuild required", tone: "attention", detail: "Context will be rebuilt before launch." };
@@ -63,7 +63,7 @@ export function packetPreparationSemantic(prepared: boolean): SemanticPresentati
 export function launchApprovalSemantic(input: {
   stale: boolean;
   ready: boolean;
-}): SemanticPresentation {
+}): SemanticState {
   const state: LaunchApprovalState = input.stale
     ? "stale"
     : input.ready
