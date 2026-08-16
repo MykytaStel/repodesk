@@ -673,7 +673,9 @@ mod tests {
             ChangeEvidenceStatus::Unavailable
         );
         assert_eq!(
-            receipt.execution.required_steps[0].change_attribution.strength,
+            receipt.execution.required_steps[0]
+                .change_attribution
+                .strength,
             ChangeAttributionStrength::Unattributed
         );
         assert_eq!(
@@ -712,7 +714,8 @@ mod tests {
         };
         let mut receipt =
             build_execution_receipt(&plan, &run, ExecutionMode::AgentRun, Some("base".into()));
-        receipt.execution.required_steps[0].change_attribution = ChangeAttributionEvidence::default();
+        receipt.execution.required_steps[0].change_attribution =
+            ChangeAttributionEvidence::default();
         assert!(!execution_receipt_matches_run(&receipt, &run));
     }
 
