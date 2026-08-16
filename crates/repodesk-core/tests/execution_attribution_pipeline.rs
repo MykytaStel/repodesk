@@ -96,8 +96,7 @@ async fn isolated_coding_agent_receipt_carries_exact_attribution_evidence() {
         "#!/bin/sh\ncat >/dev/null\nprintf 'agent\\n' >> seed.txt\necho done\n",
     )
     .expect("fake codex");
-    std::fs::set_permissions(&fake_codex, std::fs::Permissions::from_mode(0o755))
-        .expect("chmod");
+    std::fs::set_permissions(&fake_codex, std::fs::Permissions::from_mode(0o755)).expect("chmod");
 
     let old_path = std::env::var_os("PATH");
     let mut paths = vec![bin_dir.path().to_path_buf()];
@@ -137,7 +136,11 @@ async fn isolated_coding_agent_receipt_carries_exact_attribution_evidence() {
 
     let receipt = load_receipt().expect("receipt load").expect("receipt");
     assert_eq!(receipt.run_id, run.run_id);
-    let receipt_step = receipt.execution.required_steps.first().expect("receipt step");
+    let receipt_step = receipt
+        .execution
+        .required_steps
+        .first()
+        .expect("receipt step");
     assert_eq!(
         receipt_step.change_attribution.strength,
         ChangeAttributionStrength::ExactIsolated
