@@ -27,13 +27,17 @@ jobs:
           python3 scripts/dev-apply-evidence-pipeline.py
           python3 scripts/dev-complete-evidence-pipeline.py
       - name: Format
-        run: cargo fmt --all
+        run: |
+          cargo fmt --all
       - name: Verify orchestrator GREEN
-        run: cargo test -p repodesk-core --lib orchestrator::
+        run: |
+          cargo test -p repodesk-core --lib orchestrator::
       - name: Verify evidence contract GREEN
-        run: cargo test -p repodesk-core --test execution_evidence_truth
+        run: |
+          cargo test -p repodesk-core --test execution_evidence_truth
       - name: Verify architecture ratchet GREEN
-        run: node --test scripts/check-source-architecture.test.mjs
+        run: |
+          node --test scripts/check-source-architecture.test.mjs
       - name: Remove temporary development helpers
         run: |
           rm scripts/dev-apply-evidence-pipeline.py
