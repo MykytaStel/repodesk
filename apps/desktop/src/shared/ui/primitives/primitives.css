@@ -90,6 +90,7 @@
 }
 
 .semantic-panel-header__title {
+  margin: 0;
   color: var(--text);
   font-size: var(--text-md);
   font-weight: 700;
