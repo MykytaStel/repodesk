@@ -1,10 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 
 export const HARD_SOURCE_LIMIT_BYTES = 28 * 1024;
 const SOURCE_EXTENSIONS = new Set([".rs", ".ts", ".tsx", ".mjs"]);
+
+const CHANGES_SEMANTIC_ADAPTER = "apps/desktop/src/features/changes/changesSemantic.ts";
+const SHARED_PRIMITIVES_INDEX = "apps/desktop/src/shared/ui/primitives/index.ts";
+const CHANGES_TYPED_SURFACES = [
+  "apps/desktop/src/features/changes/ChangesTab.tsx",
+  "apps/desktop/src/features/changes/ChangeGovernancePanel.tsx",
+];
 
 function extensionOf(path) {
   const index = path.lastIndexOf(".");
@@ -68,6 +75,53 @@ function baseFileSize(baseSha, path) {
   }
 }
 
+function readSource(path) {
+  return existsSync(path) ? readFileSync(path, "utf8") : null;
+}
+
+export function evaluateChangesSemanticContract() {
+  const failures = [];
+
+  if (!existsSync(SHARED_PRIMITIVES_INDEX)) {
+    failures.push(`${SHARED_PRIMITIVES_INDEX}: Changes reference migration requires the shared semantic primitive boundary`);
+  }
+  if (!existsSync(CHANGES_SEMANTIC_ADAPTER)) {
+    failures.push(`${CHANGES_SEMANTIC_ADAPTER}: Changes reference migration requires one typed domain-to-semantic adapter`);
+  }
+
+  const adapter = readSource(CHANGES_SEMANTIC_ADAPTER);
+  if (adapter) {
+    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block)/i.test(adapter)) {
+      failures.push(`${CHANGES_SEMANTIC_ADAPTER}: typed Changes state must not be inferred from status text substrings`);
+    }
+    if (/statusTone\s*\(/.test(adapter)) {
+      failures.push(`${CHANGES_SEMANTIC_ADAPTER}: typed Changes state must not delegate to statusTone()`);
+    }
+  }
+
+  for (const path of CHANGES_TYPED_SURFACES) {
+    const source = readSource(path);
+    if (!source) {
+      failures.push(`${path}: expected Changes reference surface is missing`);
+      continue;
+    }
+    if (!source.includes('from "../../shared/ui/primitives"')) {
+      failures.push(`${path}: migrated Changes surfaces must consume the shared semantic primitive boundary`);
+    }
+    if (!source.includes('from "./changesSemantic"')) {
+      failures.push(`${path}: migrated Changes surfaces must consume the typed Changes semantic adapter`);
+    }
+    if (/statusTone\s*\(/.test(source)) {
+      failures.push(`${path}: typed Changes state must not call statusTone()`);
+    }
+    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block)/i.test(source)) {
+      failures.push(`${path}: typed Changes state must not be inferred from status text substrings`);
+    }
+  }
+
+  return failures;
+}
+
 export function runArchitectureRatchet() {
   const baseSha = resolveBaseSha();
   const paths = changedSourcePaths(baseSha);
@@ -79,6 +133,8 @@ export function runArchitectureRatchet() {
     const failure = evaluateSourceChange({ path, baseSize, currentSize });
     if (failure) failures.push(failure);
   }
+
+  failures.push(...evaluateChangesSemanticContract());
 
   console.log(`Architecture ratchet: ${paths.length} changed source file(s), base ${baseSha.slice(0, 12)}.`);
   console.log(`Hard limit for new/crossing files: ${HARD_SOURCE_LIMIT_BYTES} bytes (28 KiB).`);
