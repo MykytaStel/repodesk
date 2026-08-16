@@ -177,7 +177,6 @@ test("Credentials have one user-triggered mutation owner", () => {
   );
 });
 
-
 test("execution evidence has one canonical receipt owner and no unknown-to-none copy", () => {
   const runner = readFileSync(
     new URL("../crates/repodesk-core/src/orchestrator/runner.rs", import.meta.url),
@@ -193,6 +192,11 @@ test("execution evidence has one canonical receipt owner and no unknown-to-none 
     /fn write_execution_receipt\b|save_receipt\s*\(/,
     "raw runner must not own canonical execution-receipt persistence",
   );
+  assert.doesNotMatch(
+    runner,
+    /\npub async fn run_plan\s*\(/,
+    "raw runner must not expose a second fresh-run execution entrypoint beside execution_evidence",
+  );
   assert.match(
     evidence,
     /save_receipt\s*\(/,
@@ -204,7 +208,6 @@ test("execution evidence has one canonical receipt owner and no unknown-to-none 
     "an empty path list must never be described as proven no-write evidence without provenance",
   );
 });
-
 
 test("reserved run ids still pass through the canonical execution-evidence boundary", () => {
   const orchestrator = readFileSync(
