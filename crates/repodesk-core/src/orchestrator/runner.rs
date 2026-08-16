@@ -10,7 +10,7 @@
 //! waves themselves run in order. Gating (dependency, safety, budget, cost
 //! ceiling) happens in a deterministic ascending-index decision pass before a
 //! wave's calls are launched, and results are recorded in index order, so a run
-//! is identical regardless of which concurrent call finishes first.
+//! is identical regardless of which concurrent call finished first.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -111,7 +111,7 @@ pub fn reserve_run_id() -> String {
     new_run_id()
 }
 
-/// Execute `plan` using a previously reserved run identity.
+/// Execute `plan` using a previously reserved execution identity.
 ///
 /// The caller may use the identity only for best-effort intent telemetry before
 /// entering this execution boundary. The raw runner persists run history; the
@@ -694,6 +694,14 @@ pub(super) async fn run_plan_with_id(
                         if !combined_stderr.trim().is_empty() {
                             notes.push(truncate_note("stderr", &combined_stderr));
                         }
+                        let change_attribution =
+                            crate::change_attribution::classify_step_attribution(
+                                &run_id,
+                                &step.id,
+                                false,
+                                execution.change_evidence_status,
+                                workspace.as_ref(),
+                            );
                         state.push(SubAgentResult {
                             status: final_status,
                             input_tokens: meta.input_tokens,
@@ -703,6 +711,7 @@ pub(super) async fn run_plan_with_id(
                             captured_proposals: captured,
                             changed_files,
                             change_evidence_status: execution.change_evidence_status,
+                            change_attribution,
                             execution_issues: execution.execution_issues.clone(),
                             diff_path: execution.diff_path.clone(),
                             workspace: workspace.clone(),
@@ -868,6 +877,7 @@ fn base_result(step: &SubAgentTask) -> SubAgentResult {
         } else {
             ChangeEvidenceStatus::Complete
         },
+        change_attribution: Default::default(),
         execution_issues: Vec::new(),
         diff_path: None,
         workspace: None,
