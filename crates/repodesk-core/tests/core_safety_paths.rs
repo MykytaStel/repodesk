@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use repodesk_core::api_clients::{ProviderSettings, ThinkingLevel};
+use repodesk_core::change_evidence::ChangeEvidenceStatus;
 use repodesk_core::guard::{GuardLevel, preflight};
 use repodesk_core::judge::{JudgementDecision, judge_agent};
 use repodesk_core::orchestrator::{
@@ -442,6 +443,8 @@ fn write_run(orchestrate_dir: &std::path::Path, run_id: &str, goal: &str, status
             cost_units: 0.0,
             captured_proposals: 0,
             changed_files: Vec::new(),
+            change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
+            execution_issues: Vec::new(),
             diff_path: None,
             workspace: None,
             notes: Vec::new(),
@@ -530,6 +533,8 @@ fn review_run_accepts_isolated_worktree_changesets() {
             cost_units: 0.0,
             captured_proposals: 0,
             changed_files: changed_files.clone(),
+            change_evidence_status: ChangeEvidenceStatus::Complete,
+            execution_issues: Vec::new(),
             diff_path: None,
             workspace: Some(worktree.clone()),
             notes: Vec::new(),
@@ -553,6 +558,7 @@ fn review_run_accepts_isolated_worktree_changesets() {
                 status: SubAgentStatus::Ok,
                 allow_write: true,
                 changed_files: changed_files.clone(),
+                change_evidence_status: ChangeEvidenceStatus::Complete,
             }],
             changeset_digest: Some(repodesk_core::workflow::changeset_digest(&changed_files)),
         },
@@ -1364,6 +1370,8 @@ fn mixed_run(project: &str, task_id: &str) -> (OrchestrationPlan, OrchestrationR
         cost_units: cost,
         captured_proposals: 0,
         changed_files: Vec::new(),
+        change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
+        execution_issues: Vec::new(),
         diff_path: None,
         workspace: None,
         notes: Vec::new(),
@@ -1532,6 +1540,8 @@ fn record_plan_steps(project: &str, task_id: &str, provider: &str, count: usize,
             cost_units: 0.1,
             captured_proposals: 0,
             changed_files: Vec::new(),
+            change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
+            execution_issues: Vec::new(),
             diff_path: None,
             workspace: None,
             notes: Vec::new(),
