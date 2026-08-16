@@ -72,8 +72,25 @@ pub async fn run_plan(
     plan: &OrchestrationPlan,
     opts: &RunOptions,
 ) -> RepoDeskResult<OrchestrationRun> {
-    let run = runner::run_plan(plan, opts).await?;
+    run_plan_with_id(plan, opts, runner::reserve_run_id()).await
+}
 
+/// Evidence-aware execution boundary for callers that must reserve the run id
+/// before launch (for example strategy-selection telemetry). The reserved id
+/// changes identity timing only; it must never bypass receipt finalization.
+pub async fn run_plan_with_id(
+    plan: &OrchestrationPlan,
+    opts: &RunOptions,
+    run_id: String,
+) -> RepoDeskResult<OrchestrationRun> {
+    let run = runner::run_plan_with_id(plan, opts, run_id).await?;
+    finalize_after_execution(plan, run)
+}
+
+fn finalize_after_execution(
+    plan: &OrchestrationPlan,
+    run: OrchestrationRun,
+) -> RepoDeskResult<OrchestrationRun> {
     if !run.dry_run {
         match finalize_execution_evidence(plan, &run) {
             Ok(state) if state.status == ExecutionEvidenceStatus::RecoveryRequired => {

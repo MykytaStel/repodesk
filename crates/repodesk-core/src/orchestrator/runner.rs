@@ -124,7 +124,7 @@ pub async fn run_plan(
 /// The caller may use the identity only for best-effort intent telemetry before
 /// entering this execution boundary. The raw runner persists run history; the
 /// public execution-evidence boundary owns canonical workflow-receipt finalization.
-pub async fn run_plan_with_id(
+pub(super) async fn run_plan_with_id(
     plan: &OrchestrationPlan,
     opts: &RunOptions,
     run_id: String,
