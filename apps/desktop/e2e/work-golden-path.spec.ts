@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { installMockIpc, recordedCommands } from "./mock-ipc";
-import { firstRunFixtures, reviewFixtures } from "./fixtures";
+import {
+  firstRunFixtures,
+  incompleteReviewFixtures,
+  recoveryReviewFixtures,
+  reviewFixtures,
+  zeroChangeReadyReviewFixtures,
+} from "./fixtures";
 import { currentOnboardedFixtures } from "./current-fixtures";
 
 // The golden path through Work: the six-phase rail reflects backend evidence,
@@ -115,8 +121,44 @@ test.describe("work tab review (commit visibility + memory)", () => {
     await expect(page.getByRole("button", { name: "Accept" }).first()).toBeVisible();
 
     const commands = await recordedCommands(page);
+    expect(commands).toContain("orchestrate_evidence_state");
     expect(commands).toContain("orchestrate_run_diffs");
     expect(commands).toContain("memory_proposals_list");
+  });
+
+  test("Review blocks incomplete changeset evidence and does not fetch expensive diffs", async ({ page }) => {
+    await installMockIpc(page, incompleteReviewFixtures);
+    await page.goto("/");
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("cannot prove which tracked paths changed");
+    await expect(alert).toContainText("Rerun execution");
+    await expect(page.getByText("No tracked file changes captured for this run.")).toHaveCount(0);
+
+    const commands = await recordedCommands(page);
+    expect(commands).toContain("orchestrate_evidence_state");
+    expect(commands).not.toContain("orchestrate_run_diffs");
+  });
+
+  test("Review distinguishes receipt recovery from rerunning the agent", async ({ page }) => {
+    await installMockIpc(page, recoveryReviewFixtures);
+    await page.goto("/");
+
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("persisted receipt needs repair");
+    await expect(alert).toContainText("do not rerun the agent");
+
+    const commands = await recordedCommands(page);
+    expect(commands).toContain("orchestrate_evidence_state");
+    expect(commands).not.toContain("orchestrate_run_diffs");
+  });
+
+  test("Review states proven zero-change evidence explicitly", async ({ page }) => {
+    await installMockIpc(page, zeroChangeReadyReviewFixtures);
+    await page.goto("/");
+
+    await expect(page.getByText("Changeset capture is complete; no tracked file changes were produced.")).toBeVisible();
+    await expect(page.getByText("No tracked file changes captured for this run.")).toHaveCount(0);
   });
 
   test("Review has evidence-bound Accept/Reject and no manual bypass", async ({ page }) => {
