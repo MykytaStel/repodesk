@@ -32,15 +32,15 @@ test("historical product routes migrate to canonical owners on direct entry", as
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("repodesk.activeTab"))).toBe("settings");
 });
 
-test("moved product styles still yield to the Work workbench layer", async ({ page }) => {
+test("moved product styles still yield to the canonical Work workbench layer", async ({ page }) => {
   await openDirectly(page, "work");
   await expect(page.getByRole("group", { name: "Execution mode" })).toBeVisible();
 
   expect(await page.locator(".work-focus-card").evaluate((element) => getComputedStyle(element).borderRadius)).toBe("9px");
-  expect(await gridColumnCount(page, ".work-current-step-copy")).toBe(2);
+  expect(await gridColumnCount(page, ".work-workbench")).toBe(2);
 
   await page.setViewportSize({ width: 680, height: 720 });
-  expect(await gridColumnCount(page, ".work-current-step-copy")).toBe(1);
+  expect(await gridColumnCount(page, ".work-workbench")).toBe(1);
 });
 
 test("Runs shared subnavigation is styled on direct entry", async ({ page }) => {
