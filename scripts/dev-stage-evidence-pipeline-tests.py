@@ -55,11 +55,6 @@ append_once(
 )
 
 contract_test = "crates/repodesk-core/tests/execution_evidence_truth.rs"
-append_once(
-    contract_test,
-    'fn evidence_status_has_distinct_incomplete_state() {\n',
-    '',
-)
 contract = Path(contract_test).read_text()
 contract += '''\n#[test]\nfn historical_subagent_result_defaults_to_unknown_evidence() {\n    let result: repodesk_core::orchestrator::SubAgentResult = serde_json::from_value(serde_json::json!({\n        "task_id": "legacy",\n        "agent": "manual",\n        "provider": "manual",\n        "model": "external",\n        "status": "ok",\n        "output": "done",\n        "input_tokens": 0,\n        "output_tokens": 0,\n        "cost_units": 0.0,\n        "captured_proposals": 0,\n        "changed_files": [],\n        "notes": []\n    }))\n    .expect("historical run results must remain loadable");\n\n    assert_eq!(\n        result.change_evidence_status,\n        ChangeEvidenceStatus::LegacyUnknown\n    );\n    assert!(result.execution_issues.is_empty());\n}\n'''
 Path(contract_test).write_text(contract)
