@@ -28,7 +28,7 @@ pub mod types;
 pub use auto_loop::{LoopIteration, LoopOptions, LoopRun, LoopStatus, run_loop};
 pub use execution_evidence::{
     ExecutionEvidenceState, ExecutionEvidenceStatus, evidence_state_for_run,
-    repair_execution_evidence, run_plan,
+    repair_execution_evidence, run_plan, run_plan_with_id,
 };
 pub use manual_import::{ManualImport, ManualImportSource, import_manual_changes};
 pub use plan::{
@@ -40,7 +40,7 @@ pub use review::{ReviewAction, ReviewedFile, RunReview, record_review};
 pub use review_evidence_gate::review_run;
 pub use runner::{
     AgentWorkspacePolicy, ExecutionAuthorization, RunOptions, list_runs, load_latest_run, load_run,
-    reserve_run_id, run_plan_with_id,
+    reserve_run_id,
 };
 pub use strategy::{build_strategy_plan, derive_active_ai_strategy};
 pub use strategy_preview::{

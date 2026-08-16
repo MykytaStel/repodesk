@@ -3,6 +3,15 @@ import { invoke } from "@tauri-apps/api/core";
 export type ThinkingLevel = "none" | "low" | "medium" | "high";
 export type SubAgentStatus = "ok" | "skipped" | "blocked" | "failed";
 export type RunStatus = "completed" | "partial" | "failed" | "dry_run";
+export type ChangeEvidenceStatus = "complete" | "unavailable" | "legacy_unknown";
+export type ExecutionEvidenceStatus = "ready" | "recovery_required" | "incomplete" | "not_required";
+
+export type ExecutionEvidenceState = {
+  run_id: string;
+  status: ExecutionEvidenceStatus;
+  recoverable: boolean;
+  detail?: string | null;
+};
 
 export type SubAgentTask = {
   id: string;
@@ -33,6 +42,8 @@ export type SubAgentResult = {
   cost_units: number;
   captured_proposals: number;
   changed_files?: string[];
+  change_evidence_status?: ChangeEvidenceStatus;
+  execution_issues?: string[];
   diff_path?: string | null;
   workspace?: RunWorkspace | null;
   notes: string[];
@@ -175,7 +186,13 @@ export type CheckProof = {
   warnings: string[];
 };
 
-export type LoopStatus = "succeeded" | "needs_approval" | "guardrail_blocked" | "exhausted" | "dry_run";
+export type LoopStatus =
+  | "succeeded"
+  | "needs_approval"
+  | "guardrail_blocked"
+  | "evidence_recovery_required"
+  | "exhausted"
+  | "dry_run";
 
 export type LoopIteration = {
   index: number;
@@ -357,6 +374,10 @@ export async function orchestrationRuns(): Promise<RunSummary[]> {
 
 export async function orchestrateReview(runId: string, action: ReviewAction): Promise<RunReview> {
   return invoke("orchestrate_review", { runId, action });
+}
+
+export async function orchestrateEvidenceState(runId: string): Promise<ExecutionEvidenceState> {
+  return invoke("orchestrate_evidence_state", { runId });
 }
 
 export async function orchestrateRunDiffs(runId: string): Promise<RunDiff[]> {

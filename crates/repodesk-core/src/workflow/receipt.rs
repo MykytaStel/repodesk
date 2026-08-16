@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tempfile::NamedTempFile;
 
+use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::tasks::show_active_task;
 
@@ -37,6 +38,9 @@ pub struct StepReceipt {
     pub allow_write: bool,
     #[serde(default)]
     pub changed_files: Vec<String>,
+    /// Whether `changed_files` is complete evidence or only an unknown/unavailable placeholder.
+    #[serde(default)]
+    pub change_evidence_status: ChangeEvidenceStatus,
 }
 
 /// Proof of what the run actually did. `Partial` is **not** treated as success:
@@ -69,9 +73,9 @@ impl ExecutionReceipt {
                 .iter()
                 .all(|step| step.status == SubAgentStatus::Ok)
         } else {
-            required
-                .iter()
-                .all(|step| step.status == SubAgentStatus::Ok)
+            required.iter().all(|step| {
+                step.status == SubAgentStatus::Ok && step.change_evidence_status.is_complete()
+            })
         }
     }
 }
@@ -588,6 +592,7 @@ mod tests {
             status,
             allow_write,
             changed_files: Vec::new(),
+            change_evidence_status: ChangeEvidenceStatus::Complete,
         }
     }
 

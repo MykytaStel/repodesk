@@ -5,17 +5,24 @@ import * as memory from "../../shared/api/memory";
 import { queryKeys } from "../../shared/api/queries";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
 
-// Review surface: makes the run's output legible before it's committed — the
-// exact files/diffs that changed, plus the memory the run proposed capturing
-// (accept = add to memory) and a free-text note to add to memory by hand.
+// Review surface: evidence is checked before any diff is read. This keeps the
+// UI fail-closed and prevents an empty/unavailable changeset from being shown
+// as proof that the agent made no writes.
 export function ReviewPanel({ runId, projectName }: { runId: string | null; projectName: string }) {
   const queryClient = useQueryClient();
   const [note, setNote] = useState("");
 
+  const evidence = useQuery({
+    queryKey: ["work", "review-evidence", runId],
+    queryFn: () => orchestrate.orchestrateEvidenceState(runId ?? ""),
+    enabled: !!runId,
+  });
+  const evidenceReady = evidence.data?.status === "ready";
+
   const diffs = useQuery({
     queryKey: ["work", "review-diffs", runId],
-    queryFn: () => (runId ? orchestrate.orchestrateRunDiffs(runId) : Promise.resolve([])),
-    enabled: !!runId,
+    queryFn: () => orchestrate.orchestrateRunDiffs(runId ?? ""),
+    enabled: !!runId && evidenceReady,
   });
 
   const proposals = useQuery({
@@ -43,38 +50,62 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
     },
   });
 
-  const changedDiffs = (diffs.data ?? []).filter((d) => d.changed_files.length > 0);
+  const changedDiffs = (diffs.data ?? []).filter((diff) => diff.changed_files.length > 0);
   const pending = proposals.data ?? [];
+
+  const evidenceContent = !runId ? (
+    <p className="muted">No run to review yet.</p>
+  ) : evidence.isLoading ? (
+    <p className="muted">Checking execution evidence…</p>
+  ) : evidence.isError || !evidence.data ? (
+    <p className="muted" role="alert">
+      Evidence status unavailable. Review is blocked until execution evidence can be verified.
+    </p>
+  ) : evidence.data.status === "incomplete" ? (
+    <p className="muted" role="alert">
+      Change evidence unavailable. RepoDesk cannot prove which tracked paths changed. Rerun execution to capture a
+      trustworthy changeset.
+    </p>
+  ) : evidence.data.status === "recovery_required" ? (
+    <p className="muted" role="alert">
+      Execution finished, but the persisted receipt needs repair. Repair execution evidence; do not rerun the agent.
+    </p>
+  ) : evidence.data.status === "not_required" ? (
+    <p className="muted" role="alert">
+      This was a dry run, so there is no reviewable execution evidence.
+    </p>
+  ) : diffs.isLoading ? (
+    <p className="muted">Loading diff…</p>
+  ) : diffs.isError ? (
+    <p className="muted" role="alert">
+      Diff evidence could not be loaded. Review is blocked until the recorded changes can be read.
+    </p>
+  ) : changedDiffs.length === 0 ? (
+    <p className="muted">Changeset capture is complete; no tracked file changes were produced.</p>
+  ) : (
+    changedDiffs.map((diff) => (
+      <details key={diff.task_id} className="review-file">
+        <summary>
+          {diff.task_id} — {diff.changed_files.length} file(s): {diff.changed_files.join(", ")}
+        </summary>
+        {diff.diff.trim() ? (
+          <DiffViewer diff={diff.diff} />
+        ) : (
+          <p className="muted">No unified diff (new, binary, or already moved).</p>
+        )}
+        {diff.truncated && <p className="muted">Diff truncated.</p>}
+      </details>
+    ))
+  );
 
   return (
     <div className="review-panel">
-      {/* What changed — the exact files/diffs heading to a commit. */}
       <div className="review-block">
         <h4>What changed</h4>
-        {!runId ? (
-          <p className="muted">No run to review yet.</p>
-        ) : diffs.isLoading ? (
-          <p className="muted">Loading diff…</p>
-        ) : changedDiffs.length === 0 ? (
-          <p className="muted">No tracked file changes captured for this run.</p>
-        ) : (
-          changedDiffs.map((d) => (
-            <details key={d.task_id} className="review-file">
-              <summary>
-                {d.task_id} — {d.changed_files.length} file(s): {d.changed_files.join(", ")}
-              </summary>
-              {d.diff.trim() ? (
-                <DiffViewer diff={d.diff} />
-              ) : (
-                <p className="muted">No unified diff (new, binary, or already moved).</p>
-              )}
-              {d.truncated && <p className="muted">Diff truncated.</p>}
-            </details>
-          ))
-        )}
+        {evidenceContent}
       </div>
 
-      {/* Memory — accept what the run proposed, or add a note by hand. */}
+      {/* Memory proposals remain useful metadata even when file evidence is blocked. */}
       <div className="review-block">
         <h4>Add to memory</h4>
         {proposals.isLoading ? (
@@ -83,23 +114,25 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
           <p className="muted">No pending memory proposals.</p>
         ) : (
           <ul className="proposal-list">
-            {pending.map((p) => (
-              <li key={p.id} className="proposal-item">
+            {pending.map((proposal) => (
+              <li key={proposal.id} className="proposal-item">
                 <div>
-                  <span className="proposal-kind">{p.kind}</span>
-                  <p className="proposal-text">{p.payload.proposed?.content ?? p.payload.rationale}</p>
+                  <span className="proposal-kind">{proposal.kind}</span>
+                  <p className="proposal-text">
+                    {proposal.payload.proposed?.content ?? proposal.payload.rationale}
+                  </p>
                 </div>
                 <div className="phase-actions">
                   <button
                     className="secondary-cta"
-                    onClick={() => accept.mutate(p.id)}
+                    onClick={() => accept.mutate(proposal.id)}
                     disabled={accept.isPending}
                   >
                     Accept
                   </button>
                   <button
                     className="link-cta"
-                    onClick={() => reject.mutate(p.id)}
+                    onClick={() => reject.mutate(proposal.id)}
                     disabled={reject.isPending}
                   >
                     Reject
@@ -114,7 +147,7 @@ export function ReviewPanel({ runId, projectName }: { runId: string | null; proj
             className="commit-input"
             placeholder="Add a note to memory…"
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={(event) => setNote(event.target.value)}
           />
           <button
             className="secondary-cta"

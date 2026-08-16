@@ -8,6 +8,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use wait_timeout::ChildExt;
 
+use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::process_io::{BoundedTee, drain_bounded_to_writer};
 
@@ -17,6 +18,8 @@ use super::{
 };
 
 const OUTPUT_TRUNCATION_MARKER: &str = "\n[output truncated]";
+const MAX_EXECUTION_ISSUES: usize = 16;
+const MAX_EXECUTION_ISSUE_BYTES: usize = 512;
 
 #[derive(Clone, Copy)]
 pub(super) struct OutputLimits {
@@ -217,17 +220,18 @@ pub(super) fn run_with_limits(
 
     // Once the executor has launched, provenance degradation must not erase the
     // execution receipt. Missing ChangeSet evidence stays explicit and empty.
-    let changeset = match capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref()) {
-        Ok(changeset) => changeset,
-        Err(error) => {
-            push_execution_issue(
-                &mut execution_issues,
-                format!("changeset capture failed: {error}"),
-            );
-            force_failed = true;
-            Changeset::empty()
-        }
-    };
+    let (changeset, change_evidence_status) =
+        match capture_changeset(cwd, output_dir, &safe_id, stamp, pre_status.as_ref()) {
+            Ok(changeset) => (changeset, ChangeEvidenceStatus::Complete),
+            Err(error) => {
+                push_execution_issue(
+                    &mut execution_issues,
+                    format!("changeset capture failed: {error}"),
+                );
+                force_failed = true;
+                (Changeset::empty(), ChangeEvidenceStatus::Unavailable)
+            }
+        };
 
     let (stdout, mut secrets_redacted) = crate::security::redact_secrets(&raw_stdout);
     let (stderr, stderr_secrets) = crate::security::redact_secrets(&raw_stderr);
@@ -255,6 +259,7 @@ pub(super) fn run_with_limits(
         stderr_log_truncated,
         output_capture_issues,
         execution_issues,
+        change_evidence_status,
         secrets_redacted,
         timed_out,
         changed_files: changeset.changed_files,
@@ -334,9 +339,16 @@ fn join_capture_receipt(
 }
 
 fn push_execution_issue(issues: &mut Vec<String>, issue: String) {
-    issues.push(issue);
+    let (redacted, _) = crate::security::redact_secrets(&issue);
+    let bounded = truncate_char_boundary(&redacted, MAX_EXECUTION_ISSUE_BYTES).to_string();
+    if issues.iter().any(|existing| existing == &bounded) {
+        return;
+    }
+    if issues.len() >= MAX_EXECUTION_ISSUES {
+        return;
+    }
+    issues.push(bounded);
     issues.sort();
-    issues.dedup();
 }
 
 #[cfg(unix)]
@@ -431,5 +443,22 @@ mod tests {
         assert!(truncated);
         assert!(text.is_char_boundary(text.len()));
         assert!(text.len() <= 31);
+    }
+
+    #[test]
+    fn execution_issues_are_secret_redacted_and_bounded() {
+        let mut issues = Vec::new();
+        let secret = ["sk-", "abcdefghijkl", "mnopqrstuvwx"].concat();
+        for index in 0..(MAX_EXECUTION_ISSUES + 4) {
+            push_execution_issue(&mut issues, format!("diagnostic {index}: {secret}"));
+        }
+
+        assert!(issues.len() <= MAX_EXECUTION_ISSUES);
+        assert!(
+            issues
+                .iter()
+                .all(|issue| issue.len() <= MAX_EXECUTION_ISSUE_BYTES)
+        );
+        assert!(issues.iter().all(|issue| !issue.contains("abcdefghijkl")));
     }
 }

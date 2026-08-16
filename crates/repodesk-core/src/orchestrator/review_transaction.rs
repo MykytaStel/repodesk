@@ -619,6 +619,8 @@ mod tests {
                 "src/old.rs -> src/new.rs".into(),
                 "../escape -> src/safe.rs".into(),
             ],
+            change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
+            execution_issues: Vec::new(),
             diff_path: None,
             workspace: None,
             notes: vec![],

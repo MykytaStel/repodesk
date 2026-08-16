@@ -450,6 +450,7 @@ mod tests {
                     status: SubAgentStatus::Ok,
                     allow_write: true,
                     changed_files: vec!["src/lib.rs".into()],
+                    change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,
                 }],
                 changeset_digest: Some("digest-1".into()),
             },

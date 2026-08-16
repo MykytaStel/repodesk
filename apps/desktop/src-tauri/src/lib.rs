@@ -192,6 +192,7 @@ pub fn run() {
             commands::orchestrate_status,
             commands::orchestrate_show,
             commands::orchestrate_review,
+            commands::orchestrate_evidence_state,
             commands::orchestrate_run_diffs,
             commands::orchestrate_check_proof,
             commands::orchestrate_worktrees,

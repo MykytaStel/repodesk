@@ -271,6 +271,10 @@ fn run_command_captures_git_changeset() {
 
     let result = run_coding_agent_command(&command, "prompt", repo.path(), out.path(), 5).unwrap();
     assert_eq!(result.status, "ok");
+    assert_eq!(
+        result.change_evidence_status,
+        crate::change_evidence::ChangeEvidenceStatus::Complete
+    );
     let paths: Vec<&str> = result
         .changed_files
         .iter()
@@ -325,4 +329,8 @@ fn post_launch_provenance_failure_still_returns_execution_receipt() {
     assert_eq!(result.status, "failed");
     assert!(result.stdout.contains("agent-finished"));
     assert!(result.changed_files.is_empty());
+    assert_eq!(
+        result.change_evidence_status,
+        crate::change_evidence::ChangeEvidenceStatus::Unavailable
+    );
 }

@@ -21,6 +21,7 @@ use tokio::fs;
 use tokio::task::JoinSet;
 
 use crate::api_clients::{LlmRequest, LlmResponse, ProviderSettings, provider_for};
+use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::RepoDeskResult;
 use crate::persistence::event_journal::{LogEventInput, log_event};
 use crate::routing::types::ExecutorKind;
@@ -54,7 +55,7 @@ pub enum AgentWorkspacePolicy {
 /// to denied: each capability — spending on a paid completion API, launching a
 /// coding-agent CLI, and letting that agent modify files — requires its own
 /// explicit grant, and one never implies another. The runner checks these in
-/// [`run_plan`] *before* any HTTP request or process launch.
+/// the execution path *before* any HTTP request or process launch.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ExecutionAuthorization {
     /// Allow steps that route to a paid completion provider to actually call it
@@ -110,20 +111,12 @@ pub fn reserve_run_id() -> String {
     new_run_id()
 }
 
-/// Execute `plan` with a fresh RepoDesk run identity.
-pub async fn run_plan(
-    plan: &OrchestrationPlan,
-    opts: &RunOptions,
-) -> RepoDeskResult<OrchestrationRun> {
-    run_plan_with_id(plan, opts, reserve_run_id()).await
-}
-
 /// Execute `plan` using a previously reserved run identity.
 ///
 /// The caller may use the identity only for best-effort intent telemetry before
-/// entering this execution boundary. All authoritative run/receipt evidence is
-/// still produced by the runner itself.
-pub async fn run_plan_with_id(
+/// entering this execution boundary. The raw runner persists run history; the
+/// public execution-evidence boundary owns canonical workflow-receipt finalization.
+pub(super) async fn run_plan_with_id(
     plan: &OrchestrationPlan,
     opts: &RunOptions,
     run_id: String,
@@ -661,24 +654,39 @@ pub async fn run_plan_with_id(
                             .iter()
                             .map(|change| change.path.clone())
                             .collect();
-                        if changed_files.is_empty() {
-                            notes.push("changed files: none (no writes detected)".to_string());
-                        } else {
-                            notes.push(format!(
-                                "changed files ({}): {}",
-                                changed_files.len(),
-                                changed_files.join(", ")
-                            ));
-                            if let Some(diff_path) = &execution.diff_path {
-                                notes.push(format!(
-                                    "diff: {diff_path}{}",
-                                    if execution.diff_truncated {
-                                        " (truncated)"
-                                    } else {
-                                        ""
+                        match execution.change_evidence_status {
+                            ChangeEvidenceStatus::Complete => {
+                                if changed_files.is_empty() {
+                                    notes.push(
+                                        "changeset capture complete: no tracked file changes were produced"
+                                            .to_string(),
+                                    );
+                                } else {
+                                    notes.push(format!(
+                                        "changed files ({}): {}",
+                                        changed_files.len(),
+                                        changed_files.join(", ")
+                                    ));
+                                    if let Some(diff_path) = &execution.diff_path {
+                                        notes.push(format!(
+                                            "diff: {diff_path}{}",
+                                            if execution.diff_truncated {
+                                                " (truncated)"
+                                            } else {
+                                                ""
+                                            }
+                                        ));
                                     }
-                                ));
+                                }
                             }
+                            ChangeEvidenceStatus::Unavailable => notes.push(
+                                "change evidence unavailable: RepoDesk cannot prove which tracked paths changed"
+                                    .to_string(),
+                            ),
+                            ChangeEvidenceStatus::LegacyUnknown => notes.push(
+                                "change evidence unknown: rerun execution to capture a trustworthy changeset"
+                                    .to_string(),
+                            ),
                         }
                         if execution.timed_out {
                             notes.push("coding-agent process timed out and was killed".to_string());
@@ -694,6 +702,8 @@ pub async fn run_plan_with_id(
                             cost_units: cost,
                             captured_proposals: captured,
                             changed_files,
+                            change_evidence_status: execution.change_evidence_status,
+                            execution_issues: execution.execution_issues.clone(),
                             diff_path: execution.diff_path.clone(),
                             workspace: workspace.clone(),
                             notes,
@@ -742,12 +752,6 @@ pub async fn run_plan_with_id(
     };
 
     persist_run(&run).await?;
-    // Write the evidence receipt: a fresh receipt for this run (which auto-
-    // invalidates any stale review/verification from an earlier run). Dry runs
-    // carry no evidence; a receipt error never fails a run that already completed.
-    if !run.dry_run {
-        let _ = write_execution_receipt(plan, &run);
-    }
     // Record the outcome ledger (the N8 learning signal). Dry runs carry no
     // signal and are skipped inside `record_run`; a ledger error never fails a
     // run that already completed.
@@ -859,6 +863,12 @@ fn base_result(step: &SubAgentTask) -> SubAgentResult {
         cost_units: 0.0,
         captured_proposals: 0,
         changed_files: Vec::new(),
+        change_evidence_status: if step.allow_write {
+            ChangeEvidenceStatus::LegacyUnknown
+        } else {
+            ChangeEvidenceStatus::Complete
+        },
+        execution_issues: Vec::new(),
         diff_path: None,
         workspace: None,
         notes: Vec::new(),
@@ -940,70 +950,6 @@ fn truncate_note(label: &str, value: &str) -> String {
         text.push_str(" [truncated]");
     }
     format!("{label}: {text}")
-}
-
-/// Persist a fresh [`TaskRunReceipt`] for this run: the execution evidence the
-/// Work flow's post-Prepare gates derive from. Writing it resets any review /
-/// verification / finish from an earlier run (a new `run_id` invalidates them).
-fn write_execution_receipt(plan: &OrchestrationPlan, run: &OrchestrationRun) -> RepoDeskResult<()> {
-    use crate::workflow::receipt::{
-        ExecutionReceipt, StepReceipt, TaskRunReceipt, changeset_digest, head_sha, save_receipt,
-    };
-
-    let allow_write_of = |task_id: &str| {
-        plan.steps
-            .iter()
-            .find(|step| step.id == task_id)
-            .map(|step| step.allow_write)
-            .unwrap_or(false)
-    };
-
-    let mut changed: Vec<String> = Vec::new();
-    let required_steps: Vec<StepReceipt> = run
-        .results
-        .iter()
-        .map(|result| {
-            for path in &result.changed_files {
-                if !changed.iter().any(|existing| existing == path) {
-                    changed.push(path.clone());
-                }
-            }
-            StepReceipt {
-                task_id: result.task_id.clone(),
-                status: result.status,
-                allow_write: allow_write_of(&result.task_id),
-                changed_files: result.changed_files.clone(),
-            }
-        })
-        .collect();
-
-    let changeset_digest = if changed.is_empty() {
-        None
-    } else {
-        Some(changeset_digest(&changed))
-    };
-    let base_commit = crate::projects::get_active_project()
-        .ok()
-        .and_then(|project| head_sha(&project.path));
-    let execution_mode = crate::workflow::load_phase_state()
-        .map(|state| state.execution_mode)
-        .unwrap_or_default();
-
-    let receipt = TaskRunReceipt {
-        task_id: run.task_id.clone(),
-        run_id: run.run_id.clone(),
-        execution_mode,
-        base_commit,
-        execution: ExecutionReceipt {
-            status: run.status,
-            required_steps,
-            changeset_digest,
-        },
-        review: None,
-        verification: None,
-        finish: None,
-    };
-    save_receipt(&receipt)
 }
 
 async fn persist_run(run: &OrchestrationRun) -> RepoDeskResult<PathBuf> {

@@ -509,12 +509,20 @@ export const reviewFixtures: CommandFixtures = {
         cost_units: 0,
         captured_proposals: 1,
         changed_files: ["src/app.ts"],
+        change_evidence_status: "complete",
+        execution_issues: [],
         notes: [],
       },
     ],
     total_input_tokens: 100,
     total_output_tokens: 200,
     total_cost_units: 0,
+  },
+  orchestrate_evidence_state: {
+    run_id: "run-20260101-000000-1-0",
+    status: "ready",
+    recoverable: false,
+    detail: null,
   },
   orchestrate_run_diffs: [
     {
@@ -545,4 +553,36 @@ export const reviewFixtures: CommandFixtures = {
       },
     },
   ],
+};
+
+
+export const incompleteReviewFixtures: CommandFixtures = {
+  ...reviewFixtures,
+  orchestrate_evidence_state: {
+    run_id: "run-20260101-000000-1-0",
+    status: "incomplete",
+    recoverable: false,
+    detail: "one or more write-capable steps lack complete changeset provenance",
+  },
+};
+
+export const recoveryReviewFixtures: CommandFixtures = {
+  ...reviewFixtures,
+  orchestrate_evidence_state: {
+    run_id: "run-20260101-000000-1-0",
+    status: "recovery_required",
+    recoverable: true,
+    detail: "execution receipt persistence failed",
+  },
+};
+
+export const zeroChangeReadyReviewFixtures: CommandFixtures = {
+  ...reviewFixtures,
+  orchestrate_evidence_state: {
+    run_id: "run-20260101-000000-1-0",
+    status: "ready",
+    recoverable: false,
+    detail: null,
+  },
+  orchestrate_run_diffs: [],
 };
