@@ -2,6 +2,7 @@ import type {
   AiStrategyMode,
   StrategyExecutionPreview,
 } from "../../shared/api/strategy";
+import { Metric, PanelHeader, StatusBadge } from "../../shared/ui/primitives";
 
 const MODES: Array<{ id: AiStrategyMode; label: string; hint: string }> = [
   { id: "auto", label: "Auto", hint: "Use RepoDesk evidence" },
@@ -51,24 +52,22 @@ export function ExecutionStrategyControls({
 
   return (
     <section className="ai-strategy-card" aria-label="AI execution strategy">
-      <header className="ai-strategy-heading">
-        <div>
-          <span className="eyebrow">AI strategy</span>
-          <strong>
-            {loading
-              ? "Evaluating execution shape…"
-              : strategy
-                ? `${mode === "auto" ? "Auto → " : ""}${PROFILE_LABELS[strategy.profile]}`
-                : "Strategy unavailable"}
-          </strong>
-          <small>RepoDesk may reduce AI orchestration, never the human review or verification gates.</small>
-        </div>
-        {strategy ? (
-          <span className={`ai-strategy-badge profile-${strategy.profile}`}>
-            {SHAPE_LABELS[strategy.plan_shape]}
-          </span>
+      <PanelHeader
+        eyebrow="AI strategy"
+        title={loading
+          ? "Evaluating execution shape…"
+          : strategy
+            ? `${mode === "auto" ? "Auto → " : ""}${PROFILE_LABELS[strategy.profile]}`
+            : "Strategy unavailable"}
+        description="RepoDesk may reduce AI orchestration, never the human review or verification gates."
+        trailing={strategy ? (
+          <StatusBadge
+            label={SHAPE_LABELS[strategy.plan_shape]}
+            tone="info"
+            className={`ai-strategy-badge profile-${strategy.profile}`}
+          />
         ) : null}
-      </header>
+      />
 
       <div className="ai-strategy-modes" role="radiogroup" aria-label="Execution strategy mode">
         {MODES.map((item) => (
@@ -96,30 +95,31 @@ export function ExecutionStrategyControls({
           ) : null}
 
           <div className="ai-strategy-comparison">
-            <div>
-              <span>AI calls</span>
-              <strong>{comparison.baseline_steps} → {comparison.planned_steps}</strong>
-              <small>baseline → selected</small>
-            </div>
-            <div>
-              <span>Token estimate</span>
-              <strong>
-                {comparison.estimated_saved_tokens > 0
-                  ? `−${comparison.estimated_saved_tokens.toLocaleString()}`
-                  : "no reduction"}
-              </strong>
-              <small>{comparison.planned_estimated_tokens.toLocaleString()} planned</small>
-            </div>
-            <div>
-              <span>Cost delta</span>
-              <strong>{formatDelta(comparison.estimated_cost_delta_units, currency)}</strong>
-              <small>vs balanced baseline</small>
-            </div>
-            <div>
-              <span>Context</span>
-              <strong>{strategy.reuse_prepared_context ? "reuse prepared" : "build required"}</strong>
-              <small>{strategy.economy_mode} routing</small>
-            </div>
+            <Metric
+              label="AI calls"
+              value={`${comparison.baseline_steps} → ${comparison.planned_steps}`}
+              detail="baseline → selected"
+            />
+            <Metric
+              label="Token estimate"
+              value={comparison.estimated_saved_tokens > 0
+                ? `−${comparison.estimated_saved_tokens.toLocaleString()}`
+                : "no reduction"}
+              detail={`${comparison.planned_estimated_tokens.toLocaleString()} planned`}
+              tone={comparison.estimated_saved_tokens > 0 ? "positive" : "neutral"}
+            />
+            <Metric
+              label="Cost delta"
+              value={formatDelta(comparison.estimated_cost_delta_units, currency)}
+              detail="vs balanced baseline"
+              tone={comparison.estimated_cost_delta_units > 0 ? "attention" : "neutral"}
+            />
+            <Metric
+              label="Context"
+              value={strategy.reuse_prepared_context ? "reuse prepared" : "build required"}
+              detail={`${strategy.economy_mode} routing`}
+              tone={strategy.reuse_prepared_context ? "positive" : "attention"}
+            />
           </div>
 
           <div className="ai-strategy-plan-lock">
