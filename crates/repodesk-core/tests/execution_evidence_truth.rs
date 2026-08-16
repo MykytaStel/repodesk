@@ -1,12 +1,11 @@
 use repodesk_core::change_evidence::ChangeEvidenceStatus;
+use repodesk_core::orchestrator::RunStatus;
 use repodesk_core::orchestrator::SubAgentStatus;
 use repodesk_core::workflow::{ExecutionReceipt, StepReceipt};
-use repodesk_core::orchestrator::RunStatus;
 
 #[test]
 fn legacy_change_evidence_defaults_to_unknown() {
-    let status: ChangeEvidenceStatus = serde_json::from_str("null")
-        .unwrap_or_default();
+    let status: ChangeEvidenceStatus = serde_json::from_str("null").unwrap_or_default();
     assert_eq!(status, ChangeEvidenceStatus::LegacyUnknown);
 
     let step: StepReceipt = serde_json::from_value(serde_json::json!({
@@ -17,7 +16,10 @@ fn legacy_change_evidence_defaults_to_unknown() {
     }))
     .expect("historical receipts must remain loadable");
 
-    assert_eq!(step.change_evidence_status, ChangeEvidenceStatus::LegacyUnknown);
+    assert_eq!(
+        step.change_evidence_status,
+        ChangeEvidenceStatus::LegacyUnknown
+    );
 }
 
 #[test]
