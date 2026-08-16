@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use repodesk_core::change_evidence::ChangeEvidenceStatus;
 use repodesk_core::orchestrator::types::{RunStatus, SubAgentStatus};
 use repodesk_core::orchestrator::{ReviewAction, ReviewedFile, RunReview, record_review};
 use repodesk_core::projects::{AddProjectInput, add_project, use_project};
@@ -101,6 +102,7 @@ fn seed_receipt(run_id: &str, changed: &[&str]) {
                 status: SubAgentStatus::Ok,
                 allow_write: true,
                 changed_files: changed,
+                change_evidence_status: ChangeEvidenceStatus::Complete,
             }],
             changeset_digest: digest,
         },
