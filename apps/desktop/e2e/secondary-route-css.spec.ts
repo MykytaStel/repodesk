@@ -36,11 +36,13 @@ test("moved product styles still yield to the canonical Work workbench layer", a
   await openDirectly(page, "work");
   await expect(page.getByRole("group", { name: "Execution mode" })).toBeVisible();
 
+  const workbench = page.locator(".work-workbench");
   expect(await page.locator(".work-focus-card").evaluate((element) => getComputedStyle(element).borderRadius)).toBe("9px");
+  expect(await workbench.evaluate((element) => getComputedStyle(element).display)).toBe("grid");
   expect(await gridColumnCount(page, ".work-workbench")).toBe(2);
 
   await page.setViewportSize({ width: 680, height: 720 });
-  expect(await gridColumnCount(page, ".work-workbench")).toBe(1);
+  expect(await workbench.evaluate((element) => getComputedStyle(element).display)).toBe("block");
 });
 
 test("Runs shared subnavigation is styled on direct entry", async ({ page }) => {
