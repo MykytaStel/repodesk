@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          cargo test -p repodesk-core executors::tests::run_command_captures_git_changeset executors::runtime::tests::execution_issues_are_secret_redacted_and_bounded 2>&1 | tee /tmp/red.log
+          cargo test -p repodesk-core --lib executors:: 2>&1 | tee /tmp/red.log
           code=${PIPESTATUS[0]}
           set -e
           if [ "$code" -eq 0 ]; then
