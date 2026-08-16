@@ -302,6 +302,7 @@ fn build_execution_receipt(
                 allow_write: allow_write_of(&result.task_id),
                 changed_files: result.changed_files.clone(),
                 change_evidence_status: result.change_evidence_status,
+                change_attribution: result.change_attribution.clone(),
             }
         })
         .collect();
@@ -343,6 +344,7 @@ fn execution_receipt_matches_run(receipt: &TaskRunReceipt, run: &OrchestrationRu
         if step.status != result.status
             || step.changed_files != result.changed_files
             || step.change_evidence_status != result.change_evidence_status
+            || step.change_attribution != result.change_attribution
         {
             return false;
         }
@@ -527,6 +529,7 @@ mod tests {
     use super::super::types::{RunStatus, SubAgentResult, SubAgentStatus, SubAgentTask};
     use super::*;
     use crate::api_clients::ThinkingLevel;
+    use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
     use crate::routing::types::{ExecutorKind, TaskKind};
     use crate::worktree::RunWorktree;
 
@@ -547,6 +550,15 @@ mod tests {
             budget_tokens: 100,
             allow_write,
             verify_command: None,
+        }
+    }
+
+    fn exact_attribution() -> ChangeAttributionEvidence {
+        ChangeAttributionEvidence {
+            strength: ChangeAttributionStrength::ExactIsolated,
+            workspace_id: Some("workspace-1".into()),
+            baseline_commit: Some("base".into()),
+            reason: Some("managed isolated worktree".into()),
         }
     }
 
@@ -573,6 +585,7 @@ mod tests {
                 captured_proposals: 0,
                 changed_files: vec!["src/lib.rs".into()],
                 change_evidence_status: ChangeEvidenceStatus::Complete,
+                change_attribution: exact_attribution(),
                 execution_issues: vec![],
                 diff_path: None,
                 workspace: None::<RunWorktree>,
@@ -603,6 +616,10 @@ mod tests {
             ChangeEvidenceStatus::Complete
         );
         assert_eq!(
+            receipt.execution.required_steps[0].change_attribution,
+            exact_attribution()
+        );
+        assert_eq!(
             matching_receipt_status(&receipt),
             ExecutionEvidenceStatus::Ready
         );
@@ -617,6 +634,7 @@ mod tests {
     fn matching_receipt_with_unavailable_write_evidence_is_incomplete() {
         let mut run = run();
         run.results[0].change_evidence_status = ChangeEvidenceStatus::Unavailable;
+        run.results[0].change_attribution = ChangeAttributionEvidence::default();
         let plan = OrchestrationPlan {
             project: run.project.clone(),
             task_id: run.task_id.clone(),
@@ -640,6 +658,7 @@ mod tests {
     fn legacy_unknown_non_write_step_does_not_require_changeset_proof() {
         let mut run = run();
         run.results[0].change_evidence_status = ChangeEvidenceStatus::LegacyUnknown;
+        run.results[0].change_attribution = ChangeAttributionEvidence::default();
         let plan = OrchestrationPlan {
             project: run.project.clone(),
             task_id: run.task_id.clone(),
@@ -666,7 +685,7 @@ mod tests {
         };
         let mut receipt =
             build_execution_receipt(&plan, &run, ExecutionMode::AgentRun, Some("base".into()));
-        receipt.execution.required_steps[0].changed_files = vec!["src/other.rs".into()];
+        receipt.execution.required_steps[0].change_attribution = ChangeAttributionEvidence::default();
         assert!(!execution_receipt_matches_run(&receipt, &run));
     }
 
