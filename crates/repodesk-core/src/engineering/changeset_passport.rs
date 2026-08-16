@@ -221,7 +221,10 @@ mod tests {
             passport.attribution.strength,
             ChangeAttributionStrength::ExactIsolated
         );
-        assert_eq!(passport.attribution.workspace_id.as_deref(), Some("workspace-1"));
+        assert_eq!(
+            passport.attribution.workspace_id.as_deref(),
+            Some("workspace-1")
+        );
     }
 
     #[test]
@@ -247,6 +250,9 @@ mod tests {
             ..ChangeAttributionEvidence::default()
         });
         let passport = derive_changeset_passport(&governance, &report(), Some(&receipt));
-        assert_eq!(passport.attribution.strength, ChangeAttributionStrength::Manual);
+        assert_eq!(
+            passport.attribution.strength,
+            ChangeAttributionStrength::Manual
+        );
     }
 }
