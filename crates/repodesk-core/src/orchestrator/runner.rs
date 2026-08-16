@@ -55,7 +55,7 @@ pub enum AgentWorkspacePolicy {
 /// to denied: each capability — spending on a paid completion API, launching a
 /// coding-agent CLI, and letting that agent modify files — requires its own
 /// explicit grant, and one never implies another. The runner checks these in
-/// [`run_plan`] *before* any HTTP request or process launch.
+/// the execution path *before* any HTTP request or process launch.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ExecutionAuthorization {
     /// Allow steps that route to a paid completion provider to actually call it
@@ -109,14 +109,6 @@ impl Default for RunOptions {
 /// the exact run without fabricating timestamps after the provider returns.
 pub fn reserve_run_id() -> String {
     new_run_id()
-}
-
-/// Execute `plan` with a fresh RepoDesk run identity.
-pub async fn run_plan(
-    plan: &OrchestrationPlan,
-    opts: &RunOptions,
-) -> RepoDeskResult<OrchestrationRun> {
-    run_plan_with_id(plan, opts, reserve_run_id()).await
 }
 
 /// Execute `plan` using a previously reserved run identity.
