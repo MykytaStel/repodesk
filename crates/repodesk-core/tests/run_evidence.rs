@@ -22,7 +22,12 @@ fn acceptance() -> AcceptanceEvidenceReport {
     }
 }
 
-fn result(task_id: &str, changed_files: &[&str], input_tokens: usize, output_tokens: usize) -> SubAgentResult {
+fn result(
+    task_id: &str,
+    changed_files: &[&str],
+    input_tokens: usize,
+    output_tokens: usize,
+) -> SubAgentResult {
     SubAgentResult {
         task_id: task_id.into(),
         agent: "codex".into(),
