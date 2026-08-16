@@ -671,6 +671,7 @@ mod tests {
                         changed_files: vec![],
                         change_evidence_status:
                             crate::change_evidence::ChangeEvidenceStatus::Complete,
+                        change_attribution: Default::default(),
                     },
                     StepReceipt {
                         task_id: "impl".into(),
@@ -679,6 +680,7 @@ mod tests {
                         changed_files: changed,
                         change_evidence_status:
                             crate::change_evidence::ChangeEvidenceStatus::Complete,
+                        change_attribution: Default::default(),
                     },
                 ],
                 changeset_digest: digest,
