@@ -432,4 +432,27 @@ mod tests {
         assert!(text.is_char_boundary(text.len()));
         assert!(text.len() <= 31);
     }
+
+    #[test]
+    fn execution_issues_are_secret_redacted_and_bounded() {
+        let mut issues = Vec::new();
+        for index in 0..(MAX_EXECUTION_ISSUES + 4) {
+            push_execution_issue(
+                &mut issues,
+                format!("api_key=abcdefghijklmnopqrstuvwxyz{index:02}"),
+            );
+        }
+
+        assert!(issues.len() <= MAX_EXECUTION_ISSUES);
+        assert!(
+            issues
+                .iter()
+                .all(|issue| issue.len() <= MAX_EXECUTION_ISSUE_BYTES)
+        );
+        assert!(
+            issues
+                .iter()
+                .all(|issue| !issue.contains("abcdefghijklmnopqrstuvwxyz"))
+        );
+    }
 }
