@@ -10,7 +10,7 @@ fn legacy_change_evidence_defaults_to_unknown() {
 
     let step: StepReceipt = serde_json::from_value(serde_json::json!({
         "task_id": "implement",
-        "status": "Ok",
+        "status": "ok",
         "allow_write": true,
         "changed_files": []
     }))
