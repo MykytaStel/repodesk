@@ -58,3 +58,17 @@ replace_once(
     '                .all(|issue| !issue.contains("abcdefghijklmnopqrstuvwxyz"))\n',
     '                .all(|issue| !issue.contains("abcdefghijkl"))\n',
 )
+
+safe_manifest = "crates/repodesk-core/src/engineering/safe_commit_manifest.rs"
+replace_once(
+    safe_manifest,
+    '                    allow_write: true,\n                    changed_files: vec!["src/lib.rs".into()],\n                }],\n',
+    '                    allow_write: true,\n                    changed_files: vec!["src/lib.rs".into()],\n                    change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,\n                }],\n',
+)
+
+phase = "crates/repodesk-core/src/workflow/phase.rs"
+replace_once(
+    phase,
+    '                        allow_write: false,\n                        changed_files: vec![],\n                    },\n                    StepReceipt {\n                        task_id: "impl".into(),\n                        status: impl_status,\n                        allow_write: true,\n                        changed_files: changed,\n                    },\n',
+    '                        allow_write: false,\n                        changed_files: vec![],\n                        change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,\n                    },\n                    StepReceipt {\n                        task_id: "impl".into(),\n                        status: impl_status,\n                        allow_write: true,\n                        changed_files: changed,\n                        change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,\n                    },\n',
+)
