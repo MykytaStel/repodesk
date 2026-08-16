@@ -5,6 +5,7 @@ import {
   linkChangesAcceptanceEvidence,
   recordScopeOverride,
   type AcceptanceCriterionEvidence,
+  type ChangeAttributionEvidence,
   type ChangeGovernanceSnapshot,
   type ChangeSetPassport,
   type SafeCommitManifest,
@@ -48,10 +49,25 @@ function workerLabel(governance: ChangeGovernanceSnapshot): string {
     .join(" + ");
 }
 
-function attributionLabel(passport: ChangeSetPassport): string {
-  if (passport.attribution === "recorded_run") return "Recorded run";
-  if (passport.attribution === "manual") return "Manual handoff";
-  return "Unattributed";
+function attributionMeta(attribution: ChangeAttributionEvidence): { label: string; detail: string; tone: string } {
+  switch (attribution.strength) {
+    case "exact_isolated":
+      return {
+        label: "Exact · isolated worktree",
+        detail: attribution.workspace_id ? `Workspace ${attribution.workspace_id}` : "Managed isolated workspace",
+        tone: "ok",
+      };
+    case "exact_clean_workspace":
+      return { label: "Exact · clean workspace", detail: attribution.reason ?? "Exact workspace proof", tone: "ok" };
+    case "derived_pre_post":
+      return { label: "Derived · pre/post", detail: attribution.reason ?? "Derived producer evidence", tone: "warn" };
+    case "manual":
+      return { label: "Manual handoff", detail: attribution.reason ?? "Human-imported changes", tone: "neutral" };
+    case "unattributed":
+      return { label: "Unattributed", detail: attribution.reason ?? "No sufficient producer proof", tone: "danger" };
+    case "legacy_unknown":
+      return { label: "Legacy / unknown", detail: attribution.reason ?? "Historical evidence has no typed attribution", tone: "warn" };
+  }
 }
 
 function shortSha(value: string | null): string {
@@ -153,6 +169,7 @@ export function ChangeGovernancePanel({
     && governance.verification.fresh === true
     && commands.length > 0
     && manifest.state !== "committed";
+  const attribution = attributionMeta(manifest.attribution);
 
   const selectedCommand = (criterion: AcceptanceCriterionEvidence): string => {
     const explicit = criterionCommands[criterion.criterion_id];
@@ -174,13 +191,18 @@ export function ChangeGovernancePanel({
 
       <div className="change-evidence-grid">
         <EvidenceCell
+          label="Producer attribution"
+          value={attribution.label}
+          detail={`${attribution.detail}${manifest.exact_attribution_required ? " · exact required by project" : ""}`}
+        />
+        <EvidenceCell
           label="Origin"
           value={workerLabel(governance)}
-          detail={`${attributionLabel(passport)} · ${governance.origin.execution_mode ?? "no execution mode"}`}
+          detail={governance.origin.execution_mode ?? "no execution mode"}
         />
         <EvidenceCell
           label="Baseline"
-          value={shortSha(passport.baseline_commit)}
+          value={shortSha(passport.baseline_commit ?? manifest.attribution.baseline_commit)}
           detail={passport.run_id ? `Run ${passport.run_id}` : "No canonical run receipt"}
         />
         <EvidenceCell

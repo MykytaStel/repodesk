@@ -291,7 +291,20 @@ export type ChangeGovernanceSnapshot = {
   gate: CommitGate;
 };
 
-export type ChangeAttributionStrength = "recorded_run" | "manual" | "unattributed";
+export type ChangeAttributionStrength =
+  | "exact_isolated"
+  | "exact_clean_workspace"
+  | "derived_pre_post"
+  | "manual"
+  | "unattributed"
+  | "legacy_unknown";
+
+export type ChangeAttributionEvidence = {
+  strength: ChangeAttributionStrength;
+  workspace_id: string | null;
+  baseline_commit: string | null;
+  reason: string | null;
+};
 
 export type AcceptanceCoverageSummary = {
   configured: boolean;
@@ -306,7 +319,7 @@ export type ChangeSetPassport = {
   changeset_id: string | null;
   run_id: string | null;
   baseline_commit: string | null;
-  attribution: ChangeAttributionStrength;
+  attribution: ChangeAttributionEvidence;
   changed_file_count: number;
   scope_status: ScopeComplianceStatus;
   review_state: ChangeReviewState;
@@ -372,6 +385,8 @@ export type SafeCommitManifest = {
   verification_commands: VerificationCommandEvidence[];
   scope: CommitScopePolicyDecision;
   acceptance: AcceptanceEvidenceReport;
+  attribution: ChangeAttributionEvidence;
+  exact_attribution_required: boolean;
   commit_sha: string | null;
   state: SafeCommitState;
   ready: boolean;

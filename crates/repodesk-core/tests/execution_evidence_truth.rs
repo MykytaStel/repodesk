@@ -1,3 +1,4 @@
+use repodesk_core::change_attribution::ChangeAttributionStrength;
 use repodesk_core::change_evidence::ChangeEvidenceStatus;
 use repodesk_core::orchestrator::RunStatus;
 use repodesk_core::orchestrator::SubAgentStatus;
@@ -20,6 +21,10 @@ fn legacy_change_evidence_defaults_to_unknown() {
         step.change_evidence_status,
         ChangeEvidenceStatus::LegacyUnknown
     );
+    assert_eq!(
+        step.change_attribution.strength,
+        ChangeAttributionStrength::LegacyUnknown
+    );
 }
 
 #[test]
@@ -32,6 +37,7 @@ fn successful_write_receipt_requires_complete_change_evidence() {
             allow_write: true,
             changed_files: Vec::new(),
             change_evidence_status,
+            change_attribution: Default::default(),
         }],
         changeset_digest: None,
     };
@@ -51,6 +57,7 @@ fn successful_read_only_receipt_does_not_require_changeset_provenance() {
             allow_write: false,
             changed_files: Vec::new(),
             change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
+            change_attribution: Default::default(),
         }],
         changeset_digest: None,
     };

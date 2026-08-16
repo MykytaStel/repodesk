@@ -158,6 +158,7 @@ pub fn run() {
             commands::routing_snapshot,
             commands::get_active_project_config,
             commands::project_list_configs,
+            commands::project_set_exact_attribution_required,
             commands::save_project_ignore_rules,
             commands::get_project_file_token_estimates,
             commands::get_api_env_diagnostic,

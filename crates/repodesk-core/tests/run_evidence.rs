@@ -1,4 +1,5 @@
 use chrono::Utc;
+use repodesk_core::change_evidence::ChangeEvidenceStatus;
 use repodesk_core::engineering::{
     AcceptanceEvidenceReport, EngineeringEvent, EngineeringEventKind, WorkItemId,
     derive_run_evidence,
@@ -21,6 +22,32 @@ fn acceptance() -> AcceptanceEvidenceReport {
     }
 }
 
+fn result(
+    task_id: &str,
+    changed_files: &[&str],
+    input_tokens: usize,
+    output_tokens: usize,
+) -> SubAgentResult {
+    SubAgentResult {
+        task_id: task_id.into(),
+        agent: "codex".into(),
+        provider: "codex_cli".into(),
+        model: "default".into(),
+        status: SubAgentStatus::Ok,
+        output: String::new(),
+        input_tokens,
+        output_tokens,
+        cost_units: 0.0,
+        captured_proposals: 0,
+        changed_files: changed_files.iter().map(|path| (*path).into()).collect(),
+        change_evidence_status: ChangeEvidenceStatus::Complete,
+        execution_issues: Vec::new(),
+        diff_path: None,
+        workspace: None,
+        notes: Vec::new(),
+    }
+}
+
 fn run() -> OrchestrationRun {
     OrchestrationRun {
         run_id: "run-1".into(),
@@ -32,38 +59,8 @@ fn run() -> OrchestrationRun {
         started_at: "2026-08-07T18:00:00Z".into(),
         finished_at: "2026-08-07T18:01:00Z".into(),
         results: vec![
-            SubAgentResult {
-                task_id: "impl".into(),
-                agent: "codex".into(),
-                provider: "codex_cli".into(),
-                model: "default".into(),
-                status: SubAgentStatus::Ok,
-                output: String::new(),
-                input_tokens: 100,
-                output_tokens: 50,
-                cost_units: 0.0,
-                captured_proposals: 0,
-                changed_files: vec!["src/lib.rs".into(), "src/shared.rs".into()],
-                diff_path: None,
-                workspace: None,
-                notes: Vec::new(),
-            },
-            SubAgentResult {
-                task_id: "tests".into(),
-                agent: "codex".into(),
-                provider: "codex_cli".into(),
-                model: "default".into(),
-                status: SubAgentStatus::Ok,
-                output: String::new(),
-                input_tokens: 80,
-                output_tokens: 30,
-                cost_units: 0.0,
-                captured_proposals: 0,
-                changed_files: vec!["src/shared.rs".into(), "tests/evidence.rs".into()],
-                diff_path: None,
-                workspace: None,
-                notes: Vec::new(),
-            },
+            result("impl", &["src/lib.rs", "src/shared.rs"], 100, 50),
+            result("tests", &["src/shared.rs", "tests/evidence.rs"], 80, 30),
         ],
         total_input_tokens: 180,
         total_output_tokens: 80,

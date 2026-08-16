@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use repodesk_core::change_evidence::ChangeEvidenceStatus;
 use repodesk_core::orchestrator::types::{RunStatus, SubAgentStatus};
 use repodesk_core::orchestrator::{ReviewAction, ReviewedFile, RunReview, record_review};
 use repodesk_core::projects::{AddProjectInput, add_project, use_project};
@@ -100,6 +101,8 @@ fn seed_verified_change(project_path: &Path) {
                 status: SubAgentStatus::Ok,
                 allow_write: true,
                 changed_files: changed,
+                change_evidence_status: ChangeEvidenceStatus::Complete,
+                change_attribution: Default::default(),
             }],
             changeset_digest: Some(digest),
         },

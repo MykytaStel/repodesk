@@ -7,6 +7,7 @@ pub mod api_clients;
 pub mod brain;
 
 pub mod capabilities;
+pub mod change_attribution;
 pub mod change_evidence;
 pub mod checks;
 pub mod code_drafts;

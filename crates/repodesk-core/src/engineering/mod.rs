@@ -28,6 +28,7 @@ pub mod strategy_feedback;
 pub mod strategy_instrumentation;
 pub mod work_item_contract;
 
+pub use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
 pub use acceptance_evidence::{
     ACCEPTANCE_EVIDENCE_FILE, ACCEPTANCE_EVIDENCE_VERSION, AcceptanceCriterionEvidence,
     AcceptanceCriterionStatus, AcceptanceEvidenceBinding, AcceptanceEvidenceReport,
@@ -57,8 +58,7 @@ pub use change_governance::{
 };
 pub use change_verification::reconcile_verification_freshness;
 pub use changeset_passport::{
-    AcceptanceCoverageSummary, ChangeAttributionStrength, ChangeSetPassport,
-    derive_changeset_passport,
+    AcceptanceCoverageSummary, ChangeSetPassport, derive_changeset_passport,
 };
 pub use commit_policy::{
     CommitScopePolicyDecision, derive_commit_scope_policy, load_active_commit_scope_policy,

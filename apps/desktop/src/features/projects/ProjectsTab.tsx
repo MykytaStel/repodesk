@@ -1,8 +1,9 @@
 import { lazy, Suspense, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import type { TabId } from "../../shared/types/api";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { WORK_ENGINEERING_SNAPSHOT_KEY } from "../../shared/api/engineering";
 import "../../shared/ui/secondary-subnav.css";
 import "./projects-route.css";
 import { useProjectSetup } from "./useProjectSetup";
@@ -19,6 +20,7 @@ interface ProjectConfigSummary {
   main_language?: string | null;
   checks?: string[];
   context_ignore?: string[];
+  require_exact_change_attribution?: boolean;
 }
 
 const VIEWS: Array<{ id: ProjectsView; label: string }> = [
@@ -31,6 +33,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
   const [view, setView] = useState<ProjectsView>("registry");
   const [showSetup, setShowSetup] = useState(false);
   const { projectName, hasProject } = useWorkspace();
+  const queryClient = useQueryClient();
   const {
     setupForm,
     setSetupForm,
@@ -48,7 +51,19 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
     queryFn: () => invoke<ProjectConfigSummary[]>("project_list_configs"),
     enabled: view === "registry",
   });
-  const projectMutationPending = isAddingProject || isActivatingProject;
+  const attributionPolicy = useMutation({
+    mutationFn: ({ name, required }: { name: string; required: boolean }) =>
+      invoke<ProjectConfigSummary>("project_set_exact_attribution_required", { name, required }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData<ProjectConfigSummary[]>(["project_list_configs"], (current) =>
+        current?.map((project) => project.name === updated.name ? updated : project),
+      );
+      if (updated.name === projectName) {
+        void queryClient.invalidateQueries({ queryKey: WORK_ENGINEERING_SNAPSHOT_KEY });
+      }
+    },
+  });
+  const projectMutationPending = isAddingProject || isActivatingProject || attributionPolicy.isPending;
 
   return (
     <div className="subnav-host projects-tab">
@@ -178,6 +193,9 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                   {activationNotice.message}
                 </div>
               ) : null}
+              {attributionPolicy.isError ? (
+                <div className="notice danger" role="alert">Could not update project trust policy: {String(attributionPolicy.error)}</div>
+              ) : null}
 
               {projects.isLoading ? (
                 <p className="muted">Loading projects…</p>
@@ -193,6 +211,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                   {projects.data?.map((project) => {
                     const active = hasProject && project.name === projectName;
                     const activating = isActivatingProject && activatingProjectName === project.name;
+                    const exactRequired = project.require_exact_change_attribution === true;
                     return (
                       <article key={project.name} className={`project-registry-card${active ? " active" : ""}`}>
                         <div className="project-registry-head">
@@ -207,6 +226,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                           <span>{project.main_language || "language unknown"}</span>
                           <span>{project.checks?.length ?? 0} checks</span>
                           <span>{project.context_ignore?.length ?? 0} context rules</span>
+                          <span>Attribution · {exactRequired ? "exact required" : "informational"}</span>
                         </div>
                         <div className="button-row">
                           <button
@@ -216,6 +236,16 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                             onClick={() => void activateProject(project.name).catch(() => undefined)}
                           >
                             {active ? "Current project" : activating ? "Opening…" : "Open project"}
+                          </button>
+                          <button
+                            className="ghost-button"
+                            type="button"
+                            disabled={projectMutationPending}
+                            onClick={() => attributionPolicy.mutate({ name: project.name, required: !exactRequired })}
+                            aria-pressed={exactRequired}
+                            title="When required, Finish blocks any ChangeSet without exact producer attribution."
+                          >
+                            Exact attribution · {exactRequired ? "Required" : "Informational"}
                           </button>
                           {active ? <button className="ghost-button" type="button" onClick={() => setView("knowledge")}>Knowledge</button> : null}
                         </div>

@@ -13,6 +13,14 @@ pub fn project_info() -> CommandResult {
             if let Some(language) = config.main_language {
                 stdout.push_str(&format!("\n  main language: {language}"));
             }
+            stdout.push_str(&format!(
+                "\n  exact attribution before commit: {}",
+                if config.require_exact_change_attribution {
+                    "required"
+                } else {
+                    "informational"
+                }
+            ));
             if config.checks.is_empty() {
                 stdout.push_str("\n  checks: none configured");
             } else {
@@ -182,6 +190,16 @@ pub fn get_active_project_config() -> Result<repodesk_core::projects::ProjectCon
 pub fn project_list_configs() -> Result<Vec<repodesk_core::projects::ProjectConfig>, ErrorPayload> {
     repodesk_core::projects::list_projects()
         .map(|projects| projects.into_iter().map(|p| p.config).collect())
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn project_set_exact_attribution_required(
+    name: String,
+    required: bool,
+) -> Result<repodesk_core::projects::ProjectConfig, ErrorPayload> {
+    validate_short_id("Project name", &name)?;
+    repodesk_core::projects::set_project_require_exact_change_attribution(name.trim(), required)
         .map_err(ErrorPayload::from)
 }
 

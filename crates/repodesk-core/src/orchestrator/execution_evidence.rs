@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+use crate::change_attribution::classify_step_attribution;
 #[cfg(test)]
 use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
@@ -296,12 +297,20 @@ fn build_execution_receipt(
                     changed.push(path.clone());
                 }
             }
+            let allow_write = allow_write_of(&result.task_id);
             StepReceipt {
                 task_id: result.task_id.clone(),
                 status: result.status,
-                allow_write: allow_write_of(&result.task_id),
+                allow_write,
                 changed_files: result.changed_files.clone(),
                 change_evidence_status: result.change_evidence_status,
+                change_attribution: classify_step_attribution(
+                    &run.run_id,
+                    &result.task_id,
+                    false,
+                    result.change_evidence_status,
+                    result.workspace.as_ref(),
+                ),
             }
         })
         .collect();
@@ -340,9 +349,17 @@ fn execution_receipt_matches_run(receipt: &TaskRunReceipt, run: &OrchestrationRu
         else {
             return false;
         };
+        let expected_attribution = classify_step_attribution(
+            &run.run_id,
+            &result.task_id,
+            false,
+            result.change_evidence_status,
+            result.workspace.as_ref(),
+        );
         if step.status != result.status
             || step.changed_files != result.changed_files
             || step.change_evidence_status != result.change_evidence_status
+            || step.change_attribution != expected_attribution
         {
             return false;
         }
@@ -527,6 +544,7 @@ mod tests {
     use super::super::types::{RunStatus, SubAgentResult, SubAgentStatus, SubAgentTask};
     use super::*;
     use crate::api_clients::ThinkingLevel;
+    use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
     use crate::routing::types::{ExecutorKind, TaskKind};
     use crate::worktree::RunWorktree;
 
@@ -547,6 +565,18 @@ mod tests {
             budget_tokens: 100,
             allow_write,
             verify_command: None,
+        }
+    }
+
+    fn exact_attribution() -> ChangeAttributionEvidence {
+        ChangeAttributionEvidence {
+            strength: ChangeAttributionStrength::ExactIsolated,
+            workspace_id: Some("workspace-1".into()),
+            baseline_commit: Some("base".into()),
+            reason: Some(
+                "managed isolated worktree matches run and step identity with complete changeset evidence"
+                    .into(),
+            ),
         }
     }
 
@@ -575,7 +605,15 @@ mod tests {
                 change_evidence_status: ChangeEvidenceStatus::Complete,
                 execution_issues: vec![],
                 diff_path: None,
-                workspace: None::<RunWorktree>,
+                workspace: Some(RunWorktree {
+                    workspace_id: "workspace-1".into(),
+                    run_id: "run-test-1".into(),
+                    step_id: "impl".into(),
+                    path: "/tmp/private-worktree".into(),
+                    base_commit: "base".into(),
+                    created_at: "now".into(),
+                    metadata_path: None,
+                }),
                 notes: vec![],
             }],
             total_input_tokens: 1,
@@ -601,6 +639,10 @@ mod tests {
         assert_eq!(
             receipt.execution.required_steps[0].change_evidence_status,
             ChangeEvidenceStatus::Complete
+        );
+        assert_eq!(
+            receipt.execution.required_steps[0].change_attribution,
+            exact_attribution()
         );
         assert_eq!(
             matching_receipt_status(&receipt),
@@ -629,6 +671,12 @@ mod tests {
         assert_eq!(
             receipt.execution.required_steps[0].change_evidence_status,
             ChangeEvidenceStatus::Unavailable
+        );
+        assert_eq!(
+            receipt.execution.required_steps[0]
+                .change_attribution
+                .strength,
+            ChangeAttributionStrength::Unattributed
         );
         assert_eq!(
             matching_receipt_status(&receipt),
@@ -666,7 +714,8 @@ mod tests {
         };
         let mut receipt =
             build_execution_receipt(&plan, &run, ExecutionMode::AgentRun, Some("base".into()));
-        receipt.execution.required_steps[0].changed_files = vec!["src/other.rs".into()];
+        receipt.execution.required_steps[0].change_attribution =
+            ChangeAttributionEvidence::default();
         assert!(!execution_receipt_matches_run(&receipt, &run));
     }
 
