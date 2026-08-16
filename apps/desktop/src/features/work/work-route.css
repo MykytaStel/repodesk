@@ -2,11 +2,10 @@
 @import "../../app/styles/work-cockpit.css" layer(legacy);
 @import "../../app/styles/work-contract.css" layer(legacy);
 @import "../../app/styles/performance-density-v1.css" layer(legacy);
-@import "./work-focus-polish.css" layer(legacy);
 @import "./work-visual-language.css" layer(product);
 @import "../../app/styles/context-evidence-v2.css" layer(workbench);
 @import "../../app/styles/execute-packet-v2.css" layer(workbench);
-@import "../../app/styles/work-hierarchy-v3.css" layer(workbench);
+@import "../../app/styles/work-hierarchy.css" layer(workbench);
 @import "../../app/styles/observability-v1.css" layer(workbench);
 @import "../../app/styles/ai-strategy-v1.css" layer(workbench);
 @import "../../app/styles/strategy-feedback-v1.css" layer(workbench);
@@ -23,18 +22,6 @@
     .work-tab .phase-brief-grid,
     .work-tab .agent-packet {
       grid-template-columns: 1fr;
-    }
-  }
-}
-
-@layer workbench {
-  @media (max-width: 700px) {
-    .work-workbench-v3 .work-current-step-copy {
-      grid-template-columns: 1fr;
-    }
-
-    .work-workbench-v3 .work-current-step-copy > small {
-      grid-column: 1;
     }
   }
 }
