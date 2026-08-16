@@ -20,7 +20,7 @@ export function PanelHeader({ eyebrow, title, description, trailing, headingLeve
       <div className="semantic-panel-header__copy">
         {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
         <div className="semantic-panel-header__title">{titleNode}</div>
-        {description ? <div className="semantic-panel-header__description">{description}</div> : null}
+        {description ? <div className="semantic-panel-header__description muted">{description}</div> : null}
       </div>
       {trailing ? <div className="semantic-panel-header__trailing">{trailing}</div> : null}
     </header>
