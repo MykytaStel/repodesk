@@ -53,3 +53,17 @@ replace_once(
     "                allow_write: allow_write_of(&result.task_id),\n                changed_files: result.changed_files.clone(),\n            }\n",
     "                allow_write: allow_write_of(&result.task_id),\n                changed_files: result.changed_files.clone(),\n                // Until executor provenance is threaded through SubAgentResult,\n                // stay conservative rather than upgrading an empty list to proof.\n                change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,\n            }\n",
 )
+
+manual_import = "crates/repodesk-core/src/orchestrator/manual_import.rs"
+replace_once(
+    manual_import,
+    "                    allow_write: true,\n                    changed_files: r.changed_files.clone(),\n                })\n",
+    "                    allow_write: true,\n                    changed_files: r.changed_files.clone(),\n                    change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::Complete,\n                })\n",
+)
+
+runner = "crates/repodesk-core/src/orchestrator/runner.rs"
+replace_once(
+    runner,
+    "                allow_write: allow_write_of(&result.task_id),\n                changed_files: result.changed_files.clone(),\n            }\n",
+    "                allow_write: allow_write_of(&result.task_id),\n                changed_files: result.changed_files.clone(),\n                change_evidence_status: crate::change_evidence::ChangeEvidenceStatus::LegacyUnknown,\n            }\n",
+)
