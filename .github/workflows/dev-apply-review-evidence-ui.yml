@@ -6,6 +6,7 @@ on:
       - fix/execution-evidence-truth
     paths:
       - scripts/dev-apply-review-evidence-ui.py
+      - scripts/dev-fix-loop-evidence-status-ui.py
       - .github/workflows/dev-apply-review-evidence-ui.yml
 
 permissions:
@@ -40,8 +41,10 @@ jobs:
           node-version: 22
           cache: pnpm
           cache-dependency-path: apps/desktop/pnpm-lock.yaml
-      - name: Apply strict UI patch
-        run: python3 scripts/dev-apply-review-evidence-ui.py
+      - name: Apply strict UI patches
+        run: |
+          python3 scripts/dev-apply-review-evidence-ui.py
+          python3 scripts/dev-fix-loop-evidence-status-ui.py
       - name: Format Rust
         run: cargo fmt --all
       - name: Install frontend deps
@@ -57,6 +60,7 @@ jobs:
       - name: Remove development helpers
         run: |
           rm scripts/dev-apply-review-evidence-ui.py
+          rm scripts/dev-fix-loop-evidence-status-ui.py
           rm .github/workflows/dev-apply-review-evidence-ui.yml
       - name: Commit implementation
         run: |
