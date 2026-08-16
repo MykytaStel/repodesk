@@ -15,6 +15,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 use crate::change_evidence::ChangeEvidenceStatus;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::persistence::event_journal::{LogEventInput, log_event};
