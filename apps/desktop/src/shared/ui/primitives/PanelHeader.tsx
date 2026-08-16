@@ -15,7 +15,13 @@ export function PanelHeader({
   trailing,
   headingLevel,
 }: PanelHeaderProps) {
-  const Heading = headingLevel ? (`h${headingLevel}` as const) : null;
+  const Heading = headingLevel === 2
+    ? "h2"
+    : headingLevel === 3
+      ? "h3"
+      : headingLevel === 4
+        ? "h4"
+        : null;
 
   return (
     <header className="semantic-panel-header">
