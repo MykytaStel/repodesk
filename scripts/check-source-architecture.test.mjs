@@ -235,3 +235,30 @@ test("reserved run ids still pass through the canonical execution-evidence bound
     "raw runner reserved-id execution must not bypass receipt finalization",
   );
 });
+
+test("ChangeSet attribution never upgrades from execution mode alone", () => {
+  const passportSource = readFileSync(
+    new URL("../crates/repodesk-core/src/engineering/changeset_passport.rs", import.meta.url),
+    "utf8",
+  ).split("#[cfg(test)]")[0];
+  const attributionSource = readFileSync(
+    new URL("../crates/repodesk-core/src/change_attribution.rs", import.meta.url),
+    "utf8",
+  ).split("#[cfg(test)]")[0];
+
+  assert.doesNotMatch(
+    passportSource,
+    /execution_mode|RecordedRun/,
+    "Passport attribution must come from durable step evidence, never a managed/manual mode string",
+  );
+  assert.doesNotMatch(
+    attributionSource,
+    /ExecutionMode|AgentRun/,
+    "canonical attribution classifier must not accept execution mode as proof",
+  );
+  assert.match(
+    attributionSource,
+    /workspace\.run_id\s*==\s*run_id[\s\S]*workspace\.step_id\s*==\s*step_id/,
+    "exact isolated attribution must remain bound to both run and step identity",
+  );
+});
