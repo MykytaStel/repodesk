@@ -1,0 +1,375 @@
+/* Work hierarchy ------------------------------------------------------------
+   Work is the product's operating surface, not a dashboard card stack.
+   Keep persistent task/phase navigation on the left, the current action in the
+   center, and open evidence as an IDE-style inspector on the right. */
+
+.work-workbench {
+  min-width: 0;
+  min-height: 100%;
+  display: grid;
+  grid-template-columns: 206px minmax(0, 1fr);
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.work-workbench.inspector-open {
+  grid-template-columns: 206px minmax(0, 1fr) minmax(350px, 400px);
+}
+
+.work-command-rail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.work-rail-identity,
+.work-rail-phase,
+.work-rail-section {
+  min-width: 0;
+  padding: 13px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.work-rail-identity {
+  display: grid;
+  gap: 3px;
+}
+
+.work-rail-identity .eyebrow {
+  margin: 0;
+}
+
+.work-rail-identity strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-rail-identity small,
+.work-rail-phase small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-rail-phase {
+  display: grid;
+  gap: 8px;
+}
+
+.work-rail-phase-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.work-rail-phase-line > span,
+.work-rail-label {
+  color: var(--muted-2);
+  font-size: 7.5px;
+  font-weight: 780;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.work-rail-phase-state {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.work-rail-phase-state > strong,
+.work-rail-phase-line > strong {
+  color: var(--accent-2);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 760;
+}
+
+.work-rail-phase-state .semantic-status {
+  min-height: 18px;
+  padding-inline: 5px;
+  font-size: 7px;
+}
+
+.work-rail-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+
+.work-rail-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.work-rail-section {
+  display: grid;
+  gap: 4px;
+}
+
+.work-rail-label {
+  padding: 0 4px 4px;
+}
+
+.work-rail-section button {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-rail-section button:hover:not(:disabled) {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.work-rail-section button.active {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.work-rail-section button:disabled {
+  cursor: default;
+  opacity: .42;
+}
+
+.work-rail-section button > span {
+  overflow: hidden;
+  font-size: 9.5px;
+  font-weight: 730;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-rail-section button > small {
+  overflow: hidden;
+  color: var(--muted-2);
+  font-size: 7.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-primary-pane {
+  min-width: 0;
+  padding: 14px;
+  background: var(--bg);
+}
+
+.work-primary-pane .work-tab,
+.work-primary-pane .work-focus-layout {
+  min-width: 0;
+}
+
+.work-workbench .work-focus-card {
+  margin: 0;
+  border-radius: 9px;
+}
+
+.work-workbench .phase-rail.compact {
+  margin: 0;
+  border-radius: 7px;
+}
+
+.work-inspector-pane {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.work-inspector-header {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.work-inspector-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.work-inspector-header .eyebrow {
+  margin: 0;
+}
+
+.work-inspector-header strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.work-inspector-header small {
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.work-inspector-close {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.work-inspector-close:hover {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.work-inspector-body {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.work-inspector-body > .content-grid,
+.work-inspector-body > .work-contract-shell {
+  display: block;
+  margin: 0;
+  padding: 0;
+}
+
+.work-inspector-body .wide-panel,
+.work-inspector-body .work-contract-card,
+.work-inspector-body .context-evidence-workbench {
+  width: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.work-inspector-body .work-contract-card {
+  padding: 12px;
+  background: transparent;
+}
+
+.work-inspector-body .work-contract-topline,
+.work-inspector-body .phase-brief-head,
+.work-inspector-body .context-evidence-heading {
+  gap: 8px;
+}
+
+.work-inspector-body .work-contract-counts,
+.work-inspector-body .phase-brief-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.work-inspector-body .work-contract-editor-grid {
+  grid-template-columns: 1fr;
+}
+
+.work-inspector-body code,
+.work-inspector-body strong,
+.work-inspector-body small,
+.work-inspector-body p {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1180px) {
+  .work-workbench,
+  .work-workbench.inspector-open {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+
+  .work-inspector-pane {
+    position: fixed;
+    z-index: 40;
+    top: 72px;
+    right: 16px;
+    bottom: 16px;
+    width: min(420px, calc(100vw - 230px));
+    border: 1px solid var(--border-strong);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgb(0 0 0 / .28);
+  }
+}
+
+@media (max-width: 760px) {
+  .work-workbench,
+  .work-workbench.inspector-open {
+    display: block;
+    border-radius: 9px;
+  }
+
+  .work-command-rail {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(120px, .8fr);
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .work-rail-identity,
+  .work-rail-phase {
+    border-bottom: 0;
+  }
+
+  .work-rail-section {
+    display: none;
+  }
+
+  .work-primary-pane {
+    padding: 9px;
+  }
+
+  .work-inspector-pane {
+    top: 58px;
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-rail-progress > span {
+    transition: none;
+  }
+}
