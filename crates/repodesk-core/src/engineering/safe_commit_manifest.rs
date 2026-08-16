@@ -191,7 +191,7 @@ pub fn derive_safe_commit_manifest_with_attribution_policy(
         blockers.push("No canonical run receipt exists for the active Work Item.".into());
     }
 
-    if exact_attribution_required && !attribution.is_exact() {
+    if exact_attribution_required && !attribution.strength.is_exact() {
         let message = format!(
             "Project policy requires exact change attribution; current evidence is {:?}.",
             attribution.strength
@@ -497,7 +497,6 @@ fn path_set(paths: &[String]) -> BTreeSet<&str> {
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
-
     use super::*;
     use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
     use crate::engineering::{AcceptanceCriterionEvidence, AcceptanceCriterionStatus};
