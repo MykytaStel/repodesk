@@ -240,6 +240,7 @@ fn write_manual_receipt(
                     allow_write: true,
                     changed_files: r.changed_files.clone(),
                     change_evidence_status: r.change_evidence_status,
+                    change_attribution: r.change_attribution.clone(),
                 })
                 .collect(),
             changeset_digest: digest,
