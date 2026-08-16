@@ -121,7 +121,12 @@ export function ExecutionPacketPreview({
       </InspectorSection>
 
       {context.warning ? (
-        <ErrorState title="Execution context warning" detail={context.warning} scope="inline" />
+        <EvidenceState
+          label="Execution context"
+          state="Warning"
+          tone="attention"
+          detail={context.warning}
+        />
       ) : null}
 
       <details className="exec-packet-routing">
