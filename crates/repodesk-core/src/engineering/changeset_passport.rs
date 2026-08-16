@@ -50,7 +50,7 @@ pub fn derive_changeset_passport(
     receipt: Option<&TaskRunReceipt>,
 ) -> ChangeSetPassport {
     let attribution = receipt
-        .map(attribution_from_receipt)
+        .map(derive_receipt_change_attribution)
         .unwrap_or_else(unattributed_without_receipt);
 
     ChangeSetPassport {
@@ -79,7 +79,12 @@ pub fn derive_changeset_passport(
     }
 }
 
-fn attribution_from_receipt(receipt: &TaskRunReceipt) -> ChangeAttributionEvidence {
+/// Derive ChangeSet-level producer attribution exclusively from durable step
+/// receipts. This is shared by the Passport and Safe Commit Manifest so both
+/// trust surfaces use the same weakest-proof-wins semantics.
+pub(crate) fn derive_receipt_change_attribution(
+    receipt: &TaskRunReceipt,
+) -> ChangeAttributionEvidence {
     let contributors: Vec<ChangeAttributionEvidence> = receipt
         .execution
         .required_steps
