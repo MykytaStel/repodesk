@@ -145,5 +145,12 @@ async fn isolated_coding_agent_result_carries_exact_attribution_evidence() {
         step.change_attribution.baseline_commit.as_deref(),
         Some(workspace.base_commit.as_str())
     );
-    assert!(!step.change_attribution.reason.as_deref().unwrap_or("").contains(&workspace.path));
+    assert!(
+        !step
+            .change_attribution
+            .reason
+            .as_deref()
+            .unwrap_or("")
+            .contains(&workspace.path)
+    );
 }
