@@ -73,17 +73,16 @@ test("Settings utility styles are ready without activating Runs", async ({ page 
   expect(await page.locator(".settings-grid").first().evaluate((element) => getComputedStyle(element).display)).toBe("grid");
 });
 
-test("Work keeps two columns on desktop and one column at narrow width", async ({ page }) => {
+test("Work workbench keeps two columns on desktop and one column at narrow width", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await installMockIpc(page, currentOnboardedFixtures);
   await page.goto("/");
   await waitForPrimaryRoute(page, "Work");
 
-  expect(await gridColumnCount(page, ".work-current-step-copy")).toBe(2);
+  expect(await gridColumnCount(page, ".work-workbench")).toBe(2);
 
   await page.setViewportSize({ width: 680, height: 720 });
-  expect(await gridColumnCount(page, ".work-current-step-copy")).toBe(1);
-  expect(await page.locator(".work-current-step-copy > small").evaluate((element) => getComputedStyle(element).gridColumnStart)).toBe("1");
+  expect(await gridColumnCount(page, ".work-workbench")).toBe(1);
 });
 
 test("Runs workspace adapts from desktop to narrow columns", async ({ page }) => {
