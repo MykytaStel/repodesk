@@ -27,7 +27,8 @@ jobs:
       - name: Format
         run: cargo fmt --all
       - name: Verify executor GREEN
-        run: cargo test -p repodesk-core --lib executors::
+        run: |
+          cargo test -p repodesk-core --lib executors::
       - name: Remove development helpers
         run: |
           rm scripts/dev-apply-executor-evidence.py
