@@ -19,7 +19,7 @@ export function ErrorState({
       data-semantic-tone="critical"
     >
       <strong>{title}</strong>
-      {detail ? <span>{detail}</span> : null}
+      {detail ? <div className="semantic-state__detail">{detail}</div> : null}
       {action ? <div className="semantic-state__action">{action}</div> : null}
     </div>
   );
