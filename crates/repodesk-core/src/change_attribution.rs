@@ -286,7 +286,13 @@ mod tests {
         assert_eq!(exact.strength, ChangeAttributionStrength::ExactIsolated);
         assert_eq!(exact.workspace_id.as_deref(), Some("workspace-1"));
         assert_eq!(exact.baseline_commit.as_deref(), Some("abc123"));
-        assert!(!exact.reason.as_deref().unwrap_or_default().contains(&workspace.path));
+        assert!(
+            !exact
+                .reason
+                .as_deref()
+                .unwrap_or_default()
+                .contains(&workspace.path)
+        );
 
         let mismatched = classify_step_attribution(
             "run-other",
@@ -309,14 +315,12 @@ mod tests {
 
     #[test]
     fn complete_path_capture_without_producer_boundary_stays_unattributed() {
-        let attribution = classify_step_attribution(
-            "run-1",
-            "impl",
-            false,
-            ChangeEvidenceStatus::Complete,
-            None,
+        let attribution =
+            classify_step_attribution("run-1", "impl", false, ChangeEvidenceStatus::Complete, None);
+        assert_eq!(
+            attribution.strength,
+            ChangeAttributionStrength::Unattributed
         );
-        assert_eq!(attribution.strength, ChangeAttributionStrength::Unattributed);
     }
 
     #[test]
@@ -347,7 +351,10 @@ mod tests {
             reason: None,
         };
         let aggregate = aggregate_change_attribution(&[exact, derived]);
-        assert_eq!(aggregate.strength, ChangeAttributionStrength::DerivedPrePost);
+        assert_eq!(
+            aggregate.strength,
+            ChangeAttributionStrength::DerivedPrePost
+        );
         assert_eq!(aggregate.baseline_commit.as_deref(), Some("base"));
     }
 
