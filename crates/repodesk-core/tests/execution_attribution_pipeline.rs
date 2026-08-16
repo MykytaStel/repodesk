@@ -10,6 +10,7 @@ use repodesk_core::orchestrator::{
 use repodesk_core::projects::{AddProjectInput, add_project, use_project};
 use repodesk_core::routing::types::{ExecutorKind, TaskKind};
 use repodesk_core::tasks::{NewTaskInput, create_task, show_active_task};
+use repodesk_core::workflow::load_receipt;
 use serial_test::serial;
 use tempfile::TempDir;
 
@@ -85,7 +86,7 @@ fn coding_agent_plan(task_id: &str) -> OrchestrationPlan {
 
 #[tokio::test]
 #[serial]
-async fn isolated_coding_agent_result_carries_exact_attribution_evidence() {
+async fn isolated_coding_agent_receipt_carries_exact_attribution_evidence() {
     let (_home, _project) = setup();
     let task_id = show_active_task().expect("task").config.id;
     let bin_dir = TempDir::new().expect("bin dir");
@@ -130,23 +131,27 @@ async fn isolated_coding_agent_result_carries_exact_attribution_evidence() {
     }
 
     let run = result.expect("run");
-    let step = run.results.first().expect("result");
-    assert_eq!(step.status, SubAgentStatus::Ok);
+    let result_step = run.results.first().expect("result");
+    assert_eq!(result_step.status, SubAgentStatus::Ok);
+    let workspace = result_step.workspace.as_ref().expect("managed worktree");
+
+    let receipt = load_receipt().expect("receipt load").expect("receipt");
+    assert_eq!(receipt.run_id, run.run_id);
+    let receipt_step = receipt.execution.required_steps.first().expect("receipt step");
     assert_eq!(
-        step.change_attribution.strength,
+        receipt_step.change_attribution.strength,
         ChangeAttributionStrength::ExactIsolated
     );
-    let workspace = step.workspace.as_ref().expect("managed worktree");
     assert_eq!(
-        step.change_attribution.workspace_id.as_deref(),
+        receipt_step.change_attribution.workspace_id.as_deref(),
         Some(workspace.workspace_id.as_str())
     );
     assert_eq!(
-        step.change_attribution.baseline_commit.as_deref(),
+        receipt_step.change_attribution.baseline_commit.as_deref(),
         Some(workspace.base_commit.as_str())
     );
     assert!(
-        !step
+        !receipt_step
             .change_attribution
             .reason
             .as_deref()
