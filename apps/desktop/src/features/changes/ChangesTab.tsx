@@ -4,7 +4,16 @@ import { useGit } from "../git/useGit";
 import { useCode } from "../code/useCode";
 import { FindingRow, HealthTrend } from "../code/CodeFindings";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
-import { EmptyState, stringifyPreview } from "../../shared/ui/SharedComponents";
+import { stringifyPreview } from "../../shared/ui/SharedComponents";
+import {
+  ActionBar,
+  EmptyState,
+  ErrorState,
+  EvidenceState,
+  LoadingState,
+  PanelHeader,
+  StatusBadge,
+} from "../../shared/ui/primitives";
 import { callCommand, queryKeys } from "../../shared/api/queries";
 import { requestCodeWorkspaceOpen } from "../../shared/api/codeWorkspace";
 import { consumeChangesOpenRequest } from "../../shared/api/changesNavigation";
@@ -18,26 +27,16 @@ import type { TabId } from "../../shared/types/api";
 import { listFromRecord } from "../../shared/utils/helpers";
 import type { FileFindings } from "../../shared/api/repopilot";
 import { ChangeGovernancePanel } from "./ChangeGovernancePanel";
+import {
+  fileScopeSemantic,
+  fileStatusSemantic,
+  safeCommitSemantic,
+  type ChangeFileStatus,
+} from "./changesSemantic";
 import "./changes-route.css";
 import "../routing/routing-feature.css";
 
-type FileStatus = "staged" | "modified" | "untracked";
-const STATUS_META: Record<FileStatus, { label: string; tone: string }> = {
-  staged: { label: "S", tone: "ok" },
-  modified: { label: "M", tone: "warn" },
-  untracked: { label: "U", tone: "neutral" },
-};
-
 type ViewMode = "diff" | "file";
-
-function exceptionalScopeMeta(state: ChangeFileScopeState | undefined): { label: string; tone: string } | null {
-  switch (state) {
-    case "out_of_scope": return { label: "Out of scope", tone: "danger" };
-    case "protected": return { label: "Protected", tone: "danger" };
-    case "ungoverned": return { label: "Ungoverned", tone: "warn" };
-    default: return null;
-  }
-}
 
 export function ChangesTab({
   setActiveTab,
@@ -72,7 +71,7 @@ export function ChangesTab({
   const passport = engineering.data?.changeset_passport ?? null;
   const manifest = engineering.data?.safe_commit_manifest ?? null;
 
-  const statusOf = (file: string): FileStatus | null =>
+  const statusOf = (file: string): ChangeFileStatus | null =>
     staged.includes(file)
       ? "staged"
       : untracked.includes(file)
@@ -163,51 +162,54 @@ export function ChangesTab({
   };
 
   const selectedGroup = selectedFile ? findingsByFile.get(selectedFile) : undefined;
+  const safeCommit = manifest ? safeCommitSemantic(manifest) : null;
   const blocker = manifest?.blockers[0] ?? null;
-  const gateLabel = manifest?.state === "ready"
-    ? "Ready to commit"
-    : manifest?.state === "committed"
-      ? "Committed"
-      : manifest ? "Commit blocked" : "No ChangeSet";
 
   return (
     <div className="changes-tab changes-focus-layout">
-      <header className="changes-focus-header">
-        <div className="changes-focus-title">
-          <p className="eyebrow">Changes</p>
-          <strong>{branch}</strong>
-          <span className={dirty ? "warn" : "muted"}>{dirty ? `${dirtyCount} uncommitted` : "Clean"}</span>
-        </div>
-        <div className="changes-focus-actions">
-          <button className="tiny-button" onClick={refreshWorkspace}>Refresh</button>
-          <button className="tiny-button" onClick={() => setEvidenceOpen((open) => !open)}>
-            Manifest{manifest?.state === "ready" || manifest?.state === "committed" ? " ✓" : blocker ? " !" : ""}
-          </button>
-          <button
-            className={`tiny-button${findingsOpen ? " active" : ""}`}
-            onClick={() => {
-              if (!report && !reviewing) runReview();
-              setFindingsOpen((open) => !open);
-            }}
-            disabled={reviewing}
-          >
-            {reviewing ? "Analyzing…" : report ? `Findings ${report.total}` : "Analyze"}
-          </button>
-        </div>
-      </header>
+      <div className="changes-focus-header">
+        <PanelHeader
+          eyebrow="Changes"
+          title={branch}
+          description={dirty ? `${dirtyCount} uncommitted` : "Clean workspace"}
+          trailing={(
+            <div className="changes-focus-actions">
+              <button className="tiny-button" onClick={refreshWorkspace}>Refresh</button>
+              <button className="tiny-button" onClick={() => setEvidenceOpen((open) => !open)}>
+                Manifest{manifest?.state === "ready" || manifest?.state === "committed" ? " ✓" : blocker ? " !" : ""}
+              </button>
+              <button
+                className={`tiny-button${findingsOpen ? " active" : ""}`}
+                onClick={() => {
+                  if (!report && !reviewing) runReview();
+                  setFindingsOpen((open) => !open);
+                }}
+                disabled={reviewing}
+              >
+                {reviewing ? "Analyzing…" : report ? `Findings ${report.total}` : "Analyze"}
+              </button>
+            </div>
+          )}
+        />
+      </div>
 
       {hasTask ? (
-        <div className={`changes-gate-bar${blocker ? " danger" : ""}`}>
-          <span>Safe commit</span>
-          <strong>{gateLabel}</strong>
-          {blocker ? <small>{blocker}</small> : <small>{manifest?.manifest_digest ? `Manifest ${manifest.manifest_digest.slice(0, 12)}` : governance?.changeset_id ?? "No active ChangeSet"}</small>}
+        <div className="changes-gate-bar">
+          <EvidenceState
+            label="Safe commit"
+            state={safeCommit?.label ?? "No ChangeSet"}
+            tone={safeCommit?.tone ?? "neutral"}
+            detail={blocker ?? (manifest?.manifest_digest
+              ? `Manifest ${manifest.manifest_digest.slice(0, 12)}`
+              : governance?.changeset_id ?? "No active ChangeSet")}
+          />
           <button className="link-cta" onClick={() => setEvidenceOpen((open) => !open)}>
             {evidenceOpen ? "Hide manifest" : "Inspect manifest"}
           </button>
         </div>
       ) : (
-        <div className="changes-gate-bar muted">
-          <span>Governance</span><strong>No Work Item</strong><small>Changes are not attributed to a task.</small>
+        <div className="changes-gate-bar">
+          <EvidenceState label="Governance" state="No Work Item" tone="attention" detail="Changes are not attributed to a task." />
         </div>
       )}
 
@@ -236,19 +238,17 @@ export function ChangesTab({
           </div>
           <div className="file-list scroll-area changes-file-list">
             {rows.length === 0 ? (
-              <div className="changes-file-empty">
-                <strong>No changes</strong>
-                <span>This project has no uncommitted files.</span>
-              </div>
+              <EmptyState message="No changes" hint="This project has no uncommitted files." />
             ) : null}
             {rows.map((file) => {
               const status = statusOf(file);
               const group = findingsByFile.get(file);
               const active = file === selectedFile;
               const scope = governanceByFile.get(file);
-              const exceptionalScope = exceptionalScopeMeta(scope);
+              const exceptionalScope = scope && scope !== "allowed" ? fileScopeSemantic(scope) : null;
               const physicallyChanged = status != null || changedFiles.includes(file);
               const unattributed = physicallyChanged && governance?.changeset_id != null && scope == null;
+              const fileStatus = status ? fileStatusSemantic(status) : null;
               return (
                 <button
                   key={file}
@@ -261,10 +261,10 @@ export function ChangesTab({
                 >
                   <code>{file}</code>
                   <span className="file-badges">
-                    {exceptionalScope ? <span className={`pill ${exceptionalScope.tone}`}>{exceptionalScope.label}</span> : null}
-                    {unattributed ? <span className="pill warn">Unattributed</span> : null}
-                    {status ? <span className={`pill ${STATUS_META[status].tone}`}>{STATUS_META[status].label}</span> : null}
-                    {group?.blocking ? <span className="pill danger">{group.blocking}</span> : null}
+                    {exceptionalScope ? <StatusBadge label={exceptionalScope.label} tone={exceptionalScope.tone} /> : null}
+                    {unattributed ? <StatusBadge label="Unattributed" tone="critical" /> : null}
+                    {fileStatus ? <StatusBadge label={fileStatus.label} tone={fileStatus.tone} ariaLabel={fileStatus.detail} /> : null}
+                    {group?.blocking ? <StatusBadge label={String(group.blocking)} tone="critical" ariaLabel={`${group.blocking} blocking findings`} /> : null}
                   </span>
                 </button>
               );
@@ -296,7 +296,7 @@ export function ChangesTab({
                 hint={dirty ? "Choose a changed file to inspect its diff." : "New edits will appear here after refresh."}
               />
             ) : previewLoading ? (
-              <p className="muted">Loading…</p>
+              <LoadingState message="Loading file preview…" />
             ) : viewMode === "diff" ? (
               <DiffViewer diff={preview} />
             ) : (
@@ -314,18 +314,18 @@ export function ChangesTab({
               </div>
               <button className="tiny-button" onClick={() => setFindingsOpen(false)}>×</button>
             </div>
-            {report?.error ? <div className="notice danger">{report.error}</div> : null}
+            {report?.error ? <ErrorState title="Analysis unavailable" detail={report.error} /> : null}
             {report ? <HealthTrend points={trend} /> : null}
             {!report ? (
-              <p className="muted">Run Analyze to inspect the current diff.</p>
+              <EmptyState message="Not analyzed" hint="Run Analyze to inspect the current diff." />
             ) : selectedGroup ? (
               <ul className="findings-list">
                 {selectedGroup.findings.map((finding, index) => <FindingRow key={index} finding={finding} />)}
               </ul>
             ) : selectedFile ? (
-              <p className="muted">No findings in this file.</p>
+              <EmptyState message="No findings" hint="This file has no findings in the current analysis." />
             ) : fileFindings.length === 0 ? (
-              <p className="muted">No findings in the current diff.</p>
+              <EmptyState message="No findings" hint="The current diff has no findings." />
             ) : (
               fileFindings.slice(0, 12).map((group) => (
                 <button className="changes-finding-group" key={group.file} onClick={() => void loadPreview(group.file, viewMode)}>
