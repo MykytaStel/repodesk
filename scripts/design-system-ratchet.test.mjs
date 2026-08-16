@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { evaluateVisualDebtChange } from "./check-source-architecture.mjs";
 
@@ -65,4 +66,10 @@ test("canonical shared primitive CSS can be introduced outside feature-local CSS
     }),
     [],
   );
+});
+
+test("ErrorState detail wrapper is block-safe for structured blocker evidence", () => {
+  const source = readFileSync("apps/desktop/src/shared/ui/primitives/ErrorState.tsx", "utf8");
+  assert.doesNotMatch(source, /<span>\{detail\}<\/span>/);
+  assert.match(source, /className="semantic-state__detail"/);
 });
