@@ -1,7 +1,9 @@
+use repodesk_core::change_attribution::{ChangeAttributionEvidence, classify_step_attribution};
 use repodesk_core::change_evidence::ChangeEvidenceStatus;
 use repodesk_core::orchestrator::{SubAgentResult, SubAgentStatus};
+use repodesk_core::tasks::show_active_task;
 use repodesk_core::workflow::StepReceipt;
-use repodesk_core::worktree::RunWorktree;
+use repodesk_core::worktree::{RunWorktree, worktrees_parent};
 
 pub fn non_write_result(
     task_id: &str,
@@ -60,6 +62,41 @@ pub fn isolated_write_result(
     }
 }
 
+fn persisted_managed_attribution(task_id: &str) -> ChangeAttributionEvidence {
+    let Ok(active_task) = show_active_task() else {
+        return ChangeAttributionEvidence::default();
+    };
+    let parent = worktrees_parent(&active_task.config.run_dir);
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return ChangeAttributionEvidence::default();
+    };
+
+    let mut matching = entries.filter_map(|entry| {
+        let path = entry.ok()?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            return None;
+        }
+        let bytes = std::fs::read(path).ok()?;
+        let worktree: RunWorktree = serde_json::from_slice(&bytes).ok()?;
+        (worktree.step_id == task_id).then_some(worktree)
+    });
+
+    let Some(worktree) = matching.next() else {
+        return ChangeAttributionEvidence::default();
+    };
+    if matching.next().is_some() {
+        return ChangeAttributionEvidence::default();
+    }
+
+    classify_step_attribution(
+        &worktree.run_id,
+        task_id,
+        false,
+        ChangeEvidenceStatus::Complete,
+        Some(&worktree),
+    )
+}
+
 pub fn complete_write_step_receipt(task_id: &str, changed_files: Vec<String>) -> StepReceipt {
     StepReceipt {
         task_id: task_id.to_string(),
@@ -67,6 +104,6 @@ pub fn complete_write_step_receipt(task_id: &str, changed_files: Vec<String>) ->
         allow_write: true,
         changed_files,
         change_evidence_status: ChangeEvidenceStatus::Complete,
-        change_attribution: Default::default(),
+        change_attribution: persisted_managed_attribution(task_id),
     }
 }
