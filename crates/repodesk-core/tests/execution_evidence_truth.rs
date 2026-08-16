@@ -42,6 +42,23 @@ fn successful_write_receipt_requires_complete_change_evidence() {
 }
 
 #[test]
+fn successful_read_only_receipt_does_not_require_changeset_provenance() {
+    let receipt = ExecutionReceipt {
+        status: RunStatus::Completed,
+        required_steps: vec![StepReceipt {
+            task_id: "analyze".into(),
+            status: SubAgentStatus::Ok,
+            allow_write: false,
+            changed_files: Vec::new(),
+            change_evidence_status: ChangeEvidenceStatus::LegacyUnknown,
+        }],
+        changeset_digest: None,
+    };
+
+    assert!(receipt.succeeded());
+}
+
+#[test]
 fn evidence_status_has_distinct_incomplete_state() {
     assert_eq!(
         serde_json::to_string(&repodesk_core::orchestrator::ExecutionEvidenceStatus::Incomplete)
