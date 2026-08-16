@@ -33,7 +33,7 @@ test.describe("work tab golden path (onboarded)", () => {
 
   test("shows a single primary CTA for the current phase", async ({ page }) => {
     await expect(page.locator(".phase-rail")).toBeVisible();
-    const cta = page.locator(".work-cta-row .primary-cta");
+    const cta = page.locator(".semantic-action-bar__primary .primary-cta");
     await expect(cta).toHaveCount(1);
     await expect(cta).toHaveText("Run agent");
   });
@@ -44,7 +44,7 @@ test.describe("work tab golden path (onboarded)", () => {
     await expect(modeGroup.getByRole("button", { name: /Agent run/ })).toHaveClass(/selected/);
 
     await modeGroup.getByRole("button", { name: /Manual handoff/ }).click();
-    await expect(page.locator(".work-cta-row .primary-cta")).toHaveText("Generate context pack");
+    await expect(page.locator(".semantic-action-bar__primary .primary-cta")).toHaveText("Generate context pack");
 
     const commands = await recordedCommands(page);
     expect(commands).toContain("work_phase_state");
@@ -57,14 +57,14 @@ test.describe("work tab golden path (onboarded)", () => {
 
     await expect(strategy.getByText("Auto → Lean")).toBeVisible();
     await expect(strategy.getByText("3 → 1")).toBeVisible();
-    await expect(packet.locator(".exec-packet-heading strong")).toHaveText("Codex CLI · codex");
+    await expect(packet.locator(".semantic-panel-header__title")).toHaveText("Codex CLI · codex");
     await expect(packet.getByText("Isolated", { exact: true })).toBeVisible();
     await expect(packet.getByText(/4,200 \/ 8,000/)).toBeVisible();
 
     await expect(page.getByText("Coding agent + isolated writes")).toBeVisible();
     await expect(page.getByText("Paid provider spend")).toBeVisible();
 
-    const cta = page.locator(".work-cta-row .primary-cta");
+    const cta = page.locator(".semantic-action-bar__primary .primary-cta");
     await expect(cta).toBeDisabled();
     await page.getByRole("checkbox", { name: /Coding agent \+ isolated writes/ }).check();
     await expect(cta).toBeEnabled();
@@ -130,9 +130,10 @@ test.describe("work tab review (commit visibility + memory)", () => {
     await installMockIpc(page, incompleteReviewFixtures);
     await page.goto("/");
 
-    const alert = page.getByRole("alert");
+    const alert = page.getByRole("alert").filter({ hasText: "cannot prove which tracked paths changed" });
     await expect(alert).toContainText("cannot prove which tracked paths changed");
     await expect(alert).toContainText("Rerun execution");
+    await expect(alert).toHaveAttribute("data-semantic-tone", "critical");
     await expect(page.getByText("No tracked file changes captured for this run.")).toHaveCount(0);
 
     const commands = await recordedCommands(page);
@@ -144,9 +145,10 @@ test.describe("work tab review (commit visibility + memory)", () => {
     await installMockIpc(page, recoveryReviewFixtures);
     await page.goto("/");
 
-    const alert = page.getByRole("alert");
+    const alert = page.getByRole("alert").filter({ hasText: "persisted receipt needs repair" });
     await expect(alert).toContainText("persisted receipt needs repair");
     await expect(alert).toContainText("do not rerun the agent");
+    await expect(alert).toHaveAttribute("data-semantic-tone", "attention");
 
     const commands = await recordedCommands(page);
     expect(commands).toContain("orchestrate_evidence_state");
@@ -159,6 +161,7 @@ test.describe("work tab review (commit visibility + memory)", () => {
 
     await expect(page.getByText("Changeset capture is complete; no tracked file changes were produced.")).toBeVisible();
     await expect(page.getByText("No tracked file changes captured for this run.")).toHaveCount(0);
+    await expect(page.getByText("Complete", { exact: true }).last()).toHaveAttribute("data-semantic-tone", "positive");
   });
 
   test("Review has evidence-bound Accept/Reject and no manual bypass", async ({ page }) => {
