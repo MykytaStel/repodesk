@@ -16,6 +16,11 @@ pub struct ProjectConfig {
     pub main_language: Option<String>,
     pub checks: Vec<String>,
     pub context_ignore: Vec<String>,
+    /// When enabled, Finish is blocked unless the current ChangeSet has exact
+    /// producer attribution (for example, a managed isolated worktree receipt).
+    /// Defaults off so existing projects retain their current commit behavior.
+    #[serde(default)]
+    pub require_exact_change_attribution: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -61,6 +66,7 @@ pub fn add_project(input: AddProjectInput) -> RepoDeskResult<ProjectConfig> {
             .or_else(|| infer_main_language(&input.project_type)),
         checks: default_checks_for_project_type(&input.project_type),
         context_ignore: default_context_ignore(),
+        require_exact_change_attribution: false,
         created_at: now,
         updated_at: now,
     };
@@ -165,6 +171,22 @@ pub fn update_project_ignore_rules(
 ) -> RepoDeskResult<ProjectConfig> {
     let mut config = get_project(name)?;
     config.context_ignore = ignore_rules;
+    config.updated_at = Utc::now();
+    let paths = RepoDeskPaths::resolve()?;
+    let project_file = paths.project_config_file(name);
+    write_project_config(&project_file, &config)?;
+    Ok(config)
+}
+
+/// Configure whether this project requires exact producer attribution before
+/// Finish may commit a ChangeSet. The policy lives with the project because it
+/// is an engineering trust contract, not a global UI preference.
+pub fn set_project_require_exact_change_attribution(
+    name: &str,
+    required: bool,
+) -> RepoDeskResult<ProjectConfig> {
+    let mut config = get_project(name)?;
+    config.require_exact_change_attribution = required;
     config.updated_at = Utc::now();
     let paths = RepoDeskPaths::resolve()?;
     let project_file = paths.project_config_file(name);
@@ -307,4 +329,23 @@ fn default_context_ignore() -> Vec<String> {
         "*.html".to_string(),
         "*.log".to_string(),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_project_config_defaults_exact_attribution_policy_off() {
+        let project_path = std::env::temp_dir().join("repodesk-project-policy-legacy");
+        let created = Utc::now();
+        let legacy = format!(
+            "name = \"demo\"\npath = {:?}\nproject_type = \"generic\"\nchecks = []\ncontext_ignore = []\ncreated_at = {:?}\nupdated_at = {:?}\n",
+            project_path.to_string_lossy(),
+            created.to_rfc3339(),
+            created.to_rfc3339()
+        );
+        let config: ProjectConfig = toml::from_str(&legacy).expect("legacy config");
+        assert!(!config.require_exact_change_attribution);
+    }
 }
