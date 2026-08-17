@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 
 export const HARD_SOURCE_LIMIT_BYTES = 28 * 1024;
 const SOURCE_EXTENSIONS = new Set([".rs", ".ts", ".tsx", ".mjs"]);
+const LEGACY_VISUAL_GENERATION = /(?:-polish|-v\d+)\.css$/i;
 
 const SHARED_PRIMITIVES_INDEX = "apps/desktop/src/shared/ui/primitives/index.ts";
 const CHANGES_SEMANTIC_ADAPTER = "apps/desktop/src/features/changes/changesSemantic.ts";
@@ -163,6 +164,13 @@ function baseFileText(baseSha, path) {
 
 function readSource(path) {
   return existsSync(path) ? readFileSync(path, "utf8") : null;
+}
+
+export function evaluateLegacyVisualDebtCleanupContract(paths = null) {
+  const candidates = paths ?? git(["ls-files", "apps/desktop/src"]).split("\n").filter(Boolean);
+  return candidates
+    .filter((path) => LEGACY_VISUAL_GENERATION.test(path))
+    .map((path) => `${path}: legacy visual generation must be retired; use the canonical design-system layer`);
 }
 
 function evaluateTypedSemanticContract({
@@ -337,6 +345,7 @@ export function runArchitectureRatchet() {
     }
   }
 
+  failures.push(...evaluateLegacyVisualDebtCleanupContract());
   failures.push(...evaluateChangesSemanticContract());
   failures.push(...evaluateWorkSemanticContract());
   failures.push(...evaluateRunsSemanticContract());
