@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
+import * as architecture from "./check-source-architecture.mjs";
 import {
   HARD_SOURCE_LIMIT_BYTES,
   evaluateCodeSemanticContract,
@@ -56,6 +57,27 @@ test("new versioned and polish visual generations are rejected", () => {
     failures({ path: "apps/desktop/src/features/work/work-polish.css", baseSize: null, currentSize: 10 }).join("\n"),
     /polish stylesheet/i,
   );
+});
+
+test("legacy visual generations are fully retired from desktop source", () => {
+  const evaluate = architecture.evaluateLegacyVisualDebtCleanupContract;
+  assert.equal(
+    typeof evaluate,
+    "function",
+    "architecture ratchet must expose a generic legacy visual-debt cleanup contract",
+  );
+  if (typeof evaluate !== "function") return;
+
+  assert.match(
+    evaluate(["apps/desktop/src/features/code/code-editor-polish.css"]).join("\n"),
+    /legacy visual generation/i,
+  );
+  assert.match(
+    evaluate(["apps/desktop/src/app/styles/work-hierarchy-v4.css"]).join("\n"),
+    /legacy visual generation/i,
+  );
+  assert.deepEqual(evaluate(["apps/desktop/src/app/styles/work-hierarchy.css"]), []);
+  assert.deepEqual(evaluate(), []);
 });
 
 test("existing feature CSS may stay flat or shrink but not grow", () => {
