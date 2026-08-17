@@ -450,10 +450,10 @@
   overflow: hidden;
 }
 
-/* The textarea is the only scroll surface. The line-number layer lives in
-   the canonical Code editor stylesheet and is translated by textarea scrollTop.
-   Keep this base geometry aligned so lazy CSS loading cannot resurrect the old
-   28px artificial bottom range. */
+/* The textarea is the only scroll surface. The line-number layer uses the
+   canonical editor CSS and is translated by textarea scrollTop. Keep this
+   base geometry aligned so lazy CSS loading cannot resurrect the old 28px
+   artificial bottom range. */
 .code-editor-input {
   box-sizing: border-box;
   width: 100%;
