@@ -122,7 +122,6 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
               <PanelHeader
                 eyebrow="Project registry"
                 title="Repository workspaces"
-                headingLevel={1}
                 description="A Project is the durable boundary around repositories, Work Items, checks, context rules and reviewed engineering knowledge."
               />
               <ActionBar
