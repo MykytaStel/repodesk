@@ -20,6 +20,7 @@ import {
   PanelHeader,
   StatusBadge,
 } from "../../shared/ui/primitives";
+import { normalizeError } from "../../shared/utils/errors";
 import {
   acceptanceCriterionSemantic,
   commitSemantic,
@@ -397,8 +398,7 @@ export function RunsWorkspace() {
 
   if (runs.isLoading) return <LoadingState scope="surface" message="Loading persisted runs…" />;
   if (runs.isError) {
-    const detail = runs.error instanceof Error ? runs.error.message : String(runs.error);
-    return <ErrorState scope="surface" title="Run history unavailable" detail={detail} />;
+    return <ErrorState scope="surface" title="Run history unavailable" detail={normalizeError(runs.error).message} />;
   }
 
   const list = runs.data ?? [];
@@ -443,7 +443,7 @@ export function RunsWorkspace() {
         <div className="run-evidence-detail">
           <ErrorState
             title="Run evidence unavailable"
-            detail={detail.error instanceof Error ? detail.error.message : "Run evidence or observability could not be reconstructed."}
+            detail={detail.error ? normalizeError(detail.error).message : "Run evidence or observability could not be reconstructed."}
           />
         </div>
       ) : (
@@ -451,7 +451,7 @@ export function RunsWorkspace() {
           evidence={detail.data.evidence}
           observability={detail.data.observability}
           linking={link.isPending}
-          linkError={link.error instanceof Error ? link.error.message : link.error ? String(link.error) : null}
+          linkError={link.error ? normalizeError(link.error).message : null}
           onLink={(criterionId, command) => link.mutate({ criterionId, command })}
         />
       )}
