@@ -44,6 +44,9 @@ const CODE_TYPED_SURFACES = [
   "apps/desktop/src/features/code/CodeSemanticStrip.tsx",
   "apps/desktop/src/features/code/RepositoryIntelligenceDrawer.tsx",
 ];
+const CODE_EDITOR_CANONICAL_STYLES = "apps/desktop/src/app/styles/code-editor.css";
+const APP_STYLESHEET = "apps/desktop/src/app/App.css";
+const CODE_WORKSPACE_STYLES = "apps/desktop/src/features/code/code-workspace.css";
 
 function extensionOf(path) {
   const index = path.lastIndexOf(".");
@@ -171,6 +174,32 @@ export function evaluateLegacyPolishDebtCleanupContract(paths = null) {
   return candidates
     .filter((path) => LEGACY_POLISH_STYLESHEET.test(path))
     .map((path) => `${path}: legacy polish stylesheet must be retired; use the canonical design-system layer`);
+}
+
+export function evaluateCodeEditorVisualOwnershipContract({
+  appCss = null,
+  workspaceCss = null,
+  canonicalExists = null,
+} = {}) {
+  const failures = [];
+  const appSource = appCss ?? readSource(APP_STYLESHEET) ?? "";
+  const workspaceSource = workspaceCss ?? readSource(CODE_WORKSPACE_STYLES) ?? "";
+  const hasCanonicalStyles = canonicalExists ?? existsSync(CODE_EDITOR_CANONICAL_STYLES);
+
+  if (!hasCanonicalStyles) {
+    failures.push(`${CODE_EDITOR_CANONICAL_STYLES}: canonical Code editor stylesheet must exist`);
+  }
+  if (/code-editor-polish\.css/i.test(appSource)) {
+    failures.push(`${APP_STYLESHEET}: legacy Code editor polish import must be replaced by the canonical stylesheet`);
+  }
+  if (!/@import\s+["']\.\/styles\/code-editor\.css["']\s+layer\(legacy\)\s*;/i.test(appSource)) {
+    failures.push(`${APP_STYLESHEET}: canonical Code editor stylesheet must be imported in layer(legacy)`);
+  }
+  if (/code-editor-polish\.css/i.test(workspaceSource)) {
+    failures.push(`${CODE_WORKSPACE_STYLES}: stale legacy Code editor polish reference must be removed`);
+  }
+
+  return failures;
 }
 
 function evaluateTypedSemanticContract({
@@ -346,6 +375,7 @@ export function runArchitectureRatchet() {
   }
 
   failures.push(...evaluateLegacyPolishDebtCleanupContract());
+  failures.push(...evaluateCodeEditorVisualOwnershipContract());
   failures.push(...evaluateChangesSemanticContract());
   failures.push(...evaluateWorkSemanticContract());
   failures.push(...evaluateRunsSemanticContract());
