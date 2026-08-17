@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
 import {
+  HARD_SOURCE_LIMIT_BYTES,
+  evaluateCodeSemanticContract,
   evaluateProjectsSemanticContract,
   evaluateRunsSemanticContract,
   evaluateVisualDebtChange,
@@ -90,6 +92,17 @@ test("Runs migration requires one typed adapter and the shared primitive boundar
 
 test("Projects migration requires one typed adapter and the shared primitive boundary", () => {
   assert.deepEqual(evaluateProjectsSemanticContract(), []);
+});
+
+test("Code migration requires one typed adapter and the shared primitive boundary", () => {
+  assert.deepEqual(evaluateCodeSemanticContract(), []);
+});
+
+test("Code route is below the 28 KiB source architecture limit after migration", () => {
+  assert.ok(
+    statSync("apps/desktop/src/features/code/CodeTab.tsx").size <= HARD_SOURCE_LIMIT_BYTES,
+    "CodeTab.tsx must be at or below the hard source limit after Code convergence",
+  );
 });
 
 test("Work visual ownership is canonical after semantic convergence", () => {

@@ -10,9 +10,7 @@ import {
   readCodeLibraryDocument,
   readCodeWorkspaceDocument,
   saveCodeWorkspaceDocument,
-  type CodeWorkspaceDocument,
   type CodeWorkspaceFile,
-  type CodeWorkspaceFileStatus,
   type CodeWorkspaceMutationResult,
   type CodeWorkspaceOpenRequest,
 } from "../../shared/api/codeWorkspace";
@@ -29,15 +27,35 @@ import { groupByFile, runRepopilotReview } from "../../shared/api/repopilot";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import type { TabId } from "../../shared/types/api";
 import { DiffViewer } from "../../shared/ui/DiffViewer";
+import {
+  EmptyState,
+  ErrorState,
+  EvidenceState,
+  LoadingState,
+} from "../../shared/ui/primitives";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
 import { CodeProjectSearch } from "./CodeProjectSearch";
+import { CodeTabStrip } from "./CodeTabStrip";
 import { useCodeWorkspaceActions } from "./CodeWorkspaceActions";
+import { CodeWorkspaceToolbar } from "./CodeWorkspaceToolbar";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
-import { IdeIcon } from "./IdeIcon";
+import {
+  codeSaveSemantic,
+  codeWorkspaceIndexSemantic,
+} from "./codeSemantic";
+import {
+  fileName,
+  libraryTabId,
+  rememberCodeSession,
+  restoreCodeSession,
+  toLibraryTab,
+  toWorkspaceTab,
+  workspaceTabId,
+  type EditorTab,
+} from "./codeTabs";
 import { useIdeDecisionDialog } from "./IdeDecisionDialog";
 import { useIdePreferences } from "./idePreferences";
-import { LibraryTabBadge } from "./LibraryTabBadge";
 import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
 import { SemanticCodeEditor } from "./SemanticCodeEditor";
 import "./code-workspace.css";
@@ -45,108 +63,9 @@ import "./ide-chrome.css";
 import "../routing/routing-feature.css";
 
 const MAX_OPEN_TABS = 8;
-const MAX_CACHED_PROJECT_SESSIONS = 2;
-
-type EditorTab = {
-  id: string;
-  kind: "workspace" | "library";
-  path: string;
-  libraryHandle: string | null;
-  content: string;
-  fingerprint: string;
-  language: string;
-  bytes: number;
-  status: CodeWorkspaceFileStatus;
-  dirty: boolean;
-  recoveredDraft: boolean;
-};
 
 type EditorView = "edit" | "diff";
 type CodeSideMode = "explorer" | "search";
-
-type CachedCodeSession = {
-  tabs: EditorTab[];
-  activeTabId: string | null;
-  touchedAt: number;
-};
-
-const codeSessionCache = new Map<string, CachedCodeSession>();
-
-const STATUS_LABEL: Record<CodeWorkspaceFileStatus, string> = {
-  clean: "",
-  modified: "M",
-  added: "A",
-  deleted: "D",
-  untracked: "U",
-  renamed: "R",
-  conflict: "!",
-};
-
-function workspaceTabId(project: string, path: string): string {
-  return `workspace:${project}:${path}`;
-}
-
-function libraryTabId(handle: string): string {
-  return `library:${handle}`;
-}
-
-function cloneTabs(tabs: EditorTab[]): EditorTab[] {
-  return tabs.map((tab) => ({ ...tab }));
-}
-
-function rememberCodeSession(project: string, tabs: EditorTab[], activeTabId: string | null) {
-  const workspaceTabs = tabs.filter((tab) => tab.kind === "workspace");
-  codeSessionCache.set(project, {
-    tabs: cloneTabs(workspaceTabs),
-    activeTabId: workspaceTabs.some((tab) => tab.id === activeTabId) ? activeTabId : null,
-    touchedAt: Date.now(),
-  });
-
-  if (codeSessionCache.size <= MAX_CACHED_PROJECT_SESSIONS) return;
-  const removable = [...codeSessionCache.entries()]
-    .filter(([name, session]) => name !== project && session.tabs.every((tab) => !tab.dirty))
-    .sort((left, right) => left[1].touchedAt - right[1].touchedAt);
-  while (codeSessionCache.size > MAX_CACHED_PROJECT_SESSIONS && removable.length > 0) {
-    const [name] = removable.shift()!;
-    codeSessionCache.delete(name);
-  }
-}
-
-function toWorkspaceTab(document: CodeWorkspaceDocument, project: string): EditorTab {
-  return {
-    id: workspaceTabId(project, document.path),
-    kind: "workspace",
-    path: document.path,
-    libraryHandle: null,
-    content: document.content,
-    fingerprint: document.fingerprint,
-    language: document.language,
-    bytes: document.bytes,
-    status: document.status,
-    dirty: false,
-    recoveredDraft: false,
-  };
-}
-
-function toLibraryTab(document: Awaited<ReturnType<typeof readCodeLibraryDocument>>): EditorTab {
-  return {
-    id: libraryTabId(document.handle),
-    kind: "library",
-    path: document.display_path,
-    libraryHandle: document.handle,
-    content: document.content,
-    fingerprint: "",
-    language: document.language,
-    bytes: document.bytes,
-    status: "clean",
-    dirty: false,
-    recoveredDraft: false,
-  };
-}
-
-function fileName(path: string): string {
-  return path.split("/").pop() || path;
-}
 
 export function CodeTab({
   setActiveTab,
@@ -195,8 +114,8 @@ export function CodeTab({
     }
 
     sessionProjectRef.current = projectName ?? null;
-    const cached = projectName ? codeSessionCache.get(projectName) : null;
-    setTabs(cached ? cloneTabs(cached.tabs) : []);
+    const cached = projectName ? restoreCodeSession(projectName) : null;
+    setTabs(cached?.tabs ?? []);
     setActiveTabId(cached?.activeTabId ?? null);
     setWorkspaceError(null);
     setView("edit");
@@ -552,17 +471,26 @@ export function CodeTab({
   });
 
   if (!hasProject) {
-    return <div className="focus-empty">Connect a project to open the Code workspace.</div>;
+    return <EmptyState scope="surface" message="Connect a project to open the Code workspace." />;
   }
   if (workspace.isLoading) {
-    return <div className="focus-empty">Indexing repository files…</div>;
+    return <LoadingState scope="surface" message="Indexing repository files…" />;
   }
   if (workspace.isError || !workspace.data) {
-    return <div className="notice danger">{errorToMessage(workspace.error)}</div>;
+    return (
+      <ErrorState
+        scope="surface"
+        title="Code workspace unavailable"
+        detail={errorToMessage(workspace.error)}
+      />
+    );
   }
 
+  const indexSemantic = codeWorkspaceIndexSemantic(workspace.data.truncated);
+  const dirtySemantic = dirtyCount > 0 ? codeSaveSemantic("dirty") : null;
+
   return (
-    <div className="code-workspace-v0">
+    <div className="code-workspace">
       {sideMode === "search" ? (
         <CodeProjectSearch
           onClose={() => setSideMode("explorer")}
@@ -595,119 +523,72 @@ export function CodeTab({
       {editorDecisionDialog}
 
       <section className="code-editor-workbench">
-        <header className="code-workspace-toolbar">
-          <div className="code-workspace-title">
-            <strong>Code</strong>
-            <span>{workspace.data.project}</span>
-            <span>{workspace.data.files.length.toLocaleString()} files</span>
-            {workspace.data.truncated ? <span className="warn">index capped</span> : null}
-            {dirtyCount > 0 ? <span className="warn">{dirtyCount} unsaved</span> : null}
-          </div>
-          <div className="code-workspace-actions ide-icon-toolbar" role="toolbar" aria-label="Code workspace actions">
-            {activeTab?.kind === "workspace" ? (
-              <button
-                type="button"
-                className={`ide-icon-button${repoIntelOpen ? " active" : ""}`}
-                aria-label="Repository context"
-                title="Repository context"
-                onClick={() => {
-                  setRepoIntelOpen((open) => !open);
-                  setInsightsOpen(false);
-                }}
-              >
-                <IdeIcon name="context" />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="ide-icon-button"
-              aria-label={review.isPending ? "Analyzing changes" : "Analyze changes"}
-              title={review.isPending ? "Analyzing changes…" : "Analyze changes"}
-              disabled={review.isPending}
-              onClick={() => review.mutate()}
-            >
-              <IdeIcon name="analyze" />
-            </button>
-            {review.data ? (
-              <button
-                type="button"
-                className={`ide-icon-button${insightsOpen ? " active" : ""}`}
-                aria-label={`Findings ${review.data.total}`}
-                title={`${review.data.total} engineering findings`}
-                onClick={() => {
-                  setInsightsOpen((open) => !open);
-                  setRepoIntelOpen(false);
-                }}
-              >
-                <IdeIcon name="more" />
-                <span className="ide-icon-count">{review.data.total > 99 ? "99+" : review.data.total}</span>
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="ide-icon-button"
-              aria-label={activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
-              title={activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
-              onClick={openChanges}
-            >
-              <IdeIcon name="changes" />
-            </button>
-          </div>
-        </header>
+        <CodeWorkspaceToolbar
+          project={workspace.data.project}
+          fileCount={workspace.data.files.length}
+          indexSemantic={indexSemantic}
+          dirtyCount={dirtyCount}
+          dirtySemantic={dirtySemantic}
+          canShowRepositoryContext={activeTab?.kind === "workspace"}
+          repositoryContextOpen={repoIntelOpen}
+          reviewPending={review.isPending}
+          reviewTotal={review.data?.total ?? null}
+          insightsOpen={insightsOpen}
+          onToggleRepositoryContext={() => {
+            setRepoIntelOpen((open) => !open);
+            setInsightsOpen(false);
+          }}
+          onAnalyze={() => review.mutate()}
+          onToggleInsights={() => {
+            setInsightsOpen((open) => !open);
+            setRepoIntelOpen(false);
+          }}
+          onReviewChanges={openChanges}
+          reviewFile={activeTab?.kind === "workspace"}
+        />
 
-        <div className="code-tab-strip" role="tablist" aria-label="Open files">
-          {tabs.length === 0 ? <span className="code-tabs-empty">Open a file from Explorer.</span> : null}
-          {tabs.map((tab) => (
-            <div className={`code-file-tab${tab.id === activeTabId ? " active" : ""}`} key={tab.id}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={tab.id === activeTabId}
-                className="code-file-tab-select"
-                onClick={() => {
-                  setActiveTabId(tab.id);
-                  setView("edit");
-                }}
-                title={tab.path}
-              >
-                <span>{fileName(tab.path)}</span>
-                {tab.kind === "library" ? <LibraryTabBadge /> : null}
-                {tab.recoveredDraft ? <small className="code-draft-badge">recovered</small> : null}
-                {STATUS_LABEL[tab.status] ? <small>{STATUS_LABEL[tab.status]}</small> : null}
-                {tab.dirty ? <i aria-label="Unsaved">●</i> : null}
-              </button>
-              <button
-                type="button"
-                className="code-tab-close"
-                aria-label={`Close ${fileName(tab.path)}`}
-                onClick={() => void closeTab(tab.id)}
-              >×</button>
-            </div>
-          ))}
-        </div>
+        <CodeTabStrip
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSelect={(tabId) => {
+            setActiveTabId(tabId);
+            setView("edit");
+          }}
+          onClose={(tabId) => void closeTab(tabId)}
+        />
 
         {draftError ? (
-          <div className="code-workspace-message warn">
-            <span>{draftError}</span>
+          <EvidenceState
+            label="Draft recovery"
+            state="Backup unavailable"
+            tone="attention"
+            detail={draftError}
+            role="status"
+          >
             <button type="button" className="tiny-button" onClick={() => setDraftError(null)}>Dismiss</button>
-          </div>
+          </EvidenceState>
         ) : null}
 
         {workspaceError ? (
-          <div className="code-workspace-message danger">
-            <span>{workspaceError}</span>
-            {activeTab?.kind === "workspace" && workspaceError.includes("changed outside RepoDesk") ? (
-              <button
-                type="button"
-                className="tiny-button"
-                onClick={() => {
-                  const file = workspace.data.files.find((item) => item.path === activeTab.path);
-                  if (file) void openFile(file, true);
-                }}
-              >Reload from disk</button>
-            ) : null}
-            <button type="button" className="tiny-button" onClick={() => setWorkspaceError(null)}>Dismiss</button>
-          </div>
+          <ErrorState
+            title="Code workspace action failed"
+            detail={workspaceError}
+            action={(
+              <div className="button-row">
+                {activeTab?.kind === "workspace" && workspaceError.includes("changed outside RepoDesk") ? (
+                  <button
+                    type="button"
+                    className="tiny-button"
+                    onClick={() => {
+                      const file = workspace.data.files.find((item) => item.path === activeTab.path);
+                      if (file) void openFile(file, true);
+                    }}
+                  >Reload from disk</button>
+                ) : null}
+                <button type="button" className="tiny-button" onClick={() => setWorkspaceError(null)}>Dismiss</button>
+              </div>
+            )}
+          />
         ) : null}
 
         <div className="code-document-toolbar">
@@ -741,14 +622,15 @@ export function CodeTab({
         <div className="code-document-stage">
           {!activeTab ? (
             <div className="code-editor-empty">
-              <strong>Repository is ready.</strong>
-              <span>Choose a safe text file in Explorer. Code no longer depends on the Git changed-file list.</span>
-              <small>Editor budget: {MAX_OPEN_TABS} open files · 512 KiB per file · conflict-safe saves.</small>
+              <EmptyState
+                message="Repository is ready."
+                hint={`Choose a safe text file in Explorer. Editor budget: ${MAX_OPEN_TABS} open files · 512 KiB per file · conflict-safe saves.`}
+              />
             </div>
           ) : view === "diff" && activeTab.kind === "workspace" ? (
             <div className="code-diff-stage">
-              {diffLoading ? <div className="focus-empty compact">Loading diff…</div> : diff ? <DiffViewer diff={diff} /> : (
-                <div className="focus-empty compact">No Git diff for this file.</div>
+              {diffLoading ? <LoadingState message="Loading diff…" /> : diff ? <DiffViewer diff={diff} /> : (
+                <EmptyState message="No Git diff for this file." />
               )}
             </div>
           ) : (
@@ -785,7 +667,7 @@ export function CodeTab({
                 </div>
                 <button type="button" onClick={() => setInsightsOpen(false)} aria-label="Close findings">×</button>
               </div>
-              {review.data.error ? <div className="notice danger">{review.data.error}</div> : null}
+              {review.data.error ? <ErrorState title="RepoPilot analysis failed" detail={review.data.error} /> : null}
               {activeWorkspacePath ? (
                 activeFindings ? (
                   <ul className="findings-list">
