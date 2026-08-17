@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CodeWorkspaceFile, CodeWorkspaceFileStatus } from "../../shared/api/codeWorkspace";
+import type { CodeWorkspaceFile } from "../../shared/api/codeWorkspace";
+import { StatusBadge } from "../../shared/ui/primitives";
 import { CodeExplorerContextMenu, type ExplorerContextMenuState } from "./CodeExplorerContextMenu";
+import { codeFileStatusSemantic } from "./codeSemantic";
 import { IdeIcon } from "./IdeIcon";
 import { useIdePreferences } from "./idePreferences";
 import type { WorkspaceActionTarget } from "./CodeWorkspaceActions";
@@ -10,23 +12,6 @@ const MAX_EDITOR_BYTES = 512 * 1024;
 const VIRTUALIZE_AFTER = 120;
 const OVERSCAN_ROWS = 8;
 const DEFAULT_VIEWPORT_HEIGHT = 520;
-
-const STATUS_LABEL: Record<CodeWorkspaceFileStatus, string> = {
-  clean: "",
-  modified: "M",
-  added: "A",
-  deleted: "D",
-  untracked: "U",
-  renamed: "R",
-  conflict: "!",
-};
-
-function statusTone(status: CodeWorkspaceFileStatus): string {
-  if (status === "conflict") return "danger";
-  if (status === "modified" || status === "untracked") return "warn";
-  if (status === "added") return "ok";
-  return "neutral";
-}
 
 function unavailableReason(file: CodeWorkspaceFile): string | null {
   if (file.blocked) return "Unavailable for safe text editing by RepoDesk policy";
@@ -225,7 +210,7 @@ export function CodeWorkspaceTree({
 
           const { file } = node;
           const active = file.path === activePath;
-          const label = STATUS_LABEL[file.status];
+          const status = codeFileStatusSemantic(file.status);
           const unavailable = unavailableReason(file);
           return (
             <button
@@ -244,7 +229,14 @@ export function CodeWorkspaceTree({
               <span className="code-tree-file-icon" aria-hidden="true">·</span>
               <span className="code-tree-name">{file.name}</span>
               {unavailable ? <span className="code-tree-status neutral">lock</span> : null}
-              {!unavailable && label ? <span className={`code-tree-status ${statusTone(file.status)}`}>{label}</span> : null}
+              {!unavailable && file.status !== "clean" ? (
+                <StatusBadge
+                  label={status.label}
+                  tone={status.tone}
+                  ariaLabel={status.detail ?? status.label}
+                  className="code-tree-status"
+                />
+              ) : null}
             </button>
           );
         })}
