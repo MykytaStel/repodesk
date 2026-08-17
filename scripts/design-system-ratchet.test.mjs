@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  evaluateProjectsSemanticContract,
   evaluateRunsSemanticContract,
   evaluateVisualDebtChange,
   evaluateWorkSemanticContract,
@@ -85,6 +86,10 @@ test("Work migration requires one typed adapter and the shared primitive boundar
 
 test("Runs migration requires one typed adapter and the shared primitive boundary", () => {
   assert.deepEqual(evaluateRunsSemanticContract(), []);
+});
+
+test("Projects migration requires one typed adapter and the shared primitive boundary", () => {
+  assert.deepEqual(evaluateProjectsSemanticContract(), []);
 });
 
 test("Work visual ownership is canonical after semantic convergence", () => {
