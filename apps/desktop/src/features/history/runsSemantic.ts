@@ -90,7 +90,7 @@ export function verificationStateSemantic(status: RunVerificationState): Semanti
     case "running":
       return { label: "running", tone: "info" };
     case "stale":
-      return { label: "Stale", tone: "attention" };
+      return { label: "stale", tone: "attention" };
     case "not_run":
       return { label: "not run", tone: "neutral" };
     case "unknown":
