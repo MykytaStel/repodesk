@@ -32,13 +32,13 @@ import {
   ErrorState,
   EvidenceState,
   LoadingState,
-  StatusBadge,
 } from "../../shared/ui/primitives";
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
 import { CodeProjectSearch } from "./CodeProjectSearch";
 import { CodeTabStrip } from "./CodeTabStrip";
 import { useCodeWorkspaceActions } from "./CodeWorkspaceActions";
+import { CodeWorkspaceToolbar } from "./CodeWorkspaceToolbar";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
 import {
   codeSaveSemantic,
@@ -54,7 +54,6 @@ import {
   workspaceTabId,
   type EditorTab,
 } from "./codeTabs";
-import { IdeIcon } from "./IdeIcon";
 import { useIdeDecisionDialog } from "./IdeDecisionDialog";
 import { useIdePreferences } from "./idePreferences";
 import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
@@ -524,75 +523,29 @@ export function CodeTab({
       {editorDecisionDialog}
 
       <section className="code-editor-workbench">
-        <header className="code-workspace-toolbar">
-          <div className="code-workspace-title">
-            <strong>Code</strong>
-            <span>{workspace.data.project}</span>
-            <span>{workspace.data.files.length.toLocaleString()} files</span>
-            <StatusBadge
-              label={indexSemantic.label}
-              tone={indexSemantic.tone}
-              ariaLabel={indexSemantic.detail ?? indexSemantic.label}
-            />
-            {dirtySemantic ? (
-              <StatusBadge
-                label={`${dirtyCount} unsaved`}
-                tone={dirtySemantic.tone}
-                ariaLabel={`${dirtyCount} unsaved editor tab${dirtyCount === 1 ? "" : "s"}`}
-              />
-            ) : null}
-          </div>
-          <div className="code-workspace-actions ide-icon-toolbar" role="toolbar" aria-label="Code workspace actions">
-            {activeTab?.kind === "workspace" ? (
-              <button
-                type="button"
-                className={`ide-icon-button${repoIntelOpen ? " active" : ""}`}
-                aria-label="Repository context"
-                title="Repository context"
-                onClick={() => {
-                  setRepoIntelOpen((open) => !open);
-                  setInsightsOpen(false);
-                }}
-              >
-                <IdeIcon name="context" />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="ide-icon-button"
-              aria-label={review.isPending ? "Analyzing changes" : "Analyze changes"}
-              title={review.isPending ? "Analyzing changes…" : "Analyze changes"}
-              disabled={review.isPending}
-              onClick={() => review.mutate()}
-            >
-              <IdeIcon name="analyze" />
-            </button>
-            {review.data ? (
-              <button
-                type="button"
-                className={`ide-icon-button${insightsOpen ? " active" : ""}`}
-                aria-label={`Findings ${review.data.total}`}
-                title={`${review.data.total} engineering findings`}
-                onClick={() => {
-                  setInsightsOpen((open) => !open);
-                  setRepoIntelOpen(false);
-                }}
-              >
-                <IdeIcon name="more" />
-                <span className="ide-icon-count">{review.data.total > 99 ? "99+" : review.data.total}</span>
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="ide-icon-button"
-              aria-label={activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
-              title={activeTab?.kind === "workspace" ? "Review file change" : "Review changes"}
-              onClick={openChanges}
-            >
-              <IdeIcon name="changes" />
-            </button>
-          </div>
-        </header>
+        <CodeWorkspaceToolbar
+          project={workspace.data.project}
+          fileCount={workspace.data.files.length}
+          indexSemantic={indexSemantic}
+          dirtyCount={dirtyCount}
+          dirtySemantic={dirtySemantic}
+          canShowRepositoryContext={activeTab?.kind === "workspace"}
+          repositoryContextOpen={repoIntelOpen}
+          reviewPending={review.isPending}
+          reviewTotal={review.data?.total ?? null}
+          insightsOpen={insightsOpen}
+          onToggleRepositoryContext={() => {
+            setRepoIntelOpen((open) => !open);
+            setInsightsOpen(false);
+          }}
+          onAnalyze={() => review.mutate()}
+          onToggleInsights={() => {
+            setInsightsOpen((open) => !open);
+            setRepoIntelOpen(false);
+          }}
+          onReviewChanges={openChanges}
+          reviewFile={activeTab?.kind === "workspace"}
+        />
 
         <CodeTabStrip
           tabs={tabs}
