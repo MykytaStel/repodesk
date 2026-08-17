@@ -77,6 +77,34 @@ test("legacy polish styles are fully retired from desktop source", () => {
   assert.deepEqual(evaluate(), []);
 });
 
+test("Code editor visual ownership stays canonical without dropping editor CSS", () => {
+  const evaluate = architecture.evaluateCodeEditorVisualOwnershipContract;
+  assert.equal(
+    typeof evaluate,
+    "function",
+    "architecture ratchet must expose the canonical Code editor visual ownership contract",
+  );
+  if (typeof evaluate !== "function") return;
+
+  assert.match(
+    evaluate({
+      appCss: '@import "../features/code/code-editor-polish.css" layer(legacy);',
+      workspaceCss: "/* canonical owner */",
+      canonicalExists: true,
+    }).join("\n"),
+    /legacy Code editor polish import/i,
+  );
+  assert.deepEqual(
+    evaluate({
+      appCss: '@import "./styles/code-editor.css" layer(legacy);',
+      workspaceCss: "/* canonical owner */",
+      canonicalExists: true,
+    }),
+    [],
+  );
+  assert.deepEqual(evaluate(), []);
+});
+
 test("existing feature CSS may stay flat or shrink but not grow", () => {
   const path = "apps/desktop/src/features/changes/changes-density.css";
   assert.deepEqual(failures({ path, baseSize: 100, currentSize: 100 }), []);
