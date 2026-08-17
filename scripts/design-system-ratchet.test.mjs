@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
+import * as architecture from "./check-source-architecture.mjs";
 import {
   HARD_SOURCE_LIMIT_BYTES,
   evaluateCodeSemanticContract,
@@ -56,6 +57,52 @@ test("new versioned and polish visual generations are rejected", () => {
     failures({ path: "apps/desktop/src/features/work/work-polish.css", baseSize: null, currentSize: 10 }).join("\n"),
     /polish stylesheet/i,
   );
+});
+
+test("legacy polish styles are fully retired from desktop source", () => {
+  const evaluate = architecture.evaluateLegacyPolishDebtCleanupContract;
+  assert.equal(
+    typeof evaluate,
+    "function",
+    "architecture ratchet must expose a generic legacy polish cleanup contract",
+  );
+  if (typeof evaluate !== "function") return;
+
+  assert.match(
+    evaluate(["apps/desktop/src/features/code/code-editor-polish.css"]).join("\n"),
+    /legacy polish stylesheet/i,
+  );
+  assert.deepEqual(evaluate(["apps/desktop/src/app/styles/work-hierarchy-v4.css"]), []);
+  assert.deepEqual(evaluate(["apps/desktop/src/app/styles/work-hierarchy.css"]), []);
+  assert.deepEqual(evaluate(), []);
+});
+
+test("Code editor visual ownership stays canonical without dropping editor CSS", () => {
+  const evaluate = architecture.evaluateCodeEditorVisualOwnershipContract;
+  assert.equal(
+    typeof evaluate,
+    "function",
+    "architecture ratchet must expose the canonical Code editor visual ownership contract",
+  );
+  if (typeof evaluate !== "function") return;
+
+  assert.match(
+    evaluate({
+      appCss: '@import "../features/code/code-editor-polish.css" layer(legacy);',
+      workspaceCss: "/* canonical owner */",
+      canonicalExists: true,
+    }).join("\n"),
+    /legacy Code editor polish import/i,
+  );
+  assert.deepEqual(
+    evaluate({
+      appCss: '@import "./styles/code-editor.css" layer(legacy);',
+      workspaceCss: "/* canonical owner */",
+      canonicalExists: true,
+    }),
+    [],
+  );
+  assert.deepEqual(evaluate(), []);
 });
 
 test("existing feature CSS may stay flat or shrink but not grow", () => {
