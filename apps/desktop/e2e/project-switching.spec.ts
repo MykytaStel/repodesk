@@ -41,9 +41,8 @@ test("Projects uses canonical hasProject semantics for an empty workspace", asyn
     project_list_configs: projects,
   });
 
-  const activeProjectPill = page.locator(".changes-summary .pill");
-  await expect(activeProjectPill).toHaveText("No active project");
-  await expect(activeProjectPill).not.toContainText("Active ·");
+  const activeProjectState = page.getByRole("main").getByText("No active project", { exact: true });
+  await expect(activeProjectState).toHaveAttribute("data-semantic-tone", "neutral");
   await expect(page.locator(".project-registry-card.active")).toHaveCount(0);
 });
 
