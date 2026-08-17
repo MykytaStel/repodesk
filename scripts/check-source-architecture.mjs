@@ -36,6 +36,13 @@ const RUNS_PRIMITIVE_SURFACES = [
 ];
 const PROJECTS_SEMANTIC_ADAPTER = "apps/desktop/src/features/projects/projectsSemantic.ts";
 const PROJECTS_TYPED_SURFACES = ["apps/desktop/src/features/projects/ProjectsTab.tsx"];
+const CODE_SEMANTIC_ADAPTER = "apps/desktop/src/features/code/codeSemantic.ts";
+const CODE_TYPED_SURFACES = [
+  "apps/desktop/src/features/code/CodeTab.tsx",
+  "apps/desktop/src/features/code/CodeWorkspaceTree.tsx",
+  "apps/desktop/src/features/code/CodeSemanticStrip.tsx",
+  "apps/desktop/src/features/code/RepositoryIntelligenceDrawer.tsx",
+];
 
 function extensionOf(path) {
   const index = path.lastIndexOf(".");
@@ -250,6 +257,27 @@ export function evaluateProjectsSemanticContract() {
   });
 }
 
+export function evaluateCodeSemanticContract() {
+  const failures = evaluateTypedSemanticContract({
+    label: "Code",
+    adapterPath: CODE_SEMANTIC_ADAPTER,
+    adapterImport: "./codeSemantic",
+    typedSurfaces: CODE_TYPED_SURFACES,
+  });
+
+  const codeTab = readSource("apps/desktop/src/features/code/CodeTab.tsx");
+  if (codeTab && /code-workspace-v\d+/i.test(codeTab)) {
+    failures.push("apps/desktop/src/features/code/CodeTab.tsx: canonical Code shell must not use a versioned class name");
+  }
+
+  const workspaceTree = readSource("apps/desktop/src/features/code/CodeWorkspaceTree.tsx");
+  if (workspaceTree && /\bstatusTone\s*\(/.test(workspaceTree)) {
+    failures.push("apps/desktop/src/features/code/CodeWorkspaceTree.tsx: typed file state must use codeSemantic.ts instead of statusTone()");
+  }
+
+  return failures;
+}
+
 export function evaluateWorkVisualDebtCleanupContract() {
   const failures = [];
 
@@ -313,6 +341,7 @@ export function runArchitectureRatchet() {
   failures.push(...evaluateWorkSemanticContract());
   failures.push(...evaluateRunsSemanticContract());
   failures.push(...evaluateProjectsSemanticContract());
+  failures.push(...evaluateCodeSemanticContract());
   failures.push(...evaluateWorkVisualDebtCleanupContract());
 
   console.log(`Architecture ratchet: ${paths.length} changed file(s), base ${baseSha.slice(0, 12)}.`);
