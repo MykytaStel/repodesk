@@ -32,12 +32,12 @@
 - Delete: `apps/desktop/src/features/code/code-editor-polish.css` (already removed on the branch; restore behavior at the canonical path rather than reintroducing this file)
 
 **Interfaces:**
-- Produces: `evaluateCodeEditorVisualOwnershipContract(): string[]`
-- Consumes: tracked repository files plus `App.css` and `code-workspace.css` source text.
+- Produces: `evaluateCodeEditorVisualOwnershipContract({ appCss, workspaceCss, canonicalExists } = {}): string[]`, where each optional field overrides repository state for deterministic tests and a no-argument call evaluates the live checkout.
+- Consumes: `App.css`, `code-workspace.css`, and existence of `apps/desktop/src/app/styles/code-editor.css`.
 
 - [ ] **Step 1: Write the failing ownership test**
 
-Extend `scripts/design-system-ratchet.test.mjs` with a test that requires `architecture.evaluateCodeEditorVisualOwnershipContract` to exist and then requires the live repository state to return no failures. The contract must also reject an old `code-editor-polish.css` reference when supplied through its testable inputs.
+Extend `scripts/design-system-ratchet.test.mjs` with a test that requires `architecture.evaluateCodeEditorVisualOwnershipContract` to exist. The test must reject a synthetic `App.css` containing `code-editor-polish.css`, accept the canonical import when `canonicalExists: true`, and require the live repository state to return no failures.
 
 - [ ] **Step 2: Run Architecture Ratchet and verify RED**
 
@@ -45,7 +45,7 @@ Use the PR workflow on the exact test-only head. Expected: `Architecture Ratchet
 
 - [ ] **Step 3: Add the minimal ownership evaluator**
 
-Implement `evaluateCodeEditorVisualOwnershipContract()` in `scripts/check-source-architecture.mjs` so it verifies:
+Implement `evaluateCodeEditorVisualOwnershipContract({ appCss = null, workspaceCss = null, canonicalExists = null } = {})` in `scripts/check-source-architecture.mjs` so a no-argument call verifies:
 
 ```text
 apps/desktop/src/app/styles/code-editor.css exists
@@ -54,7 +54,7 @@ App.css does not reference code-editor-polish.css
 code-workspace.css does not reference code-editor-polish.css
 ```
 
-Wire the evaluator into `runArchitectureRatchet()`.
+When overrides are supplied, use them instead of reading those pieces of repository state. Wire the no-argument evaluator into `runArchitectureRatchet()`.
 
 - [ ] **Step 4: Preserve editor CSS at the canonical path**
 
