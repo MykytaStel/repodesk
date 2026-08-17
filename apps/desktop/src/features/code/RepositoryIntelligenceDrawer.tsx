@@ -4,23 +4,21 @@ import {
   REPOSITORY_INTELLIGENCE_KEY,
   repositoryIntelligenceSnapshot,
   type RepositoryContextCandidate,
-  type RepositoryEvidenceLevel,
   type RepositoryLanguageCoverage,
   type RepositorySemanticStrategy,
 } from "../../shared/api/repositoryIntelligence";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  StatusBadge,
+} from "../../shared/ui/primitives";
 import { errorToMessage } from "../../shared/utils/helpers";
+import { repositoryEvidenceSemantic } from "./codeSemantic";
 import "./repository-intelligence.css";
 
 function fileLabel(path: string): string {
   return path.split("/").pop() || path;
-}
-
-function evidenceLabel(level: RepositoryEvidenceLevel): string {
-  switch (level) {
-    case "strong": return "Strong";
-    case "bounded": return "Bounded";
-    case "unavailable": return "Unavailable";
-  }
 }
 
 function strategyLabel(strategy: RepositorySemanticStrategy): string {
@@ -88,8 +86,10 @@ export function RepositoryIntelligenceDrawer({
         <button type="button" onClick={onClose} aria-label="Close repository intelligence">×</button>
       </header>
 
-      {snapshot.isLoading ? <div className="focus-empty compact">Building bounded neighborhood…</div> : null}
-      {snapshot.isError ? <div className="notice danger">{errorToMessage(snapshot.error)}</div> : null}
+      {snapshot.isLoading ? <LoadingState message="Building bounded neighborhood…" /> : null}
+      {snapshot.isError ? (
+        <ErrorState title="Repository intelligence unavailable" detail={errorToMessage(snapshot.error)} />
+      ) : null}
 
       {snapshot.data ? (
         <div className="repo-intel-meta">
@@ -107,9 +107,11 @@ export function RepositoryIntelligenceDrawer({
           <section className="repo-intel-evidence">
             <div className="repo-intel-evidence-head">
               <h4>Graph evidence</h4>
-              <span className={`repo-intel-evidence-badge ${focus.graph_evidence.level}`}>
-                {evidenceLabel(focus.graph_evidence.level)}
-              </span>
+              <StatusBadge
+                label={repositoryEvidenceSemantic(focus.graph_evidence.level).label}
+                tone={repositoryEvidenceSemantic(focus.graph_evidence.level).tone}
+                className="repo-intel-evidence-badge"
+              />
             </div>
             <code className="repo-intel-strategy">{strategyLabel(focus.graph_evidence.strategy)}</code>
             {focus.graph_evidence.reasons.map((reason) => <p key={reason}>{reason}</p>)}
@@ -129,23 +131,28 @@ export function RepositoryIntelligenceDrawer({
               </span>
             </h4>
             <p>Only files with an implemented dependency strategy count as semantic-eligible.</p>
-            {coverageLanguages.length === 0 ? <p>No semantic dependency indexer is active.</p> : coverageLanguages.map((item) => (
-              <div className="repo-intel-coverage-row" key={item.language} title={item.limitations.join(" · ")}>
-                <span>
-                  <strong>{item.language}</strong>
-                  <code>{strategyLabel(item.strategy)}</code>
-                </span>
-                <span>
-                  <i className={`repo-intel-evidence-badge ${item.evidence_level}`}>
-                    {evidenceLabel(item.evidence_level)}
-                  </i>
-                  <small>
-                    {item.semantic_files_indexed}/{item.visible_files}
-                    {item.truncated ? " · index capped" : ""}
-                  </small>
-                </span>
-              </div>
-            ))}
+            {coverageLanguages.length === 0 ? <p>No semantic dependency indexer is active.</p> : coverageLanguages.map((item) => {
+              const evidence = repositoryEvidenceSemantic(item.evidence_level);
+              return (
+                <div className="repo-intel-coverage-row" key={item.language} title={item.limitations.join(" · ")}>
+                  <span>
+                    <strong>{item.language}</strong>
+                    <code>{strategyLabel(item.strategy)}</code>
+                  </span>
+                  <span>
+                    <StatusBadge
+                      label={evidence.label}
+                      tone={evidence.tone}
+                      className="repo-intel-evidence-badge"
+                    />
+                    <small>
+                      {item.semantic_files_indexed}/{item.visible_files}
+                      {item.truncated ? " · index capped" : ""}
+                    </small>
+                  </span>
+                </div>
+              );
+            })}
           </section>
 
           <section>
@@ -193,7 +200,7 @@ export function RepositoryIntelligenceDrawer({
           </section>
         </div>
       ) : snapshot.data && !snapshot.isLoading ? (
-        <div className="focus-empty compact">No focused repository intelligence for this file.</div>
+        <EmptyState message="No focused repository intelligence for this file." />
       ) : null}
     </aside>
   );
