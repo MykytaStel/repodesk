@@ -28,6 +28,12 @@ const WORK_OBSOLETE_VISUAL_PATHS = [
 ];
 const WORK_CANONICAL_HIERARCHY = "apps/desktop/src/app/styles/work-hierarchy.css";
 const WORK_ROUTE_STYLES = "apps/desktop/src/features/work/work-route.css";
+const RUNS_SEMANTIC_ADAPTER = "apps/desktop/src/features/history/runsSemantic.ts";
+const RUNS_TYPED_SURFACES = ["apps/desktop/src/features/history/RunsWorkspace.tsx"];
+const RUNS_PRIMITIVE_SURFACES = [
+  "apps/desktop/src/features/history/HistoryTab.tsx",
+  "apps/desktop/src/features/history/RunsWorkspace.tsx",
+];
 
 function extensionOf(path) {
   const index = path.lastIndexOf(".");
@@ -166,9 +172,10 @@ function evaluateTypedSemanticContract({
     failures.push(`${adapterPath}: ${label} migration requires one typed domain-to-semantic adapter`);
   }
 
+  const statusSubstringInference = /\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block|ready|done|stale|complete|accepted|passed|proven)/i;
   const adapter = readSource(adapterPath);
   if (adapter) {
-    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block|ready|done|stale)/i.test(adapter)) {
+    if (statusSubstringInference.test(adapter)) {
       failures.push(`${adapterPath}: typed ${label} state must not be inferred from status text substrings`);
     }
     if (/statusTone\s*\(/.test(adapter)) {
@@ -188,7 +195,7 @@ function evaluateTypedSemanticContract({
     if (/statusTone\s*\(/.test(source)) {
       failures.push(`${path}: typed ${label} state must not call statusTone()`);
     }
-    if (/\.includes\(\s*["'`](?:ok|error|failed|warn|danger|block|ready|done|stale)/i.test(source)) {
+    if (statusSubstringInference.test(source)) {
       failures.push(`${path}: typed ${label} state must not be inferred from status text substrings`);
     }
   }
@@ -219,6 +226,16 @@ export function evaluateWorkSemanticContract() {
     adapterImport: "./workSemantic",
     typedSurfaces: WORK_TYPED_SURFACES,
     primitiveSurfaces: WORK_PRIMITIVE_SURFACES,
+  });
+}
+
+export function evaluateRunsSemanticContract() {
+  return evaluateTypedSemanticContract({
+    label: "Runs",
+    adapterPath: RUNS_SEMANTIC_ADAPTER,
+    adapterImport: "./runsSemantic",
+    typedSurfaces: RUNS_TYPED_SURFACES,
+    primitiveSurfaces: RUNS_PRIMITIVE_SURFACES,
   });
 }
 
@@ -283,6 +300,7 @@ export function runArchitectureRatchet() {
 
   failures.push(...evaluateChangesSemanticContract());
   failures.push(...evaluateWorkSemanticContract());
+  failures.push(...evaluateRunsSemanticContract());
   failures.push(...evaluateWorkVisualDebtCleanupContract());
 
   console.log(`Architecture ratchet: ${paths.length} changed file(s), base ${baseSha.slice(0, 12)}.`);
