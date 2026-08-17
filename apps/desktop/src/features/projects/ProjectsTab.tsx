@@ -4,8 +4,22 @@ import { invoke } from "@tauri-apps/api/core";
 import type { TabId } from "../../shared/types/api";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { WORK_ENGINEERING_SNAPSHOT_KEY } from "../../shared/api/engineering";
+import {
+  ActionBar,
+  EmptyState,
+  ErrorState,
+  EvidenceState,
+  LoadingState,
+  PanelHeader,
+  StatusBadge,
+} from "../../shared/ui/primitives";
 import "../../shared/ui/secondary-subnav.css";
 import "./projects-route.css";
+import {
+  attributionPolicySemantic,
+  projectNoticeSemantic,
+  projectWorkspaceSemantic,
+} from "./projectsSemantic";
 import { useProjectSetup } from "./useProjectSetup";
 
 const ProjectKnowledgeWorkspace = lazy(() => import("../knowledge/ProjectKnowledgeWorkspace").then((module) => ({ default: module.ProjectKnowledgeWorkspace })));
@@ -64,15 +78,24 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
     },
   });
   const projectMutationPending = isAddingProject || isActivatingProject || attributionPolicy.isPending;
+  const workspaceSemantic = projectWorkspaceSemantic(hasProject ? "active" : "inactive");
+  const setupSemantic = setupNotice ? projectNoticeSemantic(setupNotice.tone) : null;
+  const activationSemantic = activationNotice ? projectNoticeSemantic(activationNotice.tone) : null;
 
   return (
     <div className="subnav-host projects-tab">
       <div className="changes-summary">
-        <div>
-          <p className="eyebrow">Projects</p>
-          <strong>Durable repository rules, knowledge and reusable work setup</strong>
-        </div>
-        {hasProject ? <span className="pill accent">Active · {projectName}</span> : <span className="pill neutral">No active project</span>}
+        <PanelHeader
+          eyebrow="Projects"
+          title="Durable repository rules, knowledge and reusable work setup"
+          description="Project-scoped repository configuration, evidence and reusable engineering context."
+          trailing={(
+            <StatusBadge
+              label={hasProject ? `Active · ${projectName}` : workspaceSemantic.label}
+              tone={workspaceSemantic.tone}
+            />
+          )}
+        />
       </div>
 
       <div className="subnav" role="tablist" aria-label="Project views">
@@ -90,34 +113,35 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
         ))}
       </div>
 
-      <Suspense fallback={<p className="muted">Loading project capability…</p>}>
+      <Suspense fallback={<LoadingState message="Loading project capability…" />}>
         {view === "knowledge" ? <ProjectKnowledgeWorkspace /> : null}
         {view === "templates" ? <WorkTemplatesTab setActiveTab={setActiveTab} /> : null}
         {view === "registry" ? (
           <div className="content-grid">
             <section className="hero-panel wide-panel">
-              <p className="eyebrow">Project registry</p>
-              <h1>Repository workspaces</h1>
-              <p className="lead">
-                A Project is the durable boundary around repositories, Work Items, checks, context rules and reviewed engineering knowledge.
-              </p>
-              <div className="button-row">
-                <button className="primary-button" type="button" onClick={() => setShowSetup((visible) => !visible)}>
-                  {showSetup ? "Close setup" : "Add project"}
-                </button>
-                <button className="ghost-button" type="button" onClick={() => void projects.refetch()}>Refresh registry</button>
-              </div>
+              <PanelHeader
+                eyebrow="Project registry"
+                title="Repository workspaces"
+                headingLevel={1}
+                description="A Project is the durable boundary around repositories, Work Items, checks, context rules and reviewed engineering knowledge."
+              />
+              <ActionBar
+                primary={(
+                  <button className="primary-button" type="button" onClick={() => setShowSetup((visible) => !visible)}>
+                    {showSetup ? "Close setup" : "Add project"}
+                  </button>
+                )}
+                secondary={<button className="ghost-button" type="button" onClick={() => void projects.refetch()}>Refresh registry</button>}
+              />
             </section>
 
             {showSetup ? (
               <section className="panel wide-panel project-setup-panel">
-                <div className="panel-title-row">
-                  <div>
-                    <p className="eyebrow">Connect repository</p>
-                    <h2>Add and activate a project</h2>
-                  </div>
-                  <span className="pill neutral">Project-scoped</span>
-                </div>
+                <PanelHeader
+                  eyebrow="Connect repository"
+                  title="Add and activate a project"
+                  trailing={<StatusBadge label="Project-scoped" tone="neutral" />}
+                />
                 <div className="form-stack">
                   <label>
                     Project name
@@ -158,60 +182,102 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                       />
                     </label>
                   </div>
-                  <div className="button-row">
-                    <button
-                      className="primary-button"
-                      type="button"
-                      onClick={() => void addProject().catch(() => undefined)}
-                      disabled={projectMutationPending}
-                    >
-                      {isAddingProject ? "Adding and activating…" : "Add and activate project"}
-                    </button>
-                    <button className="ghost-button" type="button" onClick={() => setShowSetup(false)} disabled={projectMutationPending}>
-                      Cancel
-                    </button>
-                  </div>
-                  {setupNotice ? (
-                    <div className={`notice ${setupNotice.tone}`} role={setupNotice.tone === "danger" ? "alert" : "status"}>
-                      {setupNotice.message}
-                    </div>
+                  <ActionBar
+                    primary={(
+                      <button
+                        className="primary-button"
+                        type="button"
+                        onClick={() => void addProject().catch(() => undefined)}
+                        disabled={projectMutationPending}
+                      >
+                        {isAddingProject ? "Adding and activating…" : "Add and activate project"}
+                      </button>
+                    )}
+                    secondary={(
+                      <button className="ghost-button" type="button" onClick={() => setShowSetup(false)} disabled={projectMutationPending}>
+                        Cancel
+                      </button>
+                    )}
+                  />
+                  {setupNotice && setupSemantic ? (
+                    setupNotice.tone === "danger" ? (
+                      <ErrorState title="Project setup failed" detail={setupNotice.message} />
+                    ) : (
+                      <EvidenceState
+                        label="Project setup"
+                        state={setupSemantic.label}
+                        tone={setupSemantic.tone}
+                        detail={setupNotice.message}
+                        role="status"
+                      />
+                    )
                   ) : null}
                 </div>
               </section>
             ) : null}
 
             <section className="panel wide-panel">
-              <div className="panel-title-row">
-                <div>
-                  <p className="eyebrow">Connected repositories</p>
-                  <h2>{projects.data?.length ?? 0} registered</h2>
-                </div>
-              </div>
+              <PanelHeader
+                eyebrow="Connected repositories"
+                title={`${projects.data?.length ?? 0} registered`}
+              />
 
-              {activationNotice ? (
-                <div className={`notice ${activationNotice.tone}`} role={activationNotice.tone === "danger" ? "alert" : "status"}>
-                  {activationNotice.message}
-                </div>
+              {activationNotice && activationSemantic ? (
+                activationNotice.tone === "danger" ? (
+                  <ErrorState title="Project activation failed" detail={activationNotice.message} />
+                ) : (
+                  <EvidenceState
+                    label="Project activation"
+                    state={activationSemantic.label}
+                    tone={activationSemantic.tone}
+                    detail={activationNotice.message}
+                    role="status"
+                  />
+                )
               ) : null}
               {attributionPolicy.isError ? (
-                <div className="notice danger" role="alert">Could not update project trust policy: {String(attributionPolicy.error)}</div>
+                <ErrorState
+                  title="Could not update project trust policy"
+                  detail={String(attributionPolicy.error)}
+                />
               ) : null}
 
               {projects.isLoading ? (
-                <p className="muted">Loading projects…</p>
+                <LoadingState message="Loading projects…" />
               ) : projects.isError ? (
-                <p className="notice danger">Could not load project registry: {String(projects.error)}</p>
+                <ErrorState title="Project registry unavailable" detail={String(projects.error)} />
               ) : (projects.data?.length ?? 0) === 0 ? (
-                <div className="workspace-empty-state">
-                  <strong>No projects registered.</strong>
-                  <span>Add a repository here. RepoDesk keeps project-specific context and rules bounded to that Project.</span>
-                </div>
+                <EmptyState
+                  message="No projects registered."
+                  hint="Add a repository here. RepoDesk keeps project-specific context and rules bounded to that Project."
+                />
               ) : (
                 <div className="project-registry-grid">
                   {projects.data?.map((project) => {
                     const active = hasProject && project.name === projectName;
                     const activating = isActivatingProject && activatingProjectName === project.name;
                     const exactRequired = project.require_exact_change_attribution === true;
+                    const policySemantic = attributionPolicySemantic(exactRequired);
+                    const policyActionLabel = exactRequired ? "Use informational attribution" : "Require exact attribution";
+                    const policyDetail = exactRequired
+                      ? "Finish requires exact producer attribution for this Project."
+                      : "Attribution remains visible evidence but does not block Finish.";
+                    const secondaryActions = (
+                      <div className="button-row">
+                        <button
+                          className="ghost-button"
+                          type="button"
+                          disabled={projectMutationPending}
+                          onClick={() => attributionPolicy.mutate({ name: project.name, required: !exactRequired })}
+                          aria-pressed={exactRequired}
+                          title="When required, Finish blocks any ChangeSet without exact producer attribution."
+                        >
+                          {policyActionLabel}
+                        </button>
+                        {active ? <button className="ghost-button" type="button" onClick={() => setView("knowledge")}>Knowledge</button> : null}
+                      </div>
+                    );
+
                     return (
                       <article key={project.name} className={`project-registry-card${active ? " active" : ""}`}>
                         <div className="project-registry-head">
@@ -219,36 +285,34 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                             <span className="eyebrow">{project.project_type || "repository"}</span>
                             <h3>{project.name}</h3>
                           </div>
-                          {active ? <span className="pill ok">Active</span> : null}
+                          {active ? <StatusBadge label="Active" tone="positive" /> : null}
                         </div>
                         <code>{project.path}</code>
                         <div className="project-registry-meta">
                           <span>{project.main_language || "language unknown"}</span>
                           <span>{project.checks?.length ?? 0} checks</span>
                           <span>{project.context_ignore?.length ?? 0} context rules</span>
-                          <span>Attribution · {exactRequired ? "exact required" : "informational"}</span>
                         </div>
-                        <div className="button-row">
-                          <button
-                            className={active ? "ghost-button" : "primary-button"}
-                            type="button"
-                            disabled={active || projectMutationPending}
-                            onClick={() => void activateProject(project.name).catch(() => undefined)}
-                          >
-                            {active ? "Current project" : activating ? "Opening…" : "Open project"}
-                          </button>
-                          <button
-                            className="ghost-button"
-                            type="button"
-                            disabled={projectMutationPending}
-                            onClick={() => attributionPolicy.mutate({ name: project.name, required: !exactRequired })}
-                            aria-pressed={exactRequired}
-                            title="When required, Finish blocks any ChangeSet without exact producer attribution."
-                          >
-                            Exact attribution · {exactRequired ? "Required" : "Informational"}
-                          </button>
-                          {active ? <button className="ghost-button" type="button" onClick={() => setView("knowledge")}>Knowledge</button> : null}
-                        </div>
+                        <EvidenceState
+                          label="Producer attribution policy"
+                          state={policySemantic.label}
+                          tone={policySemantic.tone}
+                          detail={policyDetail}
+                        />
+                        <ActionBar
+                          primary={active ? undefined : (
+                            <button
+                              className="primary-button"
+                              type="button"
+                              disabled={projectMutationPending}
+                              onClick={() => void activateProject(project.name).catch(() => undefined)}
+                            >
+                              {activating ? "Opening…" : "Open project"}
+                            </button>
+                          )}
+                          secondary={secondaryActions}
+                          detail={active ? "Current project" : undefined}
+                        />
                       </article>
                     );
                   })}
