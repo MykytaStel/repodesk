@@ -451,9 +451,9 @@
 }
 
 /* The textarea is the only scroll surface. The line-number layer lives in
-   code-editor-polish.css and is translated by textarea scrollTop. Keep this
-   base geometry aligned so lazy CSS loading cannot resurrect the old 28px
-   artificial bottom range. */
+   the canonical Code editor stylesheet and is translated by textarea scrollTop.
+   Keep this base geometry aligned so lazy CSS loading cannot resurrect the old
+   28px artificial bottom range. */
 .code-editor-input {
   box-sizing: border-box;
   width: 100%;
