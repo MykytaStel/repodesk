@@ -129,6 +129,31 @@ test.describe("Runs design-system convergence", () => {
     await expect(emptyPage.getByText("No persisted execution runs yet.")).toBeVisible();
   });
 
+  test("structured History errors render their message instead of object coercion", async ({ page }) => {
+    await bootRuns(page);
+    await page.evaluate(() => {
+      const internals = (window as unknown as {
+        __TAURI_INTERNALS__: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+      }).__TAURI_INTERNALS__;
+      const invoke = internals.invoke.bind(internals);
+      internals.invoke = (cmd, args) => {
+        if (cmd === "orchestration_runs") {
+          return Promise.reject({
+            category: "internal",
+            message: "Structured history failure",
+            retryable: false,
+          });
+        }
+        return invoke(cmd, args);
+      };
+    });
+
+    await page.getByRole("button", { name: "Refresh" }).click();
+    const alert = page.getByRole("alert");
+    await expect(alert).toContainText("Structured history failure");
+    await expect(alert).not.toContainText("[object Object]");
+  });
+
   test("Runs keeps its three owning views", async ({ page }) => {
     await bootRuns(page);
     await expect(page.getByRole("tab", { name: "Run evidence" })).toHaveAttribute("aria-selected", "true");
