@@ -37,10 +37,10 @@ import {
 import { errorToMessage } from "../../shared/utils/helpers";
 import { FindingRow } from "./CodeFindings";
 import { CodeProjectSearch } from "./CodeProjectSearch";
+import { CodeTabStrip } from "./CodeTabStrip";
 import { useCodeWorkspaceActions } from "./CodeWorkspaceActions";
 import { CodeWorkspaceTree } from "./CodeWorkspaceTree";
 import {
-  codeFileStatusSemantic,
   codeSaveSemantic,
   codeWorkspaceIndexSemantic,
 } from "./codeSemantic";
@@ -57,7 +57,6 @@ import {
 import { IdeIcon } from "./IdeIcon";
 import { useIdeDecisionDialog } from "./IdeDecisionDialog";
 import { useIdePreferences } from "./idePreferences";
-import { LibraryTabBadge } from "./LibraryTabBadge";
 import { RepositoryIntelligenceDrawer } from "./RepositoryIntelligenceDrawer";
 import { SemanticCodeEditor } from "./SemanticCodeEditor";
 import "./code-workspace.css";
@@ -595,41 +594,15 @@ export function CodeTab({
           </div>
         </header>
 
-        <div className="code-tab-strip" role="tablist" aria-label="Open files">
-          {tabs.length === 0 ? <span className="code-tabs-empty">Open a file from Explorer.</span> : null}
-          {tabs.map((tab) => {
-            const status = codeFileStatusSemantic(tab.status);
-            return (
-              <div className={`code-file-tab${tab.id === activeTabId ? " active" : ""}`} key={tab.id}>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={tab.id === activeTabId}
-                  className="code-file-tab-select"
-                  onClick={() => {
-                    setActiveTabId(tab.id);
-                    setView("edit");
-                  }}
-                  title={tab.path}
-                >
-                  <span>{fileName(tab.path)}</span>
-                  {tab.kind === "library" ? <LibraryTabBadge /> : null}
-                  {tab.recoveredDraft ? <small className="code-draft-badge">recovered</small> : null}
-                  {tab.kind === "workspace" && tab.status !== "clean" ? (
-                    <StatusBadge label={status.label} tone={status.tone} ariaLabel={status.detail ?? status.label} />
-                  ) : null}
-                  {tab.dirty ? <i aria-label="Unsaved">●</i> : null}
-                </button>
-                <button
-                  type="button"
-                  className="code-tab-close"
-                  aria-label={`Close ${fileName(tab.path)}`}
-                  onClick={() => void closeTab(tab.id)}
-                >×</button>
-              </div>
-            );
-          })}
-        </div>
+        <CodeTabStrip
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSelect={(tabId) => {
+            setActiveTabId(tabId);
+            setView("edit");
+          }}
+          onClose={(tabId) => void closeTab(tabId)}
+        />
 
         {draftError ? (
           <EvidenceState
