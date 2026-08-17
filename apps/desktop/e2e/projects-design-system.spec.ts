@@ -10,6 +10,11 @@ function tabButton(page: Page, name: string) {
 async function bootProjects(page: Page, overrides: CommandFixtures = {}) {
   await installMockIpc(page, { ...currentOnboardedFixtures, ...overrides });
   await page.goto("/");
+  const welcomeDialog = page.locator(".app-dialog[role='dialog']");
+  if (await welcomeDialog.isVisible()) {
+    await welcomeDialog.getByRole("button", { name: "Close" }).click();
+    await welcomeDialog.waitFor({ state: "hidden" });
+  }
   await tabButton(page, "Projects").click();
 }
 
