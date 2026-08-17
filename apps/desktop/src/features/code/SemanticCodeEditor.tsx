@@ -36,6 +36,7 @@ import {
   languageServerFor,
 } from "../../shared/api/languageIntelligence";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
+import { CodeSemanticStrip } from "./CodeSemanticStrip";
 import {
   clearDefinitionLink,
   clearNavigationTarget,
@@ -228,55 +229,6 @@ type DefinitionPreviewState = {
 };
 
 const DEFINITION_PREVIEW_DELAY_MS = 120;
-
-function SemanticStrip({ semantic, dirty }: { semantic: SemanticFileState; dirty: boolean }) {
-  const visible = Boolean(
-    semantic.workItemId
-    || semantic.scopeState
-    || semantic.errors
-    || semantic.warnings
-    || semantic.gitLines.length
-    || dirty,
-  );
-  if (!visible) return null;
-
-  const scopeLabel = semantic.scopeState === "allowed"
-    ? "Scope allowed"
-    : semantic.scopeState === "out_of_scope"
-      ? "Out of scope"
-      : semantic.scopeState === "protected"
-        ? "Protected path"
-        : semantic.scopeState === "ungoverned"
-          ? "Ungoverned change"
-          : null;
-  const verificationLabel = dirty && semantic.verificationState === "passed"
-    ? "Draft after verification"
-    : semantic.verificationState === "passed"
-      ? "Verified"
-      : semantic.verificationState === "failed"
-        ? "Verification failed"
-        : semantic.verificationState === "running"
-          ? "Verifying"
-          : semantic.verificationState === "not_run"
-            ? "Not verified"
-            : null;
-
-  return (
-    <div className={`semantic-code-strip scope-${semantic.scopeState ?? "none"}`}>
-      {semantic.workItemId ? <span title="Current Work Item"><strong>Work</strong> {semantic.workItemId}</span> : null}
-      {scopeLabel ? <span className={semantic.scopeState === "allowed" ? "ok" : "danger"}>{scopeLabel}</span> : null}
-      {semantic.reviewState && semantic.reviewState !== "proposed" ? <span>Review {semantic.reviewState}</span> : null}
-      {verificationLabel ? <span className={dirty && semantic.verificationState === "passed" ? "warn" : semantic.verificationState === "passed" ? "ok" : ""}>{verificationLabel}</span> : null}
-      {semantic.origin !== "unknown" ? (
-        <span title="Origin describes the governed ChangeSet, not individual lines">
-          ChangeSet {semantic.origin}{semantic.originLabel ? ` · ${semantic.originLabel}` : ""}
-        </span>
-      ) : null}
-      {semantic.errors > 0 ? <span className="danger">{semantic.errors} error{semantic.errors === 1 ? "" : "s"}</span> : null}
-      {semantic.warnings > 0 ? <span className="warn">{semantic.warnings} warning{semantic.warnings === 1 ? "" : "s"}</span> : null}
-    </div>
-  );
-}
 
 export function SemanticCodeEditor({
   path,
@@ -659,7 +611,7 @@ export function SemanticCodeEditor({
 
   return (
     <section className={`semantic-code-editor scope-${semantic.scopeState ?? "none"}`} aria-label={`Editor for ${path}`}>
-      <SemanticStrip semantic={semantic} dirty={dirty} />
+      <CodeSemanticStrip semantic={semantic} dirty={dirty} />
       {liveLanguage.panel}
       {definitionPreview ? (
         <aside
