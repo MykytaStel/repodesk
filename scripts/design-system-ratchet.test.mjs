@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  evaluateRunsSemanticContract,
   evaluateVisualDebtChange,
   evaluateWorkSemanticContract,
   evaluateWorkVisualDebtCleanupContract,
@@ -80,6 +81,10 @@ test("ErrorState detail wrapper is block-safe for structured blocker evidence", 
 
 test("Work migration requires one typed adapter and the shared primitive boundary", () => {
   assert.deepEqual(evaluateWorkSemanticContract(), []);
+});
+
+test("Runs migration requires one typed adapter and the shared primitive boundary", () => {
+  assert.deepEqual(evaluateRunsSemanticContract(), []);
 });
 
 test("Work visual ownership is canonical after semantic convergence", () => {
