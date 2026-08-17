@@ -64,7 +64,7 @@ test.describe("Projects design-system convergence", () => {
       get_active_project_config: null,
     });
 
-    await expect(page.getByText("No active project", { exact: true })).toHaveAttribute("data-semantic-tone", "neutral");
+    await expect(page.getByRole("main").getByText("No active project", { exact: true })).toHaveAttribute("data-semantic-tone", "neutral");
   });
 
   test("registry loading, failure and empty states use shared accessible vocabulary", async ({ page }) => {
