@@ -59,23 +59,20 @@ test("new versioned and polish visual generations are rejected", () => {
   );
 });
 
-test("legacy visual generations are fully retired from desktop source", () => {
-  const evaluate = architecture.evaluateLegacyVisualDebtCleanupContract;
+test("legacy polish styles are fully retired from desktop source", () => {
+  const evaluate = architecture.evaluateLegacyPolishDebtCleanupContract;
   assert.equal(
     typeof evaluate,
     "function",
-    "architecture ratchet must expose a generic legacy visual-debt cleanup contract",
+    "architecture ratchet must expose a generic legacy polish cleanup contract",
   );
   if (typeof evaluate !== "function") return;
 
   assert.match(
     evaluate(["apps/desktop/src/features/code/code-editor-polish.css"]).join("\n"),
-    /legacy visual generation/i,
+    /legacy polish stylesheet/i,
   );
-  assert.match(
-    evaluate(["apps/desktop/src/app/styles/work-hierarchy-v4.css"]).join("\n"),
-    /legacy visual generation/i,
-  );
+  assert.deepEqual(evaluate(["apps/desktop/src/app/styles/work-hierarchy-v4.css"]), []);
   assert.deepEqual(evaluate(["apps/desktop/src/app/styles/work-hierarchy.css"]), []);
   assert.deepEqual(evaluate(), []);
 });
