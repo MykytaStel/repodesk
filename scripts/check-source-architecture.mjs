@@ -34,6 +34,8 @@ const RUNS_PRIMITIVE_SURFACES = [
   "apps/desktop/src/features/history/HistoryTab.tsx",
   "apps/desktop/src/features/history/RunsWorkspace.tsx",
 ];
+const PROJECTS_SEMANTIC_ADAPTER = "apps/desktop/src/features/projects/projectsSemantic.ts";
+const PROJECTS_TYPED_SURFACES = ["apps/desktop/src/features/projects/ProjectsTab.tsx"];
 
 function extensionOf(path) {
   const index = path.lastIndexOf(".");
@@ -239,6 +241,15 @@ export function evaluateRunsSemanticContract() {
   });
 }
 
+export function evaluateProjectsSemanticContract() {
+  return evaluateTypedSemanticContract({
+    label: "Projects",
+    adapterPath: PROJECTS_SEMANTIC_ADAPTER,
+    adapterImport: "./projectsSemantic",
+    typedSurfaces: PROJECTS_TYPED_SURFACES,
+  });
+}
+
 export function evaluateWorkVisualDebtCleanupContract() {
   const failures = [];
 
@@ -301,6 +312,7 @@ export function runArchitectureRatchet() {
   failures.push(...evaluateChangesSemanticContract());
   failures.push(...evaluateWorkSemanticContract());
   failures.push(...evaluateRunsSemanticContract());
+  failures.push(...evaluateProjectsSemanticContract());
   failures.push(...evaluateWorkVisualDebtCleanupContract());
 
   console.log(`Architecture ratchet: ${paths.length} changed file(s), base ${baseSha.slice(0, 12)}.`);
