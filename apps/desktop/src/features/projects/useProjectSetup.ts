@@ -19,8 +19,10 @@ interface CommandResult {
   exit_code: number | null;
 }
 
-interface ProjectSetupNotice {
-  tone: "ok" | "warn" | "danger";
+export type ProjectNoticeTone = "ok" | "warn" | "danger";
+
+export interface ProjectSetupNotice {
+  tone: ProjectNoticeTone;
   message: string;
 }
 
