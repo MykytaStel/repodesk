@@ -33,7 +33,7 @@ export function WorkspaceSidebar({
   void activeTab;
 
   return (
-    <aside className="workspace-sidebar" aria-label="Workspace context">
+    <aside className="workspace-sidebar" aria-label="Workspace navigator">
       <div className="workspace-sidebar-scroll">
         <header className="workspace-sidebar-heading">
           <p className="eyebrow">Current surface</p>
@@ -79,7 +79,7 @@ export function WorkspaceSidebar({
         <section className="workspace-sidebar-section">
           <span className="workspace-sidebar-label">Navigation</span>
           <p className="workspace-sidebar-empty">
-            Use the activity rail for Work, Code, Changes, Runs and Projects. This drawer only describes the current context.
+            Use the activity rail for Work, Code, Changes, Runs and Projects. The Navigator keeps project and current engineering context within reach.
           </p>
         </section>
       </div>
