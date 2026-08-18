@@ -131,7 +131,7 @@ test.describe("Runs design-system convergence", () => {
 
   test("structured History errors render their message instead of object coercion", async ({ page }) => {
     await bootRuns(page);
-    await page.evaluate(() => {
+    await page.getByRole("button", { name: "Refresh" }).evaluate((button) => {
       const internals = (window as unknown as {
         __TAURI_INTERNALS__: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
       }).__TAURI_INTERNALS__;
@@ -146,9 +146,8 @@ test.describe("Runs design-system convergence", () => {
         }
         return invoke(cmd, args);
       };
+      (button as HTMLButtonElement).click();
     });
-
-    await page.getByRole("button", { name: "Refresh" }).click();
     const alert = page.getByRole("alert");
     await expect(alert).toContainText("Structured history failure");
     await expect(alert).not.toContainText("[object Object]");
