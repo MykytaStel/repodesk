@@ -13,6 +13,9 @@ import {
 interface ActivityRailProps {
   activeTab: TabId;
   tabs: AppTab[];
+  // `sidebarOpen` is a transitional internal name. The product-level surface is
+  // the Navigator; App persistence keeps the legacy sidebar storage key until a
+  // dedicated storage migration is justified.
   sidebarOpen: boolean;
   inspectorOpen: boolean;
   bottomPanelOpen: boolean;
@@ -78,7 +81,7 @@ export function ActivityRail({
           RD
         </div>
 
-        <RailButton label={`${sidebarOpen ? "Hide" : "Show"} workspace sidebar — ⌘/Ctrl+B`} active={sidebarOpen} onClick={onToggleSidebar}>
+        <RailButton label={`${sidebarOpen ? "Hide" : "Show"} Navigator — ⌘/Ctrl+B`} active={sidebarOpen} onClick={onToggleSidebar}>
           <BurgerIcon />
         </RailButton>
 
