@@ -81,7 +81,7 @@ test("project switcher distinguishes registry failure from an empty registry", a
   });
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Show workspace sidebar" }).click();
+  await page.getByRole("button", { name: "Show Navigator" }).click();
   await page.locator(".workspace-sidebar").getByRole("button", { name: "RepoDesk", exact: true }).click();
 
   await expect(page.getByRole("alert")).toContainText("Could not load projects");
