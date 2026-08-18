@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 chrono.workspace = true
 rusqlite.workspace = true
 dirs.workspace = true
@@ -31,5 +31,5 @@ tauri-plugin-global-shortcut = "2.0.0"
 quick-xml = "0.41"
 
 [dev-dependencies]
-serial_test = "3"
+serial_test = "4"
 tempfile.workspace = true
