@@ -66,9 +66,9 @@ export default function App() {
   const [appVersion, setAppVersion] = useState("1.0.0");
   const [feedback, setFeedback] = useState<ShellFeedback | null>(null);
 
-  // Focus-first migration: side surfaces are deliberate drawers rather than
-  // persistent columns. We intentionally reset them closed instead of carrying
-  // forward the old shell's "open by default" local-storage behavior.
+  // Workbench structural surfaces start closed. `sidebarOpen` remains a
+  // transitional internal name because the persisted key is legacy-compatible;
+  // the product-level surface is the Navigator.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [bottomPanelOpen, setBottomPanelOpen] = useState(
@@ -133,6 +133,8 @@ export default function App() {
     (tabId: TabId, detail?: string) => {
       const tab = APP_TABS.find((item) => item.id === tabId) ?? APP_TABS[0];
       setActiveTab(tab.id);
+      // Transitional foundation behavior: explicit route navigation closes the
+      // shell Navigator until route-owned Navigator content is migrated.
       setSidebarOpen(false);
       showFeedback("info", `Opened ${tab.title}`, detail ?? tab.subtitle, { toast: false });
     },
@@ -206,6 +208,7 @@ export default function App() {
   }, [activeTab]);
 
   useEffect(() => {
+    // Legacy key retained for backward compatibility; this stores Navigator state.
     window.localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, sidebarOpen ? "0" : "1");
   }, [sidebarOpen]);
 
@@ -368,18 +371,18 @@ export default function App() {
 
     const shellCommands: Command[] = [
       {
-        id: "shell:sidebar",
-        label: "Toggle workspace drawer",
-        hint: "Project, current work and related tools",
+        id: "shell:navigator",
+        label: "Toggle Navigator",
+        hint: "Project and current engineering context",
         group: "View",
         shortcut: "⌘B",
-        keywords: ["sidebar", "drawer", "project"],
+        keywords: ["navigator", "sidebar", "project"],
         run: () => setSidebarOpen((open) => !open),
       },
       {
         id: "shell:inspector",
-        label: "Toggle inspector drawer",
-        hint: "Contextual workspace inspector",
+        label: "Toggle Inspector",
+        hint: "Contextual engineering evidence",
         group: "View",
         keywords: ["inspector", "right panel"],
         run: () => setInspectorOpen((open) => !open),
@@ -652,6 +655,7 @@ export default function App() {
           dirty={dirty}
           dirtyCount={dirtyCount}
           onNavigate={navigateTo}
+          onClose={() => setInspectorOpen(false)}
         />
       ) : null}
 
