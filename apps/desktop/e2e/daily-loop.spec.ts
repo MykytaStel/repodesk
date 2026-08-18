@@ -58,9 +58,9 @@ test.describe("daily loop (onboarded)", () => {
   test("burger collapses the sidebar to an icon rail", async ({ page }) => {
     const sidebar = page.locator(".workspace-sidebar");
     await expect(sidebar).toBeHidden();
-    await page.getByRole("button", { name: "Show workspace sidebar" }).click();
+    await page.getByRole("button", { name: "Show Navigator" }).click();
     await expect(sidebar).toBeVisible();
-    await page.getByRole("button", { name: "Hide workspace sidebar" }).click();
+    await page.getByRole("button", { name: "Hide Navigator" }).click();
     await expect(sidebar).toBeHidden();
   });
 
@@ -87,7 +87,7 @@ test.describe("daily loop (onboarded)", () => {
   });
 
   test("project switcher lists connected projects", async ({ page }) => {
-    await page.getByRole("button", { name: "Show workspace sidebar" }).click();
+    await page.getByRole("button", { name: "Show Navigator" }).click();
     await page.locator(".workspace-sidebar").getByRole("button", { name: "RepoDesk", exact: true }).click();
     await expect(page.getByRole("button", { name: /my-api/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /RepoDesk/ }).first()).toBeVisible();

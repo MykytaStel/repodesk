@@ -39,7 +39,7 @@ const settingsFixtures = {
 async function openSettings(page: Page) {
   const sidebar = page.locator(".workspace-sidebar");
   if (!(await sidebar.isVisible())) {
-    await page.getByRole("button", { name: "Show workspace sidebar" }).click();
+    await page.getByRole("button", { name: "Show Navigator" }).click();
   }
   await sidebar.getByRole("button", { name: "Settings", exact: true }).click();
 }
