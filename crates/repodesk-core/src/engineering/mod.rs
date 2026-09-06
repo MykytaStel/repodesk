@@ -4,6 +4,7 @@
 //! models adapt into these types until later migration slices move call sites.
 
 pub mod acceptance_evidence;
+pub mod adaptive_verification;
 pub mod ai_strategy;
 pub mod ai_usage_intelligence;
 pub mod algorithmic_profile;
@@ -36,6 +37,10 @@ pub use acceptance_evidence::{
     AcceptanceEvidenceStore, acceptance_evidence_path, active_verification_is_fresh, criterion_id,
     derive_acceptance_evidence, link_active_acceptance_evidence, load_active_acceptance_evidence,
     read_acceptance_evidence,
+};
+pub use adaptive_verification::{
+    ADAPTIVE_VERIFICATION_POLICY_VERSION, VerificationAdvisorInput, VerificationCheckCandidate,
+    VerificationRecommendation, recommend_verification,
 };
 pub use ai_strategy::{
     AiPlanShape, AiStrategyInputs, AiStrategyMode, AiStrategyProfile, AiStrategyReason,

@@ -6,6 +6,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use wait_timeout::ChildExt;
 
 use super::CheckCommandResult;
@@ -88,14 +89,20 @@ pub(super) fn parse_allowed_check_command(command: &str) -> Result<ParsedCheckCo
 }
 
 pub(super) fn run_parsed_check_with_timeout(
+    check_id: &str,
     display_command: &str,
     parsed: &ParsedCheckCommand,
     cwd: &Path,
     timeout_secs: u64,
+    tree_identity: Option<String>,
+    started_at: DateTime<Utc>,
 ) -> CheckCommandResult {
     if let Err(error) = ensure_tree_termination_available() {
         return failed_without_spawn(
+            check_id,
             display_command,
+            tree_identity,
+            started_at,
             format!("Execution boundary unavailable: {error}"),
         );
     }
@@ -113,17 +120,20 @@ pub(super) fn run_parsed_check_with_timeout(
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
-            return CheckCommandResult {
-                command: display_command.to_string(),
-                status: "failed".to_string(),
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis(),
-                stdout: String::new(),
-                stderr: format!(
+            return result_with_facts(
+                check_id,
+                display_command,
+                tree_identity,
+                started_at,
+                "failed",
+                None,
+                started.elapsed().as_millis(),
+                String::new(),
+                format!(
                     "Failed to spawn approved executable '{}' directly: {error}",
                     parsed.executable
                 ),
-            };
+            );
         }
     };
 
@@ -132,7 +142,10 @@ pub(super) fn run_parsed_check_with_timeout(
         None => {
             let termination_error = terminate_process_tree(&mut child).err();
             return pipe_failure_result(
+                check_id,
                 display_command,
+                tree_identity,
+                started_at,
                 started,
                 "stdout",
                 termination_error.as_deref(),
@@ -144,7 +157,10 @@ pub(super) fn run_parsed_check_with_timeout(
         None => {
             let termination_error = terminate_process_tree(&mut child).err();
             return pipe_failure_result(
+                check_id,
                 display_command,
+                tree_identity,
+                started_at,
                 started,
                 "stderr",
                 termination_error.as_deref(),
@@ -171,7 +187,10 @@ pub(super) fn run_parsed_check_with_timeout(
     let timeout = Duration::from_secs(timeout_secs);
     match child.wait_timeout(timeout) {
         Ok(Some(status)) => finish_completed_check(
+            check_id,
             display_command,
+            tree_identity,
+            started_at,
             started,
             status,
             &mut child,
@@ -187,14 +206,17 @@ pub(super) fn run_parsed_check_with_timeout(
                 stderr.push_str(&format!(". Process-tree termination reported: {error}"));
             }
 
-            CheckCommandResult {
-                command: display_command.to_string(),
-                status: "timeout".to_string(),
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis(),
-                stdout: rx_out.try_recv().unwrap_or_default(),
+            result_with_facts(
+                check_id,
+                display_command,
+                tree_identity,
+                started_at,
+                "timeout",
+                None,
+                started.elapsed().as_millis(),
+                rx_out.try_recv().unwrap_or_default(),
                 stderr,
-            }
+            )
         }
         Err(error) => {
             let termination_error = terminate_process_tree(&mut child).err();
@@ -202,20 +224,27 @@ pub(super) fn run_parsed_check_with_timeout(
             if let Some(error) = termination_error {
                 stderr.push_str(&format!(". Process-tree termination reported: {error}"));
             }
-            CheckCommandResult {
-                command: display_command.to_string(),
-                status: "failed".to_string(),
-                exit_code: None,
-                duration_ms: started.elapsed().as_millis(),
-                stdout: rx_out.try_recv().unwrap_or_default(),
+            result_with_facts(
+                check_id,
+                display_command,
+                tree_identity,
+                started_at,
+                "failed",
+                None,
+                started.elapsed().as_millis(),
+                rx_out.try_recv().unwrap_or_default(),
                 stderr,
-            }
+            )
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_completed_check(
+    check_id: &str,
     command: &str,
+    tree_identity: Option<String>,
+    started_at: DateTime<Utc>,
     started: Instant,
     status: ExitStatus,
     child: &mut Child,
@@ -226,7 +255,17 @@ fn finish_completed_check(
         Ok(output) => output,
         Err(error) => {
             return output_drain_failure_result(
-                command, started, status, child, rx_out, rx_err, "stdout", error,
+                check_id,
+                command,
+                tree_identity.clone(),
+                started_at,
+                started,
+                status,
+                child,
+                rx_out,
+                rx_err,
+                "stdout",
+                error,
             );
         }
     };
@@ -234,24 +273,40 @@ fn finish_completed_check(
         Ok(output) => output,
         Err(error) => {
             return output_drain_failure_result(
-                command, started, status, child, rx_out, rx_err, "stderr", error,
+                check_id,
+                command,
+                tree_identity.clone(),
+                started_at,
+                started,
+                status,
+                child,
+                rx_out,
+                rx_err,
+                "stderr",
+                error,
             );
         }
     };
 
-    CheckCommandResult {
-        command: command.to_string(),
-        status: if status.success() { "passed" } else { "failed" }.to_string(),
-        exit_code: status.code(),
-        duration_ms: started.elapsed().as_millis(),
+    result_with_facts(
+        check_id,
+        command,
+        tree_identity,
+        started_at,
+        if status.success() { "passed" } else { "failed" },
+        status.code(),
+        started.elapsed().as_millis(),
         stdout,
         stderr,
-    }
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
 fn output_drain_failure_result(
+    check_id: &str,
     command: &str,
+    tree_identity: Option<String>,
+    started_at: DateTime<Utc>,
     started: Instant,
     status: ExitStatus,
     child: &mut Child,
@@ -286,29 +341,44 @@ fn output_drain_failure_result(
         stderr.push_str(". RepoDesk terminated the remaining check process tree");
     }
 
-    CheckCommandResult {
-        command: command.to_string(),
-        status: "failed".to_string(),
-        exit_code: status.code(),
-        duration_ms: started.elapsed().as_millis(),
+    result_with_facts(
+        check_id,
+        command,
+        tree_identity,
+        started_at,
+        "failed",
+        status.code(),
+        started.elapsed().as_millis(),
         stdout,
         stderr,
-    }
+    )
 }
 
-fn failed_without_spawn(command: &str, stderr: String) -> CheckCommandResult {
-    CheckCommandResult {
-        command: command.to_string(),
-        status: "failed".to_string(),
-        exit_code: None,
-        duration_ms: 0,
-        stdout: String::new(),
+fn failed_without_spawn(
+    check_id: &str,
+    command: &str,
+    tree_identity: Option<String>,
+    started_at: DateTime<Utc>,
+    stderr: String,
+) -> CheckCommandResult {
+    result_with_facts(
+        check_id,
+        command,
+        tree_identity,
+        started_at,
+        "failed",
+        None,
+        0,
+        String::new(),
         stderr,
-    }
+    )
 }
 
 fn pipe_failure_result(
+    check_id: &str,
     command: &str,
+    tree_identity: Option<String>,
+    started_at: DateTime<Utc>,
     started: Instant,
     pipe: &str,
     termination_error: Option<&str>,
@@ -317,13 +387,44 @@ fn pipe_failure_result(
     if let Some(error) = termination_error {
         stderr.push_str(&format!(". Process-tree termination reported: {error}"));
     }
-    CheckCommandResult {
-        command: command.to_string(),
-        status: "failed".to_string(),
-        exit_code: None,
-        duration_ms: started.elapsed().as_millis(),
-        stdout: String::new(),
+    result_with_facts(
+        check_id,
+        command,
+        tree_identity,
+        started_at,
+        "failed",
+        None,
+        started.elapsed().as_millis(),
+        String::new(),
         stderr,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn result_with_facts(
+    check_id: &str,
+    command: &str,
+    tree_identity: Option<String>,
+    started_at: DateTime<Utc>,
+    status: &str,
+    exit_code: Option<i32>,
+    duration_ms: u128,
+    stdout: String,
+    stderr: String,
+) -> CheckCommandResult {
+    CheckCommandResult {
+        check_id: check_id.to_string(),
+        command: command.to_string(),
+        tree_identity,
+        started_at,
+        finished_at: Utc::now(),
+        status: status.to_string(),
+        exit_code,
+        duration_ms,
+        stdout,
+        stderr,
+        tests_observed: None,
+        log_evidence_ref: None,
     }
 }
 
@@ -467,8 +568,15 @@ mod tests {
             args: vec!["-c".to_string(), parent_code],
         };
 
-        let result =
-            run_parsed_check_with_timeout("python descendant fixture", &parsed, dir.path(), 1);
+        let result = run_parsed_check_with_timeout(
+            "python-descendant-fixture",
+            "python descendant fixture",
+            &parsed,
+            dir.path(),
+            1,
+            None,
+            Utc::now(),
+        );
         assert_eq!(result.status, "timeout", "stderr: {}", result.stderr);
         std::thread::sleep(Duration::from_secs(3));
         assert!(
@@ -500,10 +608,13 @@ mod tests {
         };
 
         let result = run_parsed_check_with_timeout(
+            "python-background-descendant-fixture",
             "python background descendant fixture",
             &parsed,
             dir.path(),
             10,
+            None,
+            Utc::now(),
         );
         assert_eq!(result.status, "failed", "stderr: {}", result.stderr);
         assert!(result.stderr.contains("pipe stayed open"));

@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use crate::errors::RepoDeskResult;
 use crate::init;
@@ -24,12 +24,18 @@ pub struct ChecksRunResult {
 
 #[derive(Debug, Clone)]
 pub struct CheckCommandResult {
+    pub check_id: String,
     pub command: String,
+    pub tree_identity: Option<String>,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: DateTime<Utc>,
     pub status: String,
     pub exit_code: Option<i32>,
     pub duration_ms: u128,
     pub stdout: String,
     pub stderr: String,
+    pub tests_observed: Option<u64>,
+    pub log_evidence_ref: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -48,16 +54,45 @@ pub fn is_allowed_check_command(command: &str) -> Result<(), String> {
 /// Project checks and step `verify_command`s never cross a shell boundary.
 /// Validation failures return a `failed` result before any process is spawned.
 pub fn run_validated_check(command: &str, cwd: &Path, timeout_secs: u64) -> CheckCommandResult {
+    let check_id = check_id_for_command(command);
+    run_validated_check_with_id(&check_id, command, cwd, timeout_secs)
+}
+
+pub fn run_validated_check_with_id(
+    check_id: &str,
+    command: &str,
+    cwd: &Path,
+    timeout_secs: u64,
+) -> CheckCommandResult {
+    let started_at = Utc::now();
+    let tree_identity = crate::workflow::index_tree_sha(cwd);
     match parse_allowed_check_command(command) {
-        Ok(parsed) => run_parsed_check_with_timeout(command, &parsed, cwd, timeout_secs),
-        Err(err) => CheckCommandResult {
-            command: command.to_string(),
-            status: "failed".to_string(),
-            exit_code: None,
-            duration_ms: 0,
-            stdout: String::new(),
-            stderr: format!("Validation Error: {err}"),
-        },
+        Ok(parsed) => run_parsed_check_with_timeout(
+            check_id,
+            command,
+            &parsed,
+            cwd,
+            timeout_secs,
+            tree_identity,
+            started_at,
+        ),
+        Err(err) => {
+            let finished_at = Utc::now();
+            CheckCommandResult {
+                check_id: check_id.to_string(),
+                command: command.to_string(),
+                tree_identity,
+                started_at,
+                finished_at,
+                status: "failed".to_string(),
+                exit_code: None,
+                duration_ms: 0,
+                stdout: String::new(),
+                stderr: format!("Validation Error: {err}"),
+                tests_observed: None,
+                log_evidence_ref: None,
+            }
+        }
     }
 }
 
@@ -95,8 +130,14 @@ pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
 
     let mut results = Vec::new();
 
-    for check in &project.checks {
-        let result = run_validated_check(check, &project.path, 120);
+    for (index, check) in project.checks.iter().enumerate() {
+        let mut result = run_validated_check_with_id(
+            &format!("project-check-{index}"),
+            check,
+            &project.path,
+            120,
+        );
+        result.log_evidence_ref = Some(log_file.display().to_string());
 
         writeln!(log, "==============================")?;
         writeln!(log, "Command: {}", result.command)?;
@@ -126,6 +167,26 @@ pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
     write_run_summary(&result, "Generated after checks run.")?;
 
     Ok(result)
+}
+
+fn check_id_for_command(command: &str) -> String {
+    let slug = command
+        .trim()
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>();
+    let slug = slug.trim_matches('-');
+    if slug.is_empty() {
+        "check-unknown".to_string()
+    } else {
+        format!("check-{}", slug.chars().take(80).collect::<String>())
+    }
 }
 
 pub fn last_checks() -> RepoDeskResult<ChecksLastResult> {
@@ -252,6 +313,18 @@ mod tests {
         // `npm` is allowlisted; `npm --version` is a fast, side-effect-free probe.
         let result = run_validated_check("npm --version", &cwd, 30);
         assert_eq!(result.status, "passed", "stderr: {}", result.stderr);
+    }
+
+    #[test]
+    fn check_result_keeps_execution_facts_without_fabricating_test_counts() {
+        let cwd = env::current_dir().unwrap();
+        let result = run_validated_check("npm --version", &cwd, 30);
+
+        assert!(!result.check_id.is_empty());
+        assert!(result.tree_identity.is_some());
+        assert!(result.started_at <= result.finished_at);
+        assert_eq!(result.tests_observed, None);
+        assert_eq!(result.log_evidence_ref, None);
     }
 
     #[test]
