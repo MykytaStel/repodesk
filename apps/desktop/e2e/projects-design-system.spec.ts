@@ -68,9 +68,14 @@ test.describe("Projects design-system convergence", () => {
   });
 
   test("registry loading, failure and empty states use shared accessible vocabulary", async ({ page }) => {
-    await bootProjects(page, {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("repodesk.activeTab", "projects");
+    });
+    await installMockIpc(page, {
+      ...currentOnboardedFixtures,
       project_list_configs: { __mock_delay_ms: 700, __mock_value: [] },
     });
+    await page.goto("/");
     await expect(page.getByRole("status").filter({ hasText: "Loading projects" })).toBeVisible();
 
     const failedPage = await page.context().newPage();

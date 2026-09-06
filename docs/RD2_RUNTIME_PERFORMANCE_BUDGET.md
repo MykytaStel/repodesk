@@ -214,37 +214,31 @@ The next optimization pass should add measured baselines for:
 - frontend bundle/chunk sizes;
 - Code editor engine comparison before adopting Monaco/CodeMirror.
 
-## Measured route-loading baseline — 2026-09-06
+## Measured route-loading baseline — 2026-09-07
 
-The emitted Vite manifest and cold-start Playwright matrix now cover all 18
-persisted `TAB_IDS`. Route increments below are measured outside the eager
-shell graph and sorted by persisted route id.
+The emitted Vite manifest and cold-start Playwright matrix cover all 18
+persisted `TAB_IDS`, including legacy ids that migrate to canonical surfaces.
+The budget checker reports the 11 emitted canonical budget roots below; the
+matrix still verifies every persisted id and its migrated ready surface.
 
 | Entry | JavaScript gzip | CSS gzip |
 | --- | ---: | ---: |
 | Previous shell | 88.4 kB | 27.7 kB |
-| Final shell | 82.9 kB | 13.0 kB |
+| Final shell | 81.6 kB | 12.6 kB |
 
-| Route | JavaScript gzip | CSS gzip |
+| Budget root | JavaScript gzip | CSS gzip |
 | --- | ---: | ---: |
-| audit | 1.9 kB | 1.3 kB |
-| **changes** | **6.0 kB** | **3.0 kB** |
-| code | 26.3 kB | 8.2 kB |
-| dashboard | 6.2 kB | 1.4 kB |
-| debug | 5.7 kB | 1.7 kB |
-| git | 1.1 kB | 1.2 kB |
-| **history (Runs)** | **5.2 kB** | **1.5 kB** |
-| memory | 3.6 kB | 1.8 kB |
-| models | 4.3 kB | 1.2 kB |
-| models-cost | 0.8 kB | 0.5 kB |
-| orchestrate | 10.0 kB | 2.5 kB |
-| outcomes | 2.5 kB | 0.0 kB |
-| playbooks | 2.0 kB | 0.3 kB |
-| **projects** | **1.2 kB** | **0.4 kB** |
-| settings | 9.1 kB | 1.2 kB |
-| system | 1.9 kB | 1.2 kB |
-| tokens | 4.1 kB | 0.0 kB |
-| **work** | **18.0 kB** | **10.4 kB** |
+| nested:audit | 1.8 kB | 1.3 kB |
+| nested:knowledge | 3.6 kB | 1.8 kB |
+| nested:outcomes | 2.0 kB | 0.0 kB |
+| nested:work-templates | 2.1 kB | 0.8 kB |
+| route:changes | 9.2 kB | 3.8 kB |
+| route:code | 27.6 kB | 9.0 kB |
+| route:projects | 4.6 kB | 1.5 kB |
+| route:runs | 6.3 kB | 2.3 kB |
+| route:work | 19.5 kB | 11.0 kB |
+| utility:debug | 4.2 kB | 1.7 kB |
+| utility:settings | 5.5 kB | 1.2 kB |
 
 The separately measured vendor graphs are Code editor: 113.4 kB JavaScript /
 0.0 kB CSS gzip, and Terminal: 84.4 kB JavaScript / 1.9 kB CSS gzip. Both are

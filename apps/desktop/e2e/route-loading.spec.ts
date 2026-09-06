@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { TAB_IDS } from "../src/app/constants";
+import { LEGACY_TAB_ALIASES, TAB_IDS } from "../src/app/constants";
 import { currentOnboardedFixtures } from "./current-fixtures";
 import { installMockIpc } from "./mock-ipc";
 
@@ -9,45 +9,39 @@ const routes = [
   ["changes", "Changes"],
   ["history", "Runs"],
   ["projects", "Projects"],
-  ["dashboard", "Dashboard"],
-  ["tokens", "Tokens"],
-  ["models", "Models"],
-  ["git", "Git"],
-  ["memory", "Knowledge"],
-  ["orchestrate", "Orchestrate"],
-  ["outcomes", "Outcomes"],
-  ["playbooks", "Playbooks"],
-  ["models-cost", "Models & Cost"],
-  ["audit", "Audit"],
   ["settings", "Settings"],
-  ["system", "System Registry"],
   ["debug", "Debug"],
+  ["dashboard", "Work"],
+  ["tokens", "Settings"],
+  ["models", "Settings"],
+  ["git", "Changes"],
+  ["memory", "Projects"],
+  ["orchestrate", "Work"],
+  ["outcomes", "Runs"],
+  ["playbooks", "Projects"],
+  ["models-cost", "Settings"],
+  ["audit", "Runs"],
+  ["system", "Settings"],
 ] as const;
 
 type RouteId = (typeof routes)[number][0];
+type CanonicalRouteId = "work" | "code" | "changes" | "history" | "projects" | "settings" | "debug";
 
-const readySurface: Record<RouteId, (page: Page) => Locator> = {
+function canonicalRoute(route: RouteId): CanonicalRouteId {
+  return (LEGACY_TAB_ALIASES[route] ?? route) as CanonicalRouteId;
+}
+
+const readySurface: Record<CanonicalRouteId, (page: Page) => Locator> = {
   work: (page) => page.getByRole("group", { name: "Execution mode" }),
   code: (page) => page.getByRole("toolbar", { name: "Code workspace actions" }),
   changes: (page) => page.getByRole("region", { name: "Changed files" }),
   history: (page) => page.getByRole("tablist", { name: "Runs views" }),
   projects: (page) => page.getByRole("heading", { name: "Repository workspaces" }),
-  dashboard: (page) => page.getByRole("heading", { name: "Project state, context, and verification evidence." }),
-  tokens: (page) => page.getByRole("heading", { name: /total tokens logged\.$/ }),
-  models: (page) => page.getByRole("heading", { name: /(?:Ready for AI|No models ready yet)/ }),
-  git: (page) => page.getByRole("heading", { name: "feat/n2-e2e" }),
-  memory: (page) => page.getByRole("heading", { name: "Engineering knowledge" }),
-  orchestrate: (page) => page.getByRole("heading", { name: /Run sub-agents for/ }),
-  outcomes: (page) => page.getByRole("heading", { name: "Outcome ledger" }),
-  playbooks: (page) => page.getByRole("heading", { name: "Workflow shortcuts" }),
-  "models-cost": (page) => page.getByRole("tablist", { name: "Models and cost views" }),
-  audit: (page) => page.getByRole("heading", { name: /hash chain\.$/ }),
   settings: (page) => page.getByRole("heading", { name: "API keys, providers, and preferences." }),
-  system: (page) => page.getByRole("heading", { name: "Agent skills & context boundaries" }),
   debug: (page) => page.getByRole("table", { name: "Instrumented IPC runtime metrics" }),
 };
 
-const primaryLandmark: Partial<Record<RouteId, (page: Page) => Locator>> = {
+const primaryLandmark: Partial<Record<CanonicalRouteId, (page: Page) => Locator>> = {
   work: (page) => page.getByRole("region", { name: "Current Work Item" }),
   code: (page) => page.getByRole("tree", { name: "Repository files" }),
   changes: (page) => page.getByRole("region", { name: "Changed files" }),
@@ -77,12 +71,13 @@ for (const [route, title] of routes) {
 
     const breadcrumb = page.getByLabel("Current workspace location");
     await expect(breadcrumb.getByText(title, { exact: true })).toBeVisible();
-    await expect(readySurface[route](page)).toBeVisible();
+    const canonical = canonicalRoute(route);
+    await expect(readySurface[canonical](page)).toBeVisible();
     await expect(page.locator("main.ide-surface-scroll .skeleton-panel")).toHaveCount(0);
     await expect.poll(async () => (await page.locator("main.ide-surface-scroll").innerText()).trim().length).toBeGreaterThan(0);
     await expect(page.getByRole("heading", { name: /(?:This view crashed|RepoDesk hit an unexpected error)/ })).toHaveCount(0);
 
-    const landmark = primaryLandmark[route];
+    const landmark = primaryLandmark[canonical];
     if (landmark) await expect(landmark(page)).toBeVisible();
 
     expect(pageErrors).toEqual([]);
