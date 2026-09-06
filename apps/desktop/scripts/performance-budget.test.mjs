@@ -413,7 +413,7 @@ test("optional workspace features are standalone activation roots with isolated 
   }
 });
 
-test("entry audit treats Code as the editor activation boundary", async () => {
+test("entry audit prints a complete stable Markdown budget table", async () => {
   const desktopRoot = fileURLToPath(new URL("../", import.meta.url));
   const outDir = join(desktopRoot, "dist");
 
@@ -429,7 +429,37 @@ test("entry audit treats Code as the editor activation boundary", async () => {
   });
   const output = `${audit.stdout}\n${audit.stderr}`;
 
-  assert.match(output, /Editor vendor graph: \d+\.\d+ kB JavaScript, 0\.0 kB CSS/);
+  assert.equal(audit.status, 0, output);
+  assert.match(output, /\| Kind \| ID \| JavaScript gzip \| CSS gzip \|/);
+  assert.match(output, /\| Shell \| shell \| \d+\.\d+ kB \| \d+\.\d+ kB \|/);
+  assert.match(output, /\| Vendor \| editor \| \d+\.\d+ kB \| 0\.0 kB \|/);
+  assert.match(output, /\| Vendor \| terminal \| \d+\.\d+ kB \| \d+\.\d+ kB \|/);
+
+  const budgetRootIds = output
+    .split("\n")
+    .map((line) => line.match(/^\| Budget root \| ([^|]+) \|/))
+    .filter(Boolean)
+    .map((match) => match[1].trim());
+  assert.deepEqual(budgetRootIds, [
+    "nested:audit",
+    "nested:knowledge",
+    "nested:outcomes",
+    "nested:work-templates",
+    "route:changes",
+    "route:code",
+    "route:projects",
+    "route:runs",
+    "route:work",
+    "utility:debug",
+    "utility:settings",
+  ]);
+
+  const activatedFeatureIds = output
+    .split("\n")
+    .map((line) => line.match(/^\| Activated feature \| ([^|]+) \|/))
+    .filter(Boolean)
+    .map((match) => match[1].trim());
+  assert.deepEqual(activatedFeatureIds, ["bottomPanel", "commandPalette", "ideHealth", "terminal"]);
   assert.doesNotMatch(
     output,
     /Missing manifest source: src\/features\/code\/SemanticCodeEditor\.tsx/,

@@ -69,8 +69,12 @@ function measureFiles(files) {
   };
 }
 
-function report(label, measurement) {
-  console.log(`${label}: ${formatBytes(measurement.jsGzip)} JavaScript, ${formatBytes(measurement.cssGzip)} CSS`);
+function printMarkdownTable(rows) {
+  console.log("| Kind | ID | JavaScript gzip | CSS gzip |");
+  console.log("| --- | --- | ---: | ---: |");
+  for (const row of rows) {
+    console.log(`| ${row.kind} | ${row.id} | ${formatBytes(row.measurement.jsGzip)} | ${formatBytes(row.measurement.cssGzip)} |`);
+  }
 }
 
 function assertAbsentFromShell(label, files, shellFiles) {
@@ -81,25 +85,24 @@ function assertAbsentFromShell(label, files, shellFiles) {
 }
 
 const shell = measureGraph({ manifest, rootKey: "index.html", distPath });
-report("Shell", shell);
 assertAtMost("Shell JavaScript gzip budget", shell.jsGzip, SHELL_BUDGET.jsGzip);
 assertAtMost("Shell CSS gzip budget", shell.cssGzip, SHELL_BUDGET.cssGzip);
+const reportRows = [{ kind: "Shell", id: "shell", measurement: shell }];
 
 const shellFiles = new Set(shell.files);
 const terminalVendorFiles = namedGraphFiles(manifest, "vendor-terminal");
 const editorVendorFiles = namedGraphFiles(manifest, "vendor-editor-core");
 assertAbsentFromShell("Terminal vendor graph", terminalVendorFiles, shellFiles);
 assertAbsentFromShell("Editor vendor graph", editorVendorFiles, shellFiles);
-report("Editor vendor graph", measureFiles(editorVendorFiles));
 
-for (const [owner, source] of Object.entries(BUDGET_ROOTS)) {
+for (const [owner, source] of Object.entries(BUDGET_ROOTS).sort(([left], [right]) => left.localeCompare(right))) {
   const rootKey = findChunkBySource(manifest, source);
   const ownerGraph = measureGraph({ manifest, rootKey, distPath });
   const incrementFiles = ownerGraph.files.filter((file) => !shellFiles.has(file));
   const isCode = owner === "route:code";
   const budgetFiles = isCode ? excludeFiles(incrementFiles, editorVendorFiles) : incrementFiles;
   const increment = measureFiles(budgetFiles);
-  report(`${owner} increment`, increment);
+  reportRows.push({ kind: "Budget root", id: owner, measurement: increment });
 
   assertAtMost(`${owner} CSS gzip budget`, increment.cssGzip, ROUTE_BUDGET.cssGzip);
   assertAtMost(
@@ -109,7 +112,12 @@ for (const [owner, source] of Object.entries(BUDGET_ROOTS)) {
   );
 }
 
-for (const [feature, source] of Object.entries(ACTIVATED_FEATURES)) {
+reportRows.push(
+  { kind: "Vendor", id: "editor", measurement: measureFiles(editorVendorFiles) },
+  { kind: "Vendor", id: "terminal", measurement: measureFiles(terminalVendorFiles) },
+);
+
+for (const [feature, source] of Object.entries(ACTIVATED_FEATURES).sort(([left], [right]) => left.localeCompare(right))) {
   const rootKey = findChunkBySource(manifest, source);
   const featureGraph = measureGraph({ manifest, rootKey, distPath });
   const eagerFiles = activatedFeatureEagerFiles(
@@ -120,5 +128,7 @@ for (const [feature, source] of Object.entries(ACTIVATED_FEATURES)) {
   if (eagerFiles.length > 0) {
     throw new Error(`Activated feature ${feature} is eagerly loaded: ${eagerFiles.join(", ")}`);
   }
-  report(`Activated feature ${feature}`, featureGraph);
+  reportRows.push({ kind: "Activated feature", id: feature, measurement: featureGraph });
 }
+
+printMarkdownTable(reportRows);

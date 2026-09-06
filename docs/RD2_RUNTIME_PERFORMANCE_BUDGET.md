@@ -213,3 +213,40 @@ The next optimization pass should add measured baselines for:
 - PTY memory after long-running sessions;
 - frontend bundle/chunk sizes;
 - Code editor engine comparison before adopting Monaco/CodeMirror.
+
+## Measured route-loading baseline — 2026-09-06
+
+The emitted Vite manifest and cold-start Playwright matrix now cover all 18
+persisted `TAB_IDS`. Route increments below are measured outside the eager
+shell graph and sorted by persisted route id.
+
+| Entry | JavaScript gzip | CSS gzip |
+| --- | ---: | ---: |
+| Previous shell | 88.4 kB | 27.7 kB |
+| Final shell | 82.9 kB | 13.0 kB |
+
+| Route | JavaScript gzip | CSS gzip |
+| --- | ---: | ---: |
+| audit | 1.9 kB | 1.3 kB |
+| **changes** | **6.0 kB** | **3.0 kB** |
+| code | 26.3 kB | 8.2 kB |
+| dashboard | 6.2 kB | 1.4 kB |
+| debug | 5.7 kB | 1.7 kB |
+| git | 1.1 kB | 1.2 kB |
+| **history (Runs)** | **5.2 kB** | **1.5 kB** |
+| memory | 3.6 kB | 1.8 kB |
+| models | 4.3 kB | 1.2 kB |
+| models-cost | 0.8 kB | 0.5 kB |
+| orchestrate | 10.0 kB | 2.5 kB |
+| outcomes | 2.5 kB | 0.0 kB |
+| playbooks | 2.0 kB | 0.3 kB |
+| **projects** | **1.2 kB** | **0.4 kB** |
+| settings | 9.1 kB | 1.2 kB |
+| system | 1.9 kB | 1.2 kB |
+| tokens | 4.1 kB | 0.0 kB |
+| **work** | **18.0 kB** | **10.4 kB** |
+
+The separately measured vendor graphs are Code editor: 113.4 kB JavaScript /
+0.0 kB CSS gzip, and Terminal: 84.4 kB JavaScript / 1.9 kB CSS gzip. Both are
+activation-scoped and absent from the eager shell. The cold-start matrix also
+asserts that no Terminal/Xterm resources or PTY are created before activation.
