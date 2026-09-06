@@ -51,6 +51,12 @@ pub enum EngineeringEventKind {
     KnowledgeRejected,
     KnowledgeArchived,
     HumanOverride,
+    PreflightEstimated,
+    VerificationRecommended,
+    VerificationSelected,
+    VerificationDeferred,
+    DecisionOverridden,
+    DecisionOutcomeRecorded,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -154,6 +160,12 @@ fn event_kind_label(kind: EngineeringEventKind) -> &'static str {
         EngineeringEventKind::KnowledgeRejected => "knowledge_rejected",
         EngineeringEventKind::KnowledgeArchived => "knowledge_archived",
         EngineeringEventKind::HumanOverride => "human_override",
+        EngineeringEventKind::PreflightEstimated => "preflight_estimated",
+        EngineeringEventKind::VerificationRecommended => "verification_recommended",
+        EngineeringEventKind::VerificationSelected => "verification_selected",
+        EngineeringEventKind::VerificationDeferred => "verification_deferred",
+        EngineeringEventKind::DecisionOverridden => "decision_overridden",
+        EngineeringEventKind::DecisionOutcomeRecorded => "decision_outcome_recorded",
     }
 }
 

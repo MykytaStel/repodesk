@@ -14,6 +14,7 @@ pub mod commit_policy;
 pub mod context_compactness;
 pub mod context_inspector;
 pub mod context_manifest;
+pub mod decision_receipt;
 pub mod domain;
 pub mod events;
 pub mod instrumentation;
@@ -76,6 +77,9 @@ pub use context_manifest::{
     ContextFileEvidenceReport, ContextFileExclusionReason, ContextFileReason, ContextFileSelection,
     ContextFileStatus, ContextManifest, derive_context_file_evidence, load_context_file_evidence,
     read_context_manifest, select_task_scope_files, write_context_manifest,
+};
+pub use decision_receipt::{
+    DecisionReceipt, DecisionReceiptError, VerificationDebt, VerificationDecisionKind,
 };
 pub use domain::{
     ChangeSet, ChangeSetId, ChangeSetStatus, EngineeringDomainError, EngineeringEventId,
