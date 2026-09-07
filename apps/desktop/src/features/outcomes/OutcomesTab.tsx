@@ -23,13 +23,13 @@ function StatsPanel({ stats }: { stats: ProviderStat[] }) {
   return (
     <section className="panel wide-panel">
       <div className="panel-title-row compact">
-        <p className="eyebrow" style={{ margin: 0 }}>What the brain learned</p>
+        <p className="eyebrow" style={{ margin: 0 }}>Economics by execution route</p>
         <span className="pill">{stats.length} pair{stats.length === 1 ? "" : "s"}</span>
       </div>
       {stats.length === 0 ? (
         <EmptyState
-          message="No learning signal yet."
-          hint="Run the orchestrator (or the autonomous loop) — each step is recorded and the router adapts."
+          message="No accepted-change economics yet."
+          hint="Run a Work Item and record its outcome to learn what spend led to useful change."
         />
       ) : (
         <div className="table-list">
@@ -111,11 +111,11 @@ export function OutcomesTab() {
     return (
       <div className="content-grid">
         <section className="hero-panel wide-panel">
-          <p className="eyebrow">Learning</p>
-          <h1>No active project + task</h1>
+          <p className="eyebrow">Change economics</p>
+          <h1>No active Work Item</h1>
           <p className="lead">
-            Connect a project and create a task. As the orchestrator runs, each step's outcome is
-            recorded here and feeds the adaptive router.
+            Connect a project and create a Work Item. As the run is reviewed, RepoDesk records
+            which spend produced accepted change and which spend became correction cost.
           </p>
         </section>
       </div>
@@ -125,12 +125,12 @@ export function OutcomesTab() {
   return (
     <div className="content-grid">
       <section className="hero-panel wide-panel">
-        <p className="eyebrow">Learning</p>
-        <h1>Outcome ledger</h1>
+        <p className="eyebrow">Change economics</p>
+        <h1>Spend that led to accepted change</h1>
         <p className="lead">
-          Every orchestrator step is recorded with a verdict. The adaptive router reads these to
-          prefer what has worked on this project — confirmed verdicts count double. Confirm or
-          override a verdict to steer the brain.
+          Every execution outcome remains reviewable, but the product question is narrower:
+          what did the run cost, did the ChangeSet survive review, and where did correction spend appear?
+          Confirm or override a verdict to keep this evidence honest.
         </p>
       </section>
 
@@ -138,11 +138,11 @@ export function OutcomesTab() {
 
       <section className="panel wide-panel">
         <div className="panel-title-row compact">
-          <p className="eyebrow" style={{ margin: 0 }}>Recent outcomes</p>
+          <p className="eyebrow" style={{ margin: 0 }}>Recent change outcomes</p>
           <span className="pill">{outcomes.list.length}</span>
         </div>
         {outcomes.list.length === 0 ? (
-          <EmptyState message="No recorded outcomes yet." hint="Run the orchestrator to start the learning loop." />
+          <EmptyState message="No recorded change outcomes yet." hint="Run a Work Item to start the evidence loop." />
         ) : (
           <div className="table-list">
             {outcomes.list.map((row) => (

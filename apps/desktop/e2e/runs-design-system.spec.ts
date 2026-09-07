@@ -131,6 +131,7 @@ test.describe("Runs design-system convergence", () => {
 
   test("structured History errors render their message instead of object coercion", async ({ page }) => {
     await bootRuns(page);
+    await expect(page.getByRole("button", { name: "Refresh" })).toBeVisible();
     await page.evaluate(() => {
       const internals = (window as unknown as {
         __TAURI_INTERNALS__: { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -156,8 +157,8 @@ test.describe("Runs design-system convergence", () => {
 
   test("Runs keeps its three owning views", async ({ page }) => {
     await bootRuns(page);
-    await expect(page.getByRole("tab", { name: "Run evidence" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("tab", { name: "Provider outcomes" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Raw audit" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Run timeline" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Change economics" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Evidence archive" })).toBeVisible();
   });
 });

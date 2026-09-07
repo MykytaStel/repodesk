@@ -73,6 +73,23 @@ function semanticAncestor(locator: ReturnType<Page["getByText"]>) {
 }
 
 test.describe("Work design-system convergence", () => {
+  test("primary navigation names the five engineering jobs and Runs owns the decision loop", async ({ page }) => {
+    await boot(page);
+
+    const rail = page.getByRole("complementary", { name: "Primary workspace navigation" });
+    for (const label of ["Work", "Code", "Changes", "Runs", "Projects"]) {
+      await expect(rail.getByRole("button", { name: new RegExp(`^${label} —`) })).toBeVisible();
+    }
+    for (const label of ["Tokens", "Audit", "Models", "Dashboard"]) {
+      await expect(rail.getByRole("button", { name: new RegExp(label, "i") })).toHaveCount(0);
+    }
+
+    await rail.getByRole("button", { name: /^Runs —/ }).click();
+    await expect(page.getByRole("tab", { name: "Run timeline" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Change economics" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Evidence archive" })).toBeVisible();
+  });
+
   test("phase rail, execution packet, and launch approval expose typed semantic state", async ({ page }) => {
     await boot(page);
 

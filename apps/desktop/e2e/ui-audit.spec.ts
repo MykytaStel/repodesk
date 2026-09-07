@@ -118,8 +118,8 @@ test("Run outcome rows preserve utility layout and narrow metadata alignment", a
 
   await page.getByRole("button", { name: /^Runs —/ }).click();
   await waitForPrimaryRoute(page, "Runs");
-  await page.getByRole("tab", { name: "Provider outcomes" }).click();
-  await expect(page.getByRole("heading", { name: "Outcome ledger" })).toBeVisible();
+  await page.getByRole("tab", { name: "Change economics" }).click();
+  await expect(page.getByRole("heading", { name: "Spend that led to accepted change" })).toBeVisible();
   const outcomeRow = page.locator(".table-row").first();
   expect(await outcomeRow.evaluate((element) => getComputedStyle(element).display)).toBe("flex");
 

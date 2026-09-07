@@ -79,11 +79,11 @@ export function AuditTab() {
   return (
     <div className="content-grid dashboard-grid">
       <section className="hero-panel wide-panel">
-        <p className="eyebrow">Canonical engineering ledger</p>
-        <h1>{error ? "Ledger integrity blocked." : snapshotQuery.isLoading ? "Verifying ledger…" : "Verified evidence projection."}</h1>
+        <p className="eyebrow">Evidence archive</p>
+        <h1>{error ? "Evidence integrity blocked." : snapshotQuery.isLoading ? "Verifying archive…" : "Verified evidence archive."}</h1>
         <p className="lead">
-          This view is backed by RepoDesk&apos;s canonical SQLite engineering ledger. The backend verifies
-          every sequence number and hash-chain link before returning any rows; a corrupt ledger fails closed.
+          This deep view is backed by RepoDesk&apos;s canonical SQLite engineering ledger. The backend verifies
+          every sequence number and hash-chain link before returning any rows; a corrupt archive fails closed.
         </p>
         <div className="button-row">
           <button className="primary-button" onClick={() => void snapshotQuery.refetch()} disabled={snapshotQuery.isFetching}>

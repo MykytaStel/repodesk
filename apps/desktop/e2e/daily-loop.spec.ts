@@ -127,7 +127,7 @@ test.describe("daily loop (onboarded)", () => {
 
     await tabButton(page, "Runs").click();
     await expect(page.getByRole("tablist", { name: "Runs views" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Run evidence" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Run timeline" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByText("This view crashed")).toHaveCount(0);
   });
 });

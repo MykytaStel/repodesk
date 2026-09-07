@@ -2,3 +2,48 @@
 @import "./runs.css" layer(legacy);
 @import "./history-density.css" layer(legacy);
 @import "./secondary-summary.css" layer(legacy);
+
+@layer history-control {
+  .runs-decision-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr);
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem 1.15rem;
+    border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--surface-2) 86%, var(--accent) 14%);
+  }
+
+  .runs-decision-summary > div:first-child {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .runs-decision-summary strong {
+    font-size: 0.95rem;
+  }
+
+  .runs-decision-summary p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.78rem;
+    line-height: 1.45;
+  }
+
+  .runs-decision-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .runs-decision-metrics .metric {
+    min-width: 0;
+  }
+
+  @media (max-width: 860px) {
+    .runs-decision-summary {
+      grid-template-columns: 1fr;
+    }
+  }
+}
