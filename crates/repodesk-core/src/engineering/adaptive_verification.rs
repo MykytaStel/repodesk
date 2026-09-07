@@ -1,5 +1,7 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use super::verification_history::VerificationHistoryConfidence;
 use super::{VerificationDebt, VerificationDecisionKind};
 
 pub const ADAPTIVE_VERIFICATION_POLICY_VERSION: &str = "verification-policy-v1";
@@ -15,6 +17,11 @@ pub struct VerificationCheckCandidate {
     pub estimated_cost_units: Option<f64>,
     pub relevant_paths: Vec<String>,
     pub last_status: Option<String>,
+    pub measured_runs: usize,
+    pub failed_runs: usize,
+    pub median_duration_ms: Option<u64>,
+    pub history_confidence: VerificationHistoryConfidence,
+    pub latest_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -221,9 +228,15 @@ fn build_recommendation(
         .try_fold(0.0, |total, estimate| estimate.map(|value| total + value));
     let estimated_wall_clock_ms = selected
         .iter()
-        .map(|check| check.estimated_seconds)
+        .map(|check| {
+            check.median_duration_ms.or_else(|| {
+                check
+                    .estimated_seconds
+                    .map(|seconds| seconds.saturating_mul(1_000))
+            })
+        })
         .try_fold(0_u64, |total, estimate| {
-            estimate.map(|value| total.saturating_add(value.saturating_mul(1_000)))
+            estimate.map(|value| total.saturating_add(value))
         });
 
     let mut recommendation = VerificationRecommendation {
@@ -271,14 +284,37 @@ fn uncertainty_for_checks<'a>(
     checks: impl IntoIterator<Item = &'a VerificationCheckCandidate>,
 ) -> String {
     let checks = checks.into_iter().collect::<Vec<_>>();
-    if checks.is_empty()
-        || checks
-            .iter()
-            .any(|check| check.estimated_seconds.is_none() || check.last_status.is_none())
+    if checks.is_empty() {
+        "unknown".to_string()
+    } else if checks
+        .iter()
+        .any(|check| check_confidence(check) == "unknown")
     {
         "unknown".to_string()
+    } else if checks
+        .iter()
+        .any(|check| check_confidence(check) == "provisional")
+    {
+        "provisional".to_string()
     } else {
         "calibrated".to_string()
+    }
+}
+
+fn check_confidence(check: &VerificationCheckCandidate) -> &'static str {
+    match check.history_confidence {
+        VerificationHistoryConfidence::Unknown => {
+            if check.estimated_seconds.is_some()
+                && check.last_status.is_some()
+                && check.median_duration_ms.is_none()
+            {
+                "calibrated"
+            } else {
+                "unknown"
+            }
+        }
+        VerificationHistoryConfidence::Provisional => "provisional",
+        VerificationHistoryConfidence::Calibrated => "calibrated",
     }
 }
 

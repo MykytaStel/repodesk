@@ -30,6 +30,11 @@ export type VerificationCheckCandidate = {
   estimated_cost_units: number | null;
   relevant_paths: string[];
   last_status: string | null;
+  measured_runs: number;
+  failed_runs: number;
+  median_duration_ms: number | null;
+  history_confidence: "unknown" | "provisional" | "calibrated";
+  latest_at: string | null;
 };
 
 export type VerificationAdvisorInput = {

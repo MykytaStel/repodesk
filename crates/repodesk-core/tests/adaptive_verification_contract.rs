@@ -1,6 +1,6 @@
 use repodesk_core::engineering::{
     VerificationAdvisorInput, VerificationCheckCandidate, VerificationDecisionKind,
-    recommend_verification,
+    VerificationHistoryConfidence, recommend_verification,
 };
 
 fn check(
@@ -21,7 +21,33 @@ fn check(
         estimated_cost_units: estimated_seconds.map(|seconds| seconds as f64 / 10.0),
         relevant_paths: relevant_paths.iter().map(|path| (*path).into()).collect(),
         last_status: None,
+        measured_runs: 0,
+        failed_runs: 0,
+        median_duration_ms: None,
+        history_confidence: VerificationHistoryConfidence::Unknown,
+        latest_at: None,
     }
+}
+
+fn candidate_with_history(
+    median_duration_ms: Option<u64>,
+    measured_runs: usize,
+    confidence: VerificationHistoryConfidence,
+) -> VerificationCheckCandidate {
+    let mut candidate = check(
+        "ui-targeted",
+        "Work surface browser test",
+        "targeted",
+        false,
+        Some(999),
+        &["apps/desktop/src/features/work/WorkSurface.tsx"],
+    );
+    candidate.estimated_cost_units = None;
+    candidate.measured_runs = measured_runs;
+    candidate.median_duration_ms = median_duration_ms;
+    candidate.history_confidence = confidence;
+    candidate.last_status = Some("passed".into());
+    candidate
 }
 
 fn input(checks: Vec<VerificationCheckCandidate>) -> VerificationAdvisorInput {
@@ -187,4 +213,18 @@ fn same_input_and_policy_produce_same_recommendation() {
         recommend_verification(&verification_input),
         recommend_verification(&verification_input)
     );
+}
+
+#[test]
+fn recommendation_uses_measured_median_without_fabricating_cost() {
+    let verification_input = input(vec![candidate_with_history(
+        Some(200),
+        3,
+        VerificationHistoryConfidence::Calibrated,
+    )]);
+    let recommendation = recommend_verification(&verification_input);
+
+    assert_eq!(recommendation.estimated_wall_clock_ms, Some(200));
+    assert_eq!(recommendation.estimated_cost_units, None);
+    assert_eq!(recommendation.uncertainty_label, "calibrated");
 }

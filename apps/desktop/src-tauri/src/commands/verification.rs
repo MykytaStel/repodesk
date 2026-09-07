@@ -6,7 +6,8 @@ use repodesk_core::engineering::events::{EngineeringEvent, EngineeringEventKind}
 use repodesk_core::engineering::instrumentation::record_decision_receipt;
 use repodesk_core::engineering::{
     DecisionReceipt, EvidenceRef, VerificationAdvisorInput, VerificationCheckCandidate,
-    VerificationDebt, VerificationDecisionKind, VerificationRecommendation, recommend_verification,
+    VerificationDebt, VerificationDecisionKind, VerificationHistoryConfidence,
+    VerificationRecommendation, derive_verification_history, recommend_verification,
 };
 use repodesk_core::git_workspace::build_git_workspace_snapshot_for_path;
 use repodesk_core::projects::get_active_project;
@@ -215,19 +216,33 @@ pub fn work_verification_advisor() -> Result<VerificationAdvisorSnapshot, ErrorP
         .map(|change| change.path.clone())
         .collect::<Vec<_>>();
     let events = repodesk_core::engineering::read_events(&task.config.run_dir)?;
+    let history = derive_verification_history(&events);
     let checks = project
         .checks
         .iter()
-        .map(|check| VerificationCheckCandidate {
-            id: check.id.clone(),
-            title: check.title.clone(),
-            command: check.command.clone(),
-            kind: check.kind.clone(),
-            required: check.required,
-            estimated_seconds: None,
-            estimated_cost_units: None,
-            relevant_paths: check.relevant_paths.clone(),
-            last_status: None,
+        .map(|check| {
+            let measured = history.checks.iter().find(|item| item.check_id == check.id);
+            VerificationCheckCandidate {
+                id: check.id.clone(),
+                title: check.title.clone(),
+                command: check.command.clone(),
+                kind: check.kind.clone(),
+                required: check.required,
+                estimated_seconds: measured
+                    .and_then(|item| item.median_duration_ms)
+                    .map(|duration_ms| duration_ms.saturating_add(999) / 1_000),
+                estimated_cost_units: None,
+                relevant_paths: check.relevant_paths.clone(),
+                last_status: measured.and_then(|item| item.latest_status.clone()),
+                measured_runs: measured.map_or(0, |item| item.measured_runs),
+                failed_runs: measured.map_or(0, |item| item.failed_runs),
+                median_duration_ms: measured.and_then(|item| item.median_duration_ms),
+                history_confidence: measured
+                    .map_or(VerificationHistoryConfidence::Unknown, |item| {
+                        item.confidence
+                    }),
+                latest_at: measured.and_then(|item| item.latest_at),
+            }
         })
         .collect::<Vec<_>>();
     let input = VerificationAdvisorInput {
@@ -258,16 +273,43 @@ pub fn work_verification_advisor() -> Result<VerificationAdvisorSnapshot, ErrorP
     let mut sources = vec![
         VerificationSourceStatus {
             source: "git_tree".into(),
-            status: if current_tree_identity.is_some() { "measured" } else { "unknown" }.into(),
+            status: if current_tree_identity.is_some() {
+                "measured"
+            } else {
+                "unknown"
+            }
+            .into(),
             detail: current_tree_identity
                 .as_ref()
                 .map(|_| "Current index tree identity is available.".into())
-                .unwrap_or_else(|| "Git tree identity is unavailable; freshness is unknown.".into()),
+                .unwrap_or_else(|| {
+                    "Git tree identity is unavailable; freshness is unknown.".into()
+                }),
         },
         VerificationSourceStatus {
             source: "check_history".into(),
-            status: "partial".into(),
-            detail: "Recent verification attempts are known, but check duration/cost history is not measured yet.".into(),
+            status: if !history.checks.is_empty() {
+                "measured"
+            } else if events
+                .iter()
+                .any(|event| event.kind == EngineeringEventKind::VerificationFinished)
+            {
+                "partial"
+            } else {
+                "unknown"
+            }
+            .into(),
+            detail: if !history.checks.is_empty() {
+                "Per-check duration, status, and sample history are measured from verification events.".into()
+            } else if events
+                .iter()
+                .any(|event| event.kind == EngineeringEventKind::VerificationFinished)
+            {
+                "Aggregate verification attempts exist, but no per-check results are available yet."
+                    .into()
+            } else {
+                "No verification history is available for the configured checks.".into()
+            },
         },
         VerificationSourceStatus {
             source: "repopilot".into(),
