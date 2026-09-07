@@ -2,11 +2,18 @@
 
 [![CI](https://github.com/MykytaStel/repodesk/actions/workflows/ci.yml/badge.svg)](https://github.com/MykytaStel/repodesk/actions/workflows/ci.yml)
 
-**Local-first engineering workspace for controlled software change.**
+**Local-first AI Engineering Control Plane for trustworthy software change.**
 
 RepoDesk connects a repository and a concrete work item to bounded context, human/agent execution, isolated worktrees, changesets, verification, review, project knowledge, and engineering intelligence.
 
 > RepoDesk is not primarily an AI provider dashboard. AI is one class of worker inside the engineering workflow. The product is centered on `Work Item -> ChangeSet -> Verification -> Knowledge`.
+
+RepoDesk answers a narrower question than a generic AI copilot: **what should happen
+next, what evidence is worth paying for, and can the resulting change be trusted?**
+Adaptive Verification recommends the smallest useful proof, makes expensive work
+visible before it runs, and records every run/defer/stop choice as a Decision Receipt
+bound to the Work Item, tree identity, policy and evidence. Unknown cost, coverage or
+confidence stays unknown; the UI never turns missing telemetry into a green score.
 
 ## Current workflow
 
@@ -31,6 +38,11 @@ RepoDesk converges on five primary surfaces:
 The product is deliberately moving away from parallel Git, orchestration, model, token, audit and dashboard destinations. Those capabilities remain useful as implementation evidence or contextual tools, but they should not compete with the trustworthy-change workflow for navigation ownership.
 
 Engineering Intelligence measures the engineering process only when the result can influence a future decision: context compactness, worker fan-out, redundant execution, retries/correction cost, knowledge reuse, scope adherence, verification efficiency, cost to accepted change, and structural complexity risk.
+
+The differentiation is the control loop, not another agent chat: RepoDesk connects
+intent, bounded execution, exact ChangeSets, verification choice, spend and outcome
+in one inspectable chain. RepoPilot may provide code-analysis findings, but RepoDesk
+owns the engineering decision and evidence around the change.
 
 See:
 

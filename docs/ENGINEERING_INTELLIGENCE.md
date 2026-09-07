@@ -29,6 +29,36 @@ Metrics must be derived from inspectable evidence. RepoDesk should prefer separa
 7. Metrics should compare similar Work Items where possible.
 8. Raw prompts/responses do not need to be persisted to measure workflow efficiency.
 
+## Decision Receipts and Adaptive Verification
+
+RepoDesk treats verification as a governed decision, not a checkbox at the end of a
+run. Adaptive Verification receives the current Work Item, changed paths, configured
+checks, prior attempts/failures, budget and policy. It returns a deterministic
+recommendation such as:
+
+```text
+run_targeted | run_now | defer_with_debt | ask_for_approval |
+pause_and_review | stop_with_partial_result
+```
+
+The recommendation is advisory in Phase 0/1: execution remains owned by the existing
+workflow and a human can override it. Accepting, deferring or stopping records a
+Decision Receipt containing the tree identity, policy version, selected/skipped
+checks, evidence references, risk, uncertainty and explicit verification debt.
+
+This gives RepoDesk a product boundary that generic copilots do not provide:
+
+- the smallest useful proof is visible before spend;
+- expensive or unrelated checks can be deferred without disappearing;
+- a check is never silently skipped by UI policy;
+- stale or missing evidence cannot become a false green result;
+- cost is interpreted as cost per accepted change and correction cost, not as a
+  vanity token total.
+
+Unknown values are intentional. Duration, cost, test counts, RepoPilot findings and
+confidence are shown as unknown/not measured until a trusted source supplies them.
+Telemetry stores bounded facts and references, not raw prompts or full model outputs.
+
 ## Event substrate
 
 Engineering Intelligence should derive from an append-only engineering event ledger.

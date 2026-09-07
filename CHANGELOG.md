@@ -7,6 +7,12 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 ## [Unreleased]
 
 ### Added
+- **AI Engineering Control Plane (Phase 0/1):** Work Item control surface with
+  Adaptive Verification recommendations, explicit verification debt, Decision
+  Receipts, accepted-change economics, and honest unknown/not-measured states.
+- **Runs convergence:** Runs now owns Run timeline, Change economics, Evidence
+  archive, and a Decision Receipt summary instead of exposing provider/audit
+  subsystem views as competing destinations.
 - **CI/CD (N1):** GitHub Actions gates (fmt, clippy, tests, frontend build, secret-scan)
   on every PR and push to `main`.
 - **E2E (N2):** Playwright daily-loop smoke with a mocked Tauri IPC layer (runs everywhere,

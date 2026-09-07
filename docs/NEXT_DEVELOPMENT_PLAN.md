@@ -53,6 +53,24 @@ Settings is a global utility surface, not a sixth engineering workflow.
 
 The next phase is **convergence before expansion**.
 
+## Phase 0/1 delivered: AI work control
+
+The first convergence slice is now implemented around the product promise:
+
+- Adaptive Verification recommends the smallest useful proof from Work Item,
+  changed-path, check-history and policy evidence;
+- Decision Receipts bind run/defer/stop choices to tree identity, policy,
+  evidence, risk, uncertainty and explicit verification debt;
+- Work leads with one next-action control, while Run Control, Change Economics
+  and receipt evidence remain inspectable without duplicating the workflow;
+- Runs owns the Run timeline, Change economics and Evidence archive subviews;
+- unknown/not-measured values remain visible instead of being replaced by
+  inferred confidence or productivity scores.
+
+This phase is recommendation-first. It does not silently skip or launch checks;
+execution remains owned by the existing workflow until a later policy-authorized
+phase adds automation.
+
 ---
 
 # Current baseline
