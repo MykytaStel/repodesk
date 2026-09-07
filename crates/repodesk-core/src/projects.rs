@@ -327,7 +327,7 @@ fn validate_project_name(name: &str) -> RepoDeskResult<()> {
 
 fn infer_main_language(project_type: &str) -> Option<String> {
     match project_type {
-        "rust" | "rust-cli" | "rust-desktop" => Some("rust".to_string()),
+        "rust" | "rust-cli" | "rust-desktop" | "rust-tauri" => Some("rust".to_string()),
         "node" | "react" | "react-native" => Some("typescript".to_string()),
         "python" => Some("python".to_string()),
         "monorepo" => None,

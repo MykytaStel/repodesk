@@ -433,9 +433,23 @@ export type RunVerificationEvidence = {
   state: string;
   verification_id: string | null;
   commands: VerificationCommandEvidence[];
+  check_results?: VerificationCheckTelemetry[];
   evidence: EvidenceRef[];
   verified_at: string | null;
   source: string;
+};
+
+export type VerificationCheckTelemetry = {
+  check_id: string;
+  command: string;
+  status: string;
+  exit_code: number | null;
+  duration_ms: number;
+  started_at: string;
+  finished_at: string;
+  tree_identity: string | null;
+  log_evidence_ref: string | null;
+  tests_observed: number | null;
 };
 
 export type RunCommitEvidence = {

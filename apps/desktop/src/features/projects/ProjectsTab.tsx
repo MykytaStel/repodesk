@@ -32,9 +32,19 @@ interface ProjectConfigSummary {
   path: string;
   project_type?: string;
   main_language?: string | null;
-  checks?: string[];
+  checks?: ProjectCheckSummary[];
   context_ignore?: string[];
   require_exact_change_attribution?: boolean;
+}
+
+interface ProjectCheckSummary {
+  id: string;
+  title: string;
+  command: string;
+  kind: string;
+  required: boolean;
+  relevant_paths: string[];
+  timeout_secs: number;
 }
 
 const VIEWS: Array<{ id: ProjectsView; label: string }> = [
@@ -43,9 +53,21 @@ const VIEWS: Array<{ id: ProjectsView; label: string }> = [
   { id: "templates", label: "Work templates" },
 ];
 
+const RECOMMENDED_CHECK_PROJECT_TYPES = new Set([
+  "rust",
+  "rust-cli",
+  "rust-desktop",
+  "rust-tauri",
+  "node",
+  "react",
+  "react-native",
+  "python",
+]);
+
 export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detail?: string) => void }) {
   const [view, setView] = useState<ProjectsView>("registry");
   const [showSetup, setShowSetup] = useState(false);
+  const [checkCommand, setCheckCommand] = useState("");
   const { projectName, hasProject } = useWorkspace();
   const queryClient = useQueryClient();
   const {
@@ -77,7 +99,24 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
       }
     },
   });
-  const projectMutationPending = isAddingProject || isActivatingProject || attributionPolicy.isPending;
+  const updateProjectInCache = (updated: ProjectConfigSummary) => {
+    queryClient.setQueryData<ProjectConfigSummary[]>(["project_list_configs"], (current) =>
+      current?.map((project) => project.name === updated.name ? updated : project),
+    );
+  };
+  const recommendedChecks = useMutation({
+    mutationFn: (name: string) => invoke<ProjectConfigSummary>("project_apply_recommended_checks", { name }),
+    onSuccess: updateProjectInCache,
+  });
+  const addCheck = useMutation({
+    mutationFn: ({ name, command }: { name: string; command: string }) =>
+      invoke<ProjectConfigSummary>("project_add_check", { name, command }),
+    onSuccess: (updated) => {
+      updateProjectInCache(updated);
+      setCheckCommand("");
+    },
+  });
+  const projectMutationPending = isAddingProject || isActivatingProject || attributionPolicy.isPending || recommendedChecks.isPending || addCheck.isPending;
   const workspaceSemantic = projectWorkspaceSemantic(hasProject ? "active" : "inactive");
   const setupSemantic = setupNotice ? projectNoticeSemantic(setupNotice.tone) : null;
   const activationSemantic = activationNotice ? projectNoticeSemantic(activationNotice.tone) : null;
@@ -256,6 +295,7 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                     const active = hasProject && project.name === projectName;
                     const activating = isActivatingProject && activatingProjectName === project.name;
                     const exactRequired = project.require_exact_change_attribution === true;
+                    const hasRecommendedChecks = RECOMMENDED_CHECK_PROJECT_TYPES.has((project.project_type || "").toLowerCase());
                     const policySemantic = attributionPolicySemantic(exactRequired);
                     const policyActionLabel = exactRequired ? "Use informational attribution" : "Require exact attribution";
                     const policyDetail = exactRequired
@@ -291,6 +331,65 @@ export function ProjectsTab({ setActiveTab }: { setActiveTab: (tab: TabId, detai
                           <span>{project.main_language || "language unknown"}</span>
                           <span>{project.checks?.length ?? 0} checks</span>
                           <span>{project.context_ignore?.length ?? 0} context rules</span>
+                        </div>
+                        <div className="project-check-catalog">
+                          <div className="project-check-catalog-heading">
+                            <div>
+                              <span className="eyebrow">Verification catalog</span>
+                              <strong>{project.checks?.length ?? 0} configured</strong>
+                            </div>
+                            <span className="project-check-catalog-boundary">Explicit run only</span>
+                          </div>
+                          {project.checks && project.checks.length > 0 ? (
+                            <ul className="project-check-list">
+                              {project.checks.map((check) => (
+                                <li key={check.id}>
+                                  <div><strong>{check.title}</strong><span>{check.kind}{check.required ? " · required" : ""}</span></div>
+                                  <code>{check.command}</code>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="project-check-empty-copy">
+                              No checks are configured, so RepoDesk cannot honestly recommend or estimate verification yet.
+                            </p>
+                          )}
+                          {active ? (
+                            <div className="project-check-actions">
+                              {(!project.checks || project.checks.length === 0) && hasRecommendedChecks ? (
+                                <button
+                                  className="ghost-button"
+                                  type="button"
+                                  disabled={projectMutationPending}
+                                  onClick={() => recommendedChecks.mutate(project.name)}
+                                >
+                                  {recommendedChecks.isPending ? "Adding recommended…" : "Add recommended checks"}
+                                </button>
+                              ) : null}
+                              <form
+                                className="project-check-add-form"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  if (checkCommand.trim()) addCheck.mutate({ name: project.name, command: checkCommand.trim() });
+                                }}
+                              >
+                                <input
+                                  value={checkCommand}
+                                  onChange={(event) => setCheckCommand(event.target.value)}
+                                  placeholder="cargo test --workspace"
+                                  aria-label={`Add verification command to ${project.name}`}
+                                />
+                                <button className="ghost-button" type="submit" disabled={projectMutationPending || !checkCommand.trim()}>
+                                  Add check
+                                </button>
+                              </form>
+                              {recommendedChecks.isError || addCheck.isError ? (
+                                <span className="project-check-error">{String(recommendedChecks.error ?? addCheck.error)}</span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="project-check-empty-hint">Open this project to configure its verification catalog.</span>
+                          )}
                         </div>
                         <EvidenceState
                           label="Producer attribution policy"

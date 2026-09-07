@@ -51,6 +51,13 @@ function compactNumber(value: number | null, digits = 1): string {
   return value == null ? "—" : value.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
+function checkResultTone(status: string): "positive" | "attention" | "critical" | "neutral" {
+  if (status === "passed") return "positive";
+  if (status === "timeout") return "attention";
+  if (status === "failed") return "critical";
+  return "neutral";
+}
+
 function RunListItem({ run, selected, onSelect }: {
   run: RunSummary;
   selected: boolean;
@@ -211,6 +218,7 @@ function RunEvidenceDetail({
   const commitState = commitSemantic(evidence.commit.committed);
   const verificationIsCurrent = verificationState === "passed" || verificationState === "failed";
   const linkableCommands = verificationIsCurrent ? evidence.verification.commands : [];
+  const checkResults = evidence.verification.check_results ?? [];
 
   return (
     <div className="run-evidence-detail">
@@ -297,7 +305,21 @@ function RunEvidenceDetail({
           {evidence.verification.verified_at && <span>{fmtTime(evidence.verification.verified_at)}</span>}
         </div>
         <div className="evidence-list">
-          {evidence.verification.commands.map((check) => {
+          {checkResults.map((check) => (
+            <div className="evidence-row" key={`${check.check_id}-${check.finished_at}`}>
+              <div className="evidence-section-title">
+                <strong>{check.check_id}</strong>
+                <StatusBadge label={check.status} tone={checkResultTone(check.status)} />
+              </div>
+              <div className="evidence-row-meta">
+                <code>{check.command}</code>
+                <span>{check.duration_ms.toLocaleString()} ms</span>
+                <span>{check.tests_observed == null ? "Tests not measured" : `${check.tests_observed} tests observed`}</span>
+                {check.log_evidence_ref ? <span className="evidence-source">evidence: {check.log_evidence_ref}</span> : null}
+              </div>
+            </div>
+          ))}
+          {checkResults.length === 0 && evidence.verification.commands.map((check) => {
             const semantic = verificationCommandSemantic(check.success);
             return (
               <div className="evidence-row" key={check.command}>
@@ -308,7 +330,7 @@ function RunEvidenceDetail({
               </div>
             );
           })}
-          {evidence.verification.commands.length === 0 && (
+          {checkResults.length === 0 && evidence.verification.commands.length === 0 && (
             <EmptyState message="No command-level receipt is available for this run." />
           )}
         </div>

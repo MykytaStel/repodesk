@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { installMockIpc } from "./mock-ipc";
+import { installMockIpc, recordedInvocations } from "./mock-ipc";
 import { currentOnboardedFixtures } from "./current-fixtures";
 import type { CommandFixtures } from "./fixtures";
 
@@ -31,7 +31,7 @@ test.describe("Projects design-system convergence", () => {
           path: "/Users/you/code/repodesk",
           project_type: "rust",
           main_language: "rust",
-          checks: ["cargo test"],
+          checks: [{ id: "cargo-test", title: "Cargo test", command: "cargo test", kind: "test", required: false, relevant_paths: [], timeout_secs: 120 }],
           context_ignore: [],
           require_exact_change_attribution: true,
         },
@@ -106,5 +106,36 @@ test.describe("Projects design-system convergence", () => {
     const failure = page.getByRole("alert").filter({ hasText: "Could not update project trust policy" });
     await expect(failure).toBeVisible();
     await expect(failure).toHaveAttribute("data-semantic-tone", "critical");
+  });
+
+  test("empty verification catalog has an explicit setup action", async ({ page }) => {
+    await bootProjects(page, {
+      project_list_configs: [
+        {
+          name: "RepoDesk",
+          path: "/Users/you/code/repodesk",
+          project_type: "rust-tauri",
+          main_language: "rust",
+          checks: [],
+          context_ignore: [],
+          require_exact_change_attribution: false,
+        },
+      ],
+      project_apply_recommended_checks: {
+        name: "RepoDesk",
+        path: "/Users/you/code/repodesk",
+        project_type: "rust-tauri",
+        main_language: "rust",
+        checks: [{ id: "cargo-test", title: "Cargo tests", command: "cargo test", kind: "test", required: false, relevant_paths: [], timeout_secs: 120 }],
+        context_ignore: [],
+        require_exact_change_attribution: false,
+      },
+    });
+
+    const active = projectCard(page, "RepoDesk");
+    await expect(active.getByText(/cannot honestly recommend/)).toBeVisible();
+    await active.getByRole("button", { name: "Add recommended checks" }).click();
+    await expect(active.getByText("Cargo tests", { exact: true })).toBeVisible();
+    await expect.poll(async () => (await recordedInvocations(page)).some((entry) => entry.cmd === "project_apply_recommended_checks")).toBe(true);
   });
 });

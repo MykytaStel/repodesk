@@ -162,6 +162,8 @@ pub fn run() {
             commands::get_active_project_config,
             commands::project_list_configs,
             commands::project_set_exact_attribution_required,
+            commands::project_apply_recommended_checks,
+            commands::project_add_check,
             commands::save_project_ignore_rules,
             commands::get_project_file_token_estimates,
             commands::get_api_env_diagnostic,

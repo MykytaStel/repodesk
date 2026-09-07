@@ -10,6 +10,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - **AI Engineering Control Plane (Phase 0/1):** Work Item control surface with
   Adaptive Verification recommendations, explicit verification debt, Decision
   Receipts, accepted-change economics, and honest unknown/not-measured states.
+- **Measured Verification Catalog (Phase 2):** Stable project check descriptors,
+  bounded per-check verification telemetry, rebuildable duration/failure history,
+  honest confidence states, and explicit empty-catalog setup in the desktop UI.
 - **Runs convergence:** Runs now owns Run timeline, Change economics, Evidence
   archive, and a Decision Receipt summary instead of exposing provider/audit
   subsystem views as competing destinations.

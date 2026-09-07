@@ -59,6 +59,34 @@ Unknown values are intentional. Duration, cost, test counts, RepoPilot findings 
 confidence are shown as unknown/not measured until a trusted source supplies them.
 Telemetry stores bounded facts and references, not raw prompts or full model outputs.
 
+### Measured verification catalog
+
+Configured checks are durable project descriptors rather than anonymous command
+strings. Each descriptor has a stable ID, title, kind, requiredness, explicit
+relevant paths and a bounded timeout. Legacy `checks = ["..."]` configuration
+remains readable and is normalized to the same command-derived identity regardless
+of list order.
+
+Each completed verification records bounded per-check facts in the canonical event
+ledger: status, duration, timestamps, tree identity and a log reference. The
+history projection deduplicates repeated records for the same verification/check
+identity and derives measured runs, failures, latest status, median duration and
+confidence:
+
+- `unknown`: no usable duration is available;
+- `provisional`: one or two usable observations;
+- `calibrated`: at least three usable observations.
+
+Timeouts remain visible as operational outcomes but are excluded from duration
+estimates because they are censored at the timeout boundary. Local verification
+time is deliberately separate from AI/token spend; RepoDesk reports cost as
+`Not measured` until a separately specified cost source exists.
+
+The Advisor uses the measured median for wall-clock estimates and keeps execution
+explicit. Recording a recommendation never runs or silently skips a check. Empty
+catalogs are surfaced as setup work, with explicit recommended defaults only for
+recognized project types and manual allowlisted command registration available.
+
 ## Event substrate
 
 Engineering Intelligence should derive from an append-only engineering event ledger.

@@ -204,6 +204,28 @@ pub fn project_set_exact_attribution_required(
 }
 
 #[tauri::command]
+pub fn project_apply_recommended_checks(
+    name: String,
+) -> Result<repodesk_core::projects::ProjectConfig, ErrorPayload> {
+    validate_short_id("Project name", &name)?;
+    repodesk_core::projects::apply_recommended_project_checks(name.trim())
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
+pub fn project_add_check(
+    name: String,
+    command: String,
+) -> Result<repodesk_core::projects::ProjectConfig, ErrorPayload> {
+    validate_short_id("Project name", &name)?;
+    if command.trim().is_empty() {
+        return Err(ErrorPayload::configuration("Check command cannot be empty"));
+    }
+    repodesk_core::projects::add_project_check(name.trim(), command.trim())
+        .map_err(ErrorPayload::from)
+}
+
+#[tauri::command]
 pub async fn save_project_ignore_rules(ignore_rules: Vec<String>) -> Result<(), ErrorPayload> {
     let active = repodesk_core::projects::read_active_project().map_err(ErrorPayload::from)?;
     repodesk_core::projects::update_project_ignore_rules(&active, ignore_rules)

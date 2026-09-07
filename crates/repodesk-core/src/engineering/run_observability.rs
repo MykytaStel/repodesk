@@ -480,6 +480,7 @@ mod tests {
                 state: "not_run".into(),
                 verification_id: None,
                 commands: Vec::new(),
+                check_results: Vec::new(),
                 evidence: Vec::new(),
                 verified_at: None,
                 source: "unavailable".into(),

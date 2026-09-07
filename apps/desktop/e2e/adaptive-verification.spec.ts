@@ -19,8 +19,8 @@ test.describe("adaptive verification control surface", () => {
     await expect(surface.getByRole("heading", { name: "What should happen next?" })).toBeVisible();
     await expect(surface.getByRole("button", { name: /Run targeted checks/ })).toBeVisible();
     await expect(surface.getByText(/Not measured|Unknown/).first()).toBeVisible();
-    await expect(surface.getByText("Deferred", { exact: true })).toBeVisible();
-    await expect(surface.getByText("Full integration suite", { exact: true })).toBeVisible();
+    await expect(surface.getByLabel("Verification debt").getByText("Deferred", { exact: true })).toBeVisible();
+    await expect(surface.getByLabel("Verification debt").getByText("Full integration suite", { exact: true })).toBeVisible();
     await expect(surface.getByText("Unrelated to the changed paths", { exact: false })).toBeVisible();
   });
 
@@ -44,5 +44,40 @@ test.describe("adaptive verification control surface", () => {
     const dialog = page.getByRole("dialog", { name: "Decision Receipt" });
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText("tree-work-control-1", { exact: true })).toBeVisible();
+  });
+
+  test("shows measured duration, sample count, and calibrated confidence", async ({ page }) => {
+    const measured = {
+      ...workControlFixtures.ready,
+      input: {
+        ...workControlFixtures.ready.input,
+        checks: workControlFixtures.ready.input.checks.map((check, index) => index === 0 ? {
+          ...check,
+          estimated_seconds: 1,
+          measured_runs: 3,
+          failed_runs: 0,
+          median_duration_ms: 860,
+          history_confidence: "calibrated" as const,
+          last_status: "passed",
+          latest_at: "2026-09-07T10:00:00Z",
+        } : check),
+      },
+      recommendation: {
+        ...workControlFixtures.ready.recommendation,
+        estimated_wall_clock_ms: 860,
+        uncertainty_label: "calibrated",
+      },
+    };
+    await installMockIpc(page, {
+      ...currentOnboardedFixtures,
+      work_verification_advisor: measured,
+      work_decision_receipt: null,
+    });
+    await page.reload();
+
+    const surface = page.getByRole("region", { name: "Work Item control" });
+    await expect(surface.getByText("860 ms median", { exact: true })).toBeVisible();
+    await expect(surface.getByText("Calibrated", { exact: true }).first()).toBeVisible();
+    await expect(surface.getByText("3", { exact: true })).toBeVisible();
   });
 });

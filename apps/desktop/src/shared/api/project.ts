@@ -12,10 +12,20 @@ export type ProjectConfig = {
   path: string;
   project_type: string;
   main_language?: string | null;
-  checks: string[];
+  checks: ProjectCheck[];
   context_ignore: string[];
   created_at: string;
   updated_at: string;
+};
+
+export type ProjectCheck = {
+  id: string;
+  title: string;
+  command: string;
+  kind: string;
+  required: boolean;
+  relevant_paths: string[];
+  timeout_secs: number;
 };
 
 export async function getActiveProjectConfig(): Promise<ProjectConfig> {

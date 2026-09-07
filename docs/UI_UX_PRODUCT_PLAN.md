@@ -28,6 +28,13 @@ decision that moves it safely forward.
   ask for approval, or stop with a partial result.
 - Record the accepted choice as a Decision Receipt with tree, policy and evidence
   identity; the UI must not run checks implicitly while recording that choice.
+- Show each configured verification check as an explicit catalog item with its
+  stable identity, measured median duration, sample count, latest status and
+  `Unknown`/`Provisional`/`Calibrated` confidence.
+- Treat local verification time and AI/token spend as separate facts. Keep local
+  cost `Not measured` until a real cost source exists.
+- Give empty catalogs a recoverable setup path: add recognized project defaults
+  explicitly or register an allowlisted command manually.
 
 ### Visual polish
 

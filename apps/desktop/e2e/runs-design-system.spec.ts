@@ -46,6 +46,20 @@ test.describe("Runs design-system convergence", () => {
               { command: "cargo test", success: true },
               { command: "cargo clippy", success: false },
             ],
+            check_results: [
+              {
+                check_id: "unit-tests",
+                command: "cargo test --lib",
+                status: "passed",
+                exit_code: 0,
+                duration_ms: 900,
+                started_at: "2026-06-16T10:16:00Z",
+                finished_at: "2026-06-16T10:16:00.900Z",
+                tree_identity: "tree-run-1",
+                log_evidence_ref: "checks.log",
+                tests_observed: null,
+              },
+            ],
           },
           commit: { ...base.run_evidence.commit, committed: false },
         },
@@ -66,6 +80,9 @@ test.describe("Runs design-system convergence", () => {
     await expect(page.getByText("Verification blocked", { exact: true }).locator("xpath=ancestor-or-self::*[@data-semantic-tone][1]")).toHaveAttribute("data-semantic-tone", "critical");
     await expect(page.getByText("failed", { exact: true }).first()).toHaveAttribute("data-semantic-tone", "critical");
     await expect(page.getByText("passed", { exact: true }).first()).toHaveAttribute("data-semantic-tone", "positive");
+    await expect(page.getByText("unit-tests", { exact: true })).toBeVisible();
+    await expect(page.getByText("900 ms", { exact: true })).toBeVisible();
+    await expect(page.getByText("evidence: checks.log", { exact: true })).toBeVisible();
     await expect(page.getByText("not committed", { exact: true })).toHaveAttribute("data-semantic-tone", "neutral");
   });
 

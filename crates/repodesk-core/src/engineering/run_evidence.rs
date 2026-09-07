@@ -15,6 +15,7 @@ use crate::engineering::acceptance_evidence::{
 };
 use crate::engineering::domain::EvidenceRef;
 use crate::engineering::events::{EngineeringEvent, EngineeringEventKind, read_events};
+use crate::engineering::instrumentation::VerificationCheckTelemetry;
 use crate::engineering::work_item_contract::read_work_item_contract;
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::orchestrator::{OrchestrationRun, RunStatus, SubAgentStatus, load_run};
@@ -53,6 +54,8 @@ pub struct RunVerificationEvidence {
     pub state: String,
     pub verification_id: Option<String>,
     pub commands: Vec<CheckReceipt>,
+    #[serde(default)]
+    pub check_results: Vec<VerificationCheckTelemetry>,
     pub evidence: Vec<EvidenceRef>,
     pub verified_at: Option<String>,
     pub source: String,
@@ -285,6 +288,7 @@ fn derive_verification(
             state: state.into(),
             verification_id: None,
             commands: verification.commands.clone(),
+            check_results: verification_check_results(events, run_id),
             evidence: Vec::new(),
             verified_at: Some(verification.verified_at.clone()),
             source: "task_run_receipt".into(),
@@ -306,6 +310,7 @@ fn derive_verification(
                 state: if success { "passed" } else { "failed" }.into(),
                 verification_id: event.verification_id.as_ref().map(ToString::to_string),
                 commands: Vec::new(),
+                check_results: verification_check_results(events, run_id),
                 evidence: event.evidence.clone(),
                 verified_at: Some(event.occurred_at.to_rfc3339()),
                 source: "engineering_event".into(),
@@ -315,6 +320,7 @@ fn derive_verification(
             state: "running".into(),
             verification_id: event.verification_id.as_ref().map(ToString::to_string),
             commands: Vec::new(),
+            check_results: verification_check_results(events, run_id),
             evidence: event.evidence.clone(),
             verified_at: None,
             source: "engineering_event".into(),
@@ -323,11 +329,31 @@ fn derive_verification(
             state: "not_run".into(),
             verification_id: None,
             commands: Vec::new(),
+            check_results: Vec::new(),
             evidence: Vec::new(),
             verified_at: None,
             source: "unavailable".into(),
         },
     }
+}
+
+fn verification_check_results(
+    events: &[EngineeringEvent],
+    run_id: &str,
+) -> Vec<VerificationCheckTelemetry> {
+    let Some(event) = matching_events(events, run_id)
+        .find(|event| event.kind == EngineeringEventKind::VerificationFinished)
+    else {
+        return Vec::new();
+    };
+    event
+        .attributes
+        .get("check_results")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|value| serde_json::from_value(value.clone()).ok())
+        .collect()
 }
 
 fn derive_commit(

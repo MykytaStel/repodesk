@@ -1,6 +1,6 @@
-import type { DecisionReceipt, VerificationAdvisorSnapshot } from "../../shared/api/verification";
+import type { DecisionReceipt, VerificationAdvisorSnapshot, VerificationCheckCandidate } from "../../shared/api/verification";
 
-const targetedCheck = {
+const targetedCheck: VerificationCheckCandidate = {
   id: "work-ui-targeted",
   title: "Work surface browser test",
   command: "pnpm exec playwright test e2e/work-golden-path.spec.ts",
@@ -10,9 +10,14 @@ const targetedCheck = {
   estimated_cost_units: null,
   relevant_paths: ["apps/desktop/src/features/work/WorkSurface.tsx"],
   last_status: null,
+  measured_runs: 0,
+  failed_runs: 0,
+  median_duration_ms: null,
+  history_confidence: "unknown",
+  latest_at: null,
 };
 
-const deferredCheck = {
+const deferredCheck: VerificationCheckCandidate = {
   id: "integration-suite",
   title: "Full integration suite",
   command: "cargo test --workspace",
@@ -22,6 +27,11 @@ const deferredCheck = {
   estimated_cost_units: null,
   relevant_paths: ["crates/"],
   last_status: null,
+  measured_runs: 0,
+  failed_runs: 0,
+  median_duration_ms: null,
+  history_confidence: "unknown",
+  latest_at: null,
 };
 
 export const workControlFixtures: {

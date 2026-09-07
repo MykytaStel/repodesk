@@ -8,7 +8,7 @@ const projects = [
     path: "/Users/you/code/repodesk",
     project_type: "rust",
     main_language: "rust",
-    checks: ["cargo test"],
+    checks: [{ id: "cargo-test", title: "Cargo test", command: "cargo test", kind: "test", required: false, relevant_paths: [], timeout_secs: 120 }],
     context_ignore: [],
   },
   {
