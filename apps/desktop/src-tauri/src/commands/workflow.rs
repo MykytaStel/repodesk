@@ -258,7 +258,7 @@ pub(crate) fn build_product_workflow_state() -> ProductWorkflowState {
             } else {
                 stdout.push_str("\n  checks:");
                 for check in config.checks {
-                    stdout.push_str(&format!("\n    - {}", check));
+                    stdout.push_str(&format!("\n    - {}: {}", check.title, check.command));
                 }
             }
             if config.context_ignore.is_empty() {

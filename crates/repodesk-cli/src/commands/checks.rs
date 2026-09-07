@@ -126,7 +126,7 @@ pub fn handle_checks_command(command: ChecksCommand) -> Result<()> {
             println!();
             println!("  all checks:");
             for check in &config.checks {
-                println!("    - {check}");
+                println!("    - {}: {}", check.title, check.command);
             }
         }
     }

@@ -144,14 +144,17 @@ fn snapshot_for_project(project: &ProjectConfig) -> TaskRunnerSnapshot {
         .checks
         .iter()
         .take(TASK_RUNNER_MAX_TASKS)
-        .enumerate()
-        .map(|(index, command)| {
-            let validation_error = is_allowed_check_command(command).err();
+        .map(|check| {
+            let validation_error = is_allowed_check_command(&check.command).err();
             ProjectTask {
-                id: task_id(index, command),
-                label: task_label(command),
-                command: command.clone(),
-                kind: task_kind(command),
+                id: check.id.clone(),
+                label: if check.title.trim().is_empty() {
+                    task_label(&check.command)
+                } else {
+                    check.title.clone()
+                },
+                command: check.command.clone(),
+                kind: task_kind(&check.command),
                 runnable: validation_error.is_none(),
                 validation_error,
             }
@@ -241,18 +244,6 @@ fn bounded_tail(value: &str, max_chars: usize) -> (String, bool) {
     )
 }
 
-fn task_id(index: usize, command: &str) -> String {
-    // Stable FNV-1a is enough here: this is a stale-UI identity guard, not a
-    // cryptographic integrity primitive. Including the index preserves unique
-    // IDs even if a manually-edited project config contains duplicate checks.
-    let mut hash = 0xcbf29ce484222325_u64;
-    for byte in command.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    format!("check-{index}-{hash:016x}")
-}
-
 fn task_kind(command: &str) -> ProjectTaskKind {
     let lower = command.to_ascii_lowercase();
     if lower.contains("fmt") || lower.contains("prettier") || lower.contains("black") {
@@ -310,14 +301,6 @@ mod tests {
         assert_eq!(task_kind("pnpm typecheck"), ProjectTaskKind::Typecheck);
         assert_eq!(task_kind("cargo test --all"), ProjectTaskKind::Test);
         assert_eq!(task_kind("trivy fs ."), ProjectTaskKind::Security);
-    }
-
-    #[test]
-    fn task_identity_changes_with_command_or_position() {
-        let first = task_id(0, "cargo test --all");
-        assert_eq!(first, task_id(0, "cargo test --all"));
-        assert_ne!(first, task_id(1, "cargo test --all"));
-        assert_ne!(first, task_id(0, "cargo test -p repodesk-core"));
     }
 
     #[test]

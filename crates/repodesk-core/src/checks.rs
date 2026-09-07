@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 
 use crate::errors::RepoDeskResult;
 use crate::init;
+use crate::project_checks::ProjectCheck;
 use crate::projects::get_active_project;
 use crate::tasks::show_active_task;
 
@@ -130,14 +131,8 @@ pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
 
     let mut results = Vec::new();
 
-    for (index, check) in project.checks.iter().enumerate() {
-        let mut result = run_validated_check_with_id(
-            &format!("project-check-{index}"),
-            check,
-            &project.path,
-            120,
-        );
-        result.log_evidence_ref = Some(log_file.display().to_string());
+    for check in &project.checks {
+        let result = run_project_check(check, &project.path, Some(&log_file.display().to_string()));
 
         writeln!(log, "==============================")?;
         writeln!(log, "Command: {}", result.command)?;
@@ -167,6 +162,17 @@ pub fn run_checks() -> RepoDeskResult<ChecksRunResult> {
     write_run_summary(&result, "Generated after checks run.")?;
 
     Ok(result)
+}
+
+fn run_project_check(
+    check: &ProjectCheck,
+    cwd: &Path,
+    log_evidence_ref: Option<&str>,
+) -> CheckCommandResult {
+    let mut result =
+        run_validated_check_with_id(&check.id, &check.command, cwd, check.timeout_secs);
+    result.log_evidence_ref = log_evidence_ref.map(str::to_string);
+    result
 }
 
 fn check_id_for_command(command: &str) -> String {

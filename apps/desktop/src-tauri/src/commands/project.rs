@@ -26,7 +26,7 @@ pub fn project_info() -> CommandResult {
             } else {
                 stdout.push_str("\n  checks:");
                 for check in config.checks {
-                    stdout.push_str(&format!("\n    - {check}"));
+                    stdout.push_str(&format!("\n    - {}: {}", check.title, check.command));
                 }
             }
             if config.context_ignore.is_empty() {
@@ -159,7 +159,7 @@ pub fn project_add(input: ProjectAddInput) -> Result<CommandResult, ErrorPayload
             } else {
                 stdout.push_str("\n  checks:");
                 for check in config.checks {
-                    stdout.push_str(&format!("\n    - {check}"));
+                    stdout.push_str(&format!("\n    - {}: {}", check.title, check.command));
                 }
             }
             Ok(CommandResult {

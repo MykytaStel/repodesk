@@ -7,6 +7,10 @@ use serde::{Deserialize, Serialize};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 use crate::init;
 use crate::paths::RepoDeskPaths;
+use crate::project_checks::{
+    ProjectCheck, default_checks_for_project_type, deserialize_project_checks,
+    serialize_project_checks,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectConfig {
@@ -14,7 +18,11 @@ pub struct ProjectConfig {
     pub path: PathBuf,
     pub project_type: String,
     pub main_language: Option<String>,
-    pub checks: Vec<String>,
+    #[serde(
+        deserialize_with = "deserialize_project_checks",
+        serialize_with = "serialize_project_checks"
+    )]
+    pub checks: Vec<ProjectCheck>,
     pub context_ignore: Vec<String>,
     /// When enabled, Finish is blocked unless the current ChangeSet has exact
     /// producer attribution (for example, a managed isolated worktree receipt).
@@ -199,21 +207,48 @@ pub fn set_project_require_exact_change_attribution(
 /// stored. Idempotent: re-adding an existing check is a no-op.
 pub fn add_project_check(name: &str, command: &str) -> RepoDeskResult<ProjectConfig> {
     let command = command.trim().to_string();
-    crate::checks::is_allowed_check_command(&command)
-        .map_err(RepoDeskError::InvalidCheckCommand)?;
+    let check = ProjectCheck::new("", "", &command);
+    check.validate()?;
 
     let mut config = get_project(name)?;
-    if config.checks.iter().any(|existing| existing == &command) {
+    if config.checks.iter().any(|existing| existing.id == check.id) {
         return Ok(config);
     }
 
-    config.checks.push(command);
+    config.checks.push(check);
     config.updated_at = Utc::now();
 
     let paths = RepoDeskPaths::resolve()?;
     let project_file = paths.project_config_file(name);
     write_project_config(&project_file, &config)?;
 
+    Ok(config)
+}
+
+pub fn add_project_check_descriptor(
+    name: &str,
+    check: ProjectCheck,
+) -> RepoDeskResult<ProjectConfig> {
+    check.validate()?;
+    let mut config = get_project(name)?;
+    if config.checks.iter().any(|existing| existing.id == check.id) {
+        return Ok(config);
+    }
+    config.checks.push(check);
+    config.updated_at = Utc::now();
+    let paths = RepoDeskPaths::resolve()?;
+    write_project_config(&paths.project_config_file(name), &config)?;
+    Ok(config)
+}
+
+pub fn apply_recommended_project_checks(name: &str) -> RepoDeskResult<ProjectConfig> {
+    let mut config = get_project(name)?;
+    if config.checks.is_empty() {
+        config.checks = default_checks_for_project_type(&config.project_type);
+        config.updated_at = Utc::now();
+        let paths = RepoDeskPaths::resolve()?;
+        write_project_config(&paths.project_config_file(name), &config)?;
+    }
     Ok(config)
 }
 
@@ -297,21 +332,6 @@ fn infer_main_language(project_type: &str) -> Option<String> {
         "python" => Some("python".to_string()),
         "monorepo" => None,
         _ => None,
-    }
-}
-
-fn default_checks_for_project_type(project_type: &str) -> Vec<String> {
-    match project_type {
-        "rust" | "rust-cli" | "rust-desktop" => vec![
-            "cargo fmt --all -- --check".to_string(),
-            "cargo clippy --all-targets --all-features -- -D warnings".to_string(),
-            "cargo test --all".to_string(),
-        ],
-        "node" | "react" | "react-native" => {
-            vec!["pnpm typecheck".to_string(), "pnpm test".to_string()]
-        }
-        "python" => vec!["python -m pytest".to_string()],
-        _ => Vec::new(),
     }
 }
 

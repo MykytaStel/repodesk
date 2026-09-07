@@ -173,7 +173,12 @@ pub fn build_context() -> RepoDeskResult<ContextBuildResult> {
         task.config.title,
         task.config.run_dir.display()
     );
-    let checks = format_list(&project.checks);
+    let check_commands = project
+        .checks
+        .iter()
+        .map(|check| format!("{}: {}", check.title, check.command))
+        .collect::<Vec<_>>();
+    let checks = format_list(&check_commands);
     let ignore_rules = format_list(&project.context_ignore);
     let git_state = format!(
         "## Git Branch\n\n```txt\n{}\n```\n\n## Git Status\n\n```txt\n{}\n```\n\n## Git Diff Stat\n\n```txt\n{}\n```\n\n## Git Changed Files\n\n```txt\n{}\n```",

@@ -110,7 +110,7 @@ pub fn handle_project_command(command: ProjectCommand) -> Result<()> {
             } else {
                 println!("  checks:");
                 for check in config.checks {
-                    println!("    - {check}");
+                    println!("    - {}: {}", check.title, check.command);
                 }
             }
         }
@@ -159,7 +159,7 @@ pub fn handle_project_command(command: ProjectCommand) -> Result<()> {
             } else {
                 println!("  checks:");
                 for check in config.checks {
-                    println!("    - {check}");
+                    println!("    - {}: {}", check.title, check.command);
                 }
             }
 

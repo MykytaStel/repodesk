@@ -125,17 +125,6 @@ pub struct VerificationAdvisorSnapshot {
     pub sources: Vec<VerificationSourceStatus>,
 }
 
-fn check_kind(command: &str) -> String {
-    let lower = command.to_ascii_lowercase();
-    if lower.contains("test") || lower.contains("vitest") || lower.contains("jest") {
-        "test".into()
-    } else if lower.contains("lint") || lower.contains("eslint") || lower.contains("clippy") {
-        "lint".into()
-    } else {
-        "check".into()
-    }
-}
-
 fn decision_event_kind(receipt: &DecisionReceipt) -> EngineeringEventKind {
     if receipt.outcome.is_some() {
         return EngineeringEventKind::DecisionOutcomeRecorded;
@@ -229,16 +218,15 @@ pub fn work_verification_advisor() -> Result<VerificationAdvisorSnapshot, ErrorP
     let checks = project
         .checks
         .iter()
-        .enumerate()
-        .map(|(index, command)| VerificationCheckCandidate {
-            id: format!("project-check-{index}"),
-            title: command.clone(),
-            command: command.clone(),
-            kind: check_kind(command),
-            required: false,
+        .map(|check| VerificationCheckCandidate {
+            id: check.id.clone(),
+            title: check.title.clone(),
+            command: check.command.clone(),
+            kind: check.kind.clone(),
+            required: check.required,
             estimated_seconds: None,
             estimated_cost_units: None,
-            relevant_paths: Vec::new(),
+            relevant_paths: check.relevant_paths.clone(),
             last_status: None,
         })
         .collect::<Vec<_>>();

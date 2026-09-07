@@ -44,6 +44,7 @@ pub mod persistence;
 pub mod playbooks;
 mod process_io;
 pub mod project_ai_scan;
+pub mod project_checks;
 pub mod projects;
 pub mod prompts;
 pub mod recovery;
