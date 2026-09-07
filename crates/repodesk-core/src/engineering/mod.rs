@@ -98,8 +98,8 @@ pub use events::{
 };
 pub use intelligence::{
     AiUsageIntelligence, ChangeIntelligence, CompletionIntelligence, ContextIntelligence,
-    EngineeringIntelligence, ExecutionIntelligence, IntelligenceRates, VerificationIntelligence,
-    derive_engineering_intelligence, load_engineering_intelligence,
+    DecisionIntelligence, EngineeringIntelligence, ExecutionIntelligence, IntelligenceRates,
+    VerificationIntelligence, derive_engineering_intelligence, load_engineering_intelligence,
 };
 pub use knowledge::{
     ENGINEERING_KNOWLEDGE_FILE, ENGINEERING_KNOWLEDGE_VERSION, EngineeringKnowledgeCategory,

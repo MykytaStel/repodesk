@@ -24,6 +24,7 @@ pub struct EngineeringIntelligence {
     pub context: ContextIntelligence,
     pub changes: ChangeIntelligence,
     pub verification: VerificationIntelligence,
+    pub decisions: DecisionIntelligence,
     pub completion: CompletionIntelligence,
     pub rates: IntelligenceRates,
 }
@@ -69,6 +70,16 @@ pub struct ChangeIntelligence {
     pub pending_review_changesets: usize,
     pub accepted_files: usize,
     pub rejected_files: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct DecisionIntelligence {
+    pub accepted_change_count: usize,
+    pub accepted_change_cost_units: Option<f64>,
+    pub correction_cost_units: Option<f64>,
+    pub verification_debt_count: usize,
+    pub decision_count: usize,
+    pub override_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -236,6 +247,7 @@ pub fn derive_engineering_intelligence(events: &[EngineeringEvent]) -> Engineeri
     fold_changesets(&changesets, &mut report);
     fold_verifications(&verifications, &mut report);
     fold_commits(&commits, &mut report);
+    report.decisions = derive_decision_intelligence(events);
 
     report.execution.unique_workers = worker_ids.len();
     report.execution.unique_coding_agents = coding_agent_ids.len();
@@ -243,6 +255,75 @@ pub fn derive_engineering_intelligence(events: &[EngineeringEvent]) -> Engineeri
     report.rates = derive_rates(&report);
 
     report
+}
+
+fn derive_decision_intelligence(events: &[EngineeringEvent]) -> DecisionIntelligence {
+    let accepted_changesets = events
+        .iter()
+        .filter(|event| {
+            event.kind == EngineeringEventKind::ChangeSetReviewed
+                && attribute_str(event, "decision") == Some("accepted")
+        })
+        .filter_map(changeset_key)
+        .collect::<BTreeSet<_>>();
+    let accepted_executions = events
+        .iter()
+        .filter(|event| {
+            event.kind == EngineeringEventKind::ChangeSetReviewed
+                && attribute_str(event, "decision") == Some("accepted")
+        })
+        .filter_map(execution_key)
+        .collect::<BTreeSet<_>>();
+
+    let mut accepted_cost_total = 0.0;
+    let mut accepted_cost_measured = false;
+    let mut correction_cost_total = 0.0;
+    let mut correction_cost_measured = false;
+    let mut verification_debt_count: usize = 0;
+    let mut decision_count: usize = 0;
+    let mut override_count: usize = 0;
+
+    for event in events {
+        match event.kind {
+            EngineeringEventKind::ExecutionFinished => {
+                if accepted_executions.contains(&execution_key(event).unwrap_or_default())
+                    && let Some(cost) = attribute_f64(event, "cost_units")
+                {
+                    accepted_cost_measured = true;
+                    accepted_cost_total += cost;
+                }
+                if matches!(attribute_str(event, "status"), Some("partial" | "failed"))
+                    && let Some(cost) = attribute_f64(event, "cost_units")
+                {
+                    correction_cost_measured = true;
+                    correction_cost_total += cost;
+                }
+            }
+            EngineeringEventKind::VerificationRecommended
+            | EngineeringEventKind::VerificationSelected
+            | EngineeringEventKind::VerificationDeferred
+            | EngineeringEventKind::DecisionOverridden
+            | EngineeringEventKind::DecisionOutcomeRecorded => {
+                decision_count += 1;
+                verification_debt_count = verification_debt_count.saturating_add(
+                    attribute_usize(event, "verification_debt_count").unwrap_or_default(),
+                );
+                if event.kind == EngineeringEventKind::DecisionOverridden {
+                    override_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    DecisionIntelligence {
+        accepted_change_count: accepted_changesets.len(),
+        accepted_change_cost_units: accepted_cost_measured.then_some(accepted_cost_total),
+        correction_cost_units: correction_cost_measured.then_some(correction_cost_total),
+        verification_debt_count,
+        decision_count,
+        override_count,
+    }
 }
 
 fn update_execution_common(fact: &mut ExecutionFact, event: &EngineeringEvent) {

@@ -64,6 +64,12 @@ export type AiUsageReport = {
   output_tokens: number;
   total_tokens: number;
   cost_units: number;
+  accepted_change_count: number;
+  accepted_change_cost_units: number | null;
+  correction_cost_units: number | null;
+  verification_debt_count: number;
+  decision_count: number;
+  override_count: number;
   context: AiContextEfficiency;
   orchestration: AiOrchestrationEfficiency;
   outcomes: AiOutcomeEfficiency;

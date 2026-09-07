@@ -31,12 +31,14 @@ pub mod system;
 pub mod task;
 pub mod task_runner;
 pub mod tokens;
+pub mod verification;
 pub mod workflow;
 
 pub use models::*;
 pub use routing::*;
 pub use system::*;
 pub use tokens::*;
+pub use verification::*;
 pub use workflow::*;
 
 pub use backup::*;

@@ -10,6 +10,7 @@ use std::collections::{BTreeSet, HashMap};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
+use crate::engineering::decision_receipt::{DecisionReceipt, VerificationDecisionKind};
 use crate::engineering::domain::{
     ChangeSet, ChangeSetId, EvidenceKind, EvidenceRef, ExecutionId, VerificationId, WorkItem,
     WorkItemId, WorkerKind, WorkerRef,
@@ -385,6 +386,61 @@ pub fn record_commit_created(
     if let Ok(evidence) = EvidenceRef::try_new(EvidenceKind::Commit, commit_sha.to_string()) {
         event = event.with_evidence(evidence);
     }
+    append_for_task(task, event)
+}
+
+/// Persist a user-visible verification decision as one append-only event. The
+/// receipt is stored as structured evidence so a later projection can replay
+/// exactly what was known without retaining prompts or model responses.
+pub fn record_decision_receipt(task: &TaskConfig, receipt: &DecisionReceipt) -> RepoDeskResult<()> {
+    if task.project_name != receipt.project || task.id != receipt.work_item_id {
+        return Err(RepoDeskError::Api(
+            "decision receipt does not match the active Work Item".to_string(),
+        ));
+    }
+
+    let kind = if receipt.outcome.is_some() {
+        EngineeringEventKind::DecisionOutcomeRecorded
+    } else if receipt.human_override.is_some() {
+        EngineeringEventKind::DecisionOverridden
+    } else {
+        match receipt.decision_kind {
+            VerificationDecisionKind::RunNow | VerificationDecisionKind::RunTargeted => {
+                EngineeringEventKind::VerificationSelected
+            }
+            VerificationDecisionKind::DeferWithDebt => EngineeringEventKind::VerificationDeferred,
+            VerificationDecisionKind::AskForApproval
+            | VerificationDecisionKind::PauseAndReview
+            | VerificationDecisionKind::StopWithPartialResult => {
+                EngineeringEventKind::VerificationRecommended
+            }
+        }
+    };
+
+    let mut event = event_for_task(task, kind)?
+        .with_attribute("decision_receipt", json!(receipt))
+        .with_attribute("decision_id", json!(receipt.decision_id))
+        .with_attribute("decision_kind", json!(receipt.decision_kind))
+        .with_attribute("tree_identity", json!(receipt.tree_identity))
+        .with_attribute("policy_version", json!(receipt.policy_version))
+        .with_attribute("risk_label", json!(receipt.risk_label))
+        .with_attribute("uncertainty_label", json!(receipt.uncertainty_label))
+        .with_attribute(
+            "verification_debt_count",
+            json!(receipt.verification_debt.len()),
+        );
+
+    if let Some(execution) = receipt.execution_id.as_deref() {
+        event = event.with_execution(execution_id(execution)?);
+    }
+    if let Some(changeset_id) = receipt.changeset_identity.as_deref() {
+        event = event
+            .with_changeset(ChangeSetId::try_new(changeset_id.to_string()).map_err(domain_error)?);
+    }
+    for evidence in &receipt.evidence_refs {
+        event = event.with_evidence(evidence.clone());
+    }
+
     append_for_task(task, event)
 }
 

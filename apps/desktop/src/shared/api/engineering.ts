@@ -41,6 +41,15 @@ export type ChangeIntelligence = {
   rejected_files: number;
 };
 
+export type DecisionIntelligence = {
+  accepted_change_count: number;
+  accepted_change_cost_units: number | null;
+  correction_cost_units: number | null;
+  verification_debt_count: number;
+  decision_count: number;
+  override_count: number;
+};
+
 export type VerificationIntelligence = {
   attempts: number;
   finished: number;
@@ -72,6 +81,7 @@ export type EngineeringIntelligence = {
   context: ContextIntelligence;
   changes: ChangeIntelligence;
   verification: VerificationIntelligence;
+  decisions: DecisionIntelligence;
   completion: CompletionIntelligence;
   rates: IntelligenceRates;
 };

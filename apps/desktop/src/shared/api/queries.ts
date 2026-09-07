@@ -154,6 +154,10 @@ export const queryKeys = {
     list: ["outcomes_list"] as const,
     stats: ["outcomes_stats"] as const,
   },
+  verification: {
+    advisor: ["verification", "advisor"] as const,
+    receipt: (decisionId?: string | null) => ["verification", "receipt", decisionId ?? null] as const,
+  },
   audit: {
     recent: (limit: number) => ["audit_recent", limit] as const,
     verify: ["audit_verify"] as const,

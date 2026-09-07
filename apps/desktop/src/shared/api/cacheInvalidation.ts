@@ -1,6 +1,6 @@
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
-export type QueryDomain = "workspace" | "work" | "git" | "code" | "runs" | "providers" | "system";
+export type QueryDomain = "workspace" | "work" | "git" | "code" | "runs" | "providers" | "system" | "verification";
 
 const DOMAIN_KEYS: Record<QueryDomain, readonly QueryKey[]> = {
   workspace: [
@@ -26,6 +26,7 @@ const DOMAIN_KEYS: Record<QueryDomain, readonly QueryKey[]> = {
     ["orchestrate_status"],
     ["task_timeline"],
   ],
+  verification: [["verification"]],
   providers: [
     ["provider_settings"],
     ["model_health_snapshot"],
