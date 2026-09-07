@@ -13,6 +13,9 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 - **Measured Verification Catalog (Phase 2):** Stable project check descriptors,
   bounded per-check verification telemetry, rebuildable duration/failure history,
   honest confidence states, and explicit empty-catalog setup in the desktop UI.
+- **Verification Replay Inspector:** Changes now explains whether a verification
+  receipt is reusable against the current HEAD, staged tree, and ChangeSet,
+  including explicit stale/missing/unavailable reasons and the next action.
 - **Runs convergence:** Runs now owns Run timeline, Change economics, Evidence
   archive, and a Decision Receipt summary instead of exposing provider/audit
   subsystem views as competing destinations.

@@ -262,6 +262,42 @@ export type ChangeVerificationEvidence = {
   stale_reason: string | null;
 };
 
+export type VerificationReplayStatus = "current" | "stale" | "missing" | "unavailable";
+export type VerificationReplayReasonCode =
+  | "exact_match"
+  | "current_failed_evidence"
+  | "receipt_missing"
+  | "verification_missing"
+  | "verification_run_mismatch"
+  | "current_head_unavailable"
+  | "current_index_tree_unavailable"
+  | "current_changeset_unavailable"
+  | "committed_tree_unavailable"
+  | "head_changed"
+  | "index_tree_changed"
+  | "changeset_changed"
+  | "committed_tree_changed";
+
+export type VerificationReplay = {
+  status: VerificationReplayStatus;
+  reason_code: VerificationReplayReasonCode;
+  reason: string;
+  verification_id: string | null;
+  run_id: string | null;
+  verified_at: string | null;
+  verified_head_sha: string | null;
+  verified_index_tree_sha: string | null;
+  current_head_sha: string | null;
+  current_index_tree_sha: string | null;
+  verified_changeset_digest: string | null;
+  current_changeset_digest: string | null;
+  command_count: number;
+  passed_commands: number;
+  failed_commands: number;
+  can_rerun: boolean;
+  recommended_action: string;
+};
+
 export type ScopeOverrideEvidence = {
   event_id: string;
   reason: string;
@@ -295,6 +331,7 @@ export type ChangeGovernanceSnapshot = {
   scope_status: ScopeComplianceStatus;
   review_state: ChangeReviewState;
   verification: ChangeVerificationEvidence;
+  verification_replay?: VerificationReplay | null;
   scope_override: ScopeOverrideEvidence | null;
   committed: boolean;
   commit_sha: string | null;

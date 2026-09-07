@@ -29,6 +29,7 @@ pub mod strategy_adaptation;
 pub mod strategy_feedback;
 pub mod strategy_instrumentation;
 pub mod verification_history;
+pub mod verification_replay;
 pub mod work_item_contract;
 
 pub use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
@@ -144,6 +145,10 @@ pub use strategy_instrumentation::{
 pub use verification_history::{
     VerificationCheckHistory, VerificationHistory, VerificationHistoryConfidence,
     derive_verification_history,
+};
+pub use verification_replay::{
+    VerificationReplay, VerificationReplayInput, VerificationReplayReasonCode,
+    VerificationReplayStatus, derive_verification_replay,
 };
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,

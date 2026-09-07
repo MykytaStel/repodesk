@@ -32,7 +32,8 @@
 }
 
 .change-evidence-message,
-.change-override-receipt {
+.change-override-receipt,
+.verification-replay-message {
   min-height: 34px;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -40,6 +41,43 @@
   background: var(--surface-3);
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+.verification-replay {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.verification-replay-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--border);
+}
+
+.verification-replay-grid > .semantic-evidence {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface-3);
+}
+
+.verification-replay-message {
+  display: grid;
+  gap: 4px;
+}
+
+.verification-replay-message strong {
+  color: var(--text);
+}
+
+.verification-replay-message span {
+  color: var(--muted);
 }
 
 .change-evidence-message {
@@ -96,7 +134,8 @@
 }
 
 @media (max-width: 680px) {
-  .change-evidence-grid {
+  .change-evidence-grid,
+  .verification-replay-grid {
     grid-template-columns: 1fr;
   }
 }

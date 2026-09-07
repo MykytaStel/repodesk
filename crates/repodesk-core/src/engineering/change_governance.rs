@@ -14,6 +14,7 @@ use crate::engineering::domain::{ChangeSetId, EvidenceRef, ExecutionId, WorkerRe
 use crate::engineering::events::{
     EngineeringEvent, EngineeringEventKind, append_event, read_events,
 };
+use crate::engineering::verification_replay::VerificationReplay;
 use crate::engineering::work_item_contract::{
     ScopeComplianceStatus, WorkItemContractSnapshot, load_work_item_contract_snapshot,
 };
@@ -130,6 +131,8 @@ pub struct ChangeGovernanceSnapshot {
     pub scope_status: ScopeComplianceStatus,
     pub review_state: ChangeReviewState,
     pub verification: ChangeVerificationEvidence,
+    #[serde(default)]
+    pub verification_replay: Option<VerificationReplay>,
     pub scope_override: Option<ScopeOverrideEvidence>,
     pub committed: bool,
     pub commit_sha: Option<String>,
@@ -231,6 +234,7 @@ pub fn derive_change_governance(
             scope_status: ScopeComplianceStatus::NotEvaluated,
             review_state: ChangeReviewState::Proposed,
             verification: ChangeVerificationEvidence::default(),
+            verification_replay: None,
             scope_override: None,
             committed: false,
             commit_sha: None,
@@ -281,6 +285,7 @@ pub fn derive_change_governance(
         scope_status: contract.compliance.status,
         review_state,
         verification,
+        verification_replay: None,
         scope_override,
         committed,
         commit_sha,

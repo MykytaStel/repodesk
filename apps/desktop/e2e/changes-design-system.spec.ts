@@ -26,6 +26,7 @@ function engineeringSnapshot(options?: {
   verificationFresh?: boolean | null;
   staleReason?: string | null;
   scopeViolation?: boolean;
+  replayStatus?: "current" | "stale" | "missing" | "unavailable";
 }) {
   const attribution = options?.attribution ?? "exact_isolated";
   const gateState = options?.gateState ?? "ready";
@@ -34,6 +35,21 @@ function engineeringSnapshot(options?: {
   const blockers = options?.blockers ?? [];
   const scopeStatus = options?.scopeViolation ? "violation" : "compliant";
   const fileScopeState = options?.scopeViolation ? "out_of_scope" : "allowed";
+  const replayStatus = options?.replayStatus ?? (verificationFresh === false ? "stale" : "current");
+  const replayReason = replayStatus === "current"
+    ? "HEAD, staged tree, and ChangeSet identity exactly match the verification receipt."
+    : replayStatus === "stale"
+      ? "The staged index tree changed after verification, so the receipt is stale."
+      : replayStatus === "missing"
+        ? "No canonical verification receipt exists for this Work Item."
+        : "The current Git HEAD cannot be resolved, so receipt freshness is unknown.";
+  const replayReasonCode = replayStatus === "current"
+    ? "exact_match"
+    : replayStatus === "stale"
+      ? "index_tree_changed"
+      : replayStatus === "missing"
+        ? "receipt_missing"
+        : "current_head_unavailable";
   const base = currentOnboardedFixtures.work_engineering_intelligence as Record<string, unknown>;
 
   return {
@@ -58,6 +74,25 @@ function engineeringSnapshot(options?: {
         error: verificationState === "failed" ? "Verification command failed" : null,
         fresh: verificationFresh,
         stale_reason: options?.staleReason ?? null,
+      },
+      verification_replay: {
+        status: replayStatus,
+        reason_code: replayReasonCode,
+        reason: replayReason,
+        verification_id: "verify-semantic",
+        run_id: "run-semantic",
+        verified_at: "2026-08-16T12:00:00Z",
+        verified_head_sha: "1111111111111111111111111111111111111111",
+        verified_index_tree_sha: "3333333333333333333333333333333333333333",
+        current_head_sha: replayStatus === "unavailable" ? null : "1111111111111111111111111111111111111111",
+        current_index_tree_sha: replayStatus === "stale" ? "4444444444444444444444444444444444444444" : "3333333333333333333333333333333333333333",
+        verified_changeset_digest: "changeset-digest",
+        current_changeset_digest: "changeset-digest",
+        command_count: 1,
+        passed_commands: replayStatus === "current" ? 1 : 0,
+        failed_commands: 0,
+        can_rerun: replayStatus === "stale" || replayStatus === "missing",
+        recommended_action: replayStatus === "current" ? "No rerun required for tree identity." : "Verify the current reviewed ChangeSet again.",
       },
       committed: false,
       commit_sha: null,
@@ -186,6 +221,7 @@ test.describe("Changes semantic design-system reference", () => {
       staleReason: "The reviewed tree changed after verification.",
       gateState: "verification_stale",
       blockers: ["Verification receipt is stale."],
+      replayStatus: "stale",
     });
     await installMockIpc(page, fixturesWithEngineering(snapshot));
     await page.goto("/");
@@ -198,6 +234,18 @@ test.describe("Changes semantic design-system reference", () => {
       "attention",
     );
     await expect(page.getByText("The reviewed tree changed after verification.", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Stale · rerun required", exact: true })).toBeVisible();
+    await expect(page.getByText("The staged index tree changed after verification, so the receipt is stale.", { exact: true })).toBeVisible();
+  });
+
+  test("current replay explains that the receipt is reusable", async ({ page }) => {
+    await installMockIpc(page, fixturesWithEngineering(engineeringSnapshot()));
+    await page.goto("/");
+    await openManifest(page);
+
+    await expect(page.getByRole("heading", { name: "Current · reusable", exact: true })).toBeVisible();
+    await expect(page.getByText("HEAD, staged tree, and ChangeSet identity exactly match the verification receipt.", { exact: true })).toBeVisible();
+    await expect(page.getByText("1/1 passed", { exact: true })).toBeVisible();
   });
 
   test("scope violation is critical and exposes one override action", async ({ page }) => {

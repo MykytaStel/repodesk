@@ -28,6 +28,7 @@ import {
   safeCommitSemantic,
   scopeSemantic,
   treeBindingSemantic,
+  verificationReplaySemantic,
   verificationSemantic,
 } from "./changesSemantic";
 
@@ -118,6 +119,8 @@ export function ChangeGovernancePanel({
   const scope = scopeSemantic(manifest.scope.status, manifest.scope.overridden);
   const review = reviewSemantic(governance.review_state);
   const verification = verificationSemantic(governance);
+  const replay = governance.verification_replay ?? null;
+  const replayState = replay ? verificationReplaySemantic(replay) : null;
   const acceptance = acceptanceSemantic(manifest.acceptance);
   const treeBinding = treeBindingSemantic(manifest);
 
@@ -218,6 +221,39 @@ export function ChangeGovernancePanel({
           tone="attention"
           detail={governance.verification.stale_reason}
         />
+      ) : null}
+
+      {replay && replayState ? (
+        <section className="verification-replay" aria-label="Verification replay">
+          <PanelHeader
+            eyebrow="Verification replay"
+            title={replayState.label}
+            description={replay.verified_at ? `Verified ${replay.verified_at}` : "No reusable receipt yet"}
+            trailing={<StatusBadge label={replayState.label} tone={replayState.tone} />}
+          />
+          <div className="verification-replay-grid">
+            <EvidenceState
+              label="Verified index tree"
+              state={shortSha(replay.verified_index_tree_sha)}
+              tone={replay.status === "current" ? "positive" : "attention"}
+            />
+            <EvidenceState
+              label="Current index tree"
+              state={shortSha(replay.current_index_tree_sha)}
+              tone={replay.status === "current" ? "positive" : replay.status === "unavailable" ? "critical" : "attention"}
+            />
+            <EvidenceState
+              label="Check evidence"
+              state={`${replay.passed_commands}/${replay.command_count} passed`}
+              tone={replay.failed_commands > 0 ? "critical" : replay.command_count > 0 ? "positive" : "neutral"}
+              detail={replay.run_id ? `Run ${replay.run_id}` : undefined}
+            />
+          </div>
+          <div className="verification-replay-message" data-semantic-tone={replayState.tone}>
+            <strong>{replay.reason}</strong>
+            <span>Next: {replay.recommended_action}</span>
+          </div>
+        </section>
       ) : null}
 
       {canVerify ? (

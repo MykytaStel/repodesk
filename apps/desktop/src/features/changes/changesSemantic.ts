@@ -8,6 +8,7 @@ import type {
   CommitGateState,
   SafeCommitManifest,
   ScopeComplianceStatus,
+  VerificationReplay,
 } from "../../shared/api/engineering";
 import type { SemanticState } from "../../shared/ui/primitives";
 
@@ -81,6 +82,23 @@ export function verificationSemantic(governance: ChangeGovernanceSnapshot): Sema
       return { label: "Not run", tone: "neutral" };
     default:
       return assertNever(verification.state);
+  }
+}
+
+export function verificationReplaySemantic(replay: VerificationReplay): SemanticState {
+  switch (replay.status) {
+    case "current":
+      return replay.failed_commands > 0
+        ? { label: "Current · failed evidence", tone: "critical", detail: replay.reason }
+        : { label: "Current · reusable", tone: "positive", detail: replay.reason };
+    case "stale":
+      return { label: "Stale · rerun required", tone: "attention", detail: replay.reason };
+    case "missing":
+      return { label: "Missing receipt", tone: "attention", detail: replay.reason };
+    case "unavailable":
+      return { label: "Replay unavailable", tone: "critical", detail: replay.reason };
+    default:
+      return assertNever(replay.status);
   }
 }
 

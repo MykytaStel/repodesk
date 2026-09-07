@@ -148,6 +148,7 @@ mod tests {
                 fresh: Some(true),
                 stale_reason: None,
             },
+            verification_replay: None,
             scope_override: None,
             committed: false,
             commit_sha: None,

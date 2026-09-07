@@ -2,17 +2,19 @@ use repodesk_core::engineering::{
     AiUsageReport, ChangeGovernanceSnapshot, ChangeSetPassport, ChangeVerificationState,
     ContextInspectorReport, EngineeringIntelligence, EngineeringKnowledgeLifecycleReport,
     EngineeringKnowledgeProposalInput, EngineeringKnowledgeSnapshot, RunEvidenceSnapshot,
-    RunObservabilityReport, SafeCommitManifest, StrategyFeedbackReport, WorkItemContractSnapshot,
-    WorkItemContractUpdate, accept_active_engineering_knowledge, active_verification_is_fresh,
-    archive_active_engineering_knowledge, capture_active_verified_command,
-    derive_change_governance, derive_changeset_passport, derive_engineering_knowledge_lifecycle,
-    derive_run_observability, derive_work_item_contract_snapshot, link_active_acceptance_evidence,
+    RunObservabilityReport, SafeCommitManifest, StrategyFeedbackReport, VerificationReplayInput,
+    WorkItemContractSnapshot, WorkItemContractUpdate, accept_active_engineering_knowledge,
+    active_verification_is_fresh, archive_active_engineering_knowledge,
+    capture_active_verified_command, derive_change_governance, derive_changeset_passport,
+    derive_engineering_knowledge_lifecycle, derive_run_observability, derive_verification_replay,
+    derive_work_item_contract_snapshot, link_active_acceptance_evidence,
     load_active_acceptance_evidence, load_active_engineering_knowledge,
     load_active_run_evidence_from_events, load_active_safe_commit_manifest, load_context_inspector,
     propose_active_engineering_knowledge, read_work_item_contract,
     reconcile_verification_freshness, reconfirm_active_engineering_knowledge,
     record_active_scope_override, save_active_work_item_contract,
 };
+use repodesk_core::projects::get_active_project;
 use repodesk_core::tasks::show_active_task;
 use serde::{Deserialize, Serialize};
 
@@ -173,6 +175,30 @@ pub fn work_engineering_intelligence(
         });
         reconcile_verification_freshness(&mut change_governance, fresh, reason);
     }
+
+    let project = get_active_project().map_err(ErrorPayload::from)?;
+    let current_head_sha = repodesk_core::workflow::head_sha(&project.path);
+    let current_index_tree_sha = repodesk_core::workflow::index_tree_sha(&project.path);
+    let staged_paths = repodesk_core::workflow::staged_paths(&project.path);
+    let current_changeset_digest = current_index_tree_sha
+        .as_ref()
+        .map(|_| repodesk_core::workflow::changeset_digest(&staged_paths));
+    let committed_tree_sha = receipt
+        .as_ref()
+        .and_then(|value| value.finish.as_ref())
+        .filter(|finish| repodesk_core::workflow::commit_exists(&project.path, &finish.commit_sha))
+        .and_then(|finish| {
+            repodesk_core::workflow::receipt::commit_tree_sha(&project.path, &finish.commit_sha)
+        });
+    change_governance.verification_replay =
+        Some(derive_verification_replay(VerificationReplayInput {
+            receipt: receipt.as_ref(),
+            verification_id: change_governance.verification.verification_id.as_deref(),
+            current_head_sha: current_head_sha.as_deref(),
+            current_index_tree_sha: current_index_tree_sha.as_deref(),
+            current_changeset_digest: current_changeset_digest.as_deref(),
+            committed_tree_sha: committed_tree_sha.as_deref(),
+        }));
 
     let acceptance = load_active_acceptance_evidence().map_err(ErrorPayload::from)?;
     let changeset_passport =
