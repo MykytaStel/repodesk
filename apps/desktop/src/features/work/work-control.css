@@ -1,0 +1,81 @@
+@layer workbench {
+  .work-control-surface {
+    display: grid;
+    gap: 18px;
+    margin-bottom: 20px;
+  }
+
+  .work-control-header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 22px 24px;
+    border: 1px solid var(--border-strong);
+    border-radius: 18px;
+    background: linear-gradient(135deg, var(--surface-2), var(--surface));
+  }
+
+  .work-control-header h1 { margin: 4px 0 0; font-size: clamp(1.35rem, 2vw, 1.9rem); }
+  .work-control-header p { margin: 6px 0 0; color: var(--muted); }
+  .work-control-header-facts { display: flex; gap: 18px; flex-wrap: wrap; justify-content: end; }
+  .work-control-header-facts span, .work-control-facts span, .work-control-receipt-summary span { display: block; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
+  .work-control-header-facts strong { display: block; margin-top: 4px; }
+
+  .work-control-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); gap: 18px; align-items: start; }
+  .work-control-primary-column, .work-control-secondary-column { display: grid; gap: 18px; }
+  .work-control-card { min-width: 0; padding: 20px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-2); box-shadow: var(--card-shadow); }
+  .verification-advisor-card { border-color: color-mix(in srgb, var(--accent) 48%, var(--border)); }
+  .work-control-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 14px; }
+  .work-control-card h2 { margin: 4px 0 0; font-size: 1.05rem; }
+  .work-control-state { padding: 4px 8px; border-radius: 999px; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+  .work-control-state.is-attention { color: var(--warning); background: var(--warning-soft); }
+  .work-control-state.is-measured { color: var(--success); background: var(--success-soft); }
+  .work-control-state.is-unknown, .work-control-state.is-neutral { color: var(--muted); background: var(--neutral-soft); }
+  .work-control-rationale { margin: 16px 0; color: var(--text); line-height: 1.5; }
+  .work-control-primary-action { width: 100%; min-height: 48px; border: 1px solid color-mix(in srgb, var(--accent) 70%, white); border-radius: 10px; background: var(--accent); color: var(--accent-contrast); font-weight: 800; cursor: pointer; }
+  .work-control-primary-action:disabled { opacity: .55; cursor: not-allowed; }
+  .work-control-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+  .work-control-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+  .work-control-facts > div { padding-top: 10px; border-top: 1px solid var(--border); }
+  .work-control-facts strong { display: block; margin-top: 4px; overflow-wrap: anywhere; }
+  .work-control-note { margin: 14px 0 0; color: var(--muted); font-size: .84rem; line-height: 1.45; }
+  .work-control-debt { margin-top: 18px; padding: 14px; border: 1px solid var(--warning-border); border-radius: 12px; background: var(--warning-soft); }
+  .work-control-debt-heading { display: flex; justify-content: space-between; color: var(--warning); }
+  .work-control-debt ul, .work-receipt-section ul { margin: 12px 0 0; padding-left: 20px; }
+  .work-control-debt li { margin: 8px 0; }
+  .work-control-debt li span { display: block; margin-top: 2px; color: var(--muted); font-size: .83rem; }
+  .work-control-source-list { display: grid; gap: 8px; margin-top: 18px; }
+  .work-control-source-list > div { display: flex; justify-content: space-between; gap: 12px; font-size: .78rem; }
+  .work-control-source-list strong { font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .work-control-source-list .is-measured { color: var(--success); }
+  .work-control-source-list .is-partial, .work-control-source-list .is-unknown { color: var(--warning); }
+  .work-control-source-list .is-unavailable { color: var(--danger); }
+  .work-control-receipt-summary { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; margin: 18px 0; }
+  .work-control-receipt-summary strong { overflow-wrap: anywhere; }
+  .work-receipt-backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; background: rgba(3, 8, 14, .68); }
+  .work-receipt-dialog { width: min(680px, 100%); max-height: min(780px, 90vh); overflow: auto; padding: 22px; border: 1px solid var(--border-strong); border-radius: 18px; background: var(--surface); box-shadow: 0 24px 80px rgba(0, 0, 0, .4); }
+  .work-receipt-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 22px 0; }
+  .work-receipt-list div { padding: 10px; border: 1px solid var(--border); border-radius: 10px; }
+  .work-receipt-list dt { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; }
+  .work-receipt-list dd { margin: 5px 0 0; overflow-wrap: anywhere; }
+  .work-receipt-section { margin-top: 18px; }
+  .work-receipt-section p { color: var(--muted); }
+  .work-receipt-section pre { max-height: 180px; overflow: auto; padding: 12px; border-radius: 10px; background: var(--code-bg); color: var(--muted); font-size: .75rem; }
+  .icon-button { width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+
+  @media (max-width: 900px) {
+    .work-control-header { align-items: start; flex-direction: column; }
+    .work-control-header-facts { justify-content: start; }
+    .work-control-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 560px) {
+    .work-control-card { padding: 16px; }
+    .work-control-facts, .work-receipt-list { grid-template-columns: 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .work-control-primary-action { transition: none; }
+  }
+}

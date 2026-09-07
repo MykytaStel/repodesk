@@ -3,7 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as api from "../../shared/api/orchestrate";
 import * as strategyApi from "../../shared/api/strategy";
 import { invalidateQueryDomains } from "../../shared/api/cacheInvalidation";
-import { callCommand } from "../../shared/api/queries";
+import { callCommand, queryKeys } from "../../shared/api/queries";
+import { WORK_OBSERVABILITY_KEY, workObservabilitySnapshot } from "../../shared/api/observability";
+import * as verificationApi from "../../shared/api/verification";
 import { useWorkspace } from "../../shared/hooks/useWorkspace";
 import { useGit } from "../git/useGit";
 import { codeChangedFiles } from "../../shared/utils/helpers";
@@ -20,6 +22,10 @@ import { PromptsPanel } from "../workflow/PromptsPanel";
 import { ExecutionPreviewCompact } from "./ExecutionPreviewCompact";
 import { ExecutionStrategyControls } from "./ExecutionStrategyControls";
 import { ReviewPanel } from "./ReviewPanel";
+import { ChangeEconomicsCard } from "./ChangeEconomicsCard";
+import { DecisionReceiptDrawer } from "./DecisionReceiptDrawer";
+import { RunControlCard } from "./RunControlCard";
+import { VerificationAdvisorCard } from "./VerificationAdvisorCard";
 import { launchApprovalSemantic, phaseStatusSemantic } from "./workSemantic";
 import type { Phase, PhaseProgress, PhaseStatus } from "../../shared/api/orchestrate";
 import type { AiStrategyMode } from "../../shared/api/strategy";
@@ -76,12 +82,14 @@ function PhaseStatusIcon({ status }: { status: PhaseStatus }) {
 
 export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }) {
   const queryClient = useQueryClient();
-  const { hasProject, hasTask, projectName } = useWorkspace();
+  const { hasProject, hasTask, projectName, taskTitle } = useWorkspace();
   const { git } = useGit();
   const [executionApproval, setExecutionApproval] = useState<ExecutionApproval | null>(null);
   const [strategyMode, setStrategyMode] = useState<AiStrategyMode>("auto");
   const [commitMessage, setCommitMessage] = useState("");
   const [importPatch, setImportPatch] = useState("");
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  const [recordedReceipt, setRecordedReceipt] = useState<verificationApi.DecisionReceipt | null>(null);
 
   const phase = useQuery({
     queryKey: PHASE_KEY,
@@ -95,6 +103,20 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     staleTime: 1_500,
     refetchOnWindowFocus: true,
   });
+  const verification = useQuery({
+    queryKey: queryKeys.verification.advisor,
+    queryFn: verificationApi.workVerificationAdvisor,
+    enabled: hasTask,
+    staleTime: 1_500,
+    refetchOnWindowFocus: true,
+  });
+  const observability = useQuery({
+    queryKey: WORK_OBSERVABILITY_KEY,
+    queryFn: workObservabilitySnapshot,
+    enabled: hasTask,
+    staleTime: 1_500,
+    refetchOnWindowFocus: true,
+  });
   const executePreview = useQuery({
     queryKey: ["work", "exec-preview", strategyMode],
     queryFn: () => strategyApi.workStrategyExecutionPreview(strategyMode),
@@ -105,6 +127,15 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
   const setPhase = (next: PhaseProgress) => queryClient.setQueryData(PHASE_KEY, next);
   const refreshWork = (domains: Parameters<typeof invalidateQueryDomains>[1]) =>
     invalidateQueryDomains(queryClient, domains);
+
+  const recordDecision = useMutation({
+    mutationFn: verificationApi.recordWorkDecision,
+    onSuccess: (receipt) => {
+      setRecordedReceipt(receipt);
+      setReceiptOpen(true);
+      void refreshWork(["work", "runs", "git", "verification"]);
+    },
+  });
 
   const setMode = useMutation({
     mutationFn: (mode: api.ExecutionMode) => api.workSetExecutionMode(mode),
@@ -231,9 +262,10 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     ? latest.results.reduce((count, result) => count + (result.changed_files?.length ?? 0), 0)
     : 0;
   const busy =
-    runCta.isPending || runAgent.isPending || review.isPending || verify.isPending || importManual.isPending || commit.isPending;
+    runCta.isPending || runAgent.isPending || review.isPending || verify.isPending || importManual.isPending || commit.isPending || recordDecision.isPending;
   const strategyPreview = executePreview.data ?? null;
   const preview = strategyPreview?.execution ?? null;
+  const receipt = recordedReceipt ?? verification.data?.latest_receipt ?? null;
   const planFingerprint = strategyPreview?.plan_fingerprint ?? null;
   const approvalMatchesPreview = Boolean(
     planFingerprint && executionApproval?.fingerprint === planFingerprint,
@@ -261,6 +293,7 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
     (verify.error as Error | null)?.message ??
     (importManual.error as Error | null)?.message ??
     (commit.error as Error | null)?.message ??
+    (recordDecision.error as Error | null)?.message ??
     null;
 
   function changeStrategy(next: AiStrategyMode) {
@@ -304,6 +337,41 @@ export function WorkTab({ setActiveTab }: { setActiveTab: (tab: TabId) => void }
 
   return (
     <div className="work-tab work-focus-layout">
+      <section className="work-control-surface" aria-label="Work Item control">
+        <header className="work-control-header">
+          <div>
+            <span className="eyebrow">Work Item control</span>
+            <h1>{taskTitle || "No Work Item selected"}</h1>
+            <p>{projectName || "No project connected"} · Decide what evidence is worth spending next.</p>
+          </div>
+          <div className="work-control-header-facts" aria-label="Work Item summary">
+            <div><span>Status</span><strong>{progress.complete ? "Complete" : progress.current}</strong></div>
+            <div><span>Spend</span><strong>{latest == null ? "Not measured" : `${latest.total_cost_units.toFixed(3)} units`}</strong></div>
+            <div><span>Next</span><strong>{progress.complete ? "Review receipt" : progress.cta.label}</strong></div>
+          </div>
+        </header>
+        <div className="work-control-grid">
+          <div className="work-control-primary-column">
+            <VerificationAdvisorCard
+              snapshot={verification.data ?? null}
+              isLoading={verification.isLoading}
+              error={verification.error instanceof Error ? verification.error.message : verification.error ? String(verification.error) : null}
+              onRecord={(input) => recordDecision.mutate(input)}
+              onInspect={() => setReceiptOpen(true)}
+            />
+          </div>
+          <div className="work-control-secondary-column">
+            <RunControlCard phase={progress} latestRun={latest} onOpenRuns={() => setActiveTab("history")} />
+            <ChangeEconomicsCard latestRun={latest} report={observability.data?.ai_usage_report ?? null} />
+            <DecisionReceiptDrawer
+              receipt={receipt}
+              open={receiptOpen}
+              onOpen={() => setReceiptOpen(true)}
+              onClose={() => setReceiptOpen(false)}
+            />
+          </div>
+        </div>
+      </section>
       <section className="work-focus-card">
         <div className="work-phase-header">
           <PanelHeader

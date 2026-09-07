@@ -1,0 +1,173 @@
+import type { DecisionReceipt, VerificationAdvisorSnapshot } from "../../shared/api/verification";
+
+const targetedCheck = {
+  id: "work-ui-targeted",
+  title: "Work surface browser test",
+  command: "pnpm exec playwright test e2e/work-golden-path.spec.ts",
+  kind: "targeted",
+  required: false,
+  estimated_seconds: 120,
+  estimated_cost_units: null,
+  relevant_paths: ["apps/desktop/src/features/work/WorkSurface.tsx"],
+  last_status: null,
+};
+
+const deferredCheck = {
+  id: "integration-suite",
+  title: "Full integration suite",
+  command: "cargo test --workspace",
+  kind: "suite",
+  required: false,
+  estimated_seconds: 1_200,
+  estimated_cost_units: null,
+  relevant_paths: ["crates/"],
+  last_status: null,
+};
+
+export const workControlFixtures: {
+  ready: VerificationAdvisorSnapshot;
+  unknown: VerificationAdvisorSnapshot;
+  deferredReceipt: DecisionReceipt;
+  blocked: VerificationAdvisorSnapshot;
+} = {
+  ready: {
+    project: "RepoDesk",
+    work_item_id: "task-n2-e2e",
+    current_tree_identity: "tree-work-control-1",
+    input: {
+      project: "RepoDesk",
+      work_item_id: "task-n2-e2e",
+      tree_identity: "tree-work-control-1",
+      changed_files: ["apps/desktop/src/features/work/WorkSurface.tsx"],
+      risk_label: "medium",
+      proof_obligations: ["work-surface-renders"],
+      checks: [targetedCheck, deferredCheck],
+      estimated_budget_units: null,
+      prior_attempts: 0,
+      prior_failures: 0,
+      policy_version: "verification-policy-v1",
+    },
+    recommendation: {
+      decision: "run_targeted",
+      rationale: [
+        "A focused check intersects the changed paths and is the smallest useful proof.",
+      ],
+      selected_check_ids: ["work-ui-targeted"],
+      deferred_checks: [
+        {
+          check_id: "integration-suite",
+          title: "Full integration suite",
+          reason: "Unrelated to the changed paths for this work item",
+          required_before: "acceptance",
+        },
+      ],
+      estimated_cost_units: null,
+      estimated_wall_clock_ms: 120_000,
+      risk_label: "medium",
+      uncertainty_label: "unknown",
+      policy_version: "verification-policy-v1",
+    },
+    latest_receipt: null,
+    sources: [
+      { source: "git_tree", status: "measured", detail: "Current tree is known." },
+      { source: "check_history", status: "partial", detail: "Cost history is not measured yet." },
+      { source: "repopilot", status: "unknown", detail: "RepoPilot findings are unavailable." },
+    ],
+  },
+  unknown: {
+    project: "RepoDesk",
+    work_item_id: "task-n2-e2e",
+    current_tree_identity: null,
+    input: {
+      project: "RepoDesk",
+      work_item_id: "task-n2-e2e",
+      tree_identity: "unknown",
+      changed_files: [],
+      risk_label: "unknown",
+      proof_obligations: [],
+      checks: [],
+      estimated_budget_units: null,
+      prior_attempts: 0,
+      prior_failures: 0,
+      policy_version: "verification-policy-v1",
+    },
+    recommendation: {
+      decision: "stop_with_partial_result",
+      rationale: ["No verification checks are configured; the result cannot be proved locally."],
+      selected_check_ids: [],
+      deferred_checks: [],
+      estimated_cost_units: null,
+      estimated_wall_clock_ms: null,
+      risk_label: "unknown",
+      uncertainty_label: "unknown",
+      policy_version: "verification-policy-v1",
+    },
+    latest_receipt: null,
+    sources: [
+      { source: "git_tree", status: "unknown", detail: "Tree identity is unavailable." },
+      { source: "check_history", status: "unknown", detail: "No check history is available." },
+    ],
+  },
+  deferredReceipt: {
+    decision_id: "decision-deferred-1",
+    project: "RepoDesk",
+    work_item_id: "task-n2-e2e",
+    execution_id: null,
+    tree_identity: "tree-work-control-1",
+    changeset_identity: null,
+    decision_kind: "defer_with_debt",
+    policy_version: "verification-policy-v1",
+    observed_facts: { changed_file_count: 1, tests_observed: null },
+    evidence_refs: [{ kind: "verification", locator: "checks.log" }],
+    selected_actions: ["work-ui-targeted"],
+    skipped_actions: ["integration-suite"],
+    estimated_cost_units: null,
+    estimated_wall_clock_ms: 120_000,
+    risk_label: "medium",
+    uncertainty_label: "unknown",
+    verification_debt: [
+      {
+        check_id: "integration-suite",
+        title: "Full integration suite",
+        reason: "Unrelated to the changed paths for this work item",
+        required_before: "acceptance",
+      },
+    ],
+    human_override: null,
+    outcome: null,
+    created_at: "2026-09-07T10:00:00Z",
+  },
+  blocked: {
+    project: "RepoDesk",
+    work_item_id: "task-n2-e2e",
+    current_tree_identity: "tree-work-control-1",
+    input: {
+      project: "RepoDesk",
+      work_item_id: "task-n2-e2e",
+      tree_identity: "tree-work-control-1",
+      changed_files: ["apps/desktop/src/features/work/WorkSurface.tsx"],
+      risk_label: "high",
+      proof_obligations: [],
+      checks: [targetedCheck],
+      estimated_budget_units: null,
+      prior_attempts: 3,
+      prior_failures: 2,
+      policy_version: "verification-policy-v1",
+    },
+    recommendation: {
+      decision: "ask_for_approval",
+      rationale: ["Repeated failed verification attempts require a human review before another run."],
+      selected_check_ids: [],
+      deferred_checks: [],
+      estimated_cost_units: null,
+      estimated_wall_clock_ms: null,
+      risk_label: "high",
+      uncertainty_label: "unknown",
+      policy_version: "verification-policy-v1",
+    },
+    latest_receipt: null,
+    sources: [
+      { source: "check_history", status: "measured", detail: "Two recent verification attempts failed." },
+    ],
+  },
+};

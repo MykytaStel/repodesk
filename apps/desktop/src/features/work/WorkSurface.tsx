@@ -11,6 +11,7 @@ import { WorkTab } from "./WorkTab";
 import { workflowPositionSemantic } from "./workSemantic";
 import "../../shared/ui/manual-import.css";
 import "./work-route.css";
+import "./work-control.css";
 import "../routing/routing-feature.css";
 
 const PHASE_KEY = ["work", "phase-state"] as const;
