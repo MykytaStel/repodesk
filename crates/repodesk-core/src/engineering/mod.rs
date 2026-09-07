@@ -28,6 +28,7 @@ pub mod safe_commit_manifest;
 pub mod strategy_adaptation;
 pub mod strategy_feedback;
 pub mod strategy_instrumentation;
+pub mod verification_history;
 pub mod work_item_contract;
 
 pub use crate::change_attribution::{ChangeAttributionEvidence, ChangeAttributionStrength};
@@ -139,6 +140,10 @@ pub use strategy_feedback::{
 };
 pub use strategy_instrumentation::{
     StrategySelectionTelemetry, record_strategy_selection, record_strategy_selection_for_execution,
+};
+pub use verification_history::{
+    VerificationCheckHistory, VerificationHistory, VerificationHistoryConfidence,
+    derive_verification_history,
 };
 pub use work_item_contract::{
     ScopeComplianceReport, ScopeComplianceStatus, WORK_ITEM_CONTRACT_FILE,
