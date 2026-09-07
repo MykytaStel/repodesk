@@ -311,9 +311,11 @@ fn tail_lines(value: &str, max_lines: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
 
     #[test]
+    #[serial]
     fn run_validated_check_runs_allowlisted_command() {
         let cwd = env::current_dir().unwrap();
         // `npm` is allowlisted; `npm --version` is a fast, side-effect-free probe.
@@ -322,6 +324,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn check_result_keeps_execution_facts_without_fabricating_test_counts() {
         let cwd = env::current_dir().unwrap();
         let result = run_validated_check("npm --version", &cwd, 30);
@@ -334,6 +337,19 @@ mod tests {
     }
 
     #[test]
+    #[serial]
+    fn project_check_execution_uses_descriptor_identity_and_evidence() {
+        let cwd = env::current_dir().unwrap();
+        let descriptor = ProjectCheck::new("version", "Version probe", "npm --version");
+        let result = run_project_check(&descriptor, &cwd, Some("checks.log"));
+
+        assert_eq!(result.check_id, "version");
+        assert_eq!(result.command, "npm --version");
+        assert_eq!(result.log_evidence_ref.as_deref(), Some("checks.log"));
+    }
+
+    #[test]
+    #[serial]
     fn run_validated_check_rejects_shell_metacharacters_without_spawning() {
         let cwd = env::current_dir().unwrap();
         let result = run_validated_check("cargo test; rm -rf /", &cwd, 5);
@@ -344,6 +360,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn run_validated_check_rejects_non_allowlisted_binary() {
         let cwd = env::current_dir().unwrap();
         let result = run_validated_check("rm -rf /tmp/whatever", &cwd, 5);
