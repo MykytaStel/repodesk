@@ -10,6 +10,7 @@ use std::collections::{BTreeSet, HashMap};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
+use crate::checks::CheckCommandResult;
 use crate::engineering::decision_receipt::{DecisionReceipt, VerificationDecisionKind};
 use crate::engineering::domain::{
     ChangeSet, ChangeSetId, EvidenceKind, EvidenceRef, ExecutionId, VerificationId, WorkItem,
@@ -333,6 +334,45 @@ pub fn record_verification_started(
     append_for_task(task, event)
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct VerificationCheckTelemetry {
+    pub check_id: String,
+    pub command: String,
+    pub status: String,
+    pub exit_code: Option<i32>,
+    pub duration_ms: u64,
+    pub started_at: DateTime<Utc>,
+    pub finished_at: DateTime<Utc>,
+    pub tree_identity: Option<String>,
+    pub log_evidence_ref: Option<String>,
+    pub tests_observed: Option<u64>,
+}
+
+impl VerificationCheckTelemetry {
+    pub fn from_result(result: &CheckCommandResult) -> Self {
+        Self {
+            check_id: result.check_id.clone(),
+            command: result.command.clone(),
+            status: result.status.clone(),
+            exit_code: result.exit_code,
+            duration_ms: u64::try_from(result.duration_ms).unwrap_or(u64::MAX),
+            started_at: result.started_at,
+            finished_at: result.finished_at,
+            tree_identity: result.tree_identity.clone(),
+            log_evidence_ref: result.log_evidence_ref.clone(),
+            tests_observed: result.tests_observed,
+        }
+    }
+}
+
+fn serialize_check_results(results: &[VerificationCheckTelemetry]) -> RepoDeskResult<Vec<Value>> {
+    results
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Into::into)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct VerificationFinishedTelemetry<'a> {
     pub success: bool,
@@ -340,6 +380,7 @@ pub struct VerificationFinishedTelemetry<'a> {
     pub summary_path: Option<&'a str>,
     pub log_path: Option<&'a str>,
     pub error: Option<&'a str>,
+    pub check_results: &'a [VerificationCheckTelemetry],
 }
 
 pub fn record_verification_finished(
@@ -354,6 +395,13 @@ pub fn record_verification_finished(
         .with_verification(verification_id)
         .with_attribute("success", Value::Bool(telemetry.success))
         .with_attribute("command_count", json!(telemetry.command_count));
+
+    if !telemetry.check_results.is_empty() {
+        event = event.with_attribute(
+            "check_results",
+            Value::Array(serialize_check_results(telemetry.check_results)?),
+        );
+    }
 
     if let Some(error) = telemetry.error {
         event = event.with_attribute("error", Value::String(error.to_string()));
@@ -452,5 +500,33 @@ mod tests {
     fn verification_ids_are_run_scoped() {
         let id = new_verification_id("run-1").unwrap();
         assert!(id.as_str().starts_with("verify-run-1-"));
+    }
+
+    #[test]
+    fn verification_finished_contains_bounded_check_results() {
+        let result = CheckCommandResult {
+            check_id: "unit-tests".into(),
+            command: "cargo test --lib".into(),
+            tree_identity: Some("tree-1".into()),
+            started_at: Utc::now(),
+            finished_at: Utc::now(),
+            status: "timeout".into(),
+            exit_code: None,
+            duration_ms: 1_250,
+            stdout: "do not persist this output".into(),
+            stderr: "do not persist this error".into(),
+            tests_observed: None,
+            log_evidence_ref: Some("checks.log".into()),
+        };
+        let telemetry = VerificationCheckTelemetry::from_result(&result);
+        let value = serialize_check_results(std::slice::from_ref(&telemetry)).unwrap();
+        let item = &value[0];
+
+        assert_eq!(item["check_id"], "unit-tests");
+        assert_eq!(item["status"], "timeout");
+        assert_eq!(item["duration_ms"], 1_250);
+        assert_eq!(item["tests_observed"], Value::Null);
+        assert!(item.get("stdout").is_none());
+        assert!(item.get("stderr").is_none());
     }
 }

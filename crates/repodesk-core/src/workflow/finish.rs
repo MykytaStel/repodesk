@@ -7,7 +7,9 @@ use std::process::Command;
 
 use chrono::Utc;
 
-use crate::engineering::instrumentation::VerificationFinishedTelemetry;
+use crate::engineering::instrumentation::{
+    VerificationCheckTelemetry, VerificationFinishedTelemetry,
+};
 use crate::errors::{RepoDeskError, RepoDeskResult};
 
 use super::receipt::{
@@ -95,6 +97,7 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
                         summary_path: None,
                         log_path: None,
                         error: Some(&error_text),
+                        check_results: &[],
                     },
                 );
             }
@@ -112,6 +115,11 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
     // Pass when the checks pass (a project with none configured passes
     // vacuously, but the receipt is still bound to this HEAD/index/changeset).
     let success = result.success;
+    let check_results = result
+        .commands
+        .iter()
+        .map(VerificationCheckTelemetry::from_result)
+        .collect::<Vec<_>>();
 
     receipt.verification = Some(VerificationReceipt {
         run_id: receipt.run_id.clone(),
@@ -139,6 +147,7 @@ pub fn run_verification() -> RepoDeskResult<VerificationOutcome> {
                 summary_path: result.summary_file.to_str(),
                 log_path: result.log_file.to_str(),
                 error: None,
+                check_results: &check_results,
             },
         );
     }
