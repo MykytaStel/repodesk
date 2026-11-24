@@ -10,7 +10,7 @@ chrono.workspace = true
 dirs.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-toml = "0.8.2"
+toml = "1.1.4"
 serde_json.workspace = true
 tokio.workspace = true
 async-recursion = "1.1.1"
@@ -20,14 +20,14 @@ rusqlite.workspace = true
 indexmap = "2.2.6"
 wait-timeout = "0.2.0"
 # Async HTTP client used by provider APIs.
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
 sha2.workspace = true
 hex = "0.4"
 keyring = "4"
 # Blocking client retained for synchronous local-runtime adapters (for example embeddings).
 ureq.workspace = true
-syn = { version = "2", features = ["full", "visit"] }
+syn = { version = "3", features = ["full", "visit"] }
 tempfile.workspace = true
 
 [dev-dependencies]
-serial_test = "3"
+serial_test = "4"
